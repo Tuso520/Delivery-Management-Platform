@@ -121,7 +121,7 @@ onMounted(async () => {
         <a-form-item label="分类">
           <a-select
             v-model="filterCategory"
-            placeholder="鍏ㄩ儴"
+            placeholder="全部"
             clearable
             style="width:150px"
             @change="fetchList"
@@ -137,7 +137,7 @@ onMounted(async () => {
         <a-form-item label="状态">
           <a-select
             v-model="filterStatus"
-            placeholder="鍏ㄩ儴"
+            placeholder="全部"
             clearable
             style="width:130px"
             @change="fetchList"

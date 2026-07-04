@@ -66,6 +66,12 @@ cd /www/wwwroot/delivery-platform
 REF=v20260704.1 bash deploy-git.sh deploy
 ```
 
+如需使用旧发布包做应急部署，上传发布包后在服务器执行：
+
+```bash
+bash deploy-latest-release.sh
+```
+
 脚本会自动执行：
 
 1. `git fetch --tags --prune origin`
@@ -105,7 +111,7 @@ REF=v20260704.1 bash deploy-git.sh deploy
 - 删除表、删除列、字段重命名、唯一约束收紧必须单独评审并先在测试库演练。
 - 种子数据必须幂等，禁止清空业务表。
 
-## 5. 回滚
+## 5. 失败回滚
 
 只回滚代码：
 

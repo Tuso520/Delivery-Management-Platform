@@ -481,7 +481,7 @@ onMounted(async () => {
         </a-row>
         <a-row :gutter="20">
           <a-col :span="12">
-            <a-form-item label="杞欢负责人">
+            <a-form-item label="软件负责人">
               <a-select
                 v-model="formData.softwareLeaderId"
                 filterable
@@ -499,7 +499,7 @@ onMounted(async () => {
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="閲囪喘负责人">
+            <a-form-item label="采购负责人">
               <a-select
                 v-model="formData.purchaseOwnerId"
                 filterable

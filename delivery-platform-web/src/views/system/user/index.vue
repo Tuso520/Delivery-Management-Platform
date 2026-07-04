@@ -259,7 +259,7 @@ onMounted(async () => {
         <a-form-item label="状态">
           <a-select
             v-model="queryParams.status"
-            placeholder="鍏ㄩ儴"
+            placeholder="全部"
             clearable
             style="width: 120px"
             @change="handleSearch"

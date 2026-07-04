@@ -300,7 +300,7 @@ onMounted(async () => {
             <a-option label="低风险" value="Low" />
             <a-option label="中风险" value="Medium" />
             <a-option label="高风险" value="High" />
-            <a-option label="涓ラ噸椋庨櫓" value="Critical" />
+            <a-option label="严重风险" value="Critical" />
           </a-select>
         </a-form-item>
         <a-form-item label="是否必填">

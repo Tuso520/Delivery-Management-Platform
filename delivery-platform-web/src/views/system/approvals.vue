@@ -170,7 +170,7 @@ onMounted(fetchData)
                   :timestamp="action.createdAt"
                 >
                   第{{ action.stepOrder }} 步 · {{ action.actor.realName }} / {{ action.action }}
-                  <span v-if="action.comment">锛歿{ action.comment }}</span>
+                  <span v-if="action.comment">：{{ action.comment }}</span>
                 </a-timeline-item>
               </a-timeline>
             </template>
@@ -184,7 +184,7 @@ onMounted(fetchData)
           </a-table-column>
           <a-table-column prop="applicant.realName" label="申请人" :width="110" />
           <a-table-column prop="approver.realName" label="当前审批人" :width="120" />
-          <a-table-column prop="currentStep" label="姝ラ" :width="80" />
+          <a-table-column prop="currentStep" label="步骤" :width="80" />
           <a-table-column prop="status" label="状态" :width="100" />
           <a-table-column prop="createdAt" label="创建时间" :width="180" />
           <a-table-column label="操作" :width="140">
@@ -271,7 +271,7 @@ onMounted(fetchData)
               </a-button>
             </div>
             <a-button @click="addStep">
-              澧炲姞姝ラ
+              增加步骤
             </a-button>
           </div>
         </a-form-item>

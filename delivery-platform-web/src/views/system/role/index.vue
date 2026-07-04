@@ -399,7 +399,7 @@ onMounted(() => {
           border
           class="permission-matrix"
         >
-          <a-table-column label="妯″潡" :width="160" fixed="right">
+          <a-table-column label="模块" :width="160" fixed="right">
             <template #default="{ row }">
               <a-checkbox
                 :model-value="isGroupAllChecked(row)"

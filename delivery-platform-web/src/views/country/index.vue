@@ -187,7 +187,7 @@ onMounted(() => {
           />
         </a-form-item>
         <a-form-item label="状态">
-          <a-select v-model="queryParams.status" placeholder="鍏ㄩ儴" clearable>
+          <a-select v-model="queryParams.status" placeholder="全部" clearable>
             <a-option label="活跃" value="Active" />
             <a-option label="禁用" value="Inactive" />
           </a-select>
@@ -318,13 +318,13 @@ onMounted(() => {
         <a-form-item label="周末规则">
           <a-input v-model="formData.weekendRule" :maxlength="20" placeholder="例如: Sat-Sun" />
         </a-form-item>
-        <a-form-item label="鍏ュ瑕佹眰">
+        <a-form-item label="入境要求">
           <a-textarea v-model="formData.entryRequirements" :rows="2" />
         </a-form-item>
         <a-form-item label="安全注意事项">
           <a-textarea v-model="formData.safetyNotes" :rows="2" />
         </a-form-item>
-        <a-form-item label="绋庡姟娉ㄦ剰浜嬮」">
+        <a-form-item label="税务注意事项">
           <a-textarea v-model="formData.taxNotes" :rows="2" />
         </a-form-item>
         <a-form-item label="付款注意事项">

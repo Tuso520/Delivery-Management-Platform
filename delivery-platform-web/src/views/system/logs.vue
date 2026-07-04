@@ -21,7 +21,7 @@ const queryParams = ref<QueryOperationLogParams>({
 })
 
 const moduleOptions = [
-  { value: '', label: '鍏ㄩ儴妯″潡' },
+  { value: '', label: '全部模块' },
   { value: 'auth', label: '认证' },
   { value: 'user', label: '用户' },
   { value: 'role', label: '角色' },
@@ -47,7 +47,7 @@ const actionOptions = [
 ]
 
 const resultOptions = [
-  { value: '', label: '鍏ㄩ儴缁撴灉' },
+  { value: '', label: '全部结果' },
   { value: 'success', label: '成功' },
   { value: 'failure', label: '失败' },
   { value: 'denied', label: '拒绝' },
@@ -212,7 +212,7 @@ onMounted(() => {
             {{ row.user?.realName || row.user?.username || row.userId }}
           </template>
         </a-table-column>
-        <a-table-column prop="module" label="妯″潡" :width="80" />
+        <a-table-column prop="module" label="模块" :width="80" />
         <a-table-column prop="action" label="操作" :width="80" />
         <a-table-column prop="targetType" label="目标类型" :width="100" />
         <a-table-column

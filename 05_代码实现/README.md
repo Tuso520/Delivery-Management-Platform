@@ -1,10 +1,15 @@
-# 代码实现
+# 05 代码实现
 
-源码目录：
+本目录记录源码结构、模块清单和实现约定。
+
+## 文件清单
+
+- `代码实现说明.md`：前后端实现方式和关键文件。
+- `模块清单.md`：当前源码模块清单。
+
+## 源码入口
 
 - 前端：`delivery-platform-web/`
 - 后端：`delivery-platform-server/`
-- 数据库初始化：`docker/mysql/init.sql`
-- Docker 本地测试：`docker-compose.test.yml`
-
-保留源码在根目录是为了让 Docker、CI 和发布脚本使用稳定路径；本目录作为公司标准项目结构中的代码索引。
+- 本地模拟：`scripts/local-test-server.mjs`
+- Docker：`docker-compose.yml`、`docker-compose.prod.yml`、`docker-compose.test.yml`

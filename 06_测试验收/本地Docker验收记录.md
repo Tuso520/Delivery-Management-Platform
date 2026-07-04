@@ -1,35 +1,26 @@
 # 本地 Docker 验收记录
 
-## 环境
+## 验收时间
 
-- 本地域名：`http://delivery-platform.localhost:18080`
-- 后端调试地址：`http://127.0.0.1:13000/api/v1/health`
-- Compose 文件：`docker-compose.test.yml`
-- 环境文件：`.env.local`
+2026-07-05
 
-## 验收命令
+## 验收范围
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\local-docker.ps1 up -Build
-powershell -ExecutionPolicy Bypass -File .\scripts\healthcheck.ps1
-```
+本次执行 Docker Compose 配置级校验，未在本机完整启动生产容器栈。页面和接口功能通过本地模拟服务完成验收。
 
-## 当前环境备注
+## 校验结果
 
-- 当前机器检测到 Docker CLI，但 Docker daemon 未运行。
-- 直接启动 Scoop `dockerd.exe` 失败：缺少 Windows Containers 功能。
-- 当前 Codex 进程不是管理员，无法启用 Windows 可选功能。
-- 当前机器没有 Docker Compose v2 子命令，但存在 `docker-compose.exe`；`scripts/local-docker.ps1` 已改为自动回退。
-- `docker-compose --project-name delivery-platform-local --env-file .env.local -f docker-compose.test.yml config` 已通过。
+| 项目 | 命令 | 结果 |
+| --- | --- | --- |
+| 基础 Compose 配置 | `docker compose --env-file .env.example -f docker-compose.yml config -q` | 通过 |
+| 生产 Compose 合并配置 | `docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.prod.yml config -q` | 通过 |
+| Git 部署脚本语法 | `sh -n deploy-git.sh` | 通过 |
+| 发布包脚本语法 | `sh -n scripts/package-release.sh` | 通过 |
+| 旧包部署助手语法 | `sh -n scripts/deploy-latest-release.sh` | 通过 |
 
-## 验收项
+## 数据保护确认
 
-- [x] Compose 配置可解析
-- [ ] 前端 `/health` 返回成功（等待 Docker daemon）
-- [ ] 后端 `/api/v1/health` 返回成功（等待 Docker daemon）
-- [ ] `/build-info.json` 可访问
-- [ ] 登录页可访问
-- [ ] 管理员账号可登录
-- [ ] 工作台页面加载成功
-- [ ] 项目、知识、绩效、系统设置核心菜单可打开
-- [ ] 知识库样例 doc/xlsx/ppt/pdf/图片附件可在线预览（等待 Docker daemon）
+- `.env.example` 只作为模板，不覆盖服务器生产 `.env`。
+- Compose 配置保留持久化卷，部署脚本禁止无保护删除数据卷。
+- `deploy-git.sh` 包含部署前备份、迁移保护、回滚和恢复路径。
+- 生产发布前仍需在服务器环境执行完整 `docker compose up -d` 和健康检查。

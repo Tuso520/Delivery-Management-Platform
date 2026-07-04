@@ -237,7 +237,7 @@ onMounted(async () => {
   <div class="language-page">
     <a-tabs v-model="activeTab">
       <!-- Language Management Tab -->
-      <a-tab-pane label="语言绠＄悊" name="language">
+      <a-tab-pane label="语言管理" name="language">
         <a-card class="table-card">
           <div class="table-header">
             <span class="table-title">语言列表</span>
@@ -252,7 +252,7 @@ onMounted(async () => {
             border
             stripe
           >
-            <a-table-column prop="languageCode" label="语言浠ｇ爜" :width="120" />
+            <a-table-column prop="languageCode" label="语言代码" :width="120" />
             <a-table-column prop="languageName" label="语言名称" :min-width="200" />
             <a-table-column prop="status" label="状态" :width="90">
               <template #default="{ row }">
@@ -406,7 +406,7 @@ onMounted(async () => {
       :close-on-click-modal="false"
     >
       <a-form :model="languageForm" :rules="languageFormRules" label-width="100px">
-        <a-form-item label="语言浠ｇ爜" prop="languageCode">
+        <a-form-item label="语言代码" prop="languageCode">
           <a-input v-model="languageForm.languageCode" :disabled="isEdit" :maxlength="10" />
         </a-form-item>
         <a-form-item label="语言名称" prop="languageName">

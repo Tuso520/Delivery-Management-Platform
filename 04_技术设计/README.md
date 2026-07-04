@@ -1,13 +1,15 @@
-# 技术设计
+# 04 技术设计
 
-技术设计资料：
+本目录记录系统架构、API、数据、权限和集成设计。
 
-- 系统架构：`docs/design/系统架构.md`
-- 数据与权限：`docs/design/数据与权限架构.md`
-- 运维部署：`docs/operations/运维与部署.md`
+## 文件清单
 
-技术栈：
+- `技术架构说明.md`：前后端、存储、缓存、部署和本地模拟架构。
+- `数据权限与API设计.md`：Prisma 模型、RBAC 权限、API 约定。
 
-- 前端：Vue 3、Vite、TypeScript、Element Plus
-- 后端：NestJS、Prisma、JWT、Swagger
-- 基础设施：MySQL、Redis、MinIO、Nginx、Docker Compose
+## 技术原则
+
+- 前后端以 REST API 连接。
+- 后端统一鉴权、校验、响应和异常处理。
+- 文件走对象存储，业务表只保存索引。
+- Docker Compose 用于本地测试和服务器部署。

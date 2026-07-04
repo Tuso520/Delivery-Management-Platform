@@ -121,7 +121,7 @@ onMounted(fetchData)
         <a-form-item label="部门名称" required>
           <a-input v-model="form.departmentName" />
         </a-form-item>
-        <a-form-item label="涓婄骇閮ㄩ棬">
+        <a-form-item label="上级部门">
           <a-select v-model="form.parentId" clearable style="width:100%">
             <a-option
               v-for="item in flatten(departments)"
