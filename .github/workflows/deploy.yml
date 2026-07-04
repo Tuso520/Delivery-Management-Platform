@@ -1,0 +1,29 @@
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Deploy target environment
+        required: true
+        default: test
+        type: choice
+        options:
+          - test
+          - production
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose files
+        run: |
+          docker compose --env-file .env.local.example -f docker-compose.test.yml config -q
+          docker compose --env-file .env.example -f docker-compose.prod.yml config -q
+      - name: Validate Git deployment script
+        run: bash -n deploy-git.sh
+      - name: Deployment handoff
+        run: |
+          echo "Push or tag this revision, then run deploy-git.sh on the target server."
+          echo "The server keeps .env, backups and Docker named volumes outside Git."

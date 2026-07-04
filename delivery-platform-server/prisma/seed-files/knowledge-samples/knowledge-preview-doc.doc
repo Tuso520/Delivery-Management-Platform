@@ -1,0 +1,10 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>知识库 DOC 预览样例</title></head>
+<body>
+  <h1>知识库 DOC 预览样例</h1>
+  <p>专业：项目管理</p>
+  <p>用途：验证旧版 doc 文件上传后可在线查阅。</p>
+  <p>检查点：标题、段落、责任人和交付动作应能在平台预览窗口中显示。</p>
+</body>
+</html>

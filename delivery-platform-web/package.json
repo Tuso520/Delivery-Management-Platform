@@ -1,0 +1,47 @@
+{
+  "name": "delivery-platform-web",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.34.4",
+  "type": "module",
+  "description": "交付管理平台 - Frontend",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:checked": "vue-tsc --noEmit && vite build",
+    "type-check": "vue-tsc --noEmit",
+    "preview": "vite preview",
+    "lint": "eslint --ext .vue,.ts src/ --fix",
+    "format": "prettier --write \"src/**/*.{vue,ts,scss}\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:cov": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@arco-design/web-vue": "2.58.0",
+    "@vueuse/core": "10.11.0",
+    "axios": "1.18.1",
+    "dayjs": "1.11.21",
+    "md-editor-v3": "6.5.3",
+    "pinia": "2.1.7",
+    "vue": "3.5.38",
+    "vue-i18n": "9.14.5",
+    "vue-router": "4.3.3"
+  },
+  "devDependencies": {
+    "@pinia/testing": "^0.1.0",
+    "@types/node": "^20.14.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "@vitejs/plugin-vue": "5.1.4",
+    "eslint": "^8.57.0",
+    "eslint-plugin-vue": "^9.26.0",
+    "jsdom": "^24.0.0",
+    "prettier": "^3.3.0",
+    "sass": "^1.77.0",
+    "typescript": "5.5.4",
+    "vite": "5.4.8",
+    "vitest": "^2.0.0",
+    "vue-tsc": "2.0.29"
+  }
+}

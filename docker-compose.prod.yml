@@ -1,0 +1,40 @@
+name: delivery-platform-prod
+
+services:
+  mysql:
+    extends:
+      file: docker-compose.yml
+      service: mysql
+  redis:
+    extends:
+      file: docker-compose.yml
+      service: redis
+  minio:
+    extends:
+      file: docker-compose.yml
+      service: minio
+  minio-init:
+    extends:
+      file: docker-compose.yml
+      service: minio-init
+  backend-migrate:
+    extends:
+      file: docker-compose.yml
+      service: backend-migrate
+  backend:
+    extends:
+      file: docker-compose.yml
+      service: backend
+  frontend:
+    extends:
+      file: docker-compose.yml
+      service: frontend
+
+volumes:
+  mysql_data:
+  redis_data:
+  minio_data:
+
+networks:
+  delivery-network:
+    driver: bridge

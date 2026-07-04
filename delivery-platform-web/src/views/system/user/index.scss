@@ -1,0 +1,25 @@
+.no-role,
+.role-code-hint {
+  color: #86909c;
+  font-size: 12px;
+}
+
+.role-dialog-info {
+  margin-bottom: 16px;
+  color: #4e5969;
+  font-size: 14px;
+}
+
+.role-checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.role-checkbox-group .arco-checkbox {
+  margin-right: 0;
+}
+
+.role-code-hint {
+  margin-left: 4px;
+}

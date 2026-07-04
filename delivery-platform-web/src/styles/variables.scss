@@ -1,0 +1,52 @@
+// Delivery Management Platform design tokens
+
+$color-primary: #165dff;
+$color-primary-dark: #0e42d2;
+$color-primary-soft: #e8f3ff;
+$color-success: #00b42a;
+$color-warning: #ff7d00;
+$color-danger: #f53f3f;
+$color-info: #86909c;
+
+$color-text-primary: #1d2129;
+$color-text-regular: #4e5969;
+$color-text-secondary: #86909c;
+$color-text-placeholder: #c9cdd4;
+
+$color-border-base: #c9cdd4;
+$color-border-light: #e5e6eb;
+$color-border-lighter: #f2f3f5;
+$color-border-extra-light: #f7f8fa;
+
+$color-bg-base: #fff;
+$color-bg-page: #f7f8fa;
+$color-bg-subtle: #f7f8fa;
+
+$sidebar-width: 248px;
+$sidebar-collapsed-width: 68px;
+$header-height: 72px;
+
+$sidebar-bg-color: #fff;
+$sidebar-text-color: #4e5969;
+$sidebar-active-text-color: #165dff;
+$sidebar-hover-bg-color: #f2f3f5;
+
+$transition-duration-base: 0.24s;
+$transition-duration-fast: 0.16s;
+
+$box-shadow-light: 0 2px 8px rgba(29, 33, 41, 0.05);
+$box-shadow-dark: 0 16px 40px rgba(29, 33, 41, 0.16);
+
+$border-radius-base: 8px;
+$border-radius-small: 6px;
+
+$font-size-extra-large: 20px;
+$font-size-large: 18px;
+$font-size-medium: 16px;
+$font-size-base: 14px;
+$font-size-small: 13px;
+$font-size-extra-small: 12px;
+
+$z-index-sidebar: 1000;
+$z-index-header: 900;
+$z-index-modal: 2000;

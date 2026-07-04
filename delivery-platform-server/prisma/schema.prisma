@@ -1,0 +1,1373 @@
+// ============================================================
+// Prisma Schema — 交付管理平台
+// Database: MySQL 8.0
+// Naming: 表名 snake_case 复数，字段 camelCase + @map snake_case
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// 01 — 用户与权限
+// ============================================================
+
+model User {
+  id           String     @id @default(uuid())
+  username     String     @unique @db.VarChar(50)
+  password     String     @db.VarChar(255)
+  realName     String     @map("real_name") @db.VarChar(50)
+  email        String?    @db.VarChar(100)
+  phone        String?    @db.VarChar(30)
+  departmentId String?    @map("department_id") @db.VarChar(36)
+  status       UserStatus @default(Active)
+  lastLoginAt  DateTime?  @map("last_login_at")
+  deletedAt    DateTime?  @map("deleted_at")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  userRoles                 UserRole[]
+  projectMembers            ProjectMember[]
+  archiveItems              ProjectArchiveItem[]      @relation("ArchiveResponsibleUser")
+  reviewItems               ProjectArchiveItem[]      @relation("ArchiveReviewUser")
+  checklistItems            ProjectChecklistItem[]    @relation("ChecklistResponsibleUser")
+  checklistReviews          ProjectChecklistItem[]    @relation("ChecklistReviewUser")
+  uploadedFiles             File[]
+  fileReviews               FileReview[]
+  notifications             Notification[]
+  operationLogs             OperationLog[]
+  knowledgeArticles         KnowledgeArticle[]
+  knowledgeReviews          KnowledgeArticle[]        @relation("KnowledgeReviewer")
+  dailyReports              DailyReport[]
+  dailyReportReviews        DailyReport[]             @relation("ReportReviewer")
+  okrObjectives             OkrObjective[]
+  performanceScores         PerformanceScore[]
+  managedDepartments        Department[]              @relation("DepartmentManager")
+  uploadedAttachments       Attachment[]
+  knowledgeVersions         KnowledgeArticleVersion[]
+  skillAssessments          SkillAssessment[]         @relation("SkillAssessmentUser")
+  conductedSkillAssessments SkillAssessment[]         @relation("SkillAssessmentAssessor")
+  trainingParticipants      TrainingParticipant[]
+  trainingLed               TrainingPlan[]            @relation("TrainingTrainer")
+  processRecords            ProjectProcessRecord[]
+  projectPayments           ProjectPayment[]
+  retrospectiveActions      RetrospectiveAction[]
+  approvalTasks             ApprovalTask[]            @relation("ApprovalTaskApplicant")
+  approvalReviews           ApprovalTask[]            @relation("ApprovalTaskApprover")
+  approvalActions           ApprovalAction[]
+  backupRecords             BackupRecord[]
+
+  department Department? @relation(fields: [departmentId], references: [id])
+
+  @@index([status])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+enum UserStatus {
+  Active
+  Inactive
+  Locked
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  roleCode    String   @unique @map("role_code") @db.VarChar(50)
+  roleName    String   @map("role_name") @db.VarChar(50)
+  description String?  @db.Text
+  status      String   @default("Active") @db.VarChar(20)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id             String   @id @default(uuid())
+  permissionCode String   @unique @map("permission_code") @db.VarChar(100)
+  permissionName String   @map("permission_name") @db.VarChar(50)
+  resource       String   @db.VarChar(50)
+  action         String   @db.VarChar(50)
+  description    String?  @db.VarChar(200)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model UserRole {
+  id     String @id @default(uuid())
+  userId String @map("user_id") @db.VarChar(36)
+  roleId String @map("role_id") @db.VarChar(36)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  id           String @id @default(uuid())
+  roleId       String @map("role_id") @db.VarChar(36)
+  permissionId String @map("permission_id") @db.VarChar(36)
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ============================================================
+// 02 — 项目中心
+// ============================================================
+
+model Project {
+  id                 String        @id @default(uuid())
+  projectCode        String        @unique @map("project_code") @db.VarChar(30)
+  projectName        String        @map("project_name") @db.VarChar(200)
+  countryCode        String        @map("country_code") @db.VarChar(10)
+  city               String?       @db.VarChar(100)
+  customerName       String?       @map("customer_name") @db.VarChar(200)
+  projectType        String?       @map("project_type") @db.VarChar(50)
+  contractCurrency   String?       @map("contract_currency") @db.VarChar(10)
+  baseCurrency       String?       @map("base_currency") @db.VarChar(10)
+  contractAmount     Decimal?      @map("contract_amount") @db.Decimal(18, 2)
+  exchangeRate       Decimal?      @map("exchange_rate") @db.Decimal(18, 8)
+  convertedAmount    Decimal?      @map("converted_amount") @db.Decimal(18, 2)
+  exchangeRateDate   DateTime?     @map("exchange_rate_date")
+  exchangeRateSource String?       @map("exchange_rate_source") @db.VarChar(50)
+  projectLanguage    String?       @map("project_language") @db.VarChar(10)
+  projectManagerId   String?       @map("project_manager_id") @db.VarChar(36)
+  electricLeaderId   String?       @map("electric_leader_id") @db.VarChar(36)
+  softwareLeaderId   String?       @map("software_leader_id") @db.VarChar(36)
+  purchaseOwnerId    String?       @map("purchase_owner_id") @db.VarChar(36)
+  financeOwnerId     String?       @map("finance_owner_id") @db.VarChar(36)
+  currentStage       String?       @map("current_stage") @db.VarChar(30)
+  projectStatus      ProjectStatus @default(Draft) @map("project_status")
+  riskLevel          RiskLevel     @default(Low) @map("risk_level")
+  startDate          DateTime?     @map("start_date")
+  plannedEndDate     DateTime?     @map("planned_end_date")
+  actualEndDate      DateTime?     @map("actual_end_date")
+  createdBy          String?       @map("created_by") @db.VarChar(36)
+  deletedAt          DateTime?     @map("deleted_at")
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+
+  members        ProjectMember[]
+  archiveItems   ProjectArchiveItem[]
+  files          File[]
+  checklistItems ProjectChecklistItem[]
+  dailyReports   DailyReport[]
+  attachments    Attachment[]
+  retrospectives ProjectRetrospective[]
+  processRecords ProjectProcessRecord[]
+  payments       ProjectPayment[]
+
+  @@index([projectStatus])
+  @@index([countryCode])
+  @@index([deletedAt])
+  @@index([createdBy])
+  @@map("projects")
+}
+
+enum ProjectStatus {
+  Draft
+  Active
+  Suspended
+  Delayed
+  Accepted
+  Archived
+  Closed
+}
+
+enum RiskLevel {
+  Low
+  Medium
+  High
+  Critical
+}
+
+model ProjectMember {
+  id              String   @id @default(uuid())
+  projectId       String   @map("project_id") @db.VarChar(36)
+  userId          String   @map("user_id") @db.VarChar(36)
+  projectRole     String   @map("project_role") @db.VarChar(50)
+  permissionLevel String   @default("Member") @map("permission_level") @db.VarChar(20)
+  dataScope       String   @default("PROJECT") @map("data_scope") @db.VarChar(20)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@map("project_members")
+}
+
+model ProjectProcessRecord {
+  id          String    @id @default(uuid())
+  projectId   String    @map("project_id") @db.VarChar(36)
+  title       String    @db.VarChar(200)
+  recordType  String    @default("Progress") @map("record_type") @db.VarChar(30)
+  stageCode   String?   @map("stage_code") @db.VarChar(30)
+  recordDate  DateTime  @map("record_date")
+  description String?   @db.Text
+  status      String    @default("Recorded") @db.VarChar(20)
+  createdBy   String    @map("created_by") @db.VarChar(36)
+  deletedAt   DateTime? @map("deleted_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creator User    @relation(fields: [createdBy], references: [id])
+
+  @@index([projectId, recordDate])
+  @@index([recordType, status])
+  @@index([deletedAt])
+  @@map("project_process_records")
+}
+
+model ProjectPayment {
+  id                     String    @id @default(uuid())
+  projectId              String    @map("project_id") @db.VarChar(36)
+  paymentName            String    @map("payment_name") @db.VarChar(200)
+  paymentType            String    @default("Milestone") @map("payment_type") @db.VarChar(30)
+  dueDate                DateTime? @map("due_date")
+  receivedDate           DateTime? @map("received_date")
+  status                 String    @default("Planned") @db.VarChar(30)
+  originalAmount         Decimal   @map("original_amount") @db.Decimal(18, 2)
+  originalCurrency       String    @map("original_currency") @db.VarChar(10)
+  exchangeRate           Decimal   @map("exchange_rate") @db.Decimal(18, 8)
+  convertedCurrency      String    @map("converted_currency") @db.VarChar(10)
+  convertedAmount        Decimal   @map("converted_amount") @db.Decimal(18, 2)
+  receivedOriginalAmount Decimal   @default(0) @map("received_original_amount") @db.Decimal(18, 2)
+  receivedConvertedAmount Decimal  @default(0) @map("received_converted_amount") @db.Decimal(18, 2)
+  rateDate               DateTime  @map("rate_date")
+  rateSource             String    @map("rate_source") @db.VarChar(50)
+  remark                 String?   @db.VarChar(500)
+  createdBy              String    @map("created_by") @db.VarChar(36)
+  deletedAt              DateTime? @map("deleted_at")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creator User    @relation(fields: [createdBy], references: [id])
+
+  @@index([projectId, status])
+  @@index([dueDate])
+  @@index([deletedAt])
+  @@map("project_payments")
+}
+
+// ============================================================
+// 03 — 档案模板 + 项目档案
+// ============================================================
+
+model ArchiveTemplate {
+  id           String   @id @default(uuid())
+  templateCode String   @unique @map("template_code") @db.VarChar(50)
+  templateName String   @map("template_name") @db.VarChar(100)
+  projectType  String?  @map("project_type") @db.VarChar(50)
+  countryCode  String?  @map("country_code") @db.VarChar(10)
+  languageCode String?  @map("language_code") @db.VarChar(10)
+  version      String   @default("V1.0") @db.VarChar(10)
+  status       String   @default("Active") @db.VarChar(20)
+  description  String?  @db.Text
+  createdBy    String?  @map("created_by") @db.VarChar(36)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  items ArchiveTemplateItem[]
+
+  @@index([projectType, countryCode])
+  @@index([status])
+  @@map("archive_templates")
+}
+
+model ArchiveTemplateItem {
+  id               String   @id @default(uuid())
+  templateId       String   @map("template_id") @db.VarChar(36)
+  parentId         String?  @map("parent_id") @db.VarChar(36)
+  stageCode        String   @map("stage_code") @db.VarChar(30)
+  itemNo           Int      @map("item_no")
+  level            Int      @default(1)
+  name             String   @db.VarChar(200)
+  secondName       String?  @map("second_name") @db.VarChar(200)
+  usageDescription String?  @map("usage_description") @db.Text
+  isRequired       Boolean  @default(true) @map("is_required")
+  isStar           Boolean  @default(false) @map("is_star")
+  isSensitive      Boolean  @default(false) @map("is_sensitive")
+  needReview       Boolean  @default(false) @map("need_review")
+  responsibleRole  String?  @map("responsible_role") @db.VarChar(50)
+  reviewRole       String?  @map("review_role") @db.VarChar(50)
+  allowedFileTypes String?  @map("allowed_file_types") @db.VarChar(200)
+  sortOrder        Int      @default(0) @map("sort_order")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  template            ArchiveTemplate       @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  parent              ArchiveTemplateItem?  @relation("ArchiveItemHierarchy", fields: [parentId], references: [id])
+  children            ArchiveTemplateItem[] @relation("ArchiveItemHierarchy")
+  projectArchiveItems ProjectArchiveItem[]
+
+  @@index([templateId])
+  @@index([stageCode])
+  @@map("archive_template_items")
+}
+
+model ProjectArchiveItem {
+  id                String            @id @default(uuid())
+  projectId         String            @map("project_id") @db.VarChar(36)
+  templateItemId    String            @map("template_item_id") @db.VarChar(36)
+  parentId          String?           @map("parent_id") @db.VarChar(36)
+  stageCode         String            @map("stage_code") @db.VarChar(30)
+  itemNo            Int               @map("item_no")
+  level             Int               @default(1)
+  name              String            @db.VarChar(200)
+  secondName        String?           @map("second_name") @db.VarChar(200)
+  usageDescription  String?           @map("usage_description") @db.Text
+  isRequired        Boolean           @default(true) @map("is_required")
+  isStar            Boolean           @default(false) @map("is_star")
+  isSensitive       Boolean           @default(false) @map("is_sensitive")
+  needReview        Boolean           @default(false) @map("need_review")
+  responsibleUserId String?           @map("responsible_user_id") @db.VarChar(36)
+  reviewUserId      String?           @map("review_user_id") @db.VarChar(36)
+  status            ArchiveItemStatus @default(NotStarted) @map("status")
+  dueDate           DateTime?         @map("due_date")
+  completedAt       DateTime?         @map("completed_at")
+  sortOrder         Int               @default(0) @map("sort_order")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  project         Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  templateItem    ArchiveTemplateItem  @relation(fields: [templateItemId], references: [id])
+  responsibleUser User?                @relation("ArchiveResponsibleUser", fields: [responsibleUserId], references: [id])
+  reviewUser      User?                @relation("ArchiveReviewUser", fields: [reviewUserId], references: [id])
+  parent          ProjectArchiveItem?  @relation("ProjectArchiveHierarchy", fields: [parentId], references: [id])
+  children        ProjectArchiveItem[] @relation("ProjectArchiveHierarchy")
+  files           File[]
+
+  @@index([projectId])
+  @@index([stageCode])
+  @@index([status])
+  @@map("project_archive_items")
+}
+
+enum ArchiveItemStatus {
+  NotStarted
+  PendingUpload
+  Uploaded
+  Reviewing
+  Approved
+  Rejected
+  NotApplicable
+  Archived
+}
+
+// ============================================================
+// 04 — 文件与版本管理
+// ============================================================
+
+model File {
+  id              String     @id @default(uuid())
+  projectId       String     @map("project_id") @db.VarChar(36)
+  archiveItemId   String?    @map("archive_item_id") @db.VarChar(36)
+  fileName        String     @map("file_name") @db.VarChar(255)
+  originalName    String     @map("original_name") @db.VarChar(255)
+  fileExt         String     @map("file_ext") @db.VarChar(20)
+  fileSize        BigInt     @map("file_size")
+  mimeType        String     @map("mime_type") @db.VarChar(100)
+  storageProvider String     @default("minio") @map("storage_provider") @db.VarChar(20)
+  storageBucket   String     @default("delivery-platform") @map("storage_bucket") @db.VarChar(100)
+  storagePath     String     @map("storage_path") @db.VarChar(500)
+  versionNo       String     @default("V1.0") @map("version_no") @db.VarChar(10)
+  isCurrent       Boolean    @default(true) @map("is_current")
+  fileStatus      FileStatus @default(Uploaded) @map("file_status")
+  uploadUserId    String     @map("upload_user_id") @db.VarChar(36)
+  uploadTime      DateTime   @default(now()) @map("upload_time")
+  remark          String?    @db.Text
+  deletedAt       DateTime?  @map("deleted_at")
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  project     Project             @relation(fields: [projectId], references: [id])
+  archiveItem ProjectArchiveItem? @relation(fields: [archiveItemId], references: [id])
+  uploadUser  User                @relation(fields: [uploadUserId], references: [id])
+  reviews     FileReview[]
+
+  @@index([projectId])
+  @@index([archiveItemId])
+  @@index([fileStatus])
+  @@index([deletedAt])
+  @@map("files")
+}
+
+enum FileStatus {
+  Draft
+  Uploaded
+  Reviewing
+  Approved
+  Rejected
+  Deprecated
+  Archived
+}
+
+model FileReview {
+  id            String   @id @default(uuid())
+  fileId        String   @map("file_id") @db.VarChar(36)
+  archiveItemId String   @map("archive_item_id") @db.VarChar(36)
+  reviewUserId  String   @map("review_user_id") @db.VarChar(36)
+  reviewStatus  String   @map("review_status") @db.VarChar(20)
+  reviewComment String?  @map("review_comment") @db.Text
+  reviewTime    DateTime @default(now()) @map("review_time")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  file     File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  reviewer User @relation(fields: [reviewUserId], references: [id])
+
+  @@index([fileId])
+  @@map("file_reviews")
+}
+
+// ============================================================
+// 05 — 检查项
+// ============================================================
+
+model ChecklistTemplate {
+  id           String   @id @default(uuid())
+  templateCode String   @unique @map("template_code") @db.VarChar(50)
+  templateName String   @map("template_name") @db.VarChar(100)
+  countryCode  String?  @map("country_code") @db.VarChar(10)
+  projectType  String?  @map("project_type") @db.VarChar(50)
+  stageCode    String?  @map("stage_code") @db.VarChar(30)
+  version      String   @default("V1.0") @db.VarChar(10)
+  status       String   @default("Active") @db.VarChar(20)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  items ChecklistTemplateItem[]
+
+  @@map("checklist_templates")
+}
+
+model ChecklistTemplateItem {
+  id                           String   @id @default(uuid())
+  templateId                   String   @map("template_id") @db.VarChar(36)
+  itemName                     String   @map("item_name") @db.VarChar(200)
+  itemDescription              String?  @map("item_description") @db.Text
+  checkStandard                String?  @map("check_standard") @db.Text
+  evidenceRequired             String?  @map("evidence_required") @db.Text
+  relatedArchiveTemplateItemId String?  @map("related_archive_template_item_id") @db.VarChar(36)
+  isRequired                   Boolean  @default(true) @map("is_required")
+  riskLevel                    String   @default("Low") @map("risk_level") @db.VarChar(20)
+  responsibleRole              String?  @map("responsible_role") @db.VarChar(50)
+  reviewRole                   String?  @map("review_role") @db.VarChar(50)
+  evidenceTypes                String   @default("photo,file") @map("evidence_types") @db.VarChar(100)
+  minEvidenceCount             Int      @default(0) @map("min_evidence_count")
+  allowAlbum                   Boolean  @default(true) @map("allow_album")
+  requireLocation              Boolean  @default(false) @map("require_location")
+  sortOrder                    Int      @default(0) @map("sort_order")
+  createdAt                    DateTime @default(now()) @map("created_at")
+  updatedAt                    DateTime @updatedAt @map("updated_at")
+
+  template              ChecklistTemplate      @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  projectChecklistItems ProjectChecklistItem[]
+
+  @@index([templateId])
+  @@map("checklist_template_items")
+}
+
+model ProjectChecklistItem {
+  id                   String              @id @default(uuid())
+  projectId            String              @map("project_id") @db.VarChar(36)
+  templateItemId       String              @map("template_item_id") @db.VarChar(36)
+  relatedArchiveItemId String?             @map("related_archive_item_id") @db.VarChar(36)
+  itemName             String              @map("item_name") @db.VarChar(200)
+  checkStandard        String?             @map("check_standard") @db.Text
+  evidenceRequired     String?             @map("evidence_required") @db.Text
+  responsibleUserId    String?             @map("responsible_user_id") @db.VarChar(36)
+  reviewUserId         String?             @map("review_user_id") @db.VarChar(36)
+  status               ChecklistItemStatus @default(Pending) @map("status")
+  dueDate              DateTime?           @map("due_date")
+  completedAt          DateTime?           @map("completed_at")
+  result               String?             @db.VarChar(30)
+  resultNote           String?             @map("result_note") @db.Text
+  submittedAt          DateTime?           @map("submitted_at")
+  reviewedAt           DateTime?           @map("reviewed_at")
+  reviewComment        String?             @map("review_comment") @db.Text
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
+
+  project         Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  templateItem    ChecklistTemplateItem @relation(fields: [templateItemId], references: [id])
+  responsibleUser User?                 @relation("ChecklistResponsibleUser", fields: [responsibleUserId], references: [id])
+  reviewUser      User?                 @relation("ChecklistReviewUser", fields: [reviewUserId], references: [id])
+
+  @@index([projectId])
+  @@index([status])
+  @@map("project_checklist_items")
+}
+
+enum ChecklistItemStatus {
+  Pending
+  Processing
+  Submitted
+  Reviewing
+  Approved
+  Rejected
+  Closed
+  NotApplicable
+}
+
+// ============================================================
+// 06 — 流程标准
+// ============================================================
+
+model WorkflowCategory {
+  id          String   @id @default(uuid())
+  name        String   @db.VarChar(100)
+  description String?  @db.Text
+  sortOrder   Int      @default(0) @map("sort_order")
+  status      String   @default("Active") @db.VarChar(20)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  documents WorkflowDocument[]
+
+  @@map("workflow_categories")
+}
+
+model WorkflowDocument {
+  id               String   @id @default(uuid())
+  categoryId       String   @map("category_id") @db.VarChar(36)
+  name             String   @db.VarChar(200)
+  applicableScope  String?  @map("applicable_scope") @db.Text
+  triggerCondition String?  @map("trigger_condition") @db.Text
+  inputMaterials   String?  @map("input_materials") @db.Text
+  outputMaterials  String?  @map("output_materials") @db.Text
+  responsibleRole  String?  @map("responsible_role") @db.VarChar(50)
+  steps            String?  @db.Text
+  relatedChecklist String?  @map("related_checklist") @db.Text
+  relatedTemplates String?  @map("related_templates") @db.Text
+  relatedArchive   String?  @map("related_archive") @db.Text
+  riskNotes        String?  @map("risk_notes") @db.Text
+  version          String   @default("V1.0") @db.VarChar(10)
+  status           String   @default("Active") @db.VarChar(20)
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  category WorkflowCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([categoryId])
+  @@map("workflow_documents")
+}
+
+// ============================================================
+// 07 — 模板库
+// ============================================================
+
+model DocumentTemplate {
+  id             String    @id @default(uuid())
+  templateNo     String    @unique @map("template_no") @db.VarChar(50)
+  name           String    @db.VarChar(200)
+  category       String    @db.VarChar(50)
+  countryCode    String?   @map("country_code") @db.VarChar(10)
+  projectType    String?   @map("project_type") @db.VarChar(50)
+  stageCode      String?   @map("stage_code") @db.VarChar(30)
+  applicableRole String?   @map("applicable_role") @db.VarChar(50)
+  language       String    @default("zh-CN") @db.VarChar(10)
+  fileFormat     String?   @map("file_format") @db.VarChar(20)
+  storagePath    String?   @map("storage_path") @db.VarChar(500)
+  status         String    @default("Draft") @db.VarChar(20)
+  authorId       String?   @map("author_id") @db.VarChar(36)
+  reviewerId     String?   @map("reviewer_id") @db.VarChar(36)
+  publishedAt    DateTime? @map("published_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  versions DocumentTemplateVersion[]
+
+  @@index([category])
+  @@index([status])
+  @@map("document_templates")
+}
+
+model DocumentTemplateVersion {
+  id          String   @id @default(uuid())
+  templateId  String   @map("template_id") @db.VarChar(36)
+  versionNo   String   @map("version_no") @db.VarChar(10)
+  storagePath String   @map("storage_path") @db.VarChar(500)
+  changeNotes String?  @map("change_notes") @db.Text
+  publisherId String?  @map("publisher_id") @db.VarChar(36)
+  publishedAt DateTime @default(now()) @map("published_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  template DocumentTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId])
+  @@map("document_template_versions")
+}
+
+// ============================================================
+// 08 — 知识库
+// ============================================================
+
+model KnowledgeCategory {
+  id          String   @id @default(uuid())
+  name        String   @db.VarChar(100)
+  description String?  @db.Text
+  parentId    String?  @map("parent_id") @db.VarChar(36)
+  sortOrder   Int      @default(0) @map("sort_order")
+  status      String   @default("Active") @db.VarChar(20)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  parent   KnowledgeCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children KnowledgeCategory[] @relation("CategoryHierarchy")
+  articles KnowledgeArticle[]
+
+  @@map("knowledge_categories")
+}
+
+model KnowledgeArticle {
+  id               String          @id @default(uuid())
+  categoryId       String          @map("category_id") @db.VarChar(36)
+  title            String          @db.VarChar(200)
+  countryCode      String?         @map("country_code") @db.VarChar(10)
+  projectType      String?         @map("project_type") @db.VarChar(50)
+  stageCode        String?         @map("stage_code") @db.VarChar(30)
+  applicableRole   String?         @map("applicable_role") @db.VarChar(50)
+  background       String?         @db.Text
+  standardPractice String?         @map("standard_practice") @db.Text
+  steps            String?         @db.Text
+  notes            String?         @db.Text
+  commonMistakes   String?         @map("common_mistakes") @db.Text
+  relatedFlow      String?         @map("related_flow") @db.VarChar(200)
+  relatedChecklist String?         @map("related_checklist") @db.VarChar(200)
+  relatedTemplate  String?         @map("related_template") @db.VarChar(200)
+  contentType      String          @default("article") @map("content_type") @db.VarChar(20)
+  fileUrl          String?         @map("file_url") @db.VarChar(500)
+  fileSize         BigInt?         @map("file_size")
+  fileExt          String?         @map("file_ext") @db.VarChar(20)
+  markdownContent  String?         @map("markdown_content") @db.LongText
+  sourceStatus     String          @default("Ready") @map("source_status") @db.VarChar(20)
+  needsRevision    Boolean         @default(false) @map("needs_revision")
+  version          String          @default("V1.0") @db.VarChar(10)
+  status           KnowledgeStatus @default(Draft)
+  authorId         String          @map("author_id") @db.VarChar(36)
+  reviewerId       String?         @map("reviewer_id") @db.VarChar(36)
+  publishedAt      DateTime?       @map("published_at")
+  deletedAt        DateTime?       @map("deleted_at")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  category KnowledgeCategory         @relation(fields: [categoryId], references: [id])
+  author   User                      @relation(fields: [authorId], references: [id])
+  reviewer User?                     @relation("KnowledgeReviewer", fields: [reviewerId], references: [id])
+  versions KnowledgeArticleVersion[]
+
+  @@index([categoryId])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("knowledge_articles")
+}
+
+model KnowledgeArticleVersion {
+  id              String   @id @default(uuid())
+  articleId       String   @map("article_id") @db.VarChar(36)
+  version         String   @db.VarChar(10)
+  markdownContent String?  @map("markdown_content") @db.LongText
+  changeNotes     String?  @map("change_notes") @db.VarChar(500)
+  createdBy       String   @map("created_by") @db.VarChar(36)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  article KnowledgeArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  creator User             @relation(fields: [createdBy], references: [id])
+
+  @@unique([articleId, version])
+  @@index([articleId])
+  @@map("knowledge_article_versions")
+}
+
+enum KnowledgeStatus {
+  Draft
+  Reviewing
+  Published
+  Deprecated
+  Archived
+}
+
+// ============================================================
+// 09 — 工具中心
+// ============================================================
+
+model ToolCategory {
+  id          String   @id @default(uuid())
+  name        String   @db.VarChar(100)
+  description String?  @db.Text
+  sortOrder   Int      @default(0) @map("sort_order")
+  status      String   @default("Active") @db.VarChar(20)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tools ToolItem[]
+
+  @@map("tool_categories")
+}
+
+model ToolItem {
+  id          String   @id @default(uuid())
+  categoryId  String   @map("category_id") @db.VarChar(36)
+  name        String   @db.VarChar(200)
+  description String?  @db.Text
+  toolType    String   @default("internal") @map("tool_type") @db.VarChar(20)
+  url         String?  @db.VarChar(500)
+  icon        String?  @db.VarChar(100)
+  sortOrder   Int      @default(0) @map("sort_order")
+  status      String   @default("Active") @db.VarChar(20)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  category ToolCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([categoryId])
+  @@map("tool_items")
+}
+
+// ============================================================
+// 10 — 全球化配置
+// ============================================================
+
+model Country {
+  id                String   @id @default(uuid())
+  countryCode       String   @unique @map("country_code") @db.VarChar(10)
+  nameZh            String   @map("name_zh") @db.VarChar(50)
+  nameEn            String   @map("name_en") @db.VarChar(50)
+  defaultLanguage   String?  @map("default_language") @db.VarChar(10)
+  defaultCurrency   String?  @map("default_currency") @db.VarChar(10)
+  timezone          String?  @db.VarChar(50)
+  weekendRule       String?  @map("weekend_rule") @db.VarChar(20)
+  entryRequirements String?  @map("entry_requirements") @db.Text
+  safetyNotes       String?  @map("safety_notes") @db.Text
+  taxNotes          String?  @map("tax_notes") @db.Text
+  paymentNotes      String?  @map("payment_notes") @db.Text
+  supplierNotes     String?  @map("supplier_notes") @db.Text
+  status            String   @default("Active") @db.VarChar(20)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@map("countries")
+}
+
+model Currency {
+  id             String   @id @default(uuid())
+  currencyCode   String   @unique @map("currency_code") @db.VarChar(10)
+  currencyName   String   @map("currency_name") @db.VarChar(50)
+  currencySymbol String?  @map("currency_symbol") @db.VarChar(10)
+  decimalPlaces  Int      @default(2) @map("decimal_places")
+  status         String   @default("Active") @db.VarChar(20)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  fromRates ExchangeRate[] @relation("FromCurrency")
+  toRates   ExchangeRate[] @relation("ToCurrency")
+
+  @@map("currencies")
+}
+
+model ExchangeRate {
+  id           String   @id @default(uuid())
+  fromCurrency String   @map("from_currency") @db.VarChar(10)
+  toCurrency   String   @map("to_currency") @db.VarChar(10)
+  rate         Decimal  @db.Decimal(18, 8)
+  rateDate     DateTime @map("rate_date")
+  source       String   @default("manual") @db.VarChar(50)
+  isLocked     Boolean  @default(false) @map("is_locked")
+  confirmedBy  String?  @map("confirmed_by") @db.VarChar(36)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  from Currency @relation("FromCurrency", fields: [fromCurrency], references: [currencyCode])
+  to   Currency @relation("ToCurrency", fields: [toCurrency], references: [currencyCode])
+
+  @@unique([fromCurrency, toCurrency, rateDate])
+  @@index([fromCurrency, toCurrency])
+  @@map("exchange_rates")
+}
+
+model Language {
+  id           String   @id @default(uuid())
+  languageCode String   @unique @map("language_code") @db.VarChar(10)
+  languageName String   @map("language_name") @db.VarChar(50)
+  status       String   @default("Active") @db.VarChar(20)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("languages")
+}
+
+model Translation {
+  id           String   @id @default(uuid())
+  contentType  String   @map("content_type") @db.VarChar(50)
+  contentId    String   @map("content_id") @db.VarChar(120)
+  fieldName    String   @map("field_name") @db.VarChar(100)
+  languageCode String   @map("language_code") @db.VarChar(10)
+  fieldValue   String   @map("field_value") @db.Text
+  version      String   @default("V1.0") @db.VarChar(10)
+  reviewStatus String   @default("Draft") @map("review_status") @db.VarChar(20)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([contentType, contentId, fieldName, languageCode])
+  @@index([contentType, contentId])
+  @@map("translations")
+}
+
+// ============================================================
+// 11 — 通知
+// ============================================================
+
+model Notification {
+  id               String    @id @default(uuid())
+  userId           String    @map("user_id") @db.VarChar(36)
+  title            String    @db.VarChar(200)
+  content          String    @db.Text
+  notificationType String    @map("notification_type") @db.VarChar(50)
+  relatedType      String?   @map("related_type") @db.VarChar(50)
+  relatedId        String?   @map("related_id") @db.VarChar(36)
+  isRead           Boolean   @default(false) @map("is_read")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  readAt           DateTime? @map("read_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model NotificationRule {
+  id            String    @id @default(uuid())
+  name          String    @db.VarChar(100)
+  eventType     String    @map("event_type") @db.VarChar(50)
+  channel       String    @default("in_app") @db.VarChar(50)
+  recipientRole String?   @map("recipient_role") @db.VarChar(50)
+  template      String?   @db.Text
+  isEnabled     Boolean   @default(true) @map("is_enabled")
+  deletedAt     DateTime? @map("deleted_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@index([deletedAt])
+  @@map("notification_rules")
+}
+
+// ============================================================
+// 12 — 操作日志
+// ============================================================
+
+model OperationLog {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id") @db.VarChar(36)
+  module     String   @db.VarChar(50)
+  action     String   @db.VarChar(50)
+  targetType String   @map("target_type") @db.VarChar(50)
+  targetId   String   @map("target_id") @db.VarChar(36)
+  beforeData Json?    @map("before_data")
+  afterData  Json?    @map("after_data")
+  ipAddress  String?  @map("ip_address") @db.VarChar(50)
+  userAgent  String?  @map("user_agent") @db.VarChar(500)
+  result     String   @default("success") @db.VarChar(20)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([module, action])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+  @@map("operation_logs")
+}
+
+// ============================================================
+// 13 — 系统配置
+// ============================================================
+
+model SystemConfig {
+  id          String   @id @default(uuid())
+  configKey   String   @unique @map("config_key") @db.VarChar(100)
+  configValue String   @map("config_value") @db.Text
+  description String?  @db.VarChar(200)
+  configType  String   @default("string") @map("config_type") @db.VarChar(20)
+  updatedBy   String?  @map("updated_by") @db.VarChar(36)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("system_configs")
+}
+
+// ============================================================
+// 14 — 看板配置（MVP阶段预置，后续扩展）
+// ============================================================
+
+model DashboardWidget {
+  id          String   @id @default(uuid())
+  widgetKey   String   @unique @map("widget_key") @db.VarChar(50)
+  widgetName  String   @map("widget_name") @db.VarChar(100)
+  description String?  @db.VarChar(200)
+  defaultRole String?  @map("default_role") @db.VarChar(50)
+  sortOrder   Int      @default(0) @map("sort_order")
+  status      String   @default("Active") @db.VarChar(20)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("dashboard_widgets")
+}
+
+// ============================================================
+// 15 — 集成与开放接口
+// ============================================================
+
+model IntegrationConfig {
+  id          String   @id @default(uuid())
+  provider    String   @db.VarChar(50)
+  configName  String   @map("config_name") @db.VarChar(100)
+  configValue Json     @map("config_value")
+  isEnabled   Boolean  @default(false) @map("is_enabled")
+  description String?  @db.VarChar(200)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("integration_configs")
+}
+
+model ApiKey {
+  id          String    @id @default(uuid())
+  name        String    @db.VarChar(100)
+  apiKey      String    @unique @map("api_key") @db.VarChar(255)
+  permissions Json
+  expiresAt   DateTime? @map("expires_at")
+  lastUsedAt  DateTime? @map("last_used_at")
+  isEnabled   Boolean   @default(true) @map("is_enabled")
+  createdBy   String?   @map("created_by") @db.VarChar(36)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@map("api_keys")
+}
+
+// ============================================================
+// 16 — 日报/周报/月报
+// ============================================================
+
+model DailyReport {
+  id              String    @id @default(uuid())
+  projectId       String    @map("project_id") @db.VarChar(36)
+  authorId        String    @map("author_id") @db.VarChar(36)
+  reportType      String    @map("report_type") @db.VarChar(20) // daily/weekly/monthly
+  reportDate      DateTime  @map("report_date")
+  content         String    @db.Text
+  workHours       Decimal?  @map("work_hours") @db.Decimal(5, 1)
+  projectProgress String?   @map("project_progress") @db.VarChar(500)
+  paymentProgress String?   @map("payment_progress") @db.VarChar(500)
+  riskNotes       String?   @map("risk_notes") @db.Text
+  nextPlan        String?   @map("next_plan") @db.Text
+  status          String    @default("Draft") @db.VarChar(20) // Draft/Submitted/Reviewed
+  reviewedBy      String?   @map("reviewed_by") @db.VarChar(36)
+  reviewedAt      DateTime? @map("reviewed_at")
+  deletedAt       DateTime? @map("deleted_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  project  Project @relation(fields: [projectId], references: [id])
+  author   User    @relation(fields: [authorId], references: [id])
+  reviewer User?   @relation("ReportReviewer", fields: [reviewedBy], references: [id])
+
+  @@index([projectId, reportType])
+  @@index([authorId, reportDate])
+  @@index([reportDate])
+  @@index([deletedAt])
+  @@index([projectId, reportDate, status])
+  @@map("daily_reports")
+}
+
+// ============================================================
+// 17 — OKR 目标管理
+// ============================================================
+
+model OkrObjective {
+  id           String   @id @default(uuid())
+  title        String   @db.VarChar(200)
+  description  String?  @db.Text
+  period       String   @db.VarChar(20) // Q1/Q2/Q3/Q4
+  periodType   String   @map("period_type") @db.VarChar(20) // quarterly/yearly/monthly
+  ownerId      String   @map("owner_id") @db.VarChar(36)
+  departmentId String?  @map("department_id") @db.VarChar(36)
+  weight       Int      @default(100)
+  progress     Int      @default(0) // 0-100
+  goalType     String   @default("OKR") @map("goal_type") @db.VarChar(20)
+  scoringFlow  String   @default("Manager") @map("scoring_flow") @db.VarChar(30)
+  scoringMethod String  @default("Weighted") @map("scoring_method") @db.VarChar(30)
+  scorerIds    Json?    @map("scorer_ids")
+  scoringContent Json?  @map("scoring_content")
+  calculationRule String? @map("calculation_rule") @db.VarChar(500)
+  status       String   @default("Active") @db.VarChar(20)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  owner      User               @relation(fields: [ownerId], references: [id])
+  keyResults KeyResult[]
+  scores     PerformanceScore[]
+
+  @@index([ownerId, period])
+  @@map("okr_objectives")
+}
+
+model KeyResult {
+  id           String   @id @default(uuid())
+  objectiveId  String   @map("objective_id") @db.VarChar(36)
+  title        String   @db.VarChar(200)
+  targetValue  String?  @map("target_value") @db.VarChar(100)
+  currentValue String?  @map("current_value") @db.VarChar(100)
+  weight       Int      @default(100)
+  progress     Int      @default(0)
+  status       String   @default("Active") @db.VarChar(20)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  objective OkrObjective @relation(fields: [objectiveId], references: [id], onDelete: Cascade)
+
+  @@map("key_results")
+}
+
+model PerformanceScore {
+  id           String   @id @default(uuid())
+  objectiveId  String   @map("objective_id") @db.VarChar(36)
+  scorerId     String   @map("scorer_id") @db.VarChar(36) // 打分人(主管)
+  month        String   @db.VarChar(7) // 2026-06
+  selfScore    Int?     @map("self_score") // 自评 0-100
+  managerScore Int?     @map("manager_score") // 主管打分
+  projectRatio String?  @map("project_ratio") @db.Text // 项目占比 JSON
+  comment      String?  @db.Text
+  nextGoal     String?  @map("next_goal") @db.Text // 下月目标
+  status       String   @default("Draft") @db.VarChar(20)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  objective OkrObjective @relation(fields: [objectiveId], references: [id])
+  scorer    User         @relation(fields: [scorerId], references: [id])
+
+  @@unique([objectiveId, month, scorerId])
+  @@map("performance_scores")
+}
+
+// ============================================================
+// 18 — 通用附件、字典与组织能力
+// ============================================================
+
+model Attachment {
+  id            String    @id @default(uuid())
+  ownerType     String    @map("owner_type") @db.VarChar(50)
+  ownerId       String    @map("owner_id") @db.VarChar(36)
+  projectId     String?   @map("project_id") @db.VarChar(36)
+  category      String?   @db.VarChar(30)
+  fileName      String    @map("file_name") @db.VarChar(255)
+  originalName  String    @map("original_name") @db.VarChar(255)
+  fileExt       String    @map("file_ext") @db.VarChar(20)
+  fileSize      BigInt    @map("file_size")
+  mimeType      String    @map("mime_type") @db.VarChar(100)
+  storageBucket String    @map("storage_bucket") @db.VarChar(100)
+  storagePath   String    @map("storage_path") @db.VarChar(500)
+  uploadedBy    String    @map("uploaded_by") @db.VarChar(36)
+  capturedAt    DateTime? @map("captured_at")
+  captureSource String?   @map("capture_source") @db.VarChar(20)
+  latitude      Decimal?  @db.Decimal(10, 7)
+  longitude     Decimal?  @db.Decimal(10, 7)
+  remark        String?   @db.VarChar(500)
+  deletedAt     DateTime? @map("deleted_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  uploader User     @relation(fields: [uploadedBy], references: [id])
+  project  Project? @relation(fields: [projectId], references: [id])
+
+  @@index([ownerType, ownerId])
+  @@index([projectId])
+  @@index([deletedAt])
+  @@map("attachments")
+}
+
+model DictionaryCategory {
+  id           String   @id @default(uuid())
+  categoryCode String   @unique @map("category_code") @db.VarChar(50)
+  categoryName String   @map("category_name") @db.VarChar(100)
+  description  String?  @db.VarChar(300)
+  status       String   @default("Active") @db.VarChar(20)
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  items DictionaryItem[]
+
+  @@map("dictionary_categories")
+}
+
+model DictionaryItem {
+  id         String   @id @default(uuid())
+  categoryId String   @map("category_id") @db.VarChar(36)
+  itemValue  String   @map("item_value") @db.VarChar(100)
+  itemLabel  String   @map("item_label") @db.VarChar(100)
+  extraData  Json?    @map("extra_data")
+  status     String   @default("Active") @db.VarChar(20)
+  sortOrder  Int      @default(0) @map("sort_order")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  category DictionaryCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, itemValue])
+  @@index([categoryId, status])
+  @@map("dictionary_items")
+}
+
+model Department {
+  id             String   @id @default(uuid())
+  departmentCode String   @unique @map("department_code") @db.VarChar(50)
+  departmentName String   @map("department_name") @db.VarChar(100)
+  parentId       String?  @map("parent_id") @db.VarChar(36)
+  managerId      String?  @map("manager_id") @db.VarChar(36)
+  status         String   @default("Active") @db.VarChar(20)
+  sortOrder      Int      @default(0) @map("sort_order")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  parent   Department?  @relation("DepartmentHierarchy", fields: [parentId], references: [id])
+  children Department[] @relation("DepartmentHierarchy")
+  manager  User?        @relation("DepartmentManager", fields: [managerId], references: [id])
+  users    User[]
+
+  @@index([parentId])
+  @@map("departments")
+}
+
+// ============================================================
+// 19 — 审批、技能、培训与复盘
+// ============================================================
+
+model ApprovalTemplate {
+  id           String   @id @default(uuid())
+  templateCode String   @unique @map("template_code") @db.VarChar(50)
+  templateName String   @map("template_name") @db.VarChar(100)
+  businessType String   @map("business_type") @db.VarChar(50)
+  countryCode  String?  @map("country_code") @db.VarChar(10)
+  isEnabled    Boolean  @default(true) @map("is_enabled")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  steps ApprovalStep[]
+  tasks ApprovalTask[]
+
+  @@index([businessType, isEnabled])
+  @@map("approval_templates")
+}
+
+model ApprovalStep {
+  id            String   @id @default(uuid())
+  templateId    String   @map("template_id") @db.VarChar(36)
+  stepOrder     Int      @map("step_order")
+  stepName      String   @map("step_name") @db.VarChar(100)
+  approverType  String   @map("approver_type") @db.VarChar(30)
+  approverValue String   @map("approver_value") @db.VarChar(100)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  template ApprovalTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, stepOrder])
+  @@map("approval_steps")
+}
+
+model ApprovalTask {
+  id            String    @id @default(uuid())
+  templateId    String    @map("template_id") @db.VarChar(36)
+  businessType  String    @map("business_type") @db.VarChar(50)
+  businessId    String    @map("business_id") @db.VarChar(36)
+  businessTitle String?   @map("business_title") @db.VarChar(200)
+  applicantId   String    @map("applicant_id") @db.VarChar(36)
+  currentStep   Int       @default(1) @map("current_step")
+  approverId    String?   @map("approver_id") @db.VarChar(36)
+  status        String    @default("Pending") @db.VarChar(20)
+  comment       String?   @db.VarChar(500)
+  decidedAt     DateTime? @map("decided_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  template  ApprovalTemplate @relation(fields: [templateId], references: [id])
+  applicant User             @relation("ApprovalTaskApplicant", fields: [applicantId], references: [id])
+  approver  User?            @relation("ApprovalTaskApprover", fields: [approverId], references: [id])
+  actions   ApprovalAction[]
+
+  @@index([businessType, businessId])
+  @@index([approverId, status])
+  @@map("approval_tasks")
+}
+
+model ApprovalAction {
+  id        String   @id @default(uuid())
+  taskId    String   @map("task_id") @db.VarChar(36)
+  stepOrder Int      @map("step_order")
+  action    String   @db.VarChar(30)
+  actorId   String   @map("actor_id") @db.VarChar(36)
+  comment   String?  @db.VarChar(500)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  task  ApprovalTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  actor User         @relation(fields: [actorId], references: [id])
+
+  @@index([taskId, createdAt])
+  @@map("approval_actions")
+}
+
+model SkillDefinition {
+  id          String   @id @default(uuid())
+  skillCode   String   @unique @map("skill_code") @db.VarChar(50)
+  skillName   String   @map("skill_name") @db.VarChar(100)
+  category    String   @db.VarChar(50)
+  description String?  @db.VarChar(500)
+  maxLevel    Int      @default(5) @map("max_level")
+  status      String   @default("Active") @db.VarChar(20)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  assessments SkillAssessment[]
+
+  @@map("skill_definitions")
+}
+
+model SkillAssessment {
+  id           String   @id @default(uuid())
+  skillId      String   @map("skill_id") @db.VarChar(36)
+  userId       String   @map("user_id") @db.VarChar(36)
+  assessorId   String   @map("assessor_id") @db.VarChar(36)
+  level        Int
+  selfScore    Int?     @map("self_score")
+  managerScore Int?     @map("manager_score")
+  finalScore   Int?     @map("final_score")
+  period       String   @db.VarChar(20)
+  evidenceNote String?  @map("evidence_note") @db.VarChar(500)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  skill    SkillDefinition @relation(fields: [skillId], references: [id])
+  user     User            @relation("SkillAssessmentUser", fields: [userId], references: [id])
+  assessor User            @relation("SkillAssessmentAssessor", fields: [assessorId], references: [id])
+
+  @@unique([skillId, userId, period])
+  @@index([userId, period])
+  @@map("skill_assessments")
+}
+
+model TrainingPlan {
+  id          String    @id @default(uuid())
+  title       String    @db.VarChar(200)
+  category    String    @db.VarChar(50)
+  trainerName String?   @map("trainer_name") @db.VarChar(100)
+  trainerId   String?   @map("trainer_id") @db.VarChar(36)
+  startAt     DateTime  @map("start_at")
+  endAt       DateTime? @map("end_at")
+  location    String?   @db.VarChar(200)
+  status      String    @default("Planned") @db.VarChar(20)
+  description String?   @db.Text
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  participants TrainingParticipant[]
+  trainer      User?                 @relation("TrainingTrainer", fields: [trainerId], references: [id])
+
+  @@index([startAt, status])
+  @@index([trainerId])
+  @@map("training_plans")
+}
+
+model TrainingParticipant {
+  id          String    @id @default(uuid())
+  trainingId  String    @map("training_id") @db.VarChar(36)
+  userId      String    @map("user_id") @db.VarChar(36)
+  attendance  String    @default("Invited") @db.VarChar(20)
+  signedAt    DateTime? @map("signed_at")
+  score       Int?
+  completedAt DateTime? @map("completed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  training TrainingPlan @relation(fields: [trainingId], references: [id], onDelete: Cascade)
+  user     User         @relation(fields: [userId], references: [id])
+
+  @@unique([trainingId, userId])
+  @@map("training_participants")
+}
+
+model ProjectRetrospective {
+  id              String   @id @default(uuid())
+  projectId       String   @map("project_id") @db.VarChar(36)
+  summary         String   @db.Text
+  lessonsLearned  String?  @map("lessons_learned") @db.Text
+  problemCategory String?  @map("problem_category") @db.VarChar(50)
+  status          String   @default("Draft") @db.VarChar(20)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  project Project               @relation(fields: [projectId], references: [id])
+  actions RetrospectiveAction[]
+
+  @@index([projectId, status])
+  @@map("project_retrospectives")
+}
+
+model RetrospectiveAction {
+  id               String    @id @default(uuid())
+  retrospectiveId  String    @map("retrospective_id") @db.VarChar(36)
+  title            String    @db.VarChar(200)
+  ownerId          String    @map("owner_id") @db.VarChar(36)
+  dueDate          DateTime? @map("due_date")
+  status           String    @default("Open") @db.VarChar(20)
+  verificationNote String?   @map("verification_note") @db.VarChar(500)
+  closedAt         DateTime? @map("closed_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  retrospective ProjectRetrospective @relation(fields: [retrospectiveId], references: [id], onDelete: Cascade)
+  owner         User                 @relation(fields: [ownerId], references: [id])
+
+  @@index([ownerId, status])
+  @@map("retrospective_actions")
+}
+
+model BackupRecord {
+  id           String    @id @default(uuid())
+  backupType   String    @map("backup_type") @db.VarChar(30)
+  status       String    @default("Pending") @db.VarChar(20)
+  storagePath  String?   @map("storage_path") @db.VarChar(500)
+  fileSize     BigInt?   @map("file_size")
+  requestedBy  String    @map("requested_by") @db.VarChar(36)
+  startedAt    DateTime? @map("started_at")
+  completedAt  DateTime? @map("completed_at")
+  errorMessage String?   @map("error_message") @db.VarChar(500)
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  requester User @relation(fields: [requestedBy], references: [id])
+
+  @@index([status, createdAt])
+  @@map("backup_records")
+}
