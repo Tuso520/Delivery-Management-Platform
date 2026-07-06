@@ -35,7 +35,6 @@ const loading = ref(false)
 const categories = ref<KnowledgeCategory[]>([])
 const articles = ref<KnowledgeArticle[]>([])
 const activeCategoryId = ref('')
-const keyword = ref('')
 
 const previewVisible = ref(false)
 const previewLoading = ref(false)
@@ -47,11 +46,11 @@ const revisionTarget = ref<KnowledgeFileRow>()
 const replacementFiles = ref<File[]>([])
 
 const fileColumns: TableColumnData[] = [
-  { title: '主要内容', dataIndex: 'originalName', slotName: 'file', minWidth: 380 },
-  { title: '类型', dataIndex: 'fileExt', slotName: 'type', width: 90 },
-  { title: '大小', dataIndex: 'fileSize', slotName: 'size', width: 110 },
-  { title: '更新时间', dataIndex: 'createdAt', slotName: 'updatedAt', width: 170 },
-  { title: '操作', slotName: 'actions', width: 300, fixed: 'right' },
+  { title: '主要内容', dataIndex: 'originalName', slotName: 'file', minWidth: 480 },
+  { title: '类型', dataIndex: 'fileExt', slotName: 'type', width: 72 },
+  { title: '大小', dataIndex: 'fileSize', slotName: 'size', width: 86 },
+  { title: '更新时间', dataIndex: 'createdAt', slotName: 'updatedAt', width: 138 },
+  { title: '操作', slotName: 'actions', width: 238, fixed: 'right' },
 ]
 
 const rootCategories = computed(() => categories.value.filter((category) => !category.parentId))
@@ -67,8 +66,6 @@ const categoryRootLookup = computed(() => {
 })
 
 const categorySections = computed<CategoryIndexItem[]>(() => {
-  const query = keyword.value.trim().toLowerCase()
-
   return rootCategories.value.map((category) => {
     const allFiles = articles.value.flatMap((article) => {
       const rootId = categoryRootLookup.value.get(article.categoryId) || article.categoryId
@@ -84,21 +81,9 @@ const categorySections = computed<CategoryIndexItem[]>(() => {
       }))
     })
 
-    const files = query
-      ? allFiles.filter((file) =>
-          [
-            file.originalName,
-            file.topic,
-            file.articleTitle,
-            file.categoryName,
-            file.fileExt,
-          ].some((value) => String(value || '').toLowerCase().includes(query)),
-        )
-      : allFiles
-
     return {
       category,
-      files,
+      files: allFiles,
       totalFileCount: allFiles.length,
     }
   })
@@ -106,11 +91,6 @@ const categorySections = computed<CategoryIndexItem[]>(() => {
 
 const totalFileCount = computed(() =>
   categorySections.value.reduce((total, section) => total + section.totalFileCount, 0),
-)
-
-const activeSection = computed(() =>
-  categorySections.value.find((section) => section.category.id === activeCategoryId.value)
-  || categorySections.value[0],
 )
 
 const previewTitle = computed(() => preview.value?.title || preview.value?.fileName || '在线预览')
@@ -285,13 +265,6 @@ onBeforeUnmount(() => {
         <a-button size="small" type="text" @click="fetchArticles">刷新</a-button>
       </div>
 
-      <a-input
-        v-model="keyword"
-        allow-clear
-        placeholder="搜索文件、岗位或模板"
-        class="knowledge-search"
-      />
-
       <div class="category-list">
         <button
           v-for="section in categorySections"
@@ -309,12 +282,9 @@ onBeforeUnmount(() => {
 
     <main class="file-panel">
       <div class="file-toolbar">
-        <div>
-          <h2>{{ activeSection?.category.name || '知识库' }}</h2>
-        </div>
-        <a-space>
-          <a-button @click="goApprovalTasks">更新审批</a-button>
-          <a-button type="primary" @click="router.push('/knowledge/articles/new')">
+        <a-space size="mini">
+          <a-button size="small" @click="goApprovalTasks">更新审批</a-button>
+          <a-button size="small" type="primary" @click="router.push('/knowledge/articles/new')">
             新增资料
           </a-button>
         </a-space>
@@ -362,19 +332,19 @@ onBeforeUnmount(() => {
                 {{ formatDate(record.createdAt) }}
               </template>
               <template #actions="{ record }">
-                <a-space size="mini" wrap>
-                  <a-button type="text" size="small" @click="previewAttachment(record)">
+                <a-space size="mini" :wrap="false" class="file-actions">
+                  <a-button type="text" size="mini" @click="previewAttachment(record)">
                     在线预览
                   </a-button>
-                  <a-button type="text" size="small" @click="downloadAttachment(record)">
+                  <a-button type="text" size="mini" @click="downloadAttachment(record)">
                     下载
                   </a-button>
-                  <a-button type="text" size="small" @click="openRevision(record)">
+                  <a-button type="text" size="mini" @click="openRevision(record)">
                     编辑
                   </a-button>
                   <a-button
                     type="text"
-                    size="small"
+                    size="mini"
                     status="danger"
                     @click="deleteAttachment(record)"
                   >
@@ -470,8 +440,8 @@ onBeforeUnmount(() => {
 .knowledge-page {
   min-height: calc(100vh - 112px);
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  gap: 18px;
+  grid-template-columns: 224px minmax(0, 1fr);
+  gap: 12px;
 }
 
 .category-sidebar,
@@ -486,7 +456,7 @@ onBeforeUnmount(() => {
   height: calc(100vh - 128px);
   display: flex;
   flex-direction: column;
-  padding: 16px;
+  padding: 10px;
   position: sticky;
   top: 88px;
 }
@@ -495,29 +465,25 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
+  gap: 8px;
+  margin-bottom: 10px;
 
   h2 {
     margin: 0;
     color: var(--color-text-1);
-    font-size: 18px;
+    font-size: 15px;
   }
 
   p {
-    margin: 6px 0 0;
+    margin: 4px 0 0;
     color: var(--color-text-3);
-    font-size: 12px;
+    font-size: 11px;
   }
-}
-
-.knowledge-search {
-  margin-bottom: 14px;
 }
 
 .category-list {
   display: grid;
-  gap: 8px;
+  gap: 4px;
   overflow: auto;
 }
 
@@ -526,13 +492,14 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 7px 8px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
   color: var(--color-text-2);
   cursor: pointer;
+  font-size: 13px;
   text-align: left;
 
   span {
@@ -542,12 +509,12 @@ onBeforeUnmount(() => {
   }
 
   em {
-    min-width: 28px;
-    padding: 2px 8px;
+    min-width: 24px;
+    padding: 1px 6px;
     border-radius: 999px;
     background: var(--color-fill-2);
     color: var(--color-text-3);
-    font-size: 12px;
+    font-size: 11px;
     font-style: normal;
     text-align: center;
   }
@@ -570,22 +537,10 @@ onBeforeUnmount(() => {
 .file-toolbar {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 18px 20px;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--color-border-2);
-
-  h2 {
-    margin: 0;
-    color: var(--color-text-1);
-    font-size: 20px;
-  }
-
-  p {
-    margin: 6px 0 0;
-    color: var(--color-text-3);
-    font-size: 13px;
-  }
 }
 
 .file-spin {
@@ -596,46 +551,56 @@ onBeforeUnmount(() => {
 
 .file-stream {
   height: 100%;
-  padding: 0 20px 24px;
+  padding: 0 12px 16px;
   overflow: auto;
 }
 
 .file-section {
-  padding-top: 20px;
-  scroll-margin-top: 12px;
+  padding-top: 12px;
+  scroll-margin-top: 8px;
 }
 
 .section-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 
   h3 {
     margin: 0;
     color: var(--color-text-1);
-    font-size: 17px;
+    font-size: 15px;
   }
 
   span {
     display: inline-block;
-    margin-top: 4px;
+    margin-top: 2px;
     color: var(--color-text-3);
-    font-size: 12px;
+    font-size: 11px;
   }
 }
 
 .file-table {
   border: 1px solid var(--color-border-2);
-  border-radius: 8px;
+  border-radius: 6px;
   overflow: hidden;
+}
+
+.file-table :deep(.arco-table-th) {
+  font-size: 12px;
+}
+
+.file-table :deep(.arco-table-cell) {
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .file-name-cell {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 
   strong {
     min-width: 0;
@@ -646,10 +611,19 @@ onBeforeUnmount(() => {
   }
 }
 
+.file-actions {
+  white-space: nowrap;
+}
+
+.file-actions :deep(.arco-btn-size-mini) {
+  padding: 0 4px;
+  font-size: 12px;
+}
+
 .section-empty {
-  padding: 28px 0;
+  padding: 20px 0;
   border: 1px dashed var(--color-border-2);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--color-fill-1);
 }
 
