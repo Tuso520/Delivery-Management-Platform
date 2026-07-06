@@ -314,6 +314,7 @@ onBeforeUnmount(() => {
               @change="selectFiles"
             />
           </label>
+          <div class="attachment-remark-label">文件简介/备注</div>
           <a-textarea
             v-model="form.attachmentRemark"
             :auto-size="{ minRows: 2, maxRows: 4 }"
@@ -451,6 +452,13 @@ onBeforeUnmount(() => {
   padding: 8px;
   border: 1px solid var(--color-border-2);
   border-radius: 6px;
+}
+
+.attachment-remark-label {
+  margin: 10px 0 6px;
+  color: var(--color-text-2);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .pending-files {
