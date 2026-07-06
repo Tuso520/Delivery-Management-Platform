@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Message } from '@arco-design/web-vue'
+import type { TableColumnData } from '@arco-design/web-vue'
 import { systemConfigApi } from '@/api/system'
 import type { SystemConfig, UpsertSystemConfigDto } from '@/types/system'
 
@@ -25,7 +26,7 @@ const groupLabels: Record<string, string> = {
   security: '安全登录',
   notification: '通知',
   currency: '汇率',
-  ui: '鐣岄潰鏄剧ず',
+  ui: '界面显示',
 }
 
 const configLabelMap: Record<string, string> = {
@@ -50,46 +51,60 @@ const configLabelMap: Record<string, string> = {
   'currency.sync_base': '汇率同步基准币种',
   'currency.sync_enabled': '启用在线汇率同步',
   'ui.date_format': '日期格式',
-  'ui.table_density': '琛ㄦ牸瀵嗗害',
+  'ui.table_density': '表格密度',
 }
 
 const configTypeOptions = [
-  { value: 'string', label: '字符串'},
+  { value: 'string', label: '字符串' },
   { value: 'number', label: '数字' },
   { value: 'boolean', label: '布尔' },
   { value: 'json', label: 'JSON' },
 ]
+
+const columns: TableColumnData[] = [
+  { title: '配置项', dataIndex: 'configKey', slotName: 'configKey', minWidth: 220 },
+  { title: '配置值', dataIndex: 'configValue', slotName: 'configValue', minWidth: 260 },
+  { title: '说明', dataIndex: 'description', minWidth: 220 },
+  { title: '类型', dataIndex: 'configType', width: 100 },
+  { title: '更新时间', dataIndex: 'updatedAt', slotName: 'updatedAt', width: 170 },
+  { title: '操作', slotName: 'actions', width: 100, fixed: 'right' },
+]
+
 const numberValue = computed({
   get: () => Number(editingValue.value || 0),
-  set: (value: number) => { editingValue.value = String(value) },
+  set: (value: number) => {
+    editingValue.value = String(value)
+  },
 })
+
 const booleanValue = computed({
   get: () => editingValue.value === 'true',
-  set: (value: boolean) => { editingValue.value = String(value) },
+  set: (value: boolean) => {
+    editingValue.value = String(value)
+  },
 })
+
 const configGroups = computed(() =>
   Array.from(new Set(configList.value.map((item) => item.configKey.split('.')[0]))),
 )
+
 const filteredConfigs = computed(() =>
   configList.value.filter((item) => item.configKey.startsWith(`${activeGroup.value}.`)),
 )
 
-const fetchConfigs = async () => {
+async function fetchConfigs(): Promise<void> {
   loading.value = true
   try {
-    const res = await systemConfigApi.getAll()
-    configList.value = res
+    configList.value = await systemConfigApi.getAll()
     if (!configGroups.value.includes(activeGroup.value)) {
       activeGroup.value = configGroups.value[0] || 'platform'
     }
-  } catch {
-    configList.value = []
   } finally {
     loading.value = false
   }
 }
 
-const handleEdit = (row: SystemConfig) => {
+function handleEdit(row: SystemConfig): void {
   isNew.value = false
   editingKey.value = row.configKey
   editingValue.value = row.configValue
@@ -98,7 +113,7 @@ const handleEdit = (row: SystemConfig) => {
   dialogVisible.value = true
 }
 
-const handleAdd = () => {
+function handleAdd(): void {
   isNew.value = true
   editingKey.value = ''
   editingValue.value = ''
@@ -107,25 +122,26 @@ const handleAdd = () => {
   dialogVisible.value = true
 }
 
-const handleSave = async () => {
+async function handleSave(): Promise<void> {
   if (!editingKey.value.trim()) {
     Message.warning('配置键不能为空')
     return
   }
+
   try {
     if (editingType.value === 'json') {
       JSON.parse(editingValue.value)
     }
     const dto: UpsertSystemConfigDto = {
-      configKey: editingKey.value,
+      configKey: editingKey.value.trim(),
       configValue: editingValue.value,
       description: editingDesc.value || undefined,
       configType: editingType.value,
     }
-    await systemConfigApi.upsert(editingKey.value, dto)
+    await systemConfigApi.upsert(editingKey.value.trim(), dto)
     Message.success('保存成功')
     dialogVisible.value = false
-    fetchConfigs()
+    await fetchConfigs()
   } catch (error) {
     if (error instanceof SyntaxError) {
       Message.error('请输入有效 JSON')
@@ -133,21 +149,29 @@ const handleSave = async () => {
   }
 }
 
-onMounted(() => {
-  fetchConfigs()
-})
+function configLabel(key: string): string {
+  return configLabelMap[key] || key
+}
+
+function formatDate(value?: string): string {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+onMounted(fetchConfigs)
 </script>
 
 <template>
-  <div class="config-page">
+  <section class="config-page">
     <a-card>
-      <template #header>
-        <div class="card-header">
-          <span class="card-title">可配置系统参数</span>
-          <a-button type="primary" size="small" @click="handleAdd">
-            新增配置
-          </a-button>
-        </div>
+      <template #title>平台系统配置</template>
+      <template #extra>
+        <a-space>
+          <a-button @click="fetchConfigs">刷新</a-button>
+          <a-button type="primary" @click="handleAdd">新增配置</a-button>
+        </a-space>
       </template>
 
       <a-tabs v-model="activeGroup" class="config-tabs">
@@ -160,118 +184,124 @@ onMounted(() => {
       </a-tabs>
 
       <a-table
-        v-loading="loading"
+        :loading="loading"
+        :columns="columns"
         :data="filteredConfigs"
-        border
-        stripe
+        row-key="id"
+        :pagination="false"
       >
-        <a-table-column label="配置项" :min-width="190">
-          <template #default="{ row }">
-            <div class="config-name">
-              <strong>{{ configLabelMap[row.configKey] || row.description || row.configKey }}</strong>
-              <code>{{ row.configKey }}</code>
-            </div>
-          </template>
-        </a-table-column>
-        <a-table-column
-          prop="configValue"
-          label="配置项"
-          :min-width="240"
-          show-overflow-tooltip
-        />
-        <a-table-column
-          prop="description"
-          label="描述"
-          :min-width="220"
-          show-overflow-tooltip
-        />
-        <a-table-column prop="configType" label="类型" :width="90" />
-        <a-table-column label="更新时间" :width="180">
-          <template #default="{ row }">
-            {{ row.updatedAt ? new Date(row.updatedAt).toLocaleString() : '' }}
-          </template>
-        </a-table-column>
-        <a-table-column label="操作" :width="100" fixed="right">
-          <template #default="{ row }">
-            <a-button size="small" @click="handleEdit(row)">
-              编辑
-            </a-button>
-          </template>
-        </a-table-column>
+        <template #configKey="{ record }">
+          <div class="config-key">
+            <strong>{{ configLabel(record.configKey) }}</strong>
+            <span>{{ record.configKey }}</span>
+          </div>
+        </template>
+        <template #configValue="{ record }">
+          <code>{{ record.configValue }}</code>
+        </template>
+        <template #updatedAt="{ record }">
+          {{ formatDate(record.updatedAt) }}
+        </template>
+        <template #actions="{ record }">
+          <a-button type="text" size="small" @click="handleEdit(record)">编辑</a-button>
+        </template>
       </a-table>
 
-      <a-empty v-if="filteredConfigs.length === 0 && !loading" description="该分组暂无配置" />
+      <a-empty
+        v-if="filteredConfigs.length === 0 && !loading"
+        description="该分组暂无配置"
+        class="empty-state"
+      />
     </a-card>
 
-    <!-- Edit dialog -->
-    <a-dialog
-      v-model="dialogVisible"
+    <a-modal
+      v-model:visible="dialogVisible"
       :title="isNew ? '新增配置' : `编辑配置 - ${editingKey}`"
-      width="520px"
-      :close-on-click-modal="false"
+      ok-text="保存"
+      cancel-text="取消"
+      @ok="handleSave"
     >
-      <a-form :model="{}" label-width="100px">
-        <a-form-item label="配置项" required>
+      <a-form :model="{ editingKey, editingValue, editingDesc, editingType }" layout="vertical">
+        <a-form-item label="配置键" required>
           <a-input v-model="editingKey" :disabled="!isNew" placeholder="请输入配置键" />
         </a-form-item>
-        <a-form-item label="配置项" required>
+        <a-form-item label="配置值" required>
           <a-input-number
             v-if="editingType === 'number'"
             v-model="numberValue"
-            :min="0"
-            controls-position="right"
+            class="full-input"
           />
           <a-switch
             v-else-if="editingType === 'boolean'"
             v-model="booleanValue"
-            inline-prompt
-            active-text="是"
-            inactive-text="否"
+            checked-text="是"
+            unchecked-text="否"
           />
           <a-textarea
             v-else-if="editingType === 'json'"
             v-model="editingValue"
-
-            :rows="5"
             placeholder="请输入有效 JSON"
+            :auto-size="{ minRows: 4, maxRows: 8 }"
           />
-          <a-input v-else v-model="editingValue" placeholder="请输入配置项" />
+          <a-input v-else v-model="editingValue" placeholder="请输入配置值" />
         </a-form-item>
-        <a-form-item label="描述">
-          <a-input v-model="editingDesc" placeholder="请输入配置描述" />
+        <a-form-item label="说明">
+          <a-input v-model="editingDesc" placeholder="请输入配置说明" />
         </a-form-item>
         <a-form-item label="类型">
-          <a-segmented
-            v-model="editingType"
-            :options="configTypeOptions.map(item => ({ label: item.label, value: item.value }))"
-          />
+          <a-select v-model="editingType">
+            <a-option
+              v-for="option in configTypeOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </a-option>
+          </a-select>
         </a-form-item>
       </a-form>
-      <template #footer>
-        <a-button @click="dialogVisible = false">
-          取消
-        </a-button>
-        <a-button type="primary" @click="handleSave">
-          保存
-        </a-button>
-      </template>
-    </a-dialog>
-  </div>
+    </a-modal>
+  </section>
 </template>
 
 <style scoped lang="scss">
-.config-name {
+.config-page {
+  min-width: 0;
+}
+
+.config-tabs {
+  margin-bottom: 14px;
+}
+
+.config-key {
   display: grid;
-  gap: 3px;
+  gap: 4px;
 
   strong {
-    color: var(--app-text);
-    font-weight: 600;
+    color: var(--color-text-1);
   }
 
-  code {
-    color: var(--app-text-muted);
-    font-size: 11px;
+  span {
+    color: var(--color-text-3);
+    font-size: 12px;
   }
+}
+
+code {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--color-fill-2);
+  color: var(--color-text-2);
+  word-break: break-all;
+}
+
+.full-input {
+  width: 100%;
+}
+
+.empty-state {
+  margin-top: 18px;
 }
 </style>

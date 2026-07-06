@@ -221,6 +221,7 @@ categories.splice(0, categories.length, ...knowledgeFixture.categoryRows);
 let categoryTree = knowledgeFixture.categoryTree;
 articles = knowledgeFixture.articles;
 attachments = knowledgeFixture.attachments;
+let approvalTasks = [];
 
 const dictionaries = {
   project_type: {
@@ -377,12 +378,184 @@ function descendantCategoryIds(parentId) {
 function withArticleFileCounts(list) {
   return list.map((article) => ({
     ...article,
-    fileCount: attachments.filter((attachment) =>
-      attachment.ownerType === 'KnowledgeArticle'
-      && attachment.ownerId === article.id
-      && !attachment.deletedAt
-    ).length,
+    files: articleFiles(article.id),
+    fileCount: articleFiles(article.id).length,
   }));
+}
+
+function articleFiles(articleId) {
+  return attachments.filter((attachment) =>
+      attachment.ownerType === 'KnowledgeArticle'
+      && attachment.ownerId === articleId
+      && !attachment.deletedAt
+    );
+}
+
+function parseAttachmentRemark(remark) {
+  if (!remark) return {};
+  try {
+    const parsed = JSON.parse(remark);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function attachmentSummary(item) {
+  if (!item) return null;
+  return {
+    id: item.id,
+    ownerType: item.ownerType,
+    ownerId: item.ownerId,
+    category: item.category,
+    originalName: item.originalName,
+    fileExt: item.fileExt,
+    fileSize: item.fileSize,
+    mimeType: item.mimeType,
+    createdAt: item.createdAt,
+    uploader: item.uploader,
+  };
+}
+
+function buildFileRevisionDiff(revisionId) {
+  const revision = attachments.find((item) =>
+    item.id === revisionId
+    && item.ownerType === 'KnowledgeFileRevision'
+    && !item.deletedAt
+  );
+  if (!revision) return null;
+  const payload = parseAttachmentRemark(revision.remark);
+  const originalId = payload.originalAttachmentId || revision.ownerId;
+  const original = attachments.find((item) =>
+    item.id === originalId
+    && item.ownerType === 'KnowledgeArticle'
+    && !item.deletedAt
+  );
+  if (!original) return null;
+  const articleId = payload.articleId || original.ownerId;
+  const article = articles.find((item) => item.id === articleId);
+  const changes = [
+    ['文件名', original.originalName, revision.originalName],
+    ['扩展名', original.fileExt, revision.fileExt],
+    ['文件大小', String(original.fileSize), String(revision.fileSize)],
+    ['MIME 类型', original.mimeType, revision.mimeType],
+  ].map(([label, before, after]) => ({
+    label,
+    before,
+    after,
+    changed: before !== after,
+  }));
+  return {
+    article: article
+      ? {
+          id: article.id,
+          title: article.title,
+          version: article.version,
+          status: article.status,
+          category: article.category,
+        }
+      : null,
+    original: attachmentSummary(original),
+    incoming: attachmentSummary(revision),
+    changes,
+    submittedAt: payload.submittedAt || revision.createdAt,
+  };
+}
+
+function createApprovalTask({ businessType, businessId, businessTitle, applicantId }) {
+  const task = {
+    id: `approval-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    businessType,
+    businessId,
+    businessTitle,
+    applicantId,
+    currentStep: 1,
+    approverId: 'user-admin',
+    status: 'Pending',
+    comment: '',
+    createdAt: now(),
+    updatedAt: now(),
+    template: {
+      templateCode: businessType === 'knowledge-file-update' ? 'KNOWLEDGE_FILE_UPDATE' : 'KNOWLEDGE_PUBLISH',
+      templateName: businessType === 'knowledge-file-update' ? '知识库文件更新审批' : '知识发布审核',
+    },
+    applicant: adminUser,
+    approver: adminUser,
+    actions: [
+      {
+        id: `approval-action-${Date.now()}`,
+        stepOrder: 1,
+        action: 'Submitted',
+        comment: '发起审批',
+        createdAt: now(),
+        actor: adminUser,
+      },
+    ],
+  };
+  approvalTasks = [task, ...approvalTasks];
+  return task;
+}
+
+function applyApprovalDecision(task, decision, comment) {
+  task.status = decision;
+  task.comment = comment || '';
+  task.decidedAt = now();
+  task.updatedAt = now();
+  task.actions.push({
+    id: `approval-action-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    stepOrder: task.currentStep,
+    action: decision,
+    comment: comment || '',
+    createdAt: now(),
+    actor: adminUser,
+  });
+
+  if (task.businessType !== 'knowledge-file-update') return;
+  const revision = attachments.find((item) =>
+    item.id === task.businessId
+    && item.ownerType === 'KnowledgeFileRevision'
+    && !item.deletedAt
+  );
+  if (!revision) return;
+  const payload = parseAttachmentRemark(revision.remark);
+  const originalId = payload.originalAttachmentId || revision.ownerId;
+  const original = attachments.find((item) =>
+    item.id === originalId
+    && item.ownerType === 'KnowledgeArticle'
+    && !item.deletedAt
+  );
+  if (!original) return;
+
+  if (decision === 'Rejected') {
+    revision.deletedAt = now();
+    revision.remark = JSON.stringify({ ...payload, decision, comment, decidedAt: now() });
+    return;
+  }
+
+  original.deletedAt = now();
+  const articleId = payload.articleId || original.ownerId;
+  revision.ownerType = 'KnowledgeArticle';
+  revision.ownerId = articleId;
+  revision.category = original.category || 'document';
+  revision.remark = JSON.stringify({ ...payload, decision, comment, originalAttachmentId: originalId, decidedAt: now() });
+  const article = articles.find((item) => item.id === articleId);
+  if (article) {
+    const currentVersion = Number.parseFloat(String(article.version || 'V1.0').replace('V', ''));
+    article.version = `V${((Number.isFinite(currentVersion) ? currentVersion : 1) + 0.1).toFixed(1)}`;
+    article.status = 'Published';
+    article.updatedAt = now();
+    article.publishedAt = now();
+    article.versions = [
+      {
+        id: `version-${article.id}-${Date.now()}`,
+        version: article.version,
+        changeNotes: `附件更新审批通过：${original.originalName}`,
+        createdAt: now(),
+        creator: { id: 'user-admin', realName: adminUser.realName },
+      },
+      ...(article.versions || []),
+    ];
+  }
 }
 
 function buildKnowledgeMarkdown(module, content) {
@@ -648,8 +821,8 @@ function buildOfficePreview(item) {
     '<article class="attachment-preview">',
     '<h2>知识库 DOC 预览样例</h2>',
     '<p>用途：验证旧版 doc 文件上传后可在线查阅。</p>',
-    '<h3>项目管理要求</h3>',
-    '<p>上传资料应关联知识分类、适用国家、项目类型和交付阶段。</p>',
+    '<h3>岗位归档要求</h3>',
+    '<p>上传资料按一级岗位分类归档，文件名称后可标注岗位职责、流程或模板属性。</p>',
     '</article>',
   ].join('');
 }
@@ -973,6 +1146,85 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  const revisionSubmitMatch = path.match(/^\/knowledge\/articles\/([^/]+)\/files\/([^/]+)\/revisions$/);
+  if (req.method === 'POST' && revisionSubmitMatch) {
+    const article = articles.find((item) => item.id === revisionSubmitMatch[1]);
+    const original = attachments.find((item) =>
+      item.id === revisionSubmitMatch[2]
+      && item.ownerType === 'KnowledgeArticle'
+      && item.ownerId === revisionSubmitMatch[1]
+      && !item.deletedAt
+    );
+    if (!article || !original) {
+      sendJson(res, envelope(null, '知识库文件不存在', 404), 404);
+      return;
+    }
+    const pendingRevision = attachments.find((item) =>
+      item.ownerType === 'KnowledgeFileRevision'
+      && item.ownerId === original.id
+      && !item.deletedAt
+      && approvalTasks.some((task) =>
+        task.businessType === 'knowledge-file-update'
+        && task.businessId === item.id
+        && task.status === 'Pending'
+      )
+    );
+    if (pendingRevision) {
+      sendJson(res, envelope(null, '该文件已有待审批的更新申请', 409), 409);
+      return;
+    }
+
+    const body = await readBody(req);
+    const parts = parseMultipart(body, req.headers['content-type']);
+    const filePart = parts.find((part) => part.filename) ?? {
+      filename: `更新-${original.originalName}`,
+      contentType: original.mimeType,
+      data: Buffer.from(`Local revision content for ${original.originalName}`, 'utf8'),
+    };
+    const name = filePart.filename || `更新-${original.originalName}`;
+    const ext = extname(name).replace('.', '').toLowerCase() || fileExt(original.originalName);
+    const targetDir = join(localStorageRoot, 'attachments', 'KnowledgeFileRevision', original.id);
+    await mkdir(targetDir, { recursive: true });
+    const storagePath = join(targetDir, `${Date.now()}-${Math.random().toString(16).slice(2)}-${safeFileName(name)}`);
+    await writeFile(storagePath, filePart.data);
+    const revision = {
+      id: `att-revision-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      ownerType: 'KnowledgeFileRevision',
+      ownerId: original.id,
+      category: 'revision',
+      originalName: name,
+      fileExt: ext,
+      fileSize: String(filePart.data.length),
+      mimeType: filePart.contentType || mimeTypeFor(name),
+      storagePath,
+      remark: JSON.stringify({
+        revisionType: 'knowledge-file-update',
+        articleId: article.id,
+        originalAttachmentId: original.id,
+        originalName: original.originalName,
+        submittedAt: now(),
+      }),
+      createdAt: now(),
+      uploader: { id: 'user-admin', realName: adminUser.realName, username: 'admin' },
+    };
+    attachments = [revision, ...attachments];
+    const task = createApprovalTask({
+      businessType: 'knowledge-file-update',
+      businessId: revision.id,
+      businessTitle: `知识库文件更新：${original.originalName}`,
+      applicantId: 'user-admin',
+    });
+    sendJson(res, envelope(task));
+    return;
+  }
+
+  const revisionDiffMatch = path.match(/^\/knowledge\/file-revisions\/([^/]+)\/diff$/);
+  if (req.method === 'GET' && revisionDiffMatch) {
+    const diff = buildFileRevisionDiff(revisionDiffMatch[1]);
+    sendJson(res, envelope(diff), diff ? 200 : 404);
+    return;
+  }
+
   if (req.method === 'GET' && path === '/attachments') {
     const ownerType = url.searchParams.get('ownerType');
     const ownerId = url.searchParams.get('ownerId');
@@ -1230,12 +1482,31 @@ async function handleApi(req, res, url) {
   if (req.method === 'GET' && path === '/approvals/templates') {
     sendJson(res, envelope(page([
       { id: 'approval-report', templateCode: 'REPORT_REVIEW', templateName: '工作报告审核', businessType: 'report', countryCode: 'CN', isEnabled: true, steps: [{ id: 'step-1', stepOrder: 1, stepName: '主管审核', approverType: 'role', approverValue: 'PROJECT_MANAGER' }] },
+      { id: 'approval-knowledge-file', templateCode: 'KNOWLEDGE_FILE_UPDATE', templateName: '知识库文件更新审批', businessType: 'knowledge-file-update', countryCode: '', isEnabled: true, steps: [{ id: 'step-knowledge-file-1', stepOrder: 1, stepName: '管理员审核', approverType: 'user', approverValue: 'user-admin' }] },
     ], url.searchParams.get('page'), url.searchParams.get('pageSize'))));
     return;
   }
 
   if (req.method === 'GET' && path === '/approvals/tasks') {
-    sendJson(res, envelope(page([], url.searchParams.get('page'), url.searchParams.get('pageSize'))));
+    sendJson(res, envelope(page(approvalTasks, url.searchParams.get('page'), url.searchParams.get('pageSize'))));
+    return;
+  }
+
+  const approvalDecisionMatch = path.match(/^\/approvals\/tasks\/([^/]+)\/decision$/);
+  if (req.method === 'POST' && approvalDecisionMatch) {
+    const task = approvalTasks.find((item) => item.id === approvalDecisionMatch[1]);
+    if (!task) {
+      sendJson(res, envelope(null, '审批任务不存在', 404), 404);
+      return;
+    }
+    if (task.status !== 'Pending') {
+      sendJson(res, envelope(null, '审批任务已处理', 409), 409);
+      return;
+    }
+    const body = await readJson(req);
+    const decision = body.decision === 'Rejected' ? 'Rejected' : 'Approved';
+    applyApprovalDecision(task, decision, body.comment || '');
+    sendJson(res, envelope(task));
     return;
   }
 

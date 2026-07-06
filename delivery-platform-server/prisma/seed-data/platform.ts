@@ -306,6 +306,7 @@ async function seedApprovalTemplates(prisma: PrismaClient): Promise<void> {
   const templates = [
     ['REPORT_REVIEW', '工作报告审核', 'report'],
     ['KNOWLEDGE_PUBLISH', '知识发布审核', 'knowledge'],
+    ['KNOWLEDGE_FILE_UPDATE', '知识库文件更新审批', 'knowledge-file-update'],
     ['CHECKLIST_REVIEW', '检查记录审核', 'checklist'],
     ['PERFORMANCE_SCORE', '绩效评分确认', 'performance'],
   ] as const;

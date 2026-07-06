@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
@@ -7,28 +7,16 @@ import { MdEditor, MdPreview } from 'md-editor-v3'
 import 'md-editor-v3/lib/style.css'
 import { attachmentApi } from '@/api/attachment'
 import type { Attachment, AttachmentPreview } from '@/api/attachment'
-import { downloadBlob } from '@/utils/blob'
-import { countryApi } from '@/api/country'
-import { checklistApi } from '@/api/checklist'
 import { knowledgeApi } from '@/api/knowledge'
-import { dictionaryApi } from '@/api/platform'
-import { roleApi } from '@/api/role'
-import { templateApi } from '@/api/template'
-import { workflowApi } from '@/api/workflow'
-import type { ChecklistTemplate } from '@/types/checklist'
-import type { Country } from '@/types/country'
 import type { KnowledgeArticle, KnowledgeCategory } from '@/types/knowledge'
-import type { DictionaryItem } from '@/types/platform'
-import type { Role } from '@/types/role'
-import type { DocumentTemplate } from '@/types/template'
-import type { WorkflowDocument } from '@/types/workflow'
+import { downloadBlob } from '@/utils/blob'
 
 type PreviewState = AttachmentPreview & { objectUrl?: string }
 
 const route = useRoute()
 const router = useRouter()
 const articleId = computed(() => String(route.params.id ?? ''))
-const isNew = computed(() => !articleId.value)
+const isNew = computed(() => !articleId.value || articleId.value === 'new')
 const editing = ref(isNew.value || route.query.edit === '1')
 const loading = ref(false)
 const previewVisible = ref(false)
@@ -36,49 +24,30 @@ const previewLoading = ref(false)
 const preview = ref<PreviewState>()
 const article = ref<KnowledgeArticle>()
 const categories = ref<KnowledgeCategory[]>([])
-const countries = ref<Country[]>([])
-const projectTypes = ref<DictionaryItem[]>([])
-const stages = ref<DictionaryItem[]>([])
-const roles = ref<Role[]>([])
 const attachments = ref<Attachment[]>([])
-const workflows = ref<WorkflowDocument[]>([])
-const checklistTemplates = ref<ChecklistTemplate[]>([])
-const documentTemplates = ref<DocumentTemplate[]>([])
 const pendingFiles = ref<File[]>([])
+
 const form = ref({
   categoryId: '',
   title: '',
-  countryCode: '',
-  projectType: '',
-  stageCode: '',
-  applicableRole: '',
   markdownContent: '',
-  sourceStatus: 'Ready',
-  needsRevision: false,
   contentType: 'article',
-  relatedFlow: '',
-  relatedChecklist: '',
-  relatedTemplate: '',
 })
 
 const attachmentColumns: TableColumnData[] = [
-  { title: '文件名', dataIndex: 'originalName', slotName: 'fileName', width: 320 },
+  { title: '文件名', dataIndex: 'originalName', slotName: 'fileName', minWidth: 320 },
   { title: '类型', dataIndex: 'fileExt', width: 90 },
   { title: '大小', dataIndex: 'fileSize', slotName: 'fileSize', width: 110 },
   { title: '上传人', dataIndex: 'uploader.realName', slotName: 'uploader', width: 120 },
-  { title: '上传时间', dataIndex: 'createdAt', width: 180 },
-  { title: '操作', slotName: 'actions', width: 220, fixed: 'right' },
+  { title: '上传时间', dataIndex: 'createdAt', slotName: 'createdAt', width: 170 },
+  { title: '操作', slotName: 'actions', width: 230, fixed: 'right' },
 ]
 
-const categoryOptions = computed(() => flattenCategories(categories.value))
-const previewTitle = computed(() => preview.value?.title || preview.value?.fileName || '在线预览')
+const categoryOptions = computed(() =>
+  categories.value.filter((category) => !category.parentId),
+)
 
-function flattenCategories(nodes: KnowledgeCategory[], prefix = ''): Array<{ id: string; label: string }> {
-  return nodes.flatMap((node) => [
-    { id: node.id, label: `${prefix}${node.name}` },
-    ...flattenCategories(node.children || [], `${prefix}${node.name} / `),
-  ])
-}
+const previewTitle = computed(() => preview.value?.title || preview.value?.fileName || '在线预览')
 
 function formatFileSize(value: string | number): string {
   const size = Number(value)
@@ -86,6 +55,13 @@ function formatFileSize(value: string | number): string {
   if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`
   if (size >= 1024) return `${(size / 1024).toFixed(1)} KB`
   return `${size} B`
+}
+
+function formatDate(value?: string): string {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('zh-CN', { hour12: false })
 }
 
 function viewerLabel(viewer?: AttachmentPreview['viewer']): string {
@@ -102,33 +78,7 @@ function viewerLabel(viewer?: AttachmentPreview['viewer']): string {
 }
 
 async function fetchOptions(): Promise<void> {
-  const [
-    categoryTree,
-    countryPage,
-    projectTypeDictionary,
-    stageDictionary,
-    roleList,
-    workflowPage,
-    checklistPage,
-    templatePage,
-  ] = await Promise.all([
-    knowledgeApi.getCategories(),
-    countryApi.getList({ page: 1, pageSize: 100 }),
-    dictionaryApi.getByCode('project_type'),
-    dictionaryApi.getByCode('project_stage'),
-    roleApi.getList(),
-    workflowApi.getDocuments({ page: 1, pageSize: 200, status: 'Active' }),
-    checklistApi.getTemplates({ page: 1, pageSize: 200, status: 'Active' }),
-    templateApi.getList({ page: 1, pageSize: 200, status: 'Published' }),
-  ])
-  categories.value = categoryTree
-  countries.value = countryPage.list
-  projectTypes.value = projectTypeDictionary.items
-  stages.value = stageDictionary.items
-  roles.value = roleList
-  workflows.value = workflowPage.list
-  checklistTemplates.value = checklistPage.list
-  documentTemplates.value = templatePage.list
+  categories.value = await knowledgeApi.getCategories()
 }
 
 async function fetchArticle(): Promise<void> {
@@ -137,22 +87,14 @@ async function fetchArticle(): Promise<void> {
     attachments.value = []
     return
   }
+
   article.value = await knowledgeApi.getArticleById(articleId.value)
   const item = article.value
   form.value = {
     categoryId: item.categoryId,
     title: item.title,
-    countryCode: item.countryCode ?? '',
-    projectType: item.projectType ?? '',
-    stageCode: item.stageCode ?? '',
-    applicableRole: item.applicableRole ?? '',
     markdownContent: item.markdownContent ?? '',
-    sourceStatus: item.sourceStatus,
-    needsRevision: item.needsRevision,
-    contentType: item.contentType,
-    relatedFlow: item.relatedFlow ?? '',
-    relatedChecklist: item.relatedChecklist ?? '',
-    relatedTemplate: item.relatedTemplate ?? '',
+    contentType: item.contentType || 'article',
   }
   await fetchAttachments()
 }
@@ -162,6 +104,7 @@ async function fetchAttachments(): Promise<void> {
     attachments.value = []
     return
   }
+
   const result = await attachmentApi.getList({
     ownerType: 'KnowledgeArticle',
     ownerId: articleId.value,
@@ -188,19 +131,27 @@ async function uploadPending(ownerId: string): Promise<void> {
 
 async function save(): Promise<void> {
   if (!form.value.categoryId || !form.value.title.trim()) {
-    Message.warning('请选择分类并填写标题')
+    Message.warning('请选择一级分类并填写标题')
     return
   }
+
   loading.value = true
   try {
+    const payload = {
+      categoryId: form.value.categoryId,
+      title: form.value.title.trim(),
+      markdownContent: form.value.markdownContent,
+      contentType: form.value.contentType,
+    }
+
     if (isNew.value) {
-      const created = await knowledgeApi.createArticle(form.value)
+      const created = await knowledgeApi.createArticle(payload)
       await uploadPending(created.id)
       Message.success('知识条目已创建')
       await router.replace(`/knowledge/${created.id}?edit=1`)
       await fetchArticle()
     } else {
-      await knowledgeApi.updateArticle(articleId.value, form.value)
+      await knowledgeApi.updateArticle(articleId.value, payload)
       await uploadPending(articleId.value)
       Message.success('知识条目已更新')
       await fetchArticle()
@@ -212,7 +163,7 @@ async function save(): Promise<void> {
 
 async function publish(): Promise<void> {
   await knowledgeApi.publishArticle(articleId.value)
-  Message.success('已提交发布审核')
+  Message.success('已提交发布审批')
   editing.value = false
   await fetchArticle()
 }
@@ -233,10 +184,9 @@ async function previewAttachment(item: Attachment): Promise<void> {
   try {
     const metadata = await attachmentApi.getPreview(item.id)
     if (metadata.previewKind === 'image' || metadata.previewKind === 'pdf') {
-      const blob = await attachmentApi.getContent(item.id)
       preview.value = {
         ...metadata,
-        objectUrl: URL.createObjectURL(blob),
+        objectUrl: URL.createObjectURL(await attachmentApi.getContent(item.id)),
       }
     } else {
       preview.value = metadata
@@ -320,192 +270,65 @@ onBeforeUnmount(() => {
     <div class="page-toolbar">
       <div>
         <h2>{{ isNew ? '创建知识条目' : article?.title }}</h2>
-        <p v-if="article">
-          版本 {{ article.version }} / {{ article.status }} / {{ article.sourceStatus }}
-        </p>
-        <p v-else>使用 Markdown 和附件沉淀可复用的交付知识</p>
+        <p>知识库只按岗位一级分类归档，流程或模板属性写入标题或文件名称。</p>
       </div>
-      <a-space wrap>
-        <a-button @click="router.push('/knowledge')">返回</a-button>
-        <a-button v-if="!isNew && !editing" @click="editing = true">编辑</a-button>
+      <a-space>
+        <a-button @click="router.push('/knowledge')">返回知识库</a-button>
+        <a-button v-if="!editing && !isNew" @click="editing = true">编辑</a-button>
         <a-button v-if="editing" type="primary" @click="save">保存</a-button>
-        <a-button
-          v-if="!isNew && article && !['Published', 'Reviewing'].includes(article.status)"
-          status="success"
-          @click="publish"
-        >
-          提交发布
-        </a-button>
+        <a-button v-if="!isNew && !editing" type="primary" @click="publish">提交发布</a-button>
       </a-space>
     </div>
 
-    <template v-if="editing">
-      <a-form :model="form" layout="vertical" class="knowledge-form">
-        <div class="form-grid">
-          <a-form-item label="知识分类" required>
-            <a-select v-model="form.categoryId" allow-search>
-              <a-option
-                v-for="item in categoryOptions"
-                :key="item.id"
-                :value="item.id"
-              >
-                {{ item.label }}
-              </a-option>
-            </a-select>
-          </a-form-item>
-          <a-form-item label="知识标题" required>
-            <a-input v-model="form.title" :max-length="200" show-word-limit />
-          </a-form-item>
-          <a-form-item label="适用国家">
-            <a-select v-model="form.countryCode" allow-clear allow-search>
-              <a-option
-                v-for="item in countries"
-                :key="item.id"
-                :value="item.countryCode"
-              >
-                {{ item.nameZh }}
-              </a-option>
-            </a-select>
-          </a-form-item>
-          <a-form-item label="项目类型">
-            <a-select v-model="form.projectType" allow-clear>
-              <a-option
-                v-for="item in projectTypes"
-                :key="item.id"
-                :value="item.itemValue"
-              >
-                {{ item.itemLabel }}
-              </a-option>
-            </a-select>
-          </a-form-item>
-          <a-form-item label="交付阶段">
-            <a-select v-model="form.stageCode" allow-clear>
-              <a-option
-                v-for="item in stages"
-                :key="item.id"
-                :value="item.itemValue"
-              >
-                {{ item.itemLabel }}
-              </a-option>
-            </a-select>
-          </a-form-item>
-          <a-form-item label="适用角色">
-            <a-select v-model="form.applicableRole" allow-clear allow-search>
-              <a-option
-                v-for="item in roles"
-                :key="item.id"
-                :value="item.roleCode"
-              >
-                {{ item.roleName }}
-              </a-option>
-            </a-select>
-          </a-form-item>
-          <a-form-item label="关联交付流程">
-            <a-select v-model="form.relatedFlow" allow-clear allow-search>
-              <a-option
-                v-for="item in workflows"
-                :key="item.id"
-                :value="item.id"
-              >
-                {{ item.name }}
-              </a-option>
-            </a-select>
-          </a-form-item>
-          <a-form-item label="关联检查模板">
-            <a-select v-model="form.relatedChecklist" allow-clear allow-search>
-              <a-option
-                v-for="item in checklistTemplates"
-                :key="item.id"
-                :value="item.id"
-              >
-                {{ item.templateName }}
-              </a-option>
-            </a-select>
-          </a-form-item>
-          <a-form-item label="关联文档模板">
-            <a-select v-model="form.relatedTemplate" allow-clear allow-search>
-              <a-option
-                v-for="item in documentTemplates"
-                :key="item.id"
-                :value="item.id"
-              >
-                {{ item.name }}
-              </a-option>
-            </a-select>
-          </a-form-item>
-          <a-form-item label="原始资料">
-            <a-radio-group v-model="form.sourceStatus" type="button">
-              <a-radio value="Ready">资料齐全</a-radio>
-              <a-radio value="PendingUpload">待上传</a-radio>
-            </a-radio-group>
-          </a-form-item>
-          <a-form-item label="修订标记">
-            <a-switch v-model="form.needsRevision">
-              <template #checked>需要</template>
-              <template #unchecked>不需要</template>
-            </a-switch>
-          </a-form-item>
-        </div>
-        <a-form-item label="Markdown 正文">
-          <MdEditor v-model="form.markdownContent" language="zh-CN" :preview="true" />
+    <a-card v-if="editing" class="article-card">
+      <a-form :model="form" layout="vertical">
+        <a-form-item label="一级分类" required>
+          <a-select v-model="form.categoryId" placeholder="选择一级分类">
+            <a-option
+              v-for="category in categoryOptions"
+              :key="category.id"
+              :value="category.id"
+            >
+              {{ category.name }}
+            </a-option>
+          </a-select>
         </a-form-item>
-        <a-form-item label="资料附件">
-          <div class="file-picker">
+        <a-form-item label="标题" required>
+          <a-input v-model="form.title" placeholder="例如 项目经理 - 岗位职责" />
+        </a-form-item>
+        <a-form-item label="正文">
+          <MdEditor v-model="form.markdownContent" language="zh-CN" />
+        </a-form-item>
+        <a-form-item label="附件">
+          <label class="file-picker">
             <input
               type="file"
               multiple
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.md,.txt"
+              accept=".doc,.docx,.xls,.xlsx,.ppt,.pptx,.pdf,.png,.jpg,.jpeg,.webp,.txt,.md"
               @change="selectFiles"
             />
-            <span v-if="pendingFiles.length" class="file-note">
-              已选择 {{ pendingFiles.length }} 个文件
-            </span>
-          </div>
+          </label>
+          <p v-if="pendingFiles.length" class="pending-files">
+            已选择 {{ pendingFiles.length }} 个待上传文件
+          </p>
         </a-form-item>
       </a-form>
-    </template>
+    </a-card>
 
-    <template v-else-if="article">
-      <div class="article-meta">
-        <a-tag v-if="article.countryCode">{{ article.countryCode }}</a-tag>
-        <a-tag v-if="article.projectType" color="green">{{ article.projectType }}</a-tag>
-        <a-tag v-if="article.stageCode" color="orange">{{ article.stageCode }}</a-tag>
-        <a-tag v-if="article.needsRevision" color="red">待修订</a-tag>
-        <a-tag v-if="article.relatedFlow" color="arcoblue">已关联流程</a-tag>
-        <a-tag v-if="article.relatedChecklist" color="arcoblue">已关联检查模板</a-tag>
-        <a-tag v-if="article.relatedTemplate" color="arcoblue">已关联文档模板</a-tag>
-      </div>
-      <div class="markdown-panel">
-        <MdPreview :model-value="article.markdownContent || '暂无 Markdown 正文'" language="zh-CN" />
-      </div>
-      <div class="version-list">
-        <h3>版本记录</h3>
-        <a-timeline>
-          <a-timeline-item
-            v-for="version in article.versions"
-            :key="version.id"
-            :label="version.createdAt"
-          >
-            {{ version.version }} / {{ version.changeNotes || '版本快照' }} / {{ version.creator.realName }}
-          </a-timeline-item>
-        </a-timeline>
-      </div>
-    </template>
+    <a-card v-else class="article-card">
+      <MdPreview :model-value="article?.markdownContent || '暂无正文内容。'" />
+    </a-card>
 
-    <div v-if="!isNew" class="attachment-section">
-      <div class="section-heading">
-        <h3>附件</h3>
-        <span>支持 doc/docx、xls/xlsx、ppt/pptx、pdf、图片和文本在线查阅</span>
-      </div>
+    <a-card class="article-card">
+      <template #title>附件</template>
       <a-table
         :columns="attachmentColumns"
         :data="attachments"
         :pagination="false"
-        :bordered="{ cell: true }"
         row-key="id"
       >
         <template #fileName="{ record }">
-          <span class="file-name">{{ record.originalName }}</span>
+          <strong>{{ record.originalName }}</strong>
         </template>
         <template #fileSize="{ record }">
           {{ formatFileSize(record.fileSize) }}
@@ -513,13 +336,21 @@ onBeforeUnmount(() => {
         <template #uploader="{ record }">
           {{ record.uploader?.realName || '-' }}
         </template>
+        <template #createdAt="{ record }">
+          {{ formatDate(record.createdAt) }}
+        </template>
         <template #actions="{ record }">
-          <a-space size="mini">
-            <a-button type="text" @click="previewAttachment(record)">在线预览</a-button>
-            <a-button type="text" @click="downloadAttachment(record)">下载</a-button>
+          <a-space size="mini" wrap>
+            <a-button type="text" size="small" @click="previewAttachment(record)">
+              在线预览
+            </a-button>
+            <a-button type="text" size="small" @click="downloadAttachment(record)">
+              下载
+            </a-button>
             <a-button
               v-if="editing"
               type="text"
+              size="small"
               status="danger"
               @click="deleteAttachment(record)"
             >
@@ -528,7 +359,7 @@ onBeforeUnmount(() => {
           </a-space>
         </template>
       </a-table>
-    </div>
+    </a-card>
 
     <a-modal
       v-model:visible="previewVisible"
@@ -574,14 +405,13 @@ onBeforeUnmount(() => {
 <style scoped lang="scss">
 .article-page {
   display: block;
-  min-width: 0;
 }
 
 .page-toolbar {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 20px;
+  gap: 18px;
   margin-bottom: 18px;
 
   h2 {
@@ -597,81 +427,22 @@ onBeforeUnmount(() => {
   }
 }
 
-.knowledge-form,
-.markdown-panel,
-.attachment-section,
-.version-list {
-  border: 1px solid var(--color-border-2);
+.article-card {
+  margin-bottom: 16px;
   border-radius: 8px;
-  background: var(--color-bg-2);
 }
 
-.knowledge-form {
-  padding: 18px;
+.file-picker input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--color-border-2);
+  border-radius: 6px;
 }
 
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 18px;
-}
-
-.file-picker {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.file-note {
+.pending-files {
+  margin: 8px 0 0;
   color: var(--color-text-3);
   font-size: 12px;
-}
-
-.article-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.markdown-panel {
-  padding: 14px 18px;
-}
-
-.attachment-section,
-.version-list {
-  margin-top: 24px;
-  padding: 18px;
-}
-
-.section-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 14px;
-
-  h3 {
-    margin: 0;
-    color: var(--color-text-1);
-    font-size: 16px;
-  }
-
-  span {
-    color: var(--color-text-3);
-    font-size: 12px;
-  }
-}
-
-.version-list h3 {
-  margin: 0 0 14px;
-  font-size: 16px;
-}
-
-.file-name {
-  color: var(--color-text-1);
-  font-weight: 520;
 }
 
 .preview-meta {
@@ -762,14 +533,9 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 
-@media (max-width: 760px) {
-  .page-toolbar,
-  .section-heading {
+@media (max-width: 900px) {
+  .page-toolbar {
     flex-direction: column;
-  }
-
-  .form-grid {
-    grid-template-columns: 1fr;
   }
 }
 </style>

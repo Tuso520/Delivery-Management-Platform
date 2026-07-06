@@ -13,6 +13,7 @@ import { PaginationDto } from '../../../common/dto/pagination.dto';
 
 export const attachmentOwnerTypes = [
   'KnowledgeArticle',
+  'KnowledgeFileRevision',
   'ChecklistItem',
   'TrainingPlan',
   'ProjectProcessRecord',

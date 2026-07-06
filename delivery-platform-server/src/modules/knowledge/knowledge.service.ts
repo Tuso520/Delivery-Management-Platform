@@ -8,6 +8,7 @@ import { Prisma, KnowledgeStatus } from '@prisma/client';
 
 import type { PaginatedResult } from '../../common/dto/pagination.dto';
 import { PrismaService } from '../../database/prisma.service';
+import { AttachmentService } from '../attachment/attachment.service';
 import { ApprovalService } from '../platform/approval.service';
 
 import { CreateKnowledgeArticleDto } from './dto/create-knowledge-article.dto';
@@ -30,6 +31,7 @@ interface ArticleListItem {
   sourceStatus: string;
   needsRevision: boolean;
   fileCount?: number;
+  files?: KnowledgeAttachmentSummary[];
   version: string;
   status: string;
   authorId: string;
@@ -39,6 +41,27 @@ interface ArticleListItem {
   updatedAt: Date;
   category: { id: string; name: string } | null;
   author: { id: string; realName: string } | null;
+}
+
+interface KnowledgeAttachmentSummary {
+  id: string;
+  ownerType: string;
+  ownerId: string;
+  category: string | null;
+  originalName: string;
+  fileExt: string;
+  fileSize: bigint;
+  mimeType: string;
+  createdAt: Date;
+  uploader: { id: string; realName: string; username: string } | null;
+}
+
+interface FileRevisionPayload {
+  revisionType?: string;
+  articleId?: string;
+  originalAttachmentId?: string;
+  originalName?: string;
+  submittedAt?: string;
 }
 
 interface CategoryTreeNode {
@@ -58,6 +81,7 @@ export class KnowledgeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly approvalService: ApprovalService,
+    private readonly attachmentService?: AttachmentService,
   ) {}
 
   // ========== Category CRUD ==========
@@ -263,26 +287,35 @@ export class KnowledgeService {
         orderBy: { updatedAt: 'desc' },
       }),
     ]);
-    const fileCounts = list.length
-      ? await this.prisma.attachment.groupBy({
-          by: ['ownerId'],
+    const files = list.length
+      ? await this.prisma.attachment.findMany({
           where: {
             ownerType: 'KnowledgeArticle',
             ownerId: { in: list.map((item) => item.id) },
             deletedAt: null,
           },
-          _count: { _all: true },
+          include: {
+            uploader: { select: { id: true, realName: true, username: true } },
+          },
+          orderBy: { createdAt: 'desc' },
         })
       : [];
-    const fileCountByArticleId = new Map(
-      fileCounts.map((item) => [item.ownerId, item._count._all]),
-    );
+    const filesByArticleId = new Map<string, KnowledgeAttachmentSummary[]>();
+    for (const file of files) {
+      const listForArticle = filesByArticleId.get(file.ownerId) ?? [];
+      listForArticle.push(file);
+      filesByArticleId.set(file.ownerId, listForArticle);
+    }
 
     return {
-      list: list.map((item) => ({
-        ...item,
-        fileCount: fileCountByArticleId.get(item.id) ?? 0,
-      })),
+      list: list.map((item) => {
+        const articleFiles = filesByArticleId.get(item.id) ?? [];
+        return {
+          ...item,
+          fileCount: articleFiles.length,
+          files: articleFiles,
+        };
+      }),
       pagination: {
         page,
         pageSize,
@@ -468,6 +501,190 @@ export class KnowledgeService {
       },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  async submitFileRevision(
+    articleId: string,
+    attachmentId: string,
+    file: Express.Multer.File,
+    userId: string,
+  ) {
+    if (!this.attachmentService) {
+      throw new BadRequestException('知识库附件服务未启用');
+    }
+
+    const [article, original] = await Promise.all([
+      this.prisma.knowledgeArticle.findFirst({
+        where: { id: articleId, deletedAt: null },
+        select: { id: true, title: true, countryCode: true },
+      }),
+      this.prisma.attachment.findFirst({
+        where: {
+          id: attachmentId,
+          ownerType: 'KnowledgeArticle',
+          ownerId: articleId,
+          deletedAt: null,
+        },
+        select: {
+          id: true,
+          originalName: true,
+          fileExt: true,
+          fileSize: true,
+          mimeType: true,
+        },
+      }),
+    ]);
+
+    if (!article || !original) {
+      throw new NotFoundException('知识库文件不存在');
+    }
+
+    const pendingRevision = await this.prisma.attachment.findFirst({
+      where: {
+        ownerType: 'KnowledgeFileRevision',
+        ownerId: attachmentId,
+        deletedAt: null,
+      },
+      select: { id: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (pendingRevision) {
+      const pendingTask = await this.prisma.approvalTask.findFirst({
+        where: {
+          businessType: 'knowledge-file-update',
+          businessId: pendingRevision.id,
+          status: 'Pending',
+        },
+        select: { id: true },
+      });
+      if (pendingTask) {
+        throw new ConflictException('该文件已有待审批的更新申请');
+      }
+    }
+
+    const payload: FileRevisionPayload = {
+      revisionType: 'knowledge-file-update',
+      articleId,
+      originalAttachmentId: attachmentId,
+      originalName: original.originalName,
+      submittedAt: new Date().toISOString(),
+    };
+    const [revision] = await this.attachmentService.uploadMany(
+      [file],
+      {
+        ownerType: 'KnowledgeFileRevision',
+        ownerId: attachmentId,
+        category: 'revision',
+        remark: JSON.stringify(payload),
+      },
+      userId,
+    );
+    const approvalTemplate = await this.prisma.approvalTemplate.findFirst({
+      where: { businessType: 'knowledge-file-update', isEnabled: true },
+      select: { id: true },
+    });
+
+    return this.approvalService.startBusinessApproval({
+      businessType: 'knowledge-file-update',
+      businessId: revision.id,
+      businessTitle: `知识库文件更新：${original.originalName}`,
+      applicantId: userId,
+      countryCode: article.countryCode ?? undefined,
+      approverIds: approvalTemplate ? undefined : [userId],
+    });
+  }
+
+  async findFileRevisionDiff(revisionId: string) {
+    const revision = await this.prisma.attachment.findFirst({
+      where: {
+        id: revisionId,
+        ownerType: 'KnowledgeFileRevision',
+        deletedAt: null,
+      },
+      include: {
+        uploader: { select: { id: true, realName: true, username: true } },
+      },
+    });
+
+    if (!revision) {
+      throw new NotFoundException('文件更新申请不存在');
+    }
+
+    const payload = this.parseFileRevisionPayload(revision.remark);
+    const originalAttachmentId = payload.originalAttachmentId ?? revision.ownerId;
+    const original = await this.prisma.attachment.findFirst({
+      where: {
+        id: originalAttachmentId,
+        ownerType: 'KnowledgeArticle',
+        deletedAt: null,
+      },
+      include: {
+        uploader: { select: { id: true, realName: true, username: true } },
+      },
+    });
+
+    if (!original) {
+      throw new NotFoundException('原知识库文件不存在');
+    }
+
+    const articleId = payload.articleId ?? original.ownerId;
+    const article = await this.prisma.knowledgeArticle.findFirst({
+      where: { id: articleId, deletedAt: null },
+      select: {
+        id: true,
+        title: true,
+        version: true,
+        status: true,
+        category: { select: { id: true, name: true } },
+      },
+    });
+
+    return {
+      article,
+      original: this.toAttachmentSummary(original),
+      incoming: this.toAttachmentSummary(revision),
+      changes: [
+        this.diffField('文件名', original.originalName, revision.originalName),
+        this.diffField('扩展名', original.fileExt, revision.fileExt),
+        this.diffField('文件大小', String(original.fileSize), String(revision.fileSize)),
+        this.diffField('MIME 类型', original.mimeType, revision.mimeType),
+      ],
+      submittedAt: payload.submittedAt ?? revision.createdAt,
+    };
+  }
+
+  private parseFileRevisionPayload(remark?: string | null): FileRevisionPayload {
+    if (!remark) return {};
+    try {
+      const parsed = JSON.parse(remark);
+      return typeof parsed === 'object' && parsed ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private toAttachmentSummary(attachment: KnowledgeAttachmentSummary) {
+    return {
+      id: attachment.id,
+      ownerType: attachment.ownerType,
+      ownerId: attachment.ownerId,
+      category: attachment.category,
+      originalName: attachment.originalName,
+      fileExt: attachment.fileExt,
+      fileSize: String(attachment.fileSize),
+      mimeType: attachment.mimeType,
+      createdAt: attachment.createdAt,
+      uploader: attachment.uploader,
+    };
+  }
+
+  private diffField(label: string, before: string, after: string) {
+    return {
+      label,
+      before,
+      after,
+      changed: before !== after,
+    };
   }
 
   private categoryIdentity(name: string, parentId: string | null): string {

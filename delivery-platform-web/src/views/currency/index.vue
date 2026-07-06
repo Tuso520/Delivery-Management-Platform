@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { Message } from '@arco-design/web-vue'
-import { arcoConfirm, arcoPrompt } from '@/utils/arco-dialog'
-import { currencyApi } from '@/api/currency'
-import type { Currency, ExchangeRate, CreateCurrencyDto, CreateExchangeRateDto } from '@/types/currency'
+import type { TableColumnData } from '@arco-design/web-vue'
 import dayjs from 'dayjs'
+import { currencyApi } from '@/api/currency'
+import type { CreateCurrencyDto, CreateExchangeRateDto, Currency, ExchangeRate } from '@/types/currency'
+import { arcoConfirm } from '@/utils/arco-dialog'
 
-// ====== Currency tab ======
+const activeTab = ref('currency')
+
 const loading = ref(false)
 const currencyList = ref<Currency[]>([])
 const dialogVisible = ref(false)
@@ -18,92 +20,7 @@ const formData = reactive({
   currencySymbol: '',
   decimalPlaces: 2,
 })
-const formRules = {
-  currencyCode: [{ required: true, message: '请输入币种代码', trigger: 'blur' }],
-  currencyName: [{ required: true, message: '请输入币种名称', trigger: 'blur' }],
-}
 
-const fetchCurrencies = async () => {
-  loading.value = true
-  try {
-    const res = await currencyApi.getList()
-    currencyList.value = res
-  } catch {
-    // handled by interceptor
-  } finally {
-    loading.value = false
-  }
-}
-
-const openCreate = () => {
-  isEdit.value = false
-  currentId.value = ''
-  Object.assign(formData, {
-    currencyCode: '',
-    currencyName: '',
-    currencySymbol: '',
-    decimalPlaces: 2,
-  })
-  dialogVisible.value = true
-}
-
-const openEdit = (row: Currency) => {
-  isEdit.value = true
-  currentId.value = row.id
-  formData.currencyCode = row.currencyCode
-  formData.currencyName = row.currencyName
-  formData.currencySymbol = row.currencySymbol ?? ''
-  formData.decimalPlaces = row.decimalPlaces
-  dialogVisible.value = true
-}
-
-const handleSubmit = async () => {
-  try {
-    const payload: CreateCurrencyDto = {
-      currencyCode: formData.currencyCode,
-      currencyName: formData.currencyName,
-      currencySymbol: formData.currencySymbol === '' ? undefined : formData.currencySymbol,
-      decimalPlaces: formData.decimalPlaces,
-    }
-
-    if (isEdit.value) {
-      await currencyApi.update(currentId.value, payload)
-      Message.success('更新成功')
-    } else {
-      await currencyApi.create(payload)
-      Message.success('创建成功')
-    }
-    dialogVisible.value = false
-    fetchCurrencies()
-  } catch {
-    // handled by interceptor
-  }
-}
-
-const handleDelete = (row: Currency) => {
-  arcoConfirm(`确定禁用币种 "${row.currencyName}" 吗？`, '确认', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning',
-  }).then(async () => {
-    try {
-      await currencyApi.delete(row.id)
-      Message.success('禁用成功')
-      fetchCurrencies()
-    } catch {
-      // handled by interceptor
-    }
-  }).catch(() => {
-    // cancelled
-  })
-}
-
-const statusTagType = (status: string) => {
-  return status === 'Active' ? 'success' : 'info'
-}
-
-// ====== Exchange Rate tab ======
-const activeTab = ref('currency')
 const rateLoading = ref(false)
 const rateList = ref<ExchangeRate[]>([])
 const rateDialogVisible = ref(false)
@@ -116,25 +33,109 @@ const rateForm = reactive<CreateExchangeRateDto>({
   rateDate: '',
   source: 'manual',
 })
-const rateFormRules = {
-  fromCurrency: [{ required: true, message: '请输入源币种', trigger: 'blur' }],
-  toCurrency: [{ required: true, message: '请输入目标币种', trigger: 'blur' }],
-  rate: [{ required: true, message: '请输入汇率', trigger: 'blur' }],
+
+const currencyColumns: TableColumnData[] = [
+  { title: '币种代码', dataIndex: 'currencyCode', width: 120 },
+  { title: '币种名称', dataIndex: 'currencyName', minWidth: 160 },
+  { title: '符号', dataIndex: 'currencySymbol', slotName: 'symbol', width: 100 },
+  { title: '小数位数', dataIndex: 'decimalPlaces', width: 110 },
+  { title: '状态', dataIndex: 'status', slotName: 'status', width: 100 },
+  { title: '操作', slotName: 'actions', width: 160, fixed: 'right' },
+]
+
+const rateColumns: TableColumnData[] = [
+  { title: '源币种', dataIndex: 'fromCurrency', width: 110 },
+  { title: '目标币种', dataIndex: 'toCurrency', width: 120 },
+  { title: '汇率', dataIndex: 'rate', minWidth: 150 },
+  { title: '汇率日期', dataIndex: 'rateDate', slotName: 'rateDate', width: 140 },
+  { title: '来源', dataIndex: 'source', slotName: 'source', width: 130 },
+  { title: '锁定状态', dataIndex: 'isLocked', slotName: 'lockStatus', width: 120 },
+  { title: '操作', slotName: 'rateActions', width: 160, fixed: 'right' },
+]
+
+async function fetchCurrencies(): Promise<void> {
+  loading.value = true
+  try {
+    currencyList.value = await currencyApi.getList()
+  } finally {
+    loading.value = false
+  }
 }
 
-const fetchRates = async () => {
+async function fetchRates(): Promise<void> {
   rateLoading.value = true
   try {
-    const res = await currencyApi.getExchangeRates()
-    rateList.value = res
-  } catch {
-    // handled by interceptor
+    rateList.value = await currencyApi.getExchangeRates()
   } finally {
     rateLoading.value = false
   }
 }
 
-const openAddRate = () => {
+function openCreate(): void {
+  isEdit.value = false
+  currentId.value = ''
+  Object.assign(formData, {
+    currencyCode: '',
+    currencyName: '',
+    currencySymbol: '',
+    decimalPlaces: 2,
+  })
+  dialogVisible.value = true
+}
+
+function openEdit(row: Currency): void {
+  isEdit.value = true
+  currentId.value = row.id
+  formData.currencyCode = row.currencyCode
+  formData.currencyName = row.currencyName
+  formData.currencySymbol = row.currencySymbol ?? ''
+  formData.decimalPlaces = row.decimalPlaces
+  dialogVisible.value = true
+}
+
+async function handleSubmit(): Promise<void> {
+  if (!formData.currencyCode.trim()) {
+    Message.warning('请输入币种代码')
+    return
+  }
+  if (!formData.currencyName.trim()) {
+    Message.warning('请输入币种名称')
+    return
+  }
+
+  const payload: CreateCurrencyDto = {
+    currencyCode: formData.currencyCode.trim().toUpperCase(),
+    currencyName: formData.currencyName.trim(),
+    currencySymbol: formData.currencySymbol.trim() || undefined,
+    decimalPlaces: formData.decimalPlaces,
+  }
+
+  if (isEdit.value) {
+    await currencyApi.update(currentId.value, payload)
+    Message.success('更新成功')
+  } else {
+    await currencyApi.create(payload)
+    Message.success('创建成功')
+  }
+  dialogVisible.value = false
+  await fetchCurrencies()
+}
+
+function handleDelete(row: Currency): void {
+  arcoConfirm(`确认禁用币种“${row.currencyName}”？`, '确认禁用', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning',
+  }).then(async () => {
+    await currencyApi.delete(row.id)
+    Message.success('禁用成功')
+    await fetchCurrencies()
+  }).catch(() => {
+    // 用户取消。
+  })
+}
+
+function openAddRate(): void {
   rateForm.fromCurrency = ''
   rateForm.toCurrency = ''
   rateForm.rate = 0
@@ -143,38 +144,30 @@ const openAddRate = () => {
   rateDialogVisible.value = true
 }
 
-const handleRateSubmit = async () => {
-  try {
-    await currencyApi.addExchangeRate(rateForm)
-    Message.success('汇率添加成功')
-    rateDialogVisible.value = false
-    fetchRates()
-  } catch {
-    // handled by interceptor
+async function handleRateSubmit(): Promise<void> {
+  if (!rateForm.fromCurrency || !rateForm.toCurrency || !rateForm.rate) {
+    Message.warning('请填写完整的汇率信息')
+    return
   }
+  await currencyApi.addExchangeRate(rateForm)
+  Message.success('汇率添加成功')
+  rateDialogVisible.value = false
+  await fetchRates()
 }
 
-const handleLockRate = async (row: ExchangeRate) => {
-  try {
-    await currencyApi.lockExchangeRate(row.id)
-    Message.success('锁定成功')
-    fetchRates()
-  } catch {
-    // handled by interceptor
-  }
+async function handleLockRate(row: ExchangeRate): Promise<void> {
+  await currencyApi.lockExchangeRate(row.id)
+  Message.success('锁定成功')
+  await fetchRates()
 }
 
-const handleUnlockRate = async (row: ExchangeRate) => {
-  try {
-    await currencyApi.unlockExchangeRate(row.id)
-    Message.success('解锁成功')
-    fetchRates()
-  } catch {
-    // handled by interceptor
-  }
+async function handleUnlockRate(row: ExchangeRate): Promise<void> {
+  await currencyApi.unlockExchangeRate(row.id)
+  Message.success('解锁成功')
+  await fetchRates()
 }
 
-const handleSyncRates = async () => {
+async function handleSyncRates(): Promise<void> {
   syncLoading.value = true
   try {
     lastSync.value = await currencyApi.syncExchangeRates('CNY')
@@ -185,6 +178,15 @@ const handleSyncRates = async () => {
   }
 }
 
+function sourceLabel(source: string): string {
+  const labels: Record<string, string> = {
+    manual: '人工维护',
+    boc: '中国银行',
+    project_locked: '项目锁定',
+  }
+  return labels[source] ?? source
+}
+
 onMounted(() => {
   fetchCurrencies()
   fetchRates()
@@ -192,233 +194,181 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="currency-page">
+  <section class="currency-page">
     <a-tabs v-model="activeTab">
-      <!-- Currency Management Tab -->
       <a-tab-pane label="币种管理" name="currency">
         <a-card class="table-card">
-          <div class="table-header">
-            <span class="table-title">币种列表</span>
-            <a-button type="primary" @click="openCreate">
-              <a-icon><Plus /></a-icon> 新增币种
-            </a-button>
-          </div>
+          <template #title>币种列表</template>
+          <template #extra>
+            <a-button type="primary" @click="openCreate">新增币种</a-button>
+          </template>
 
           <a-table
-            v-loading="loading"
+            :loading="loading"
+            :columns="currencyColumns"
             :data="currencyList"
-            border
-            stripe
+            row-key="id"
+            :pagination="false"
           >
-            <a-table-column prop="currencyCode" label="币种代码" :width="120" />
-            <a-table-column prop="currencyName" label="币种名称" :min-width="150" />
-            <a-table-column prop="currencySymbol" label="绗﹀彿" :width="100" />
-            <a-table-column prop="decimalPlaces" label="小数位数" :width="100" />
-            <a-table-column prop="status" label="状态" :width="90">
-              <template #default="{ row }">
-                <a-tag :type="statusTagType(row.status)" size="small">
-                  {{ row.status === 'Active' ? '活跃' : '禁用' }}
-                </a-tag>
-              </template>
-            </a-table-column>
-            <a-table-column label="操作" :width="160" fixed="right">
-              <template #default="{ row }">
-                <a-button
-                  type="primary"
-                  text
-                  size="small"
-                  @click="openEdit(row)"
-                >
-                  编辑
-                </a-button>
-                <a-button
-                  status="danger" type="secondary"
-                  text
-                  size="small"
-                  @click="handleDelete(row)"
-                >
+            <template #symbol="{ record }">
+              {{ record.currencySymbol || '-' }}
+            </template>
+            <template #status="{ record }">
+              <a-tag :color="record.status === 'Active' ? 'green' : 'gray'">
+                {{ record.status === 'Active' ? '启用' : '禁用' }}
+              </a-tag>
+            </template>
+            <template #actions="{ record }">
+              <a-space size="mini">
+                <a-button type="text" size="small" @click="openEdit(record)">编辑</a-button>
+                <a-button type="text" size="small" status="danger" @click="handleDelete(record)">
                   禁用
                 </a-button>
-              </template>
-            </a-table-column>
+              </a-space>
+            </template>
           </a-table>
         </a-card>
       </a-tab-pane>
 
-      <!-- Exchange Rate Tab -->
       <a-tab-pane label="汇率管理" name="rate">
         <a-card class="table-card">
-          <div class="table-header">
-            <div>
-              <span class="table-title">汇率列表</span>
-              <span class="rate-source">
-                每日汇率来源：                <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer">
-                  ExchangeRate-API
-                </a>
-              </span>
-            </div>
-            <div>
-              <a-button :loading="syncLoading" type="primary" @click="handleSyncRates">
-                <a-icon><Refresh /></a-icon> 在线同步
-              </a-button>
-              <a-button @click="openAddRate">
-                <a-icon><Plus /></a-icon> 手工添加
-              </a-button>
-            </div>
-          </div>
+          <template #title>汇率列表</template>
+          <template #extra>
+            <a-space>
+              <a-button :loading="syncLoading" @click="handleSyncRates">在线同步</a-button>
+              <a-button type="primary" @click="openAddRate">手工添加</a-button>
+            </a-space>
+          </template>
+
           <a-alert
             v-if="lastSync"
-            type="success"
-            :closable="false"
-            :title="`最近同步：${new Date(lastSync.rateDate).toLocaleDateString()}，${lastSync.syncedCount} 条`"
             class="sync-alert"
+            type="success"
+            :title="`最近同步：${new Date(lastSync.rateDate).toLocaleDateString()}，${lastSync.syncedCount} 条`"
           />
 
           <a-table
-            v-loading="rateLoading"
+            :loading="rateLoading"
+            :columns="rateColumns"
             :data="rateList"
-            border
-            stripe
+            row-key="id"
+            :pagination="false"
           >
-            <a-table-column prop="fromCurrency" label="源币种" :width="110" />
-            <a-table-column prop="toCurrency" label="目标币种" :width="110" />
-            <a-table-column prop="rate" label="汇率" :min-width="180" />
-            <a-table-column prop="rateDate" label="汇率日期" :width="140">
-              <template #default="{ row }">
-                {{ dayjs(row.rateDate).format('YYYY-MM-DD') }}
-              </template>
-            </a-table-column>
-            <a-table-column
-              prop="source"
-              label="来源"
-              :min-width="220"
-              show-overflow-tooltip
-            />
-            <a-table-column prop="isLocked" label="锁定状态" :width="110">
-              <template #default="{ row }">
-                <a-tag :type="row.isLocked ? 'danger' : 'success'" size="small">
-                  {{ row.isLocked ? '已锁定' : '未锁定' }}
-                </a-tag>
-              </template>
-            </a-table-column>
-            <a-table-column label="操作" :width="160" fixed="right">
-              <template #default="{ row }">
-                <a-button
-                  v-if="!row.isLocked"
-                  status="warning" type="secondary"
-                  text
-                  size="small"
-                  @click="handleLockRate(row)"
-                >
-                  锁定
-                </a-button>
-                <a-button
-                  v-if="row.isLocked"
-                  status="success" type="secondary"
-                  text
-                  size="small"
-                  @click="handleUnlockRate(row)"
-                >
-                  解锁
-                </a-button>
-              </template>
-            </a-table-column>
+            <template #rateDate="{ record }">
+              {{ dayjs(record.rateDate).format('YYYY-MM-DD') }}
+            </template>
+            <template #source="{ record }">
+              {{ sourceLabel(record.source) }}
+            </template>
+            <template #lockStatus="{ record }">
+              <a-tag :color="record.isLocked ? 'orange' : 'green'">
+                {{ record.isLocked ? '已锁定' : '未锁定' }}
+              </a-tag>
+            </template>
+            <template #rateActions="{ record }">
+              <a-button
+                v-if="!record.isLocked"
+                type="text"
+                size="small"
+                @click="handleLockRate(record)"
+              >
+                锁定
+              </a-button>
+              <a-button
+                v-else
+                type="text"
+                size="small"
+                @click="handleUnlockRate(record)"
+              >
+                解锁
+              </a-button>
+            </template>
           </a-table>
         </a-card>
       </a-tab-pane>
     </a-tabs>
 
-    <!-- Currency Create/Edit Dialog -->
-    <a-dialog
-      v-model="dialogVisible"
+    <a-modal
+      v-model:visible="dialogVisible"
       :title="isEdit ? '编辑币种' : '新增币种'"
-      width="480px"
-      :close-on-click-modal="false"
+      ok-text="保存"
+      cancel-text="取消"
+      @ok="handleSubmit"
     >
-      <a-form :model="formData" :rules="formRules" label-width="100px">
-        <a-form-item label="币种代码" prop="currencyCode">
-          <a-input v-model="formData.currencyCode" :disabled="isEdit" :maxlength="10" />
+      <a-form :model="formData" layout="vertical">
+        <a-form-item label="币种代码" required>
+          <a-input v-model="formData.currencyCode" :disabled="isEdit" placeholder="例如 CNY" />
         </a-form-item>
-        <a-form-item label="币种名称" prop="currencyName">
-          <a-input v-model="formData.currencyName" :maxlength="50" />
+        <a-form-item label="币种名称" required>
+          <a-input v-model="formData.currencyName" placeholder="例如 人民币" />
         </a-form-item>
         <a-form-item label="币种符号">
-          <a-input v-model="formData.currencySymbol" :maxlength="10" />
+          <a-input v-model="formData.currencySymbol" placeholder="例如 ¥" />
         </a-form-item>
         <a-form-item label="小数位数">
-          <a-input-number v-model="formData.decimalPlaces" :min="0" :max="8" />
+          <a-input-number v-model="formData.decimalPlaces" :min="0" :max="6" />
         </a-form-item>
       </a-form>
-      <template #footer>
-        <a-button @click="dialogVisible = false">
-          取消
-        </a-button>
-        <a-button type="primary" @click="handleSubmit">
-          保存
-        </a-button>
-      </template>
-    </a-dialog>
+    </a-modal>
 
-    <!-- Exchange Rate Dialog -->
-    <a-dialog
-      v-model="rateDialogVisible"
+    <a-modal
+      v-model:visible="rateDialogVisible"
       title="添加汇率"
-      width="480px"
-      :close-on-click-modal="false"
+      ok-text="保存"
+      cancel-text="取消"
+      @ok="handleRateSubmit"
     >
-      <a-form :model="rateForm" :rules="rateFormRules" label-width="100px">
-        <a-form-item label="源币种" prop="fromCurrency">
-          <a-select v-model="rateForm.fromCurrency" filterable style="width:100%">
+      <a-form :model="rateForm" layout="vertical">
+        <a-form-item label="源币种" required>
+          <a-select v-model="rateForm.fromCurrency" placeholder="选择源币种">
             <a-option
-              v-for="item in currencyList"
-              :key="item.id"
-              :label="`${item.currencyCode} / ${item.currencyName}`"
-              :value="item.currencyCode"
-            />
+              v-for="currency in currencyList"
+              :key="currency.currencyCode"
+              :value="currency.currencyCode"
+            >
+              {{ currency.currencyCode }} - {{ currency.currencyName }}
+            </a-option>
           </a-select>
         </a-form-item>
-        <a-form-item label="目标币种" prop="toCurrency">
-          <a-select v-model="rateForm.toCurrency" filterable style="width:100%">
+        <a-form-item label="目标币种" required>
+          <a-select v-model="rateForm.toCurrency" placeholder="选择目标币种">
             <a-option
-              v-for="item in currencyList"
-              :key="item.id"
-              :label="`${item.currencyCode} / ${item.currencyName}`"
-              :value="item.currencyCode"
-            />
+              v-for="currency in currencyList"
+              :key="currency.currencyCode"
+              :value="currency.currencyCode"
+            >
+              {{ currency.currencyCode }} - {{ currency.currencyName }}
+            </a-option>
           </a-select>
         </a-form-item>
-        <a-form-item label="汇率" prop="rate">
-          <a-input-number
-            v-model="rateForm.rate"
-            :min="0"
-            :precision="8"
-            style="width: 100%"
-          />
+        <a-form-item label="汇率" required>
+          <a-input-number v-model="rateForm.rate" :min="0" :precision="6" />
         </a-form-item>
         <a-form-item label="汇率日期">
-          <a-date-picker
-            v-model="rateForm.rateDate"
-            type="date"
-            placeholder="选择日期"
-            style="width: 100%"
-          />
+          <a-date-picker v-model="rateForm.rateDate" placeholder="选择日期" />
         </a-form-item>
         <a-form-item label="来源">
-          <a-select v-model="rateForm.source" style="width:100%">
-            <a-option label="人工维护" value="manual" />
-            <a-option label="中国银行" value="boc" />
-            <a-option label="项目锁定汇率" value="project_locked" />
+          <a-select v-model="rateForm.source">
+            <a-option value="manual">人工维护</a-option>
+            <a-option value="boc">中国银行</a-option>
+            <a-option value="project_locked">项目锁定</a-option>
           </a-select>
         </a-form-item>
       </a-form>
-      <template #footer>
-        <a-button @click="rateDialogVisible = false">
-          取消
-        </a-button>
-        <a-button type="primary" @click="handleRateSubmit">
-          保存
-        </a-button>
-      </template>
-    </a-dialog>
-  </div>
+    </a-modal>
+  </section>
 </template>
+
+<style scoped lang="scss">
+.currency-page {
+  min-width: 0;
+}
+
+.table-card {
+  border-radius: 8px;
+}
+
+.sync-alert {
+  margin-bottom: 14px;
+}
+</style>

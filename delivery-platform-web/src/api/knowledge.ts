@@ -3,6 +3,7 @@ import type { PaginatedData } from '@/types/api'
 import type {
   KnowledgeCategory,
   KnowledgeArticle,
+  KnowledgeFileRevisionDiff,
   CreateKnowledgeCategoryDto,
   UpdateKnowledgeCategoryDto,
   CreateKnowledgeArticleDto,
@@ -63,6 +64,17 @@ export const knowledgeApi = {
 
   getVersions(id: string) {
     return request.get<NonNullable<KnowledgeArticle['versions']>>(`/knowledge/articles/${id}/versions`)
+  },
+
+  submitFileRevision(articleId: string, attachmentId: string, data: FormData) {
+    return request.post(`/knowledge/articles/${articleId}/files/${attachmentId}/revisions`, data, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    })
+  },
+
+  getFileRevisionDiff(id: string) {
+    return request.get<KnowledgeFileRevisionDiff>(`/knowledge/file-revisions/${id}/diff`)
   },
 
   /** Upload a file as a knowledge article */

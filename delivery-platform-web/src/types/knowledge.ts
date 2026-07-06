@@ -11,6 +11,38 @@ export interface KnowledgeCategory {
   parent?: { id: string; name: string }
 }
 
+export interface KnowledgeAttachment {
+  id: string
+  ownerType: string
+  ownerId: string
+  category?: string | null
+  originalName: string
+  fileExt: string
+  fileSize: string | number
+  mimeType: string
+  createdAt: string
+  uploader?: { id: string; realName: string; username?: string } | null
+}
+
+export interface KnowledgeFileRevisionDiff {
+  article?: {
+    id: string
+    title: string
+    version: string
+    status: string
+    category?: { id: string; name: string }
+  } | null
+  original: KnowledgeAttachment
+  incoming: KnowledgeAttachment
+  changes: Array<{
+    label: string
+    before: string
+    after: string
+    changed: boolean
+  }>
+  submittedAt: string
+}
+
 export interface KnowledgeArticle {
   id: string
   categoryId: string
@@ -24,6 +56,7 @@ export interface KnowledgeArticle {
   fileSize: number | null
   fileExt: string | null
   fileCount?: number
+  files?: KnowledgeAttachment[]
   markdownContent: string | null
   sourceStatus: string
   needsRevision: boolean

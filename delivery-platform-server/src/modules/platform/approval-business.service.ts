@@ -56,6 +56,15 @@ export class ApprovalBusinessService {
         reviewerId,
         now,
       );
+    } else if (businessType === 'knowledge-file-update') {
+      await this.applyKnowledgeFileUpdateDecision(
+        tx,
+        businessId,
+        approved,
+        reviewerId,
+        now,
+        comment,
+      );
     } else if (businessType === 'checklist') {
       await tx.projectChecklistItem.update({
         where: { id: businessId },
@@ -131,5 +140,134 @@ export class ApprovalBusinessService {
         publishedAt,
       },
     });
+  }
+
+  private async applyKnowledgeFileUpdateDecision(
+    tx: Prisma.TransactionClient,
+    revisionAttachmentId: string,
+    approved: boolean,
+    reviewerId: string,
+    decidedAt: Date,
+    comment?: string,
+  ): Promise<void> {
+    const revision = await tx.attachment.findFirst({
+      where: {
+        id: revisionAttachmentId,
+        ownerType: 'KnowledgeFileRevision',
+        deletedAt: null,
+      },
+    });
+    if (!revision) {
+      throw new NotFoundException('知识库文件更新申请不存在');
+    }
+
+    const payload = this.parseRevisionPayload(revision.remark);
+    const originalAttachmentId = payload.originalAttachmentId ?? revision.ownerId;
+    const original = await tx.attachment.findFirst({
+      where: {
+        id: originalAttachmentId,
+        ownerType: 'KnowledgeArticle',
+        deletedAt: null,
+      },
+    });
+    if (!original) {
+      throw new NotFoundException('原知识库文件不存在');
+    }
+
+    const articleId = payload.articleId ?? original.ownerId;
+    if (!approved) {
+      await tx.attachment.update({
+        where: { id: revisionAttachmentId },
+        data: {
+          deletedAt: decidedAt,
+          remark: this.stringifyRevisionRemark({
+            ...payload,
+            decision: 'Rejected',
+            reviewerId,
+            comment,
+            decidedAt: decidedAt.toISOString(),
+          }),
+        },
+      });
+      return;
+    }
+
+    await tx.attachment.update({
+      where: { id: originalAttachmentId },
+      data: {
+        deletedAt: decidedAt,
+        remark: this.stringifyRevisionRemark({
+          archivedByRevisionId: revisionAttachmentId,
+          archivedAt: decidedAt.toISOString(),
+        }),
+      },
+    });
+    await tx.attachment.update({
+      where: { id: revisionAttachmentId },
+      data: {
+        ownerType: 'KnowledgeArticle',
+        ownerId: articleId,
+        category: original.category ?? 'document',
+        remark: this.stringifyRevisionRemark({
+          ...payload,
+          decision: 'Approved',
+          reviewerId,
+          originalAttachmentId,
+          decidedAt: decidedAt.toISOString(),
+        }),
+      },
+    });
+
+    const article = await tx.knowledgeArticle.findUnique({
+      where: { id: articleId },
+      select: { version: true, markdownContent: true, authorId: true },
+    });
+    if (!article) {
+      throw new NotFoundException('知识库文章不存在');
+    }
+    const currentVersion = Number.parseFloat(article.version.replace('V', ''));
+    const nextVersion = `V${((Number.isFinite(currentVersion) ? currentVersion : 1) + 0.1).toFixed(1)}`;
+    await tx.knowledgeArticleVersion.upsert({
+      where: {
+        articleId_version: {
+          articleId,
+          version: nextVersion,
+        },
+      },
+      create: {
+        articleId,
+        version: nextVersion,
+        markdownContent: article.markdownContent,
+        changeNotes: `附件更新审批通过：${original.originalName}`,
+        createdBy: article.authorId,
+      },
+      update: {
+        markdownContent: article.markdownContent,
+        changeNotes: `附件更新审批通过：${original.originalName}`,
+      },
+    });
+    await tx.knowledgeArticle.update({
+      where: { id: articleId },
+      data: {
+        status: 'Published',
+        version: nextVersion,
+        reviewerId,
+        publishedAt: decidedAt,
+      },
+    });
+  }
+
+  private parseRevisionPayload(remark?: string | null): Record<string, string | undefined> {
+    if (!remark) return {};
+    try {
+      const parsed = JSON.parse(remark);
+      return typeof parsed === 'object' && parsed ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private stringifyRevisionRemark(value: Record<string, unknown>): string {
+    return JSON.stringify(value).slice(0, 500);
   }
 }

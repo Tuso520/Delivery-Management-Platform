@@ -7,16 +7,21 @@ import {
   Body,
   Param,
   Query,
+  UploadedFiles,
   UseGuards,
+  UseInterceptors,
   HttpCode,
   HttpStatus,
+  BadRequestException,
 } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
   ApiOperation,
   ApiBearerAuth,
   ApiBody,
   ApiResponse,
+  ApiConsumes,
 } from '@nestjs/swagger';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -33,6 +38,22 @@ import { QueryKnowledgeArticleDto } from './dto/query-knowledge-article.dto';
 import { UpdateKnowledgeArticleDto } from './dto/update-knowledge-article.dto';
 import { UpdateKnowledgeCategoryDto } from './dto/update-knowledge-category.dto';
 import { KnowledgeService } from './knowledge.service';
+
+const allowedKnowledgeFileExtensions = new Set([
+  'pdf',
+  'doc',
+  'docx',
+  'xls',
+  'xlsx',
+  'ppt',
+  'pptx',
+  'jpg',
+  'jpeg',
+  'png',
+  'gif',
+  'md',
+  'txt',
+]);
 
 @ApiTags('Knowledge')
 @ApiBearerAuth('JWT-auth')
@@ -174,6 +195,53 @@ export class KnowledgeController {
   @ApiOperation({ summary: '获取知识文章版本记录' })
   async findVersions(@Param('id') id: string) {
     return this.knowledgeService.findVersions(id);
+  }
+
+  @Post('articles/:articleId/files/:attachmentId/revisions')
+  @Roles('DELIVERY_MANAGER', 'STANDARD_ADMIN')
+  @Permissions('knowledge:update')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FilesInterceptor('files', 1, {
+      limits: { fileSize: 100 * 1024 * 1024 },
+      fileFilter: (_request, file, callback) => {
+        const extension = file.originalname.split('.').pop()?.toLowerCase() ?? '';
+        if (!allowedKnowledgeFileExtensions.has(extension)) {
+          callback(
+            new BadRequestException(`不支持的知识库文件类型: .${extension}`),
+            false,
+          );
+          return;
+        }
+        callback(null, true);
+      },
+    }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: '提交知识库文件更新审批' })
+  async submitFileRevision(
+    @Param('articleId') articleId: string,
+    @Param('attachmentId') attachmentId: string,
+    @UploadedFiles() files: Express.Multer.File[],
+    @CurrentUser() user: JwtPayload,
+  ) {
+    const file = files?.[0];
+    if (!file) {
+      throw new BadRequestException('请至少选择一个更新文件');
+    }
+    return this.knowledgeService.submitFileRevision(
+      articleId,
+      attachmentId,
+      file,
+      user.sub,
+    );
+  }
+
+  @Get('file-revisions/:id/diff')
+  @Permissions('knowledge:view')
+  @ApiOperation({ summary: '查看知识库文件更新差异' })
+  async findFileRevisionDiff(@Param('id') id: string) {
+    return this.knowledgeService.findFileRevisionDiff(id);
   }
 
   @Post('articles/:id/deprecate')

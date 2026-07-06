@@ -315,6 +315,18 @@ export class AttachmentService {
         if (!owner) throw new NotFoundException('附件所属业务记录不存在');
         return undefined;
       }
+      case 'KnowledgeFileRevision': {
+        const owner = await this.prisma.attachment.findFirst({
+          where: {
+            id: ownerId,
+            ownerType: 'KnowledgeArticle',
+            deletedAt: null,
+          },
+          select: { id: true, projectId: true },
+        });
+        if (!owner) throw new NotFoundException('附件所属业务记录不存在');
+        return owner.projectId ?? undefined;
+      }
       case 'TrainingPlan': {
         const owner = await this.prisma.trainingPlan.findUnique({
           where: { id: ownerId },
@@ -394,6 +406,10 @@ export class AttachmentService {
       Record<AttachmentOwnerType, { view: string; manage: string }>
     > = {
       KnowledgeArticle: {
+        view: 'knowledge:view',
+        manage: 'knowledge:update',
+      },
+      KnowledgeFileRevision: {
         view: 'knowledge:view',
         manage: 'knowledge:update',
       },
