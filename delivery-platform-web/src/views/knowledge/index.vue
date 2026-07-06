@@ -19,6 +19,12 @@ const keyword = ref('')
 const status = ref('')
 const sourceStatus = ref('')
 
+interface CategoryIndexItem {
+  category: KnowledgeCategory
+  label: string
+  depth: number
+}
+
 const statusOptions = [
   { label: '草稿', value: 'Draft', color: 'gray' },
   { label: '审核中', value: 'Reviewing', color: 'blue' },
@@ -46,14 +52,24 @@ const articleColumns: TableColumnData[] = [
 const flatCategories = computed(() => flattenCategories(categories.value))
 
 const categorySections = computed(() =>
-  flatCategories.value.map((category) => ({
-    category,
-    articles: articles.value.filter((article) => article.categoryId === category.id),
-  })),
+  flatCategories.value
+    .map((item) => ({
+      ...item,
+      articles: articles.value.filter((article) => article.categoryId === item.category.id),
+    }))
+    .filter((section) => section.articles.length || !(section.category.children?.length)),
 )
 
-function flattenCategories(nodes: KnowledgeCategory[]): KnowledgeCategory[] {
-  return nodes.flatMap((node) => [node, ...flattenCategories(node.children || [])])
+function flattenCategories(
+  nodes: KnowledgeCategory[],
+  parentLabel = '',
+  depth = 0,
+): CategoryIndexItem[] {
+  return nodes.flatMap((node) => {
+    const label = parentLabel ? `${parentLabel} / ${node.name}` : node.name
+    const current = { category: node, label, depth }
+    return [current, ...flattenCategories(node.children || [], label, depth + 1)]
+  })
 }
 
 function statusMeta(value: string) {
@@ -117,7 +133,7 @@ function remove(article: KnowledgeArticle): void {
 onMounted(async () => {
   await fetchCategories()
   await fetchArticles()
-  activeCategoryId.value = flatCategories.value[0]?.id || ''
+  activeCategoryId.value = categorySections.value[0]?.category.id || ''
 })
 </script>
 
@@ -134,7 +150,7 @@ onMounted(async () => {
         long
         @click="scrollToCategory(section.category.id)"
       >
-        <span>{{ section.category.name }}</span>
+        <span>{{ section.label }}</span>
         <a-badge :count="section.articles.length" :max-count="99" />
       </a-button>
     </aside>
@@ -192,7 +208,7 @@ onMounted(async () => {
         >
           <header class="category-header">
             <div>
-              <h3>{{ section.category.name }}</h3>
+              <h3>{{ section.label }}</h3>
               <p>{{ section.category.description }}</p>
             </div>
             <span>{{ section.articles.length }} 条知识</span>
@@ -254,7 +270,7 @@ onMounted(async () => {
           </a-table>
           <a-empty
             v-else
-            :description="`${section.category.name}暂无匹配内容`"
+            :description="`${section.label}暂无匹配内容`"
           />
         </section>
       </a-spin>
@@ -292,6 +308,14 @@ onMounted(async () => {
   min-height: 38px;
   margin-bottom: 4px;
   color: var(--color-text-2);
+
+  span:first-child {
+    min-width: 0;
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 
   &.active,
   &:hover {

@@ -1,66 +1,101 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { deflateSync } from 'node:zlib';
 
 import JSZip from 'jszip';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const outputDir = resolve(__dirname, 'seed-files', 'knowledge-samples');
+const catalogPath = resolve(__dirname, 'seed-data', 'knowledge-catalog.json');
+const outputDir = resolve(__dirname, 'seed-files', 'knowledge-catalog');
 
+const catalog = JSON.parse(await readFile(catalogPath, 'utf8'));
 await mkdir(outputDir, { recursive: true });
 
-await writeFile(
-  resolve(outputDir, 'knowledge-preview-doc.doc'),
-  `<!doctype html>
+const files = catalog.modules.flatMap((module) =>
+  module.contents.flatMap((content) =>
+    content.files.map((file) => ({
+      ...file,
+      moduleName: module.name,
+      contentTitle: content.title,
+      updateFrequency: content.updateFrequency ?? '',
+    })),
+  ),
+);
+
+for (const file of files) {
+  const ext = extname(file.name).replace('.', '').toLowerCase();
+  const target = resolve(outputDir, file.name);
+  await writeFile(target, await buildFile(file, ext));
+}
+
+console.log(`Generated ${files.length} knowledge sample files in ${outputDir}`);
+
+async function buildFile(file, ext) {
+  if (ext === 'docx') return buildDocx(file);
+  if (ext === 'doc') return buildLegacyOfficeHtml(file, 'Word 文档');
+  if (ext === 'xlsx') return buildXlsx(file);
+  if (ext === 'pptx') return buildPptx(file);
+  if (ext === 'ppt') return buildLegacyOfficeHtml(file, 'PPT 演示');
+  if (ext === 'pdf') return buildPdf(file);
+  if (['png', 'jpg', 'jpeg'].includes(ext)) return buildPng(960, 540);
+  return Buffer.from(buildPlainText(file), 'utf8');
+}
+
+async function buildDocx(file) {
+  const zip = new JSZip();
+  zip.file(
+    '[Content_Types].xml',
+    xml(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`),
+  );
+  zip.file(
+    '_rels/.rels',
+    xml(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`),
+  );
+  zip.file(
+    'word/document.xml',
+    xml(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    ${docParagraph(file.name)}
+    ${docParagraph(`所属模块：${file.moduleName}`)}
+    ${docParagraph(`主要内容：${file.contentTitle}`)}
+    ${docParagraph(file.updateFrequency ? `更新频率：${file.updateFrequency}` : '更新频率：按制度变更维护')}
+    ${docParagraph('本文件由本地知识库种子脚本生成，用于验证上传、存储、下载和在线预览链路。')}
+    ${docParagraph('验收要点：分类匹配正确、附件可查阅、预览弹窗能显示文档正文。')}
+  </w:body>
+</w:document>`),
+  );
+  return zip.generateAsync({ type: 'nodebuffer' });
+}
+
+function buildLegacyOfficeHtml(file, typeName) {
+  return Buffer.from(
+    `<!doctype html>
 <html>
-<head><meta charset="utf-8"><title>知识库 DOC 预览样例</title></head>
+<head><meta charset="utf-8"><title>${escapeHtml(file.name)}</title></head>
 <body>
-  <h1>知识库 DOC 预览样例</h1>
-  <p>专业：项目管理</p>
-  <p>用途：验证旧版 doc 文件上传后可在线查阅。</p>
-  <p>检查点：标题、段落、责任人和交付动作应能在平台预览窗口中显示。</p>
+  <h1>${escapeHtml(file.name)}</h1>
+  <p>文件类型：${typeName}</p>
+  <p>所属模块：${escapeHtml(file.moduleName)}</p>
+  <p>主要内容：${escapeHtml(file.contentTitle)}</p>
+  <p>用途：验证旧版 Office 文件在知识库中的上传、存储和在线查阅。</p>
 </body>
 </html>
 `,
-  'utf8',
-);
+    'utf8',
+  );
+}
 
-await writeFile(
-  resolve(outputDir, 'knowledge-preview-slides.ppt'),
-  `<!doctype html>
-<html>
-<head><meta charset="utf-8"><title>知识库 PPT 预览样例</title></head>
-<body>
-  <h1>知识库 PPT 预览样例</h1>
-  <h2>第一页：交付启动</h2>
-  <p>确认客户范围、项目团队、里程碑和风险清单。</p>
-  <h2>第二页：专业协同</h2>
-  <p>电气、软件、运维按阶段沉淀知识条目。</p>
-</body>
-</html>
-`,
-  'utf8',
-);
-
-await writeFile(
-  resolve(outputDir, 'knowledge-preview-table.xlsx'),
-  await buildXlsx(),
-);
-
-await writeFile(
-  resolve(outputDir, 'knowledge-preview-pdf.pdf'),
-  buildPdf(),
-);
-
-await writeFile(
-  resolve(outputDir, 'knowledge-preview-image.png'),
-  buildPng(640, 360),
-);
-
-console.log(`Knowledge sample files generated in ${outputDir}`);
-
-async function buildXlsx() {
+async function buildXlsx(file) {
   const zip = new JSZip();
   zip.file(
     '[Content_Types].xml',
@@ -83,7 +118,7 @@ async function buildXlsx() {
     'xl/workbook.xml',
     xml(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <sheets><sheet name="知识预览" sheetId="1" r:id="rId1"/></sheets>
+  <sheets><sheet name="知识库样例" sheetId="1" r:id="rId1"/></sheets>
 </workbook>`),
   );
   zip.file(
@@ -95,12 +130,13 @@ async function buildXlsx() {
   );
 
   const rows = [
-    ['专业', '交付阶段', '查阅重点', '状态'],
-    ['项目管理', '启动', '范围、计划、责任人', '已验证'],
-    ['电气工程', '设计', '点表、控制柜、电缆清单', '已验证'],
-    ['软件工程', '调试', '版本、配置、回归记录', '已验证'],
-    ['运维管理', '验收', '巡检、备份、远程连接', '已验证'],
+    ['字段', '内容', '验收标准', '状态'],
+    ['文件名', file.name, '附件名称完整展示', '通过'],
+    ['所属模块', file.moduleName, '分类链路正确', '通过'],
+    ['主要内容', file.contentTitle, '子分类匹配正确', '通过'],
+    ['在线预览', '表格内容可在弹窗中查阅', '无需下载即可查看', '通过'],
   ];
+
   zip.file(
     'xl/worksheets/sheet1.xml',
     xml(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -120,25 +156,74 @@ async function buildXlsx() {
   return zip.generateAsync({ type: 'nodebuffer' });
 }
 
-function buildPdf() {
-  const objects = [];
-  objects.push('<< /Type /Catalog /Pages 2 0 R >>');
-  objects.push('<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
-  objects.push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>');
-  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+async function buildPptx(file) {
+  const zip = new JSZip();
+  zip.file(
+    '[Content_Types].xml',
+    xml(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
+  <Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
+  <Override PartName="/ppt/slides/slide2.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
+</Types>`),
+  );
+  zip.file(
+    '_rels/.rels',
+    xml(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
+</Relationships>`),
+  );
+  zip.file(
+    'ppt/presentation.xml',
+    xml(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:sldIdLst>
+    <p:sldId id="256" r:id="rId1"/>
+    <p:sldId id="257" r:id="rId2"/>
+  </p:sldIdLst>
+</p:presentation>`),
+  );
+  zip.file(
+    'ppt/_rels/presentation.xml.rels',
+    xml(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide2.xml"/>
+</Relationships>`),
+  );
+  zip.file('ppt/slides/slide1.xml', buildSlideXml(file.name, [`模块：${file.moduleName}`, `主要内容：${file.contentTitle}`]));
+  zip.file('ppt/slides/slide2.xml', buildSlideXml('知识库预览验收', ['文件已写入本地存储目录', '附件接口可下载原文件', '预览接口可抽取演示文稿文本']));
+  return zip.generateAsync({ type: 'nodebuffer' });
+}
+
+function buildPdf(file) {
+  const safeTitle = file.name.replace(/[^\x20-\x7e]/gu, ' ');
+  const safeModule = file.moduleName.replace(/[^\x20-\x7e]/gu, ' ');
   const stream = [
     'BT',
-    '/F1 22 Tf',
+    '/F1 20 Tf',
     '72 720 Td',
-    '(Knowledge Base PDF Preview Sample) Tj',
+    `(${escapePdfText(safeTitle)}) Tj`,
     '/F1 12 Tf',
-    '0 -36 Td',
-    '(Purpose: verify secure online PDF preview in local Docker.) Tj',
-    '0 -24 Td',
-    '(Scope: project management, engineering, operations and delivery evidence.) Tj',
+    '0 -34 Td',
+    `(Module: ${escapePdfText(safeModule)}) Tj`,
+    '0 -22 Td',
+    '(Purpose: verify PDF online preview in the delivery knowledge base.) Tj',
+    '0 -22 Td',
+    '(Storage: local sample file generated by the seed script.) Tj',
     'ET',
   ].join('\n');
-  objects.push(`<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`);
+
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`,
+  ];
 
   let pdf = '%PDF-1.4\n';
   const offsets = [0];
@@ -164,11 +249,11 @@ function buildPng(width, height) {
     raw[rowStart] = 0;
     for (let x = 0; x < width; x += 1) {
       const offset = rowStart + 1 + x * 3;
-      const inHeader = y < 92;
-      const stripe = Math.floor(x / 80) % 2 === 0;
-      raw[offset] = inHeader ? 22 : stripe ? 232 : 247;
-      raw[offset + 1] = inHeader ? 93 : stripe ? 243 : 248;
-      raw[offset + 2] = inHeader ? 255 : stripe ? 255 : 250;
+      const header = y < 110;
+      const grid = Math.floor(x / 80) % 2 === Math.floor(y / 80) % 2;
+      raw[offset] = header ? 22 : grid ? 236 : 249;
+      raw[offset + 1] = header ? 93 : grid ? 246 : 248;
+      raw[offset + 2] = header ? 255 : grid ? 255 : 250;
     }
   }
   return Buffer.concat([
@@ -177,6 +262,31 @@ function buildPng(width, height) {
     chunk('IDAT', deflateSync(raw)),
     chunk('IEND', Buffer.alloc(0)),
   ]);
+}
+
+function buildPlainText(file) {
+  return [
+    file.name,
+    `所属模块：${file.moduleName}`,
+    `主要内容：${file.contentTitle}`,
+    '用途：验证知识库附件存储和在线查阅。',
+  ].join('\n');
+}
+
+function buildSlideXml(title, lines) {
+  return xml(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:sp><p:txBody><a:p><a:r><a:t>${escapeXml(title)}</a:t></a:r></a:p></p:txBody></p:sp>
+      ${lines.map((line) => `<p:sp><p:txBody><a:p><a:r><a:t>${escapeXml(line)}</a:t></a:r></a:p></p:txBody></p:sp>`).join('')}
+    </p:spTree>
+  </p:cSld>
+</p:sld>`);
+}
+
+function docParagraph(text) {
+  return `<w:p><w:r><w:t>${escapeXml(text)}</w:t></w:r></w:p>`;
 }
 
 function chunk(type, data) {
@@ -222,10 +332,23 @@ function xml(value) {
 }
 
 function escapeXml(value) {
-  return value
+  return String(value)
     .replace(/&/gu, '&amp;')
     .replace(/</gu, '&lt;')
     .replace(/>/gu, '&gt;')
     .replace(/"/gu, '&quot;')
     .replace(/'/gu, '&apos;');
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/gu, '&amp;')
+    .replace(/</gu, '&lt;')
+    .replace(/>/gu, '&gt;')
+    .replace(/"/gu, '&quot;')
+    .replace(/'/gu, '&#39;');
+}
+
+function escapePdfText(value) {
+  return String(value).replace(/[()\\]/gu, '\\$&');
 }

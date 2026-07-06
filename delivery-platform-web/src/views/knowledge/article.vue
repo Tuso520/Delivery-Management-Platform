@@ -132,7 +132,11 @@ async function fetchOptions(): Promise<void> {
 }
 
 async function fetchArticle(): Promise<void> {
-  if (isNew.value) return
+  if (isNew.value) {
+    article.value = undefined
+    attachments.value = []
+    return
+  }
   article.value = await knowledgeApi.getArticleById(articleId.value)
   const item = article.value
   form.value = {
@@ -154,7 +158,10 @@ async function fetchArticle(): Promise<void> {
 }
 
 async function fetchAttachments(): Promise<void> {
-  if (isNew.value) return
+  if (isNew.value) {
+    attachments.value = []
+    return
+  }
   const result = await attachmentApi.getList({
     ownerType: 'KnowledgeArticle',
     ownerId: articleId.value,
@@ -264,8 +271,29 @@ function releasePreviewObjectUrl(): void {
   }
 }
 
+function resetArticleState(): void {
+  releasePreviewObjectUrl()
+  article.value = undefined
+  attachments.value = []
+  previewVisible.value = false
+  previewLoading.value = false
+  preview.value = undefined
+  pendingFiles.value = []
+}
+
 watch(() => route.query.edit, (value) => {
   editing.value = isNew.value || value === '1'
+})
+
+watch(articleId, async () => {
+  resetArticleState()
+  editing.value = isNew.value || route.query.edit === '1'
+  loading.value = true
+  try {
+    await fetchArticle()
+  } finally {
+    loading.value = false
+  }
 })
 
 watch(previewVisible, (visible) => {

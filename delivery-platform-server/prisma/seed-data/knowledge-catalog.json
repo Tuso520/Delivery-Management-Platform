@@ -1,0 +1,271 @@
+{
+  "modules": [
+    {
+      "id": "project-manager",
+      "name": "项目经理",
+      "description": "项目经理岗位职责、项目管理制度、启动会、安全质量和商务沟通资料。",
+      "contents": [
+        {
+          "id": "project-manager-responsibility",
+          "title": "岗位职责",
+          "files": [
+            { "name": "项目经理岗位职责.docx", "kind": "document" },
+            { "name": "项目管理十大禁忌.doc", "kind": "document" },
+            { "name": "项目经理商务沟通指导手册(持续更新).docx", "kind": "document" },
+            { "name": "机电工程细部节点管控要点-202503.pdf", "kind": "pdf" },
+            { "name": "分包人员进场管理要求.docx", "kind": "document" },
+            { "name": "项目变更签证管理办法（试行）.docx", "kind": "document" },
+            { "name": "交付项目质量与安全管理细则（试行） 2025.9.25(2).pdf", "kind": "pdf" },
+            { "name": "设备材料进场验收管理办法（试行）.docx", "kind": "document" },
+            { "name": "安全晨会流程（20分钟）.docx", "kind": "document" },
+            { "name": "外部启动会组织指南.docx", "kind": "document" },
+            { "name": "项目管理常见问题指导手册-20250524.pdf", "kind": "pdf" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "electrical-engineer",
+      "name": "电气工程师",
+      "description": "电气岗位职责、控制柜电源设计、点表模板和标准点库。",
+      "contents": [
+        {
+          "id": "electrical-responsibility",
+          "title": "岗位职责",
+          "files": [
+            { "name": "电气工程师岗位职责.docx", "kind": "document" }
+          ]
+        },
+        {
+          "id": "electrical-standard-process",
+          "title": "标准化流程",
+          "files": [
+            { "name": "电气组职责及标准化（持续更新）.docx", "kind": "document" },
+            { "name": "项目控制柜（箱）电源设计说明.docx", "kind": "document" },
+            { "name": "上位机点表模板1.2.xlsx", "kind": "spreadsheet" },
+            { "name": "标准点库.xlsx", "kind": "spreadsheet" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "software-engineer",
+      "name": "软件工程师",
+      "description": "软件岗位职责、平台配置、策略配置、图标库、产品清单和远程汇总资料。",
+      "contents": [
+        {
+          "id": "software-responsibility",
+          "title": "岗位职责",
+          "files": [
+            { "name": "软件工程师岗位职责.docx", "kind": "document" }
+          ]
+        },
+        {
+          "id": "software-standard-process",
+          "title": "标准化流程",
+          "files": [
+            { "name": "单项目平台-软件配置手册20250303.docx", "kind": "document" },
+            { "name": "项目软件管理.xlsx", "kind": "spreadsheet" },
+            { "name": "交付-强化学习策略配置手册.docx", "kind": "document" },
+            { "name": "项目交付图标标准化库.xlsx", "kind": "spreadsheet" },
+            { "name": "DeepSight软件配置手册.pdf", "kind": "pdf" },
+            { "name": "空压节能配置标准1.0.ppt", "kind": "presentation" },
+            { "name": "空调节能配置标准1.0.ppt", "kind": "presentation" },
+            { "name": "平台系统配置标准.pptx", "kind": "presentation" },
+            { "name": "DeepLogic交付使用手册（一章 ~ 八章）.docx", "kind": "document" },
+            { "name": "DeepLogic交付使用手册（九章 ~ 十章）.docx", "kind": "document" },
+            { "name": "产品功能清单.xlsx", "kind": "spreadsheet" }
+          ]
+        },
+        {
+          "id": "software-remote-summary",
+          "title": "项目远程汇总",
+          "files": [
+            { "name": "海外项目平台远程汇总.xlsx", "kind": "spreadsheet" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "operations-management",
+      "name": "运维管理",
+      "description": "运维岗位职责、远程巡检、平台运行维护和异常处理流程。",
+      "contents": [
+        {
+          "id": "operations-duty-flow",
+          "title": "岗位职责与流程",
+          "files": [
+            { "name": "运维岗位职责与流程.docx", "kind": "document" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "general-requirements",
+      "name": "通用要求",
+      "description": "影像资料、服务器配置、人员能力、脚本命令和文件字体要求。",
+      "contents": [
+        {
+          "id": "general-project-evidence",
+          "title": "项目过程资料",
+          "files": [
+            { "name": "项目过程影像管理办法（试行）.docx", "kind": "document" },
+            { "name": "项目影像拍摄清单.png", "kind": "image" },
+            { "name": "管道带压开孔操作规程.docx", "kind": "document" },
+            { "name": "3d可视化引擎使用分析0715.pdf", "kind": "pdf" },
+            { "name": "标准项目服务器配置_售前标准_20240904.xlsx", "kind": "spreadsheet" }
+          ]
+        },
+        {
+          "id": "general-skill-assessment",
+          "title": "人员技能评估工具",
+          "updateFrequency": "每季度",
+          "files": [
+            { "name": "人员能力模型.xlsx", "kind": "spreadsheet" },
+            { "name": "交付统计售前投标阶段注意事项2026.3.4.xlsx", "kind": "spreadsheet" }
+          ]
+        },
+        {
+          "id": "general-script-manual",
+          "title": "网络脚本命令使用教程",
+          "files": [
+            { "name": "命令行使用手册.docx", "kind": "document" }
+          ]
+        },
+        {
+          "id": "general-font-requirement",
+          "title": "文件字体要求",
+          "files": [
+            { "name": "文件字体统一规范.pdf", "kind": "pdf" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "technical-standard",
+      "name": "技术标准",
+      "description": "技术规范、现场安装规范和项目技术标准资料。",
+      "contents": [
+        {
+          "id": "technical-specification",
+          "title": "技术规范与标准",
+          "files": [
+            { "name": "待补充-现场安装规范（项目经理完成）.docx", "kind": "document", "needsRevision": true }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "debug-management",
+      "name": "调试管理",
+      "description": "调试技术标准、调试记录和问题闭环资料。",
+      "contents": [
+        {
+          "id": "debug-technical-standard",
+          "title": "调试技术标准",
+          "files": [
+            { "name": "调试技术标准-待补充.docx", "kind": "document", "needsRevision": true }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "safety-civilized-construction",
+      "name": "安全文明施工",
+      "description": "安全文明施工规定、事故处理办法和记录表。",
+      "contents": [
+        {
+          "id": "safety-management-rules",
+          "title": "管理规定",
+          "files": [
+            { "name": "项目安全文明施工管理规定-20250320-V1.pdf", "kind": "pdf" }
+          ]
+        },
+        {
+          "id": "safety-incident-process",
+          "title": "施工处理办法",
+          "files": [
+            { "name": "安全生产事故处理办法（试行）.docx", "kind": "document" }
+          ]
+        },
+        {
+          "id": "safety-record-form",
+          "title": "安全文明施工记录表",
+          "files": [
+            { "name": "【★待修订】.docx", "kind": "document", "needsRevision": true }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "customer-management",
+      "name": "客户管理",
+      "description": "客户管理办法、客户沟通和问题升级资料。",
+      "contents": [
+        {
+          "id": "customer-management-method",
+          "title": "客户管理办法",
+          "files": [
+            { "name": "客户管理办法.docx", "kind": "document" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cross-cultural-communication",
+      "name": "跨文化沟通",
+      "description": "跨文化管理指南、海外会议沟通和时区协作资料。",
+      "contents": [
+        {
+          "id": "cross-cultural-guide",
+          "title": "跨文化管理指南",
+          "files": [
+            { "name": "跨文化管理指南.docx", "kind": "document" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "logistics-management",
+      "name": "物流管理",
+      "description": "运输标准流程、进出口流程和物流交付资料。",
+      "contents": [
+        {
+          "id": "logistics-transport-process",
+          "title": "运输标准流程",
+          "files": [
+            { "name": "【进出口全流程】.docx", "kind": "document" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "supplier-management",
+      "name": "供应商管理",
+      "description": "海外供应商资源、设备选型库和报价资料。",
+      "contents": [
+        {
+          "id": "supplier-overseas-resource",
+          "title": "海外供应商资源",
+          "files": [
+            { "name": "海外供应商库20250516.xlsx", "kind": "spreadsheet" }
+          ]
+        },
+        {
+          "id": "supplier-overseas-selection",
+          "title": "海外设备选型及报价",
+          "files": [
+            { "name": "【海外】设备选型库 20250509.xlsx", "kind": "spreadsheet" }
+          ]
+        },
+        {
+          "id": "supplier-domestic-selection",
+          "title": "国内设备选型及报价",
+          "files": [
+            { "name": "【国内】设备选型库 交付 20251021.xlsx", "kind": "spreadsheet" }
+          ]
+        }
+      ]
+    }
+  ]
+}

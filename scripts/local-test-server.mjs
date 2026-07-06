@@ -1,12 +1,15 @@
 import { createServer } from 'node:http';
-import { createReadStream, existsSync } from 'node:fs';
-import { readFile, stat } from 'node:fs/promises';
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const projectRoot = normalize(join(__dirname, '..'));
 const webDist = join(projectRoot, 'delivery-platform-web', 'dist');
+const knowledgeCatalogPath = join(projectRoot, 'delivery-platform-server', 'prisma', 'seed-data', 'knowledge-catalog.json');
+const knowledgeSampleDir = join(projectRoot, 'delivery-platform-server', 'prisma', 'seed-files', 'knowledge-catalog');
+const localStorageRoot = join(projectRoot, 'storage', 'local-test');
 const port = Number(process.env.LOCAL_TEST_PORT || 18080);
 const host = process.env.LOCAL_TEST_HOST || '127.0.0.1';
 const now = () => new Date().toISOString();
@@ -211,6 +214,14 @@ let attachments = [
   },
 ];
 
+const knowledgeCatalog = JSON.parse(readFileSync(knowledgeCatalogPath, 'utf8'));
+const knowledgeFixture = buildKnowledgeFixture(knowledgeCatalog);
+adminUser.realName = '系统管理员';
+categories.splice(0, categories.length, ...knowledgeFixture.categoryRows);
+let categoryTree = knowledgeFixture.categoryTree;
+articles = knowledgeFixture.articles;
+attachments = knowledgeFixture.attachments;
+
 const dictionaries = {
   project_type: {
     id: 'dict-project-type',
@@ -232,6 +243,229 @@ const dictionaries = {
     ],
   },
 };
+
+function buildKnowledgeFixture(catalog) {
+  const categoryRows = [];
+  const articleRows = [];
+  const attachmentRows = [];
+
+  catalog.modules.forEach((module, moduleIndex) => {
+    const moduleCategory = makeCategory({
+      id: `cat-${module.id}`,
+      name: module.name,
+      description: module.description,
+      parentId: null,
+      sortOrder: (moduleIndex + 1) * 10,
+    });
+    categoryRows.push(moduleCategory);
+
+    module.contents.forEach((content, contentIndex) => {
+      const contentCategory = makeCategory({
+        id: `cat-${module.id}-${content.id}`,
+        name: content.title,
+        description: `${module.name} / ${content.title}：${content.files.length} 个文件索引`,
+        parentId: moduleCategory.id,
+        sortOrder: (contentIndex + 1) * 10,
+      });
+      categoryRows.push(contentCategory);
+
+      const articleId = `article-${module.id}-${content.id}`;
+      const article = {
+        id: articleId,
+        categoryId: contentCategory.id,
+        title: `${module.name} - ${content.title}`,
+        countryCode: 'CN',
+        projectType: inferProjectType(module.id),
+        stageCode: inferStageCode(module.id),
+        applicableRole: inferRole(module.id),
+        contentType: 'article',
+        fileUrl: null,
+        fileSize: null,
+        fileExt: null,
+        markdownContent: buildKnowledgeMarkdown(module, content),
+        sourceStatus: 'Ready',
+        needsRevision: content.files.some((file) => file.needsRevision),
+        background: module.description,
+        standardPractice: '按知识分类维护文件索引，附件必须可下载、可在线查阅，并按修订状态维护。',
+        steps: null,
+        notes: content.updateFrequency ? `更新频率：${content.updateFrequency}` : null,
+        commonMistakes: null,
+        relatedFlow: 'workflow-delivery',
+        relatedChecklist: 'checklist-delivery',
+        relatedTemplate: 'template-delivery',
+        version: 'V1.0',
+        status: 'Published',
+        authorId: 'user-admin',
+        reviewerId: null,
+        publishedAt: now(),
+        createdAt: now(),
+        updatedAt: now(),
+        category: { id: contentCategory.id, name: contentCategory.name },
+        author: { id: 'user-admin', realName: '系统管理员', username: 'admin' },
+        reviewer: null,
+        versions: [
+          {
+            id: `version-${articleId}-1`,
+            version: 'V1.0',
+            changeNotes: '标准知识库目录初始化',
+            createdAt: now(),
+            creator: { id: 'user-admin', realName: '系统管理员' },
+          },
+        ],
+      };
+      articleRows.push(article);
+
+      content.files.forEach((file, fileIndex) => {
+        const samplePath = join(knowledgeSampleDir, file.name);
+        attachmentRows.push({
+          id: `att-${module.id}-${content.id}-${fileIndex + 1}`,
+          ownerType: 'KnowledgeArticle',
+          ownerId: articleId,
+          category: 'document',
+          originalName: file.name,
+          fileExt: fileExt(file.name),
+          fileSize: String(fileSize(samplePath)),
+          mimeType: mimeTypeFor(file.name),
+          storagePath: samplePath,
+          createdAt: now(),
+          uploader: { id: 'user-admin', realName: '系统管理员', username: 'admin' },
+        });
+      });
+    });
+  });
+
+  return {
+    categoryRows,
+    categoryTree: buildCategoryTree(categoryRows),
+    articles: articleRows,
+    attachments: attachmentRows,
+  };
+}
+
+function makeCategory({ id, name, description, parentId, sortOrder }) {
+  return {
+    id,
+    name,
+    description,
+    parentId,
+    sortOrder,
+    status: 'Active',
+    createdAt: now(),
+    updatedAt: now(),
+    children: [],
+  };
+}
+
+function buildCategoryTree(rows) {
+  const clones = new Map(rows.map((category) => [category.id, { ...category, children: [] }]));
+  const roots = [];
+  rows.forEach((category) => {
+    const node = clones.get(category.id);
+    const parent = category.parentId ? clones.get(category.parentId) : undefined;
+    if (parent) {
+      parent.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  });
+  return roots;
+}
+
+function rebuildCategoryTree() {
+  categoryTree = buildCategoryTree(categories);
+}
+
+function descendantCategoryIds(parentId) {
+  const directChildren = categories.filter((category) => category.parentId === parentId);
+  return directChildren.flatMap((category) => [
+    category.id,
+    ...descendantCategoryIds(category.id),
+  ]);
+}
+
+function buildKnowledgeMarkdown(module, content) {
+  return [
+    `# ${module.name} / ${content.title}`,
+    '',
+    module.description,
+    '',
+    content.updateFrequency ? `更新频率：${content.updateFrequency}` : '更新频率：按制度变更维护',
+    '',
+    '## 文件索引',
+    '',
+    '| 文件 | 类型 | 状态 |',
+    '| --- | --- | --- |',
+    ...content.files.map((file) =>
+      `| ${file.name} | ${labelForKind(file.kind)} | ${file.needsRevision ? '待修订' : '已生成'} |`,
+    ),
+    '',
+    '## 测试要求',
+    '',
+    '1. 从左侧分类进入当前知识条目。',
+    '2. 在附件列表点击“在线预览”。',
+    '3. Word、Excel、PPT、PDF、图片均应能正常打开预览。',
+  ].join('\n');
+}
+
+function inferProjectType(moduleId) {
+  if (moduleId.includes('software')) return 'software';
+  if (moduleId.includes('electrical')) return 'electrical';
+  return 'delivery';
+}
+
+function inferStageCode(moduleId) {
+  if (moduleId.includes('debug')) return 'commissioning';
+  if (moduleId.includes('technical')) return 'design';
+  return 'delivery';
+}
+
+function inferRole(moduleId) {
+  if (moduleId.includes('software')) return 'SOFTWARE_ENGINEER';
+  if (moduleId.includes('electrical')) return 'ELEC_ENGINEER';
+  if (moduleId.includes('project-manager')) return 'PROJECT_MANAGER';
+  return '';
+}
+
+function labelForKind(kind) {
+  return {
+    document: 'Word 文档',
+    spreadsheet: 'Excel 表格',
+    presentation: 'PPT 演示',
+    pdf: 'PDF 文档',
+    image: '图片',
+  }[kind] ?? '文件';
+}
+
+function fileExt(fileName) {
+  return extname(fileName).replace('.', '').toLowerCase();
+}
+
+function fileSize(path) {
+  try {
+    return statSync(path).size;
+  } catch {
+    return 0;
+  }
+}
+
+function mimeTypeFor(fileName) {
+  const types = {
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xls: 'application/vnd.ms-excel',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ppt: 'application/vnd.ms-powerpoint',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    pdf: 'application/pdf',
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    txt: 'text/plain; charset=utf-8',
+    md: 'text/markdown; charset=utf-8',
+  };
+  return types[fileExt(fileName)] ?? 'application/octet-stream';
+}
 
 function envelope(data, message = 'ok', code = 0) {
   return { code, message, data, timestamp: now() };
@@ -295,11 +529,50 @@ async function readJson(req) {
   }
 }
 
-function extractUploadedNames(buffer) {
-  const text = buffer.toString('latin1');
-  return [...text.matchAll(/filename="([^"]+)"/g)]
-    .map((match) => Buffer.from(match[1], 'latin1').toString('utf8'))
-    .filter(Boolean);
+function parseMultipart(buffer, contentTypeHeader) {
+  const contentType = Array.isArray(contentTypeHeader)
+    ? contentTypeHeader.join(';')
+    : String(contentTypeHeader ?? '');
+  const boundary = contentType.match(/boundary=([^;]+)/i)?.[1];
+  if (!boundary) return [];
+
+  const boundaryBuffer = Buffer.from(`--${boundary}`);
+  const parts = [];
+  let cursor = buffer.indexOf(boundaryBuffer);
+
+  while (cursor >= 0) {
+    const partStart = cursor + boundaryBuffer.length;
+    if (buffer.slice(partStart, partStart + 2).toString() === '--') break;
+
+    const nextBoundary = buffer.indexOf(boundaryBuffer, partStart);
+    if (nextBoundary < 0) break;
+
+    let part = buffer.slice(partStart, nextBoundary);
+    if (part.slice(0, 2).toString() === '\r\n') part = part.slice(2);
+    if (part.slice(-2).toString() === '\r\n') part = part.slice(0, -2);
+
+    const headerEnd = part.indexOf(Buffer.from('\r\n\r\n'));
+    if (headerEnd > 0) {
+      const headerText = part.slice(0, headerEnd).toString('utf8');
+      const data = part.slice(headerEnd + 4);
+      const disposition = headerText.match(/content-disposition:\s*([^\r\n]+)/i)?.[1] ?? '';
+      const name = disposition.match(/name="([^"]+)"/i)?.[1] ?? '';
+      const rawFilename = disposition.match(/filename="([^"]*)"/i)?.[1] ?? '';
+      const filename = rawFilename || '';
+      const contentType = headerText.match(/content-type:\s*([^\r\n]+)/i)?.[1]?.trim();
+      if (name) {
+        parts.push({ name, filename, contentType, data });
+      }
+    }
+
+    cursor = nextBoundary;
+  }
+
+  return parts;
+}
+
+function safeFileName(name) {
+  return name.replace(/[<>:"/\\|?*\u0000-\u001F]/gu, '-').slice(0, 140);
 }
 
 function attachmentPreview(id) {
@@ -505,7 +778,7 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === 'GET' && path === '/knowledge/categories') {
-    sendJson(res, envelope(categories));
+    sendJson(res, envelope(categoryTree));
     return;
   }
 
@@ -541,6 +814,7 @@ async function handleApi(req, res, url) {
       parent: parentId ? categories.find((item) => item.id === parentId) : undefined,
     };
     categories.push(category);
+    rebuildCategoryTree();
     sendJson(res, envelope(category));
     return;
   }
@@ -565,6 +839,7 @@ async function handleApi(req, res, url) {
     if (body.description !== undefined) category.description = body.description || '';
     if (body.sortOrder !== undefined) category.sortOrder = Number(body.sortOrder) || category.sortOrder;
     category.updatedAt = now();
+    rebuildCategoryTree();
     sendJson(res, envelope(category));
     return;
   }
@@ -581,6 +856,7 @@ async function handleApi(req, res, url) {
       return;
     }
     categories.splice(index, 1);
+    rebuildCategoryTree();
     sendJson(res, envelope(null));
     return;
   }
@@ -589,7 +865,12 @@ async function handleApi(req, res, url) {
     const keyword = url.searchParams.get('keyword')?.trim();
     const status = url.searchParams.get('status')?.trim();
     const sourceStatus = url.searchParams.get('sourceStatus')?.trim();
+    const categoryId = url.searchParams.get('categoryId')?.trim();
     let list = articles;
+    if (categoryId) {
+      const categoryIds = new Set([categoryId, ...descendantCategoryIds(categoryId)]);
+      list = list.filter((item) => categoryIds.has(item.categoryId));
+    }
     if (keyword) {
       list = list.filter((item) => item.title.includes(keyword) || item.markdownContent?.includes(keyword));
     }
@@ -702,12 +983,32 @@ async function handleApi(req, res, url) {
 
   if (req.method === 'POST' && path === '/attachments') {
     const body = await readBody(req);
-    const text = body.toString('utf8');
-    const ownerId = text.match(/name="ownerId"\r?\n\r?\n([^\r\n]+)/)?.[1] || 'article-preview';
-    const ownerType = text.match(/name="ownerType"\r?\n\r?\n([^\r\n]+)/)?.[1] || 'KnowledgeArticle';
-    const names = extractUploadedNames(body);
-    const created = (names.length ? names : ['本地上传测试文件.txt']).map((name) => {
+    const parts = parseMultipart(body, req.headers['content-type']);
+    const fields = Object.fromEntries(
+      parts
+        .filter((part) => !part.filename)
+        .map((part) => [part.name, part.data.toString('utf8').trim()]),
+    );
+    const fileParts = parts.filter((part) => part.filename);
+    const ownerId = fields.ownerId || 'article-preview';
+    const ownerType = fields.ownerType || 'KnowledgeArticle';
+    const targetDir = join(localStorageRoot, 'attachments', ownerType, ownerId);
+    await mkdir(targetDir, { recursive: true });
+    const uploadParts = fileParts.length
+      ? fileParts
+      : [{
+          name: 'files',
+          filename: '本地上传测试文件.txt',
+          contentType: 'text/plain; charset=utf-8',
+          data: Buffer.from('本地上传测试文件', 'utf8'),
+        }];
+
+    const created = [];
+    for (const part of uploadParts) {
+      const name = part.filename || '本地上传测试文件.txt';
       const ext = extname(name).replace('.', '').toLowerCase() || 'txt';
+      const storagePath = join(targetDir, `${Date.now()}-${Math.random().toString(16).slice(2)}-${safeFileName(name)}`);
+      await writeFile(storagePath, part.data);
       const attachment = {
         id: `att-${Date.now()}-${Math.random().toString(16).slice(2)}`,
         ownerType,
@@ -715,14 +1016,15 @@ async function handleApi(req, res, url) {
         category: 'document',
         originalName: name,
         fileExt: ext,
-        fileSize: String(body.length),
-        mimeType: ext === 'pdf' ? 'application/pdf' : ext === 'png' ? 'image/png' : 'application/octet-stream',
+        fileSize: String(part.data.length),
+        mimeType: part.contentType || mimeTypeFor(name),
+        storagePath,
         createdAt: now(),
         uploader: { id: 'user-admin', realName: '系统管理员', username: 'admin' },
       };
       attachments = [attachment, ...attachments];
-      return attachment;
-    });
+      created.push(attachment);
+    }
     sendJson(res, envelope(created));
     return;
   }
@@ -751,6 +1053,10 @@ async function handleApi(req, res, url) {
     const item = attachments.find((attachment) => attachment.id === contentMatch[1]);
     if (!item) {
       sendJson(res, envelope(null, '附件不存在', 404), 404);
+      return;
+    }
+    if (item.storagePath && existsSync(item.storagePath)) {
+      sendRaw(res, await readFile(item.storagePath), item.mimeType);
       return;
     }
     if (item.fileExt === 'pdf') {
@@ -953,7 +1259,8 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === 'GET' && path === '/system-operations/storage') {
-    sendJson(res, envelope({ bucket: 'local-delivery-test', available: true, provider: 'local', attachmentCount: attachments.length, attachmentBytes: '20480', backupCount: 1 }));
+    const attachmentBytes = attachments.reduce((total, item) => total + Number(item.fileSize || 0), 0);
+    sendJson(res, envelope({ bucket: 'local-delivery-test', available: true, provider: 'local', attachmentCount: attachments.length, attachmentBytes: String(attachmentBytes), backupCount: 1 }));
     return;
   }
 

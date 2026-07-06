@@ -4,13 +4,36 @@ import { join } from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { Client } from 'minio';
 
-import { knowledgeIndexEntries } from './knowledge-index';
+interface KnowledgeCatalog {
+  modules: KnowledgeCatalogModule[];
+}
 
-const knowledgeCategories = [
+interface KnowledgeCatalogModule {
+  id: string;
+  name: string;
+  description: string;
+  contents: KnowledgeCatalogContent[];
+}
+
+interface KnowledgeCatalogContent {
+  id: string;
+  title: string;
+  updateFrequency?: string;
+  files: KnowledgeCatalogFile[];
+}
+
+interface KnowledgeCatalogFile {
+  name: string;
+  kind: 'document' | 'spreadsheet' | 'presentation' | 'pdf' | 'image';
+  needsRevision?: boolean;
+}
+
+const legacyCategoryNames = [
   '项目管理',
+  '电气专业',
+  '软件专业',
   '电气工程',
   '软件工程',
-  '运维管理',
   '安全管理',
   '通用标准',
   '流程标准',
@@ -19,91 +42,18 @@ const knowledgeCategories = [
   '日常制度',
   '客户与跨文化',
   '物流与供应商',
-];
-
-const legacyCategoryNames = [
   '专业技术',
   '制度文化',
   '交付资源',
-  '项目管理',
-  '电气工程',
-  '软件工程',
-  '运维管理',
-  '安全管理',
-  '通用标准',
-  '流程标准',
-  '绩效与激励',
-  '团队文化',
-  '日常制度',
-  '客户与跨文化',
-  '物流与供应商',
-];
-
-interface KnowledgeSampleFile {
-  title: string;
-  category: string;
-  fileName: string;
-  mimeType: string;
-  summary: string;
-}
-
-const sampleFiles: KnowledgeSampleFile[] = [
-  {
-    title: '交付知识库在线预览测试-DOC',
-    category: '项目管理',
-    fileName: 'knowledge-preview-doc.doc',
-    mimeType: 'application/msword',
-    summary: '验证旧版 doc 文件上传、鉴权读取和在线查阅。',
-  },
-  {
-    title: '交付知识库在线预览测试-XLSX',
-    category: '电气工程',
-    fileName: 'knowledge-preview-table.xlsx',
-    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    summary: '验证 xlsx 表格按工作表和单元格在线查阅。',
-  },
-  {
-    title: '交付知识库在线预览测试-PPT',
-    category: '软件工程',
-    fileName: 'knowledge-preview-slides.ppt',
-    mimeType: 'application/vnd.ms-powerpoint',
-    summary: '验证 ppt 演示资料上传后按页面内容在线查阅。',
-  },
-  {
-    title: '交付知识库在线预览测试-PDF',
-    category: '流程标准',
-    fileName: 'knowledge-preview-pdf.pdf',
-    mimeType: 'application/pdf',
-    summary: '验证 PDF 资料在浏览器中通过鉴权 Blob 在线查阅。',
-  },
-  {
-    title: '交付知识库在线预览测试-图片',
-    category: '运维管理',
-    fileName: 'knowledge-preview-image.png',
-    mimeType: 'image/png',
-    summary: '验证现场图片类资料上传后在线查阅。',
-  },
 ];
 
 export async function seedKnowledge(prisma: PrismaClient): Promise<void> {
-  console.log('Seeding knowledge categories, index and preview samples...');
+  console.log('Seeding standard knowledge categories, articles and files...');
 
-  const categoryIds = new Map<string, string>();
-  let sortOrder = 10;
+  const catalog = await loadKnowledgeCatalog();
+  const categoryIds = await seedKnowledgeCategories(prisma, catalog);
 
-  for (const name of knowledgeCategories) {
-    const category = await syncCategory(
-      prisma,
-      name,
-      `${name}相关制度、手册、标准、案例与模板`,
-      null,
-      sortOrder,
-    );
-    categoryIds.set(name, category.id);
-    sortOrder += 10;
-  }
-
-  await cleanupDuplicateCategories(prisma);
+  await cleanupLegacyAndDuplicateCategories(prisma);
 
   const admin = await prisma.user.findUnique({
     where: { username: 'admin' },
@@ -115,110 +65,131 @@ export async function seedKnowledge(prisma: PrismaClient): Promise<void> {
     return;
   }
 
-  await seedKnowledgeIndex(prisma, categoryIds, admin.id);
-  await seedKnowledgeSampleFiles(prisma, categoryIds, admin.id);
+  await seedKnowledgeArticlesAndFiles(prisma, catalog, categoryIds, admin.id);
 
-  console.log(`Seeded ${knowledgeIndexEntries.length} knowledge index entries.`);
+  const fileCount = catalog.modules.reduce(
+    (total, module) =>
+      total +
+      module.contents.reduce((subtotal, content) => subtotal + content.files.length, 0),
+    0,
+  );
+  console.log(
+    `Seeded ${catalog.modules.length} knowledge modules and ${fileCount} sample files.`,
+  );
 }
 
-async function seedKnowledgeIndex(
+async function loadKnowledgeCatalog(): Promise<KnowledgeCatalog> {
+  const raw = await readFile(join(__dirname, 'knowledge-catalog.json'), 'utf8');
+  return JSON.parse(raw) as KnowledgeCatalog;
+}
+
+async function seedKnowledgeCategories(
   prisma: PrismaClient,
-  categoryIds: Map<string, string>,
-  adminId: string,
-): Promise<void> {
-  const seen = new Set<string>();
+  catalog: KnowledgeCatalog,
+): Promise<Map<string, string>> {
+  const categoryIds = new Map<string, string>();
+  let moduleSortOrder = 10;
 
-  for (const entry of knowledgeIndexEntries) {
-    const categoryId = categoryIds.get(entry.category);
-    if (!categoryId) continue;
+  for (const module of catalog.modules) {
+    const moduleCategory = await syncCategory(
+      prisma,
+      module.name,
+      module.description,
+      null,
+      moduleSortOrder,
+    );
+    categoryIds.set(module.id, moduleCategory.id);
 
-    const key = `${categoryId}::${entry.title.trim()}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    let contentSortOrder = 10;
+    for (const content of module.contents) {
+      const contentCategory = await syncCategory(
+        prisma,
+        content.title,
+        `${module.name} / ${content.title}：${content.files.length} 个文件索引`,
+        moduleCategory.id,
+        contentSortOrder,
+      );
+      categoryIds.set(`${module.id}/${content.id}`, contentCategory.id);
+      contentSortOrder += 10;
+    }
 
-    const markdownContent = [
-      `# ${entry.title}`,
-      '',
-      entry.summary,
-      '',
-      '## 资料状态',
-      '',
-      '- 可维护 Markdown 正文、关联流程、关联检查项和附件。',
-      '- 原始文件上传后可在本条目中在线预览、下载和维护版本。',
-    ].join('\n');
-
-    const data = {
-      categoryId,
-      title: entry.title.trim(),
-      background: entry.summary,
-      standardPractice: '按知识条目关联的制度、手册或模板执行。',
-      markdownContent,
-      contentType: 'article',
-      sourceStatus: 'Ready',
-      needsRevision: entry.needsRevision ?? false,
-      authorId: adminId,
-    };
-
-    const article = await findOrCreateArticle(prisma, data);
-    await softDeleteDuplicateArticles(prisma, article.id, categoryId, data.title);
+    moduleSortOrder += 10;
   }
+
+  return categoryIds;
 }
 
-async function seedKnowledgeSampleFiles(
+async function seedKnowledgeArticlesAndFiles(
   prisma: PrismaClient,
+  catalog: KnowledgeCatalog,
   categoryIds: Map<string, string>,
   adminId: string,
 ): Promise<void> {
   const storage = createMinioClient();
   if (!storage) {
-    console.warn('  MinIO environment is incomplete, skipping knowledge preview sample attachments');
+    console.warn('  MinIO environment is incomplete, skipping knowledge file upload seed');
     return;
   }
 
   await ensureBucket(storage.client, storage.bucket);
-  const sampleDir = join(__dirname, '../seed-files/knowledge-samples');
+  const sampleDir = join(__dirname, '../seed-files/knowledge-catalog');
 
-  for (const sample of sampleFiles) {
-    const categoryId = categoryIds.get(sample.category);
-    if (!categoryId) continue;
+  for (const module of catalog.modules) {
+    for (const content of module.contents) {
+      const categoryId = categoryIds.get(`${module.id}/${content.id}`);
+      if (!categoryId) continue;
 
-    const article = await findOrCreateArticle(prisma, {
-      categoryId,
-      title: sample.title,
-      background: sample.summary,
-      standardPractice: '用于本地 Docker 验收知识库文件上传、在线查阅和预览能力。',
-      markdownContent: [
-        `# ${sample.title}`,
-        '',
-        sample.summary,
-        '',
-        '## 验收动作',
-        '',
-        '1. 打开条目详情。',
-        '2. 在附件列表点击“在线预览”。',
-        '3. 确认预览窗口能显示文件内容。',
-      ].join('\n'),
-      contentType: 'article',
-      sourceStatus: 'Ready',
-      needsRevision: false,
-      authorId: adminId,
-    });
+      const article = await upsertArticle(prisma, {
+        categoryId,
+        title: `${module.name} - ${content.title}`,
+        background: `${module.name}模块下的${content.title}资料，共 ${content.files.length} 个文件。`,
+        standardPractice:
+          '按知识分类维护原始资料，所有文件必须可下载、可在线查阅，并保留版本和修订状态。',
+        markdownContent: buildArticleMarkdown(module, content),
+        contentType: 'article',
+        sourceStatus: 'Ready',
+        needsRevision: content.files.some((file) => file.needsRevision),
+        authorId: adminId,
+      });
 
-    const filePath = join(sampleDir, sample.fileName);
+      await seedAttachmentsForArticle(
+        prisma,
+        storage,
+        sampleDir,
+        article.id,
+        content.files,
+        adminId,
+      );
+    }
+  }
+}
+
+async function seedAttachmentsForArticle(
+  prisma: PrismaClient,
+  storage: { client: Client; bucket: string },
+  sampleDir: string,
+  articleId: string,
+  files: KnowledgeCatalogFile[],
+  adminId: string,
+): Promise<void> {
+  const expectedNames = new Set(files.map((file) => file.name));
+
+  for (const file of files) {
+    const filePath = join(sampleDir, file.name);
     const buffer = await readFile(filePath);
-    const objectName = `attachments/KnowledgeArticle/${article.id}/seed-${sample.fileName}`;
+    const objectName = `attachments/KnowledgeArticle/${articleId}/seed-${file.name.replace(/[\\/]/gu, '-')}`;
+    const mimeType = mimeTypeFor(file.name);
 
     await storage.client.putObject(storage.bucket, objectName, buffer, buffer.length, {
-      'Content-Type': sample.mimeType,
-      'X-Amz-Meta-Original-Name': encodeURIComponent(sample.fileName),
+      'Content-Type': mimeType,
+      'X-Amz-Meta-Original-Name': encodeURIComponent(file.name),
     });
 
-    const fileExt = sample.fileName.split('.').pop()?.toLowerCase() ?? '';
     const existing = await prisma.attachment.findFirst({
       where: {
         ownerType: 'KnowledgeArticle',
-        ownerId: article.id,
-        originalName: sample.fileName,
+        ownerId: articleId,
+        originalName: file.name,
         deletedAt: null,
       },
       select: { id: true },
@@ -226,17 +197,19 @@ async function seedKnowledgeSampleFiles(
 
     const attachmentData = {
       ownerType: 'KnowledgeArticle',
-      ownerId: article.id,
+      ownerId: articleId,
       category: 'document',
-      fileName: sample.fileName,
-      originalName: sample.fileName,
-      fileExt,
+      fileName: file.name,
+      originalName: file.name,
+      fileExt: fileExt(file.name),
       fileSize: BigInt(buffer.length),
-      mimeType: sample.mimeType,
+      mimeType,
       storageBucket: storage.bucket,
       storagePath: objectName,
       uploadedBy: adminId,
-      remark: '知识库在线预览本地验收样例',
+      remark: file.needsRevision
+        ? '知识库标准目录样例文件，当前标记为待修订'
+        : '知识库标准目录样例文件',
     };
 
     if (existing) {
@@ -247,9 +220,17 @@ async function seedKnowledgeSampleFiles(
     } else {
       await prisma.attachment.create({ data: attachmentData });
     }
-
-    await softDeleteDuplicateArticles(prisma, article.id, categoryId, sample.title);
   }
+
+  await prisma.attachment.updateMany({
+    where: {
+      ownerType: 'KnowledgeArticle',
+      ownerId: articleId,
+      deletedAt: null,
+      originalName: { notIn: [...expectedNames] },
+    },
+    data: { deletedAt: new Date() },
+  });
 }
 
 async function syncCategory(
@@ -278,7 +259,7 @@ async function syncCategory(
   });
 }
 
-async function findOrCreateArticle(
+async function upsertArticle(
   prisma: PrismaClient,
   data: {
     categoryId: string;
@@ -302,14 +283,23 @@ async function findOrCreateArticle(
     select: { id: true },
   });
 
+  const articleData = {
+    ...data,
+    status: 'Published' as const,
+    publishedAt: new Date(),
+  };
+
   if (existing) {
+    await softDeleteDuplicateArticles(prisma, existing.id, data.categoryId, data.title);
     return existing;
   }
 
-  return prisma.knowledgeArticle.create({
-    data,
+  const created = await prisma.knowledgeArticle.create({
+    data: articleData,
     select: { id: true },
   });
+  await softDeleteDuplicateArticles(prisma, created.id, data.categoryId, data.title);
+  return created;
 }
 
 async function softDeleteDuplicateArticles(
@@ -332,10 +322,13 @@ async function softDeleteDuplicateArticles(
   });
 }
 
-async function cleanupDuplicateCategories(prisma: PrismaClient): Promise<void> {
+async function cleanupLegacyAndDuplicateCategories(prisma: PrismaClient): Promise<void> {
   if (typeof prisma.knowledgeCategory.updateMany === 'function') {
     await prisma.knowledgeCategory.updateMany({
-      where: { name: { in: legacyCategoryNames } },
+      where: {
+        name: { in: legacyCategoryNames },
+        status: 'Active',
+      },
       data: { status: 'Inactive' },
     });
   }
@@ -365,9 +358,75 @@ async function cleanupDuplicateCategories(prisma: PrismaClient): Promise<void> {
     });
     await prisma.knowledgeCategory.update({
       where: { id: category.id },
-      data: { status: 'Inactive', description: '已合并到同名知识分类' },
+      data: {
+        status: 'Inactive',
+        description: '已合并到同级同名知识分类',
+      },
     });
   }
+}
+
+function buildArticleMarkdown(
+  module: KnowledgeCatalogModule,
+  content: KnowledgeCatalogContent,
+): string {
+  return [
+    `# ${module.name} / ${content.title}`,
+    '',
+    module.description,
+    '',
+    content.updateFrequency ? `更新频率：${content.updateFrequency}` : '更新频率：按制度变更维护',
+    '',
+    '## 文件索引',
+    '',
+    '| 文件 | 类型 | 状态 |',
+    '| --- | --- | --- |',
+    ...content.files.map((file) =>
+      `| ${file.name} | ${labelForKind(file.kind)} | ${
+        file.needsRevision ? '待修订' : '已生成样例'
+      } |`,
+    ),
+    '',
+    '## 验收要求',
+    '',
+    '1. 文件必须挂在当前知识分类下。',
+    '2. 文件必须可通过附件接口下载。',
+    '3. Word、Excel、PPT、PDF 和图片必须可以在线预览。',
+  ].join('\n');
+}
+
+function labelForKind(kind: KnowledgeCatalogFile['kind']): string {
+  const labels: Record<KnowledgeCatalogFile['kind'], string> = {
+    document: 'Word 文档',
+    spreadsheet: 'Excel 表格',
+    presentation: 'PPT 演示',
+    pdf: 'PDF 文档',
+    image: '图片',
+  };
+  return labels[kind];
+}
+
+function fileExt(fileName: string): string {
+  return fileName.split('.').pop()?.toLowerCase() ?? '';
+}
+
+function mimeTypeFor(fileName: string): string {
+  const ext = fileExt(fileName);
+  const mimeTypes: Record<string, string> = {
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xls: 'application/vnd.ms-excel',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ppt: 'application/vnd.ms-powerpoint',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    pdf: 'application/pdf',
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    txt: 'text/plain; charset=utf-8',
+  };
+  return mimeTypes[ext] ?? 'application/octet-stream';
 }
 
 function createMinioClient(): { client: Client; bucket: string } | undefined {
