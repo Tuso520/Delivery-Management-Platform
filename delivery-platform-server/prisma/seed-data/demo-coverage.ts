@@ -1,7 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { PrismaClient } from '@prisma/client';
+import { FileStatus, PrismaClient } from '@prisma/client';
 import { Client } from 'minio';
 
 interface StorageContext {
@@ -61,6 +61,7 @@ export async function seedDemoCoverage(prisma: PrismaClient): Promise<void> {
   await seedProjectProcessAndPayments(prisma, admin.id, projects);
   await seedProjectFilesAndReviews(prisma, storage, samples, admin.id, users, projects);
   await seedApprovalAndNotificationCoverage(prisma, admin.id, users, projects);
+  await seedNotificationInboxCoverage(prisma, users, projects);
   await seedBusinessListCoverage(prisma, admin.id, users, projects);
   await seedTemplateAttachmentsAndHeat(prisma, storage, samples, admin.id);
   await seedKnowledgeRemarksAndHeat(prisma, admin.id);
@@ -411,8 +412,8 @@ async function seedProjectFilesAndReviews(
       select: { id: true },
     });
     const fileData = {
-      projectId: project.id,
-      archiveItemId: archiveItem.id,
+      project: { connect: { id: project.id } },
+      archiveItem: { connect: { id: archiveItem.id } },
       fileName: originalName,
       originalName,
       fileExt: sampleExt,
@@ -423,8 +424,8 @@ async function seedProjectFilesAndReviews(
       storagePath,
       versionNo: 'V1.0',
       isCurrent: true,
-      fileStatus: index % 2 === 0 ? 'Reviewing' : 'Approved',
-      uploadUserId: adminId,
+      fileStatus: index % 2 === 0 ? FileStatus.Reviewing : FileStatus.Approved,
+      uploadUser: { connect: { id: adminId } },
       remark: `演示文件：${project.projectCode} 档案目录上传资料。`,
     };
     const file = existingFile
@@ -553,6 +554,49 @@ async function seedApprovalAndNotificationCoverage(
       await prisma.notificationRule.update({ where: { id: existingRule.id }, data: ruleData });
     } else {
       await prisma.notificationRule.create({ data: ruleData });
+    }
+  }
+}
+
+async function seedNotificationInboxCoverage(
+  prisma: PrismaClient,
+  users: Array<{ id: string }>,
+  projects: Array<{ id: string; projectCode: string }>,
+): Promise<void> {
+  const notificationTypes = [
+    'approval_pending',
+    'project_progress',
+    'payment_reminder',
+    'file_review',
+    'risk_warning',
+  ];
+
+  for (const user of users) {
+    for (let index = 1; index <= 10; index += 1) {
+      const project = projects[(index - 1) % projects.length];
+      const title = `演示收件箱提醒-${pad(index)}`;
+      const existingNotification = await prisma.notification.findFirst({
+        where: { userId: user.id, title },
+        select: { id: true },
+      });
+      const notificationData = {
+        userId: user.id,
+        title,
+        content: `项目 ${project.projectCode} 的交付事项已更新，请按岗位职责完成查看或处理。`,
+        notificationType: notificationTypes[(index - 1) % notificationTypes.length],
+        relatedType: 'Project',
+        relatedId: project.id,
+        isRead: index % 3 === 0,
+        readAt: index % 3 === 0 ? new Date(Date.UTC(2026, 6, index)) : null,
+      };
+      if (existingNotification) {
+        await prisma.notification.update({
+          where: { id: existingNotification.id },
+          data: notificationData,
+        });
+      } else {
+        await prisma.notification.create({ data: notificationData });
+      }
     }
   }
 }
