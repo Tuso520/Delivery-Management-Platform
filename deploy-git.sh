@@ -139,6 +139,7 @@ acquire_lock() {
 write_release_metadata() {
   local id
   id="$(release_id)"
+  export RELEASE_ID="$id"
   printf '%s\n' "$id" > RELEASE_ID
   git ls-files > RELEASE_MANIFEST.txt
   log "release id: $id"
