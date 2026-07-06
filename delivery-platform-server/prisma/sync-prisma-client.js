@@ -8,22 +8,45 @@ const clientPackageRoot = path.dirname(
 );
 const clientPackageNodeModules = path.resolve(clientPackageRoot, '..', '..');
 const resolverClient = path.join(clientPackageNodeModules, '.prisma', 'client');
+const clientPackageEmbeddedClient = path.join(clientPackageRoot, '.prisma', 'client');
 
 function samePath(left, right) {
   return path.resolve(left).toLowerCase() === path.resolve(right).toLowerCase();
 }
 
-if (!fs.existsSync(generatedClient)) {
-  throw new Error(`Generated Prisma client not found: ${generatedClient}`);
+function hasGeneratedClient(clientDir) {
+  return (
+    fs.existsSync(path.join(clientDir, 'index.js')) &&
+    fs.existsSync(path.join(clientDir, 'default.js')) &&
+    fs.existsSync(path.join(clientDir, 'schema.prisma'))
+  );
 }
 
-if (samePath(generatedClient, resolverClient)) {
+const sourceClient = [
+  generatedClient,
+  resolverClient,
+  clientPackageEmbeddedClient,
+  clientPackageRoot,
+].find(hasGeneratedClient);
+
+if (!sourceClient) {
+  throw new Error(
+    `Generated Prisma client not found. Checked: ${[
+      generatedClient,
+      resolverClient,
+      clientPackageEmbeddedClient,
+      clientPackageRoot,
+    ].join(', ')}`,
+  );
+}
+
+if (samePath(sourceClient, resolverClient)) {
   console.log('[prisma] Resolver client already points to generated client.');
   process.exit(0);
 }
 
 fs.rmSync(resolverClient, { recursive: true, force: true });
 fs.mkdirSync(path.dirname(resolverClient), { recursive: true });
-fs.cpSync(generatedClient, resolverClient, { recursive: true });
+fs.cpSync(sourceClient, resolverClient, { recursive: true });
 
 console.log(`[prisma] Synced generated client to resolver path: ${resolverClient}`);
