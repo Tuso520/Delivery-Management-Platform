@@ -28,6 +28,7 @@ export async function seedDemoCoverage(prisma: PrismaClient): Promise<void> {
   }
 
   await seedReferenceCoverage(prisma);
+  await seedToolCoverage(prisma);
   await seedChecklistTemplateCoverage(prisma);
   await seedArchiveTemplateCoverage(prisma, admin.id);
 
@@ -65,6 +66,86 @@ export async function seedDemoCoverage(prisma: PrismaClient): Promise<void> {
   await seedKnowledgeRemarksAndHeat(prisma, admin.id);
 
   console.log('Demo coverage data seeding complete.');
+}
+
+async function seedToolCoverage(prisma: PrismaClient): Promise<void> {
+  const categories = [
+    {
+      name: '风险与问题闭环',
+      description: '用于交付风险识别、问题跟踪、整改复核和经验沉淀。',
+      sortOrder: 70,
+      tools: [
+        ['风险登记台账', 'internal', '记录风险来源、等级、责任人、应对动作和关闭时间。', 'AlertCircle', undefined],
+        ['问题闭环看板', 'internal', '按项目、责任人和状态追踪问题整改进度。', 'CheckCircle', undefined],
+      ],
+    },
+    {
+      name: '客户沟通与会议',
+      description: '用于客户会议、纪要、往来函件和跨文化沟通场景。',
+      sortOrder: 80,
+      tools: [
+        ['会议纪要生成器', 'internal', '按议题、决议、责任人和完成日期生成会议纪要。', 'FileText', undefined],
+        ['Zoom 会议入口', 'external', '打开远程会议平台，便于海外项目沟通。', 'Link', 'https://zoom.us/'],
+      ],
+    },
+    {
+      name: '远程交付支持',
+      description: '用于远程连接、网络诊断、截图取证和文件协作。',
+      sortOrder: 90,
+      tools: [
+        ['远程连接检查清单', 'internal', '检查 VPN、堡垒机、账号权限、远程桌面和审计记录。', 'Monitor', undefined],
+        ['AnyDesk 远程入口', 'external', '打开远程协助工具官网，用于现场联调支持。', 'Link', 'https://anydesk.com/'],
+      ],
+    },
+  ] as const;
+
+  for (const category of categories) {
+    const existingCategory = await prisma.toolCategory.findFirst({
+      where: { name: category.name },
+      select: { id: true },
+    });
+    const savedCategory = existingCategory
+      ? await prisma.toolCategory.update({
+          where: { id: existingCategory.id },
+          data: {
+            description: category.description,
+            sortOrder: category.sortOrder,
+            status: 'Active',
+          },
+          select: { id: true },
+        })
+      : await prisma.toolCategory.create({
+          data: {
+            name: category.name,
+            description: category.description,
+            sortOrder: category.sortOrder,
+            status: 'Active',
+          },
+          select: { id: true },
+        });
+
+    for (const [name, toolType, description, icon, url] of category.tools) {
+      const existingTool = await prisma.toolItem.findFirst({
+        where: { categoryId: savedCategory.id, name },
+        select: { id: true },
+      });
+      const data = {
+        categoryId: savedCategory.id,
+        name,
+        description,
+        toolType,
+        url,
+        icon,
+        sortOrder: 10,
+        status: 'Active',
+      };
+      if (existingTool) {
+        await prisma.toolItem.update({ where: { id: existingTool.id }, data });
+      } else {
+        await prisma.toolItem.create({ data });
+      }
+    }
+  }
 }
 
 async function seedReferenceCoverage(prisma: PrismaClient): Promise<void> {
