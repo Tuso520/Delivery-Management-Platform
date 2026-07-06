@@ -146,6 +146,12 @@ services:
       - DATABASE_URL=mysql://${MYSQL_USER}:${MYSQL_USER_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
       - SEED_ADMIN_PASSWORD=${SEED_ADMIN_PASSWORD}
       - SEED_DEFAULT_PASSWORD=${SEED_DEFAULT_PASSWORD}
+      - MINIO_ENDPOINT=minio
+      - MINIO_PORT=9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
+      - MINIO_BUCKET=${MINIO_BUCKET}
+      - MINIO_USE_SSL=false
     depends_on:
       mysql:
         condition: service_healthy
