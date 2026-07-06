@@ -35,6 +35,7 @@ const loading = ref(false)
 const categories = ref<KnowledgeCategory[]>([])
 const articles = ref<KnowledgeArticle[]>([])
 const activeCategoryId = ref('')
+const fileStreamRef = ref<HTMLElement>()
 
 const previewVisible = ref(false)
 const previewLoading = ref(false)
@@ -93,6 +94,11 @@ const totalFileCount = computed(() =>
   categorySections.value.reduce((total, section) => total + section.totalFileCount, 0),
 )
 
+const activeSection = computed(() =>
+  categorySections.value.find((section) => section.category.id === activeCategoryId.value)
+  || categorySections.value[0],
+)
+
 const previewTitle = computed(() => preview.value?.title || preview.value?.fileName || '在线预览')
 
 function articleTopic(article: KnowledgeArticle, rootName: string): string {
@@ -141,6 +147,8 @@ async function fetchArticles(): Promise<void> {
   try {
     const params: QueryKnowledgeArticleDto = { page: 1, pageSize: 300 }
     articles.value = (await knowledgeApi.getArticles(params)).list
+    await nextTick()
+    updateActiveCategoryByScroll()
   } finally {
     loading.value = false
   }
@@ -149,10 +157,38 @@ async function fetchArticles(): Promise<void> {
 async function scrollToCategory(categoryId: string): Promise<void> {
   activeCategoryId.value = categoryId
   await nextTick()
-  document.getElementById(`knowledge-${categoryId}`)?.scrollIntoView({
-    behavior: 'smooth',
-    block: 'start',
-  })
+  const container = fileStreamRef.value
+  const target = document.getElementById(`knowledge-${categoryId}`)
+  if (container && target) {
+    container.scrollTo({
+      top: target.offsetTop,
+      behavior: 'smooth',
+    })
+    return
+  }
+  target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function updateActiveCategoryByScroll(): void {
+  const container = fileStreamRef.value
+  if (!container || !categorySections.value.length) return
+
+  const containerTop = container.getBoundingClientRect().top
+  const threshold = 48
+  let currentId = categorySections.value[0].category.id
+
+  for (const section of categorySections.value) {
+    const element = document.getElementById(`knowledge-${section.category.id}`)
+    if (!element) continue
+    const top = element.getBoundingClientRect().top - containerTop
+    if (top <= threshold) {
+      currentId = section.category.id
+    } else {
+      break
+    }
+  }
+
+  activeCategoryId.value = currentId
 }
 
 async function previewAttachment(file: KnowledgeFileRow | KnowledgeAttachment): Promise<void> {
@@ -247,6 +283,8 @@ function releasePreviewObjectUrl(): void {
 
 onMounted(async () => {
   await Promise.all([fetchCategories(), fetchArticles()])
+  await nextTick()
+  updateActiveCategoryByScroll()
 })
 
 onBeforeUnmount(() => {
@@ -282,6 +320,10 @@ onBeforeUnmount(() => {
 
     <main class="file-panel">
       <div class="file-toolbar">
+        <div class="toolbar-title">
+          <strong>{{ activeSection?.category.name || '知识库' }}</strong>
+          <span>{{ activeSection?.totalFileCount || 0 }} 个文件</span>
+        </div>
         <a-space size="mini">
           <a-button size="small" @click="goApprovalTasks">更新审批</a-button>
           <a-button size="small" type="primary" @click="router.push('/knowledge/articles/new')">
@@ -291,20 +333,13 @@ onBeforeUnmount(() => {
       </div>
 
       <a-spin :loading="loading" class="file-spin">
-        <div class="file-stream">
+        <div ref="fileStreamRef" class="file-stream" @scroll.passive="updateActiveCategoryByScroll">
           <section
             v-for="section in categorySections"
             :id="`knowledge-${section.category.id}`"
             :key="section.category.id"
             class="file-section"
           >
-            <div class="section-heading">
-              <div>
-                <h3>{{ section.category.name }}</h3>
-                <span>共 {{ section.totalFileCount }} 个文件</span>
-              </div>
-            </div>
-
             <a-table
               v-if="section.files.length"
               :columns="fileColumns"
@@ -438,35 +473,36 @@ onBeforeUnmount(() => {
 
 <style scoped lang="scss">
 .knowledge-page {
-  min-height: calc(100vh - 112px);
+  height: calc(100vh - 104px);
+  min-height: 560px;
   display: grid;
   grid-template-columns: 224px minmax(0, 1fr);
-  gap: 12px;
+  gap: 8px;
+  align-items: stretch;
 }
 
 .category-sidebar,
 .file-panel {
   min-width: 0;
+  height: 100%;
   border: 1px solid var(--color-border-2);
   border-radius: 8px;
   background: var(--color-bg-2);
 }
 
 .category-sidebar {
-  height: calc(100vh - 128px);
   display: flex;
   flex-direction: column;
-  padding: 10px;
-  position: sticky;
-  top: 88px;
+  padding: 8px;
+  position: relative;
 }
 
 .category-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: 6px;
+  margin-bottom: 8px;
 
   h2 {
     margin: 0;
@@ -493,7 +529,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 7px 8px;
+  padding: 6px 8px;
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
@@ -528,7 +564,6 @@ onBeforeUnmount(() => {
 }
 
 .file-panel {
-  height: calc(100vh - 128px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -536,11 +571,34 @@ onBeforeUnmount(() => {
 
 .file-toolbar {
   display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  padding: 8px 12px;
+  min-height: 36px;
+  padding: 5px 8px;
   border-bottom: 1px solid var(--color-border-2);
+}
+
+.toolbar-title {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+
+  strong {
+    overflow: hidden;
+    color: var(--color-text-1);
+    font-size: 14px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  span {
+    flex: 0 0 auto;
+    color: var(--color-text-3);
+    font-size: 11px;
+  }
 }
 
 .file-spin {
@@ -551,33 +609,13 @@ onBeforeUnmount(() => {
 
 .file-stream {
   height: 100%;
-  padding: 0 12px 16px;
+  padding: 0 8px 10px;
   overflow: auto;
 }
 
 .file-section {
-  padding-top: 12px;
+  padding-top: 8px;
   scroll-margin-top: 8px;
-}
-
-.section-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
-
-  h3 {
-    margin: 0;
-    color: var(--color-text-1);
-    font-size: 15px;
-  }
-
-  span {
-    display: inline-block;
-    margin-top: 2px;
-    color: var(--color-text-3);
-    font-size: 11px;
-  }
 }
 
 .file-table {
