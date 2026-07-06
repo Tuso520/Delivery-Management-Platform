@@ -72,14 +72,16 @@ const categoryRootLookup = computed(() => {
 const categorySections = computed<CategoryIndexItem[]>(() => {
   return rootCategories.value.map((category) => {
     const allFiles = articles.value.flatMap((article) => {
-      const rootId = categoryRootLookup.value.get(article.categoryId) || article.categoryId
+      const articleCategoryId = article.categoryId || article.category?.id
+      if (!articleCategoryId) return []
+      const rootId = categoryRootLookup.value.get(articleCategoryId) || articleCategoryId
       if (rootId !== category.id) return []
 
       return (article.files || []).map((file) => ({
         ...file,
         articleId: article.id,
         articleTitle: article.title,
-        categoryId: article.categoryId,
+        categoryId: articleCategoryId,
         categoryName: category.name,
         topic: articleTopic(article, category.name),
       }))
@@ -336,7 +338,7 @@ onBeforeUnmount(() => {
         </div>
         <a-space size="mini">
           <a-button size="small" @click="goApprovalTasks">更新审批</a-button>
-          <a-button size="small" type="primary" @click="router.push('/knowledge/articles/new')">
+          <a-button size="small" type="primary" @click="router.push('/knowledge/create')">
             新增资料
           </a-button>
         </a-space>

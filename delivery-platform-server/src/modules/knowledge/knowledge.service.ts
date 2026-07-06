@@ -260,6 +260,7 @@ export class KnowledgeService {
         where,
         select: {
           id: true,
+          categoryId: true,
           title: true,
           countryCode: true,
           projectType: true,
