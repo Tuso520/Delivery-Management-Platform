@@ -259,20 +259,11 @@ function buildKnowledgeFixture(catalog) {
     });
     categoryRows.push(moduleCategory);
 
-    module.contents.forEach((content, contentIndex) => {
-      const contentCategory = makeCategory({
-        id: `cat-${module.id}-${content.id}`,
-        name: content.title,
-        description: `${module.name} / ${content.title}：${content.files.length} 个文件索引`,
-        parentId: moduleCategory.id,
-        sortOrder: (contentIndex + 1) * 10,
-      });
-      categoryRows.push(contentCategory);
-
+    module.contents.forEach((content) => {
       const articleId = `article-${module.id}-${content.id}`;
       const article = {
         id: articleId,
-        categoryId: contentCategory.id,
+        categoryId: moduleCategory.id,
         title: `${module.name} - ${content.title}`,
         countryCode: 'CN',
         projectType: inferProjectType(module.id),
@@ -300,7 +291,7 @@ function buildKnowledgeFixture(catalog) {
         publishedAt: now(),
         createdAt: now(),
         updatedAt: now(),
-        category: { id: contentCategory.id, name: contentCategory.name },
+        category: { id: moduleCategory.id, name: moduleCategory.name },
         author: { id: 'user-admin', realName: '系统管理员', username: 'admin' },
         reviewer: null,
         versions: [
@@ -383,6 +374,17 @@ function descendantCategoryIds(parentId) {
   ]);
 }
 
+function withArticleFileCounts(list) {
+  return list.map((article) => ({
+    ...article,
+    fileCount: attachments.filter((attachment) =>
+      attachment.ownerType === 'KnowledgeArticle'
+      && attachment.ownerId === article.id
+      && !attachment.deletedAt
+    ).length,
+  }));
+}
+
 function buildKnowledgeMarkdown(module, content) {
   return [
     `# ${module.name} / ${content.title}`,
@@ -396,7 +398,7 @@ function buildKnowledgeMarkdown(module, content) {
     '| 文件 | 类型 | 状态 |',
     '| --- | --- | --- |',
     ...content.files.map((file) =>
-      `| ${file.name} | ${labelForKind(file.kind)} | ${file.needsRevision ? '待修订' : '已生成'} |`,
+      `| ${file.name}（${content.title}） | ${labelForKind(file.kind)} | ${file.needsRevision ? '待修订' : '已生成'} |`,
     ),
     '',
     '## 测试要求',
@@ -876,14 +878,14 @@ async function handleApi(req, res, url) {
     }
     if (status) list = list.filter((item) => item.status === status);
     if (sourceStatus) list = list.filter((item) => item.sourceStatus === sourceStatus);
-    sendJson(res, envelope(page(list, url.searchParams.get('page'), url.searchParams.get('pageSize'))));
+    sendJson(res, envelope(page(withArticleFileCounts(list), url.searchParams.get('page'), url.searchParams.get('pageSize'))));
     return;
   }
 
   const articleMatch = path.match(/^\/knowledge\/articles\/([^/]+)$/);
   if (req.method === 'GET' && articleMatch) {
     const article = articles.find((item) => item.id === articleMatch[1]);
-    sendJson(res, envelope(article ?? null), article ? 200 : 404);
+    sendJson(res, envelope(article ? withArticleFileCounts([article])[0] : null), article ? 200 : 404);
     return;
   }
 

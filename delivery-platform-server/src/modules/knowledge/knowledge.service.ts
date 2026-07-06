@@ -27,6 +27,9 @@ interface ArticleListItem {
   fileUrl: string | null;
   fileSize: bigint | null;
   fileExt: string | null;
+  sourceStatus: string;
+  needsRevision: boolean;
+  fileCount?: number;
   version: string;
   status: string;
   authorId: string;
@@ -260,9 +263,26 @@ export class KnowledgeService {
         orderBy: { updatedAt: 'desc' },
       }),
     ]);
+    const fileCounts = list.length
+      ? await this.prisma.attachment.groupBy({
+          by: ['ownerId'],
+          where: {
+            ownerType: 'KnowledgeArticle',
+            ownerId: { in: list.map((item) => item.id) },
+            deletedAt: null,
+          },
+          _count: { _all: true },
+        })
+      : [];
+    const fileCountByArticleId = new Map(
+      fileCounts.map((item) => [item.ownerId, item._count._all]),
+    );
 
     return {
-      list,
+      list: list.map((item) => ({
+        ...item,
+        fileCount: fileCountByArticleId.get(item.id) ?? 0,
+      })),
       pagination: {
         page,
         pageSize,

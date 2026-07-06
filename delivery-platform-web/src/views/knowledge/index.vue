@@ -22,7 +22,8 @@ const sourceStatus = ref('')
 interface CategoryIndexItem {
   category: KnowledgeCategory
   label: string
-  depth: number
+  articles: KnowledgeArticle[]
+  fileCount: number
 }
 
 const statusOptions = [
@@ -39,37 +40,51 @@ const sourceOptions = [
 ] as const
 
 const articleColumns: TableColumnData[] = [
-  { title: '知识标题', dataIndex: 'title', slotName: 'title', width: 300 },
+  { title: '主要内容', dataIndex: 'title', slotName: 'title', width: 300 },
   { title: '国家', dataIndex: 'countryCode', slotName: 'country', width: 100 },
   { title: '适用阶段', dataIndex: 'stageCode', slotName: 'stage', width: 140 },
   { title: '资料状态', dataIndex: 'sourceStatus', slotName: 'sourceStatus', width: 120 },
   { title: '发布状态', dataIndex: 'status', slotName: 'status', width: 120 },
   { title: '版本', dataIndex: 'version', width: 90 },
-  { title: '文件与正文', slotName: 'content', width: 130 },
+  { title: '文件', slotName: 'content', width: 130 },
   { title: '操作', slotName: 'actions', width: 210, fixed: 'right' },
 ]
 
-const flatCategories = computed(() => flattenCategories(categories.value))
+const rootCategories = computed(() => categories.value.filter((category) => !category.parentId))
 
-const categorySections = computed(() =>
-  flatCategories.value
-    .map((item) => ({
-      ...item,
-      articles: articles.value.filter((article) => article.categoryId === item.category.id),
-    }))
-    .filter((section) => section.articles.length || !(section.category.children?.length)),
+const categoryRootLookup = computed(() => {
+  const lookup = new Map<string, string>()
+  const visit = (category: KnowledgeCategory, rootId: string) => {
+    lookup.set(category.id, rootId)
+    ;(category.children || []).forEach((child) => visit(child, rootId))
+  }
+  rootCategories.value.forEach((category) => visit(category, category.id))
+  return lookup
+})
+
+const categorySections = computed<CategoryIndexItem[]>(() =>
+  rootCategories.value
+    .map((category) => {
+      const sectionArticles = articles.value.filter(
+        (article) => (categoryRootLookup.value.get(article.categoryId) || article.categoryId) === category.id,
+      )
+      return {
+        category,
+        label: category.name,
+        articles: sectionArticles,
+        fileCount: sectionArticles.reduce((total, article) => total + articleFileCount(article), 0),
+      }
+    })
+    .filter((section) => section.articles.length),
 )
 
-function flattenCategories(
-  nodes: KnowledgeCategory[],
-  parentLabel = '',
-  depth = 0,
-): CategoryIndexItem[] {
-  return nodes.flatMap((node) => {
-    const label = parentLabel ? `${parentLabel} / ${node.name}` : node.name
-    const current = { category: node, label, depth }
-    return [current, ...flattenCategories(node.children || [], label, depth + 1)]
-  })
+function articleFileCount(article: KnowledgeArticle): number {
+  return Number(article.fileCount ?? (article.fileUrl ? 1 : 0))
+}
+
+function articleTopic(article: KnowledgeArticle, rootName: string): string {
+  const prefix = `${rootName} - `
+  return article.title.startsWith(prefix) ? article.title.slice(prefix.length) : article.title
 }
 
 function statusMeta(value: string) {
@@ -151,7 +166,7 @@ onMounted(async () => {
         @click="scrollToCategory(section.category.id)"
       >
         <span>{{ section.label }}</span>
-        <a-badge :count="section.articles.length" :max-count="99" />
+        <span class="file-count-pill">{{ section.fileCount }}</span>
       </a-button>
     </aside>
 
@@ -211,7 +226,7 @@ onMounted(async () => {
               <h3>{{ section.label }}</h3>
               <p>{{ section.category.description }}</p>
             </div>
-            <span>{{ section.articles.length }} 条知识</span>
+            <span class="section-file-count">{{ section.fileCount }} 个文件</span>
           </header>
 
           <a-table
@@ -224,9 +239,14 @@ onMounted(async () => {
             class="knowledge-table"
           >
             <template #title="{ record }">
-              <a-button type="text" @click="router.push(`/knowledge/${record.id}`)">
-                {{ record.title }}
-              </a-button>
+              <div class="article-topic">
+                <a-button type="text" @click="router.push(`/knowledge/${record.id}`)">
+                  {{ articleTopic(record, section.category.name) }}
+                </a-button>
+                <span v-if="articleTopic(record, section.category.name) !== record.title" class="topic-note">
+                  {{ record.title }}
+                </span>
+              </div>
             </template>
             <template #country="{ record }">
               {{ record.countryCode || '通用' }}
@@ -245,9 +265,7 @@ onMounted(async () => {
               </a-tag>
             </template>
             <template #content="{ record }">
-              <a-button type="text" @click="router.push(`/knowledge/${record.id}`)">
-                查看内容
-              </a-button>
+              <span class="table-file-count">{{ articleFileCount(record) }} 个文件</span>
             </template>
             <template #actions="{ record }">
               <a-space size="mini">
@@ -324,6 +342,20 @@ onMounted(async () => {
   }
 }
 
+.file-count-pill {
+  flex: 0 0 auto;
+  min-width: 26px;
+  padding: 1px 7px;
+  border: 1px solid var(--color-border-2);
+  border-radius: 999px;
+  background: var(--color-fill-1);
+  color: var(--color-text-3);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  text-align: center;
+}
+
 .knowledge-stream {
   min-width: 0;
 }
@@ -388,6 +420,37 @@ onMounted(async () => {
     color: var(--color-text-3);
     font-size: 12px;
   }
+}
+
+.section-file-count {
+  flex: 0 0 auto;
+}
+
+.article-topic {
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+  min-width: 0;
+}
+
+.article-topic :deep(.arco-btn) {
+  max-width: 100%;
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.topic-note {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--color-text-3);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table-file-count {
+  color: var(--color-text-2);
+  font-size: 13px;
 }
 
 .knowledge-table :deep(.arco-btn-text) {

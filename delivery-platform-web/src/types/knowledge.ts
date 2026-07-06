@@ -23,6 +23,7 @@ export interface KnowledgeArticle {
   fileUrl: string | null
   fileSize: number | null
   fileExt: string | null
+  fileCount?: number
   markdownContent: string | null
   sourceStatus: string
   needsRevision: boolean

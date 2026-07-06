@@ -53,6 +53,7 @@ export async function seedKnowledge(prisma: PrismaClient): Promise<void> {
   const catalog = await loadKnowledgeCatalog();
   const categoryIds = await seedKnowledgeCategories(prisma, catalog);
 
+  await collapseSeedChildCategories(prisma, catalog, categoryIds);
   await cleanupLegacyAndDuplicateCategories(prisma);
 
   const admin = await prisma.user.findUnique({
@@ -100,19 +101,6 @@ async function seedKnowledgeCategories(
     );
     categoryIds.set(module.id, moduleCategory.id);
 
-    let contentSortOrder = 10;
-    for (const content of module.contents) {
-      const contentCategory = await syncCategory(
-        prisma,
-        content.title,
-        `${module.name} / ${content.title}：${content.files.length} 个文件索引`,
-        moduleCategory.id,
-        contentSortOrder,
-      );
-      categoryIds.set(`${module.id}/${content.id}`, contentCategory.id);
-      contentSortOrder += 10;
-    }
-
     moduleSortOrder += 10;
   }
 
@@ -136,7 +124,7 @@ async function seedKnowledgeArticlesAndFiles(
 
   for (const module of catalog.modules) {
     for (const content of module.contents) {
-      const categoryId = categoryIds.get(`${module.id}/${content.id}`);
+      const categoryId = categoryIds.get(module.id);
       if (!categoryId) continue;
 
       const article = await upsertArticle(prisma, {
@@ -259,6 +247,55 @@ async function syncCategory(
   });
 }
 
+async function collapseSeedChildCategories(
+  prisma: PrismaClient,
+  catalog: KnowledgeCatalog,
+  categoryIds: Map<string, string>,
+): Promise<void> {
+  if (
+    typeof prisma.knowledgeCategory.findMany !== 'function' ||
+    typeof prisma.knowledgeCategory.updateMany !== 'function' ||
+    typeof prisma.knowledgeArticle.updateMany !== 'function'
+  ) {
+    return;
+  }
+
+  for (const module of catalog.modules) {
+    const rootCategoryId = categoryIds.get(module.id);
+    if (!rootCategoryId) continue;
+
+    const childNames = module.contents.map((content) => content.title);
+    if (!childNames.length) continue;
+
+    const childCategories = await prisma.knowledgeCategory.findMany({
+      where: {
+        parentId: rootCategoryId,
+        name: { in: childNames },
+        status: 'Active',
+      },
+      select: { id: true },
+    });
+
+    if (!childCategories.length) continue;
+
+    const childIds = childCategories.map((category) => category.id);
+    await prisma.knowledgeArticle.updateMany({
+      where: {
+        categoryId: { in: childIds },
+        deletedAt: null,
+      },
+      data: { categoryId: rootCategoryId },
+    });
+    await prisma.knowledgeCategory.updateMany({
+      where: { id: { in: childIds } },
+      data: {
+        status: 'Inactive',
+        description: '已合并到一级知识分类，原二级内容保留在知识条目标题和文件索引中',
+      },
+    });
+  }
+}
+
 async function upsertArticle(
   prisma: PrismaClient,
   data: {
@@ -276,11 +313,10 @@ async function upsertArticle(
   const existing = await prisma.knowledgeArticle.findFirst({
     where: {
       title: data.title,
-      categoryId: data.categoryId,
       deletedAt: null,
     },
     orderBy: { createdAt: 'asc' },
-    select: { id: true },
+    select: { id: true, categoryId: true },
   });
 
   const articleData = {
@@ -290,6 +326,16 @@ async function upsertArticle(
   };
 
   if (existing) {
+    if (
+      existing.categoryId &&
+      existing.categoryId !== data.categoryId &&
+      typeof prisma.knowledgeArticle.update === 'function'
+    ) {
+      await prisma.knowledgeArticle.update({
+        where: { id: existing.id },
+        data: { categoryId: data.categoryId },
+      });
+    }
     await softDeleteDuplicateArticles(prisma, existing.id, data.categoryId, data.title);
     return existing;
   }
@@ -382,7 +428,7 @@ function buildArticleMarkdown(
     '| 文件 | 类型 | 状态 |',
     '| --- | --- | --- |',
     ...content.files.map((file) =>
-      `| ${file.name} | ${labelForKind(file.kind)} | ${
+      `| ${file.name}（${content.title}） | ${labelForKind(file.kind)} | ${
         file.needsRevision ? '待修订' : '已生成样例'
       } |`,
     ),
