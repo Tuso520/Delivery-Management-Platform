@@ -54,6 +54,8 @@ interface KnowledgeAttachmentSummary {
   mimeType: string;
   createdAt: Date;
   uploader: { id: string; realName: string; username: string } | null;
+  previewCount?: number;
+  downloadCount?: number;
 }
 
 interface FileRevisionPayload {
@@ -300,10 +302,31 @@ export class KnowledgeService {
           orderBy: { createdAt: 'desc' },
         })
       : [];
+    const heatRows = files.length
+      ? await this.prisma.operationLog.groupBy({
+          by: ['targetId', 'action'],
+          where: {
+            module: 'attachment',
+            action: { in: ['preview', 'download'] },
+            targetId: { in: files.map((file) => file.id) },
+            result: 'success',
+          },
+          _count: { _all: true },
+        })
+      : [];
+    const heatMap = new Map<string, number>();
+    for (const item of heatRows) {
+      heatMap.set(`${item.targetId}:${item.action}`, item._count._all);
+    }
+
     const filesByArticleId = new Map<string, KnowledgeAttachmentSummary[]>();
     for (const file of files) {
       const listForArticle = filesByArticleId.get(file.ownerId) ?? [];
-      listForArticle.push(file);
+      listForArticle.push({
+        ...file,
+        previewCount: heatMap.get(`${file.id}:preview`) ?? 0,
+        downloadCount: heatMap.get(`${file.id}:download`) ?? 0,
+      });
       filesByArticleId.set(file.ownerId, listForArticle);
     }
 
@@ -675,6 +698,8 @@ export class KnowledgeService {
       mimeType: attachment.mimeType,
       createdAt: attachment.createdAt,
       uploader: attachment.uploader,
+      previewCount: attachment.previewCount ?? 0,
+      downloadCount: attachment.downloadCount ?? 0,
     };
   }
 

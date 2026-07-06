@@ -220,7 +220,7 @@ onBeforeUnmount(() => {
   min-height: 0;
   flex: 1 1 auto;
   min-width: 0;
-  padding: 24px 28px 36px;
+  padding: 8px;
   background: var(--color-fill-1);
   overflow: auto;
 }
@@ -246,7 +246,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 900px) {
   .layout-main {
-    padding: 16px 14px 28px;
+    padding: 6px;
   }
 }
 </style>

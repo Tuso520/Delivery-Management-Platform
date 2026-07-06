@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import type { TableColumnData } from '@arco-design/web-vue'
+import { IconDownload, IconEye } from '@arco-design/web-vue/es/icon'
 import { attachmentApi } from '@/api/attachment'
 import type { AttachmentPreview } from '@/api/attachment'
 import { knowledgeApi } from '@/api/knowledge'
@@ -46,13 +47,15 @@ const revisionSubmitting = ref(false)
 const revisionTarget = ref<KnowledgeFileRow>()
 const replacementFiles = ref<File[]>([])
 
-const fileColumns: TableColumnData[] = [
-  { title: '主要内容', dataIndex: 'originalName', slotName: 'file', minWidth: 480 },
-  { title: '类型', dataIndex: 'fileExt', slotName: 'type', width: 72 },
-  { title: '大小', dataIndex: 'fileSize', slotName: 'size', width: 86 },
-  { title: '更新时间', dataIndex: 'createdAt', slotName: 'updatedAt', width: 138 },
-  { title: '操作', slotName: 'actions', width: 238, fixed: 'right' },
-]
+function fileColumnsFor(categoryName: string): TableColumnData[] {
+  return [
+    { title: categoryName, dataIndex: 'originalName', slotName: 'file', minWidth: 520 },
+    { title: '类型', dataIndex: 'fileExt', slotName: 'type', width: 64 },
+    { title: '大小', dataIndex: 'fileSize', slotName: 'size', width: 78 },
+    { title: '更新时间', dataIndex: 'createdAt', slotName: 'updatedAt', width: 132 },
+    { title: '操作', slotName: 'actions', width: 224, fixed: 'right' },
+  ]
+}
 
 const rootCategories = computed(() => categories.value.filter((category) => !category.parentId))
 
@@ -135,6 +138,16 @@ function viewerLabel(viewer?: AttachmentPreview['viewer']): string {
   return viewer ? labels[viewer] : '在线预览'
 }
 
+function incrementFileHeat(fileId: string, key: 'previewCount' | 'downloadCount'): void {
+  for (const article of articles.value) {
+    const target = article.files?.find((file) => file.id === fileId)
+    if (target) {
+      target[key] = (target[key] || 0) + 1
+      return
+    }
+  }
+}
+
 async function fetchCategories(): Promise<void> {
   categories.value = await knowledgeApi.getCategories()
   if (!activeCategoryId.value && rootCategories.value.length) {
@@ -214,6 +227,7 @@ async function previewAttachment(file: KnowledgeFileRow | KnowledgeAttachment): 
     } else {
       preview.value = metadata
     }
+    incrementFileHeat(file.id, 'previewCount')
   } finally {
     previewLoading.value = false
   }
@@ -221,6 +235,7 @@ async function previewAttachment(file: KnowledgeFileRow | KnowledgeAttachment): 
 
 async function downloadAttachment(file: KnowledgeFileRow | KnowledgeAttachment): Promise<void> {
   downloadBlob(await attachmentApi.getContent(file.id), file.originalName)
+  incrementFileHeat(file.id, 'downloadCount')
 }
 
 function openRevision(file: KnowledgeFileRow): void {
@@ -342,7 +357,7 @@ onBeforeUnmount(() => {
           >
             <a-table
               v-if="section.files.length"
-              :columns="fileColumns"
+              :columns="fileColumnsFor(section.category.name)"
               :data="section.files"
               :pagination="false"
               :bordered="{ cell: false }"
@@ -352,9 +367,14 @@ onBeforeUnmount(() => {
               <template #file="{ record }">
                 <div class="file-name-cell">
                   <strong>{{ record.originalName }}</strong>
-                  <a-tag v-if="record.topic" size="small" color="arcoblue">
-                    {{ record.topic }}
-                  </a-tag>
+                  <span class="file-heat" title="在线预览热度">
+                    <IconEye />
+                    {{ record.previewCount || 0 }}
+                  </span>
+                  <span class="file-heat" title="下载热度">
+                    <IconDownload />
+                    {{ record.downloadCount || 0 }}
+                  </span>
                 </div>
               </template>
               <template #type="{ record }">
@@ -473,45 +493,48 @@ onBeforeUnmount(() => {
 
 <style scoped lang="scss">
 .knowledge-page {
-  height: calc(100vh - 104px);
-  min-height: 560px;
+  height: 100%;
+  min-height: 0;
   display: grid;
-  grid-template-columns: 224px minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: 176px minmax(0, 1fr);
+  gap: 6px;
   align-items: stretch;
+  overflow: hidden;
 }
 
 .category-sidebar,
 .file-panel {
   min-width: 0;
+  min-height: 0;
   height: 100%;
   border: 1px solid var(--color-border-2);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--color-bg-2);
 }
 
 .category-sidebar {
   display: flex;
   flex-direction: column;
-  padding: 8px;
+  padding: 6px;
   position: relative;
+  overflow: hidden;
 }
 
 .category-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 6px;
-  margin-bottom: 8px;
+  gap: 4px;
+  margin-bottom: 6px;
 
   h2 {
     margin: 0;
     color: var(--color-text-1);
-    font-size: 15px;
+    font-size: 14px;
   }
 
   p {
-    margin: 4px 0 0;
+    margin: 2px 0 0;
     color: var(--color-text-3);
     font-size: 11px;
   }
@@ -519,23 +542,26 @@ onBeforeUnmount(() => {
 
 .category-list {
   display: grid;
-  gap: 4px;
-  overflow: auto;
+  align-content: start;
+  gap: 3px;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .category-item {
   width: 100%;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px 8px;
+  gap: 5px;
+  padding: 5px 6px;
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
   color: var(--color-text-2);
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
   text-align: left;
 
   span {
@@ -545,8 +571,8 @@ onBeforeUnmount(() => {
   }
 
   em {
-    min-width: 24px;
-    padding: 1px 6px;
+    min-width: 20px;
+    padding: 0 5px;
     border-radius: 999px;
     background: var(--color-fill-2);
     color: var(--color-text-3);
@@ -573,9 +599,9 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  min-height: 36px;
-  padding: 5px 8px;
+  gap: 6px;
+  min-height: 34px;
+  padding: 4px 6px;
   border-bottom: 1px solid var(--color-border-2);
 }
 
@@ -583,12 +609,12 @@ onBeforeUnmount(() => {
   min-width: 0;
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 6px;
 
   strong {
     overflow: hidden;
     color: var(--color-text-1);
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -607,20 +633,26 @@ onBeforeUnmount(() => {
   flex: 1;
 }
 
+.file-spin :deep(.arco-spin-children) {
+  height: 100%;
+  min-height: 0;
+}
+
 .file-stream {
   height: 100%;
-  padding: 0 8px 10px;
-  overflow: auto;
+  padding: 0 6px 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .file-section {
-  padding-top: 8px;
-  scroll-margin-top: 8px;
+  padding-top: 6px;
+  scroll-margin-top: 6px;
 }
 
 .file-table {
   border: 1px solid var(--color-border-2);
-  border-radius: 6px;
+  border-radius: 5px;
   overflow: hidden;
 }
 
@@ -629,7 +661,7 @@ onBeforeUnmount(() => {
 }
 
 .file-table :deep(.arco-table-cell) {
-  padding: 6px 8px;
+  padding: 5px 6px;
   font-size: 12px;
   line-height: 1.35;
 }
@@ -649,13 +681,29 @@ onBeforeUnmount(() => {
   }
 }
 
+.file-heat {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--color-text-3);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+
+  svg {
+    width: 13px;
+    height: 13px;
+  }
+}
+
 .file-actions {
   white-space: nowrap;
 }
 
 .file-actions :deep(.arco-btn-size-mini) {
-  padding: 0 4px;
-  font-size: 12px;
+  padding: 0 3px;
+  font-size: 11px;
 }
 
 .section-empty {
@@ -789,21 +837,21 @@ onBeforeUnmount(() => {
 @media (max-width: 980px) {
   .knowledge-page {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(104px, 172px) minmax(0, 1fr);
   }
 
   .category-sidebar,
   .file-panel {
-    height: auto;
+    height: 100%;
     position: static;
   }
 
   .category-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    max-height: 240px;
   }
 
   .file-toolbar {
-    flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>

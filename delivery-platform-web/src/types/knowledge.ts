@@ -21,6 +21,8 @@ export interface KnowledgeAttachment {
   fileSize: string | number
   mimeType: string
   createdAt: string
+  previewCount?: number
+  downloadCount?: number
   uploader?: { id: string; realName: string; username?: string } | null
 }
 
