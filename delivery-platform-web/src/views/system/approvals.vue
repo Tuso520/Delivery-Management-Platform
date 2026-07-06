@@ -96,18 +96,21 @@ const previewTitle = computed(() => preview.value?.title || preview.value?.fileN
 async function fetchData(): Promise<void> {
   loading.value = true
   try {
-    const [templatePage, taskPage, roleList, userPage, countryPage] = await Promise.all([
+    const [templatePage, taskPage] = await Promise.all([
       approvalApi.getTemplates({ page: 1, pageSize: 100 }),
       approvalApi.getTasks({ page: 1, pageSize: 100 }),
+    ])
+    templates.value = templatePage.list
+    tasks.value = taskPage.list
+
+    const [roleResult, userResult, countryResult] = await Promise.allSettled([
       roleApi.getList(),
       userApi.getList({ page: 1, pageSize: 100, status: 'Active' }),
       countryApi.getList({ page: 1, pageSize: 100 }),
     ])
-    templates.value = templatePage.list
-    tasks.value = taskPage.list
-    roles.value = roleList
-    users.value = userPage.list
-    countries.value = countryPage.list
+    roles.value = roleResult.status === 'fulfilled' ? roleResult.value : []
+    users.value = userResult.status === 'fulfilled' ? userResult.value.list : []
+    countries.value = countryResult.status === 'fulfilled' ? countryResult.value.list : []
   } finally {
     loading.value = false
   }
