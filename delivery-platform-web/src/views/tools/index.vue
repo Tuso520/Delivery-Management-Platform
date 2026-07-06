@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { Message } from '@arco-design/web-vue'
-import { arcoConfirm, arcoPrompt } from '@/utils/arco-dialog'
+import { arcoConfirm } from '@/utils/arco-dialog'
 import { toolApi } from '@/api/tools'
 import type { ToolCategory, ToolItem } from '@/types/tools'
 import type { TagType } from '@/types/ui'
@@ -346,26 +346,36 @@ onMounted(() => {
 </template>
 <style scoped lang="scss">
 .tools-page {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 6px;
+  align-items: stretch;
   padding: 0;
+  overflow: hidden;
 }
 .category-card {
-  width: 240px;
-  flex-shrink: 0;
-  border-radius: 8px;
+  min-width: 0;
+  height: 100%;
+  border-radius: 0;
+  overflow: hidden;
 }
-.category-tabs {
-  max-height: calc(100vh - 240px);
+.category-card :deep(.arco-card__body),
+.tools-card :deep(.arco-card__body) {
+  min-height: 0;
   overflow-y: auto;
 }
+.category-tabs {
+  display: grid;
+  gap: 4px;
+}
 .category-tab {
-  padding: 10px 12px;
+  padding: 8px 10px;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 0;
   transition: all 0.2s;
-  margin-bottom: 4px;
+  margin-bottom: 0;
   &:hover {
     background-color: var(--app-surface-subtle);
   }
@@ -388,8 +398,8 @@ onMounted(() => {
   font-size: 12px;
   color: var(--app-text-muted);
   background-color: var(--app-surface-subtle);
-  padding: 0 7px;
-  border-radius: 8px;
+  padding: 0 6px;
+  border-radius: 0;
   height: 18px;
   line-height: 18px;
 }
@@ -403,9 +413,10 @@ onMounted(() => {
   opacity: 1;
 }
 .tools-card {
-  flex: 1;
   min-width: 0;
-  border-radius: 8px;
+  height: 100%;
+  border-radius: 0;
+  overflow: hidden;
 }
 .card-header {
   display: flex;
@@ -417,10 +428,13 @@ onMounted(() => {
   font-weight: 600;
 }
 .tool-card {
-  margin-bottom: 16px;
-  border-radius: 8px;
+  height: calc(100% - 12px);
+  margin-bottom: 12px;
+  border-radius: 0;
+  box-shadow: none !important;
 }
 .tool-card-content {
+  min-height: 166px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -433,7 +447,7 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   background-color: #e8f3ff;
-  border-radius: 12px;
+  border-radius: 0;
   margin-bottom: 12px;
 }
 .tool-name {
@@ -468,5 +482,12 @@ onMounted(() => {
   padding: 48px;
   color: var(--app-text-muted);
   font-size: 14px;
+}
+
+@media (max-width: 980px) {
+  .tools-page {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(128px, 200px) minmax(0, 1fr);
+  }
 }
 </style>

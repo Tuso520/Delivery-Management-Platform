@@ -2,10 +2,10 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
-import { arcoConfirm, arcoPrompt } from '@/utils/arco-dialog'
+import { arcoConfirm } from '@/utils/arco-dialog'
 import { projectApi } from '@/api/project'
 import type { Project, QueryProjectDto } from '@/types/project'
-import { PROJECT_STATUS_OPTIONS, PROJECT_TYPE_OPTIONS, COUNTRY_OPTIONS } from '@/types/project'
+import { PROJECT_TYPE_OPTIONS, COUNTRY_OPTIONS } from '@/types/project'
 import type { TagType } from '@/types/ui'
 import { useLocaleStore } from '@/store/locale'
 import {
@@ -161,83 +161,26 @@ onMounted(() => {
 
 <template>
   <div class="project-page">
-    <!-- Search Bar -->
     <a-card class="search-card">
-      <a-form :model="searchForm" inline label-width="auto">
-        <a-form-item label="关键词">
-          <a-input
-            v-model="searchForm.keyword"
-            placeholder="项目名称或客户名称"
-            clearable
-            class="filter-control filter-control-wide"
-            @keyup.enter="handleSearch"
-          />
-        </a-form-item>
-        <a-form-item label="项目状态">
-          <a-select
-            v-model="searchForm.projectStatus"
-            placeholder="全部状态"
-            clearable
-            class="filter-control"
-            @change="handleSearch"
-          >
-            <a-option
-              v-for="item in PROJECT_STATUS_OPTIONS"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
+      <div class="project-search-row">
+        <a-form :model="searchForm" inline label-width="auto" class="project-search-form">
+          <a-form-item label="关键词" class="keyword-item">
+            <a-input
+              v-model="searchForm.keyword"
+              placeholder="项目名称或客户名称"
+              clearable
+              class="keyword-input"
+              @keyup.enter="handleSearch"
             />
-          </a-select>
-        </a-form-item>
-        <a-form-item label="国家">
-          <a-select
-            v-model="searchForm.countryCode"
-            placeholder="全部国家"
-            clearable
-            class="filter-control"
-            @change="handleSearch"
-          >
-            <a-option
-              v-for="item in COUNTRY_OPTIONS"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </a-select>
-        </a-form-item>
-        <a-form-item label="项目类型">
-          <a-select
-            v-model="searchForm.projectType"
-            placeholder="全部类型"
-            clearable
-            class="filter-control"
-            @change="handleSearch"
-          >
-            <a-option
-              v-for="item in PROJECT_TYPE_OPTIONS"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </a-select>
-        </a-form-item>
-        <a-form-item>
-          <a-button type="primary" @click="handleSearch">
-            查询
-          </a-button>
-          <a-button @click="handleReset">
-            重置
-          </a-button>
-        </a-form-item>
-      </a-form>
+          </a-form-item>
+        </a-form>
+        <div class="project-search-actions">
+          <a-button type="primary" @click="handleSearch">查询</a-button>
+          <a-button @click="handleReset">重置</a-button>
+          <a-button type="primary" @click="handleCreate">新建项目</a-button>
+        </div>
+      </div>
     </a-card>
-
-    <!-- Toolbar -->
-    <div class="toolbar">
-      <a-button type="primary" @click="handleCreate">
-        新建项目
-      </a-button>
-    </div>
 
     <!-- Table -->
     <a-card>
@@ -367,5 +310,58 @@ onMounted(() => {
   color: var(--app-text);
   font-weight: 600;
   white-space: nowrap;
+}
+
+.project-page {
+  min-width: 0;
+}
+
+.project-search-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.project-search-form {
+  min-width: 0;
+  flex: 1;
+}
+
+.keyword-item {
+  width: min(520px, 100%);
+  margin-bottom: 0 !important;
+}
+
+.keyword-input {
+  width: 100% !important;
+}
+
+.project-search-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.project-search-actions .arco-btn + .arco-btn {
+  margin-left: 2px;
+}
+
+@media (max-width: 760px) {
+  .project-search-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .keyword-item {
+    width: 100%;
+  }
+
+  .project-search-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
 }
 </style>

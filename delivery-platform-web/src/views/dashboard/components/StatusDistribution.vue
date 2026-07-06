@@ -70,7 +70,7 @@ function getBarWidth(count: number): string {
 <style scoped lang="scss">
 .data-panel {
   min-width: 0;
-  border-radius: 8px;
+  border-radius: 0;
   border: 1px solid #e5e6eb;
   background: #fff;
   overflow: hidden;
@@ -141,13 +141,13 @@ function getBarWidth(count: number): string {
   width: 8px;
   height: 8px;
   flex: 0 0 auto;
-  border-radius: 2px;
+  border-radius: 0;
 }
 
 .status-bar-track {
   height: 10px;
   background: #edf1ef;
-  border-radius: 3px;
+  border-radius: 0;
   overflow: hidden;
 }
 
@@ -155,7 +155,7 @@ function getBarWidth(count: number): string {
   display: block;
   height: 100%;
   min-width: 8px;
-  border-radius: 3px;
+  border-radius: 0;
   transition: width 0.4s ease;
 }
 

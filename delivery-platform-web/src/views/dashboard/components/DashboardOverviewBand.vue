@@ -1,7 +1,7 @@
 <script setup lang="ts">
 defineProps<{
-  userName: string
-  todayLabel: string
+  headline: string
+  description: string
   loading: boolean
   averageCompletionLabel: string
   activeProjectCount: number
@@ -14,10 +14,10 @@ defineProps<{
     <div class="overview-copy">
       <span class="overview-kicker">DELIVERY OVERVIEW</span>
       <h2 class="overview-title">
-        欢迎回来，{{ userName }}
+        {{ headline }}
       </h2>
       <p class="overview-description">
-        今天是 {{ todayLabel }}，这里汇总当前项目、回款、进度和风险情况。
+        {{ description }}
       </p>
     </div>
     <div class="overview-highlights">
@@ -47,7 +47,7 @@ defineProps<{
   margin-bottom: 18px;
   padding: 24px 28px 28px;
   border: 1px solid #e5e6eb;
-  border-radius: 8px;
+  border-radius: 0;
   background: #fff;
   overflow: hidden;
 }
@@ -87,7 +87,7 @@ defineProps<{
   display: grid;
   grid-template-columns: repeat(3, minmax(104px, 1fr));
   border: 1px solid #e5e6eb;
-  border-radius: 6px;
+  border-radius: 0;
   background: #f8faf8;
   overflow: hidden;
 }

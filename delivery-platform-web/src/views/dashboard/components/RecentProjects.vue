@@ -86,7 +86,7 @@ function formatDate(value: string): string {
   min-width: 0;
   margin-bottom: 18px;
   border: 1px solid #e5e6eb;
-  border-radius: 8px;
+  border-radius: 0;
   background: #fff;
   overflow: hidden;
 }

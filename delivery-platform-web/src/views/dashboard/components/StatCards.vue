@@ -56,7 +56,7 @@ function getCardStyle(color: string): Record<string, string> {
   min-height: 116px;
   padding: 17px 18px 15px;
   border: 1px solid #e5e6eb;
-  border-radius: 8px;
+  border-radius: 0;
   background: #fff;
   overflow: hidden;
   transition:
@@ -103,7 +103,7 @@ function getCardStyle(color: string): Record<string, string> {
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  border-radius: 6px;
+  border-radius: 0;
   background: color-mix(in srgb, var(--stat-color) 12%, white);
   color: var(--stat-color);
 }
@@ -115,7 +115,7 @@ function getCardStyle(color: string): Record<string, string> {
   left: 18px;
   width: 30px;
   height: 2px;
-  border-radius: 2px;
+  border-radius: 0;
   background: var(--stat-color);
 }
 

@@ -59,6 +59,78 @@ const todayLabel = computed(() =>
   }).format(new Date()),
 )
 
+const roleLabels: Record<string, string> = {
+  SUPER_ADMIN: '系统管理员',
+  SYSTEM_ADMIN: '系统管理员',
+  DELIVERY_MANAGER: '交付负责人',
+  COUNTRY_MANAGER: '国家负责人',
+  PROJECT_MANAGER: '项目经理',
+  ELEC_LEADER: '电气负责人',
+  ELEC_ENGINEER: '电气工程师',
+  SOFTWARE_LEADER: '软件负责人',
+  SOFTWARE_ENGINEER: '软件工程师',
+  PURCHASE: '采购人员',
+  FINANCE: '财务人员',
+  HSE: '安全人员',
+  STANDARD_ADMIN: '标准化管理员',
+  PARTNER: '外部合作方',
+}
+
+const roleDescriptions: Record<string, string> = {
+  SUPER_ADMIN: '请优先关注系统运行、用户权限、审批配置、备份状态和关键操作审计。',
+  SYSTEM_ADMIN: '请优先关注系统运行、用户权限、审批配置、备份状态和关键操作审计。',
+  DELIVERY_MANAGER: '这里汇总全局项目进度、阶段门、回款和高风险事项，请优先处理延期项目与待审核资料。',
+  COUNTRY_MANAGER: '请关注所辖国家项目的现场进度、资料闭环、客户沟通和本地化交付风险。',
+  PROJECT_MANAGER: '请优先确认负责项目的阶段进展、待审核资料、风险事项和回款节点，把卡点推进到下一责任人。',
+  ELEC_LEADER: '请优先核对电气设计、安装调试资料、点表和现场问题闭环。',
+  ELEC_ENGINEER: '请完成今日电气资料上传、点位核对和调试记录，确保版本可追溯。',
+  SOFTWARE_LEADER: '请关注软件配置、联调验证、策略调试和远程问题闭环。',
+  SOFTWARE_ENGINEER: '请更新软件配置和调试记录，补齐平台截图、点表和异常处理说明。',
+  PURCHASE: '请跟进采购申请、供应商交期、到货验收和采购资料归档。',
+  FINANCE: '请核对回款计划、逾期款项、币种折算和项目成本资料。',
+  HSE: '请检查安全晨会、风险交底、现场影像和整改闭环。',
+  STANDARD_ADMIN: '请维护流程、模板、知识库和工具中心，优先处理待发布和缺失标准。',
+  PARTNER: '请查看授权项目资料和待补充文件，按要求提交交付证据。',
+}
+
+const rolePriority = [
+  'SUPER_ADMIN',
+  'SYSTEM_ADMIN',
+  'DELIVERY_MANAGER',
+  'COUNTRY_MANAGER',
+  'PROJECT_MANAGER',
+  'STANDARD_ADMIN',
+  'ELEC_LEADER',
+  'ELEC_ENGINEER',
+  'SOFTWARE_LEADER',
+  'SOFTWARE_ENGINEER',
+  'PURCHASE',
+  'FINANCE',
+  'HSE',
+  'PARTNER',
+]
+
+const primaryRole = computed(() => {
+  const roles = userInfo.value?.roles || []
+  return rolePriority.find((role) => roles.includes(role)) || roles[0] || ''
+})
+
+const userDisplayName = computed(() =>
+  userInfo.value?.realName || userInfo.value?.username || '用户',
+)
+
+const dashboardHeadline = computed(() => {
+  const roleLabel = roleLabels[primaryRole.value]
+  return roleLabel
+    ? `${roleLabel}，欢迎回来，${userDisplayName.value}`
+    : `欢迎回来，${userDisplayName.value}`
+})
+
+const dashboardDescription = computed(() => {
+  const roleDescription = roleDescriptions[primaryRole.value]
+  return `今天是 ${todayLabel.value}，${roleDescription || '这里汇总当前项目、回款、进度和风险情况。'}`
+})
+
 const averageCompletionLabel = computed(() =>
   `${Math.round(overview.value.avgCompletionRate || 0)}%`,
 )
@@ -172,8 +244,8 @@ onMounted(() => {
 <template>
   <div class="dashboard-page">
     <DashboardOverviewBand
-      :user-name="userInfo?.realName || userInfo?.username || '用户'"
-      :today-label="todayLabel"
+      :headline="dashboardHeadline"
+      :description="dashboardDescription"
       :loading="loading"
       :average-completion-label="averageCompletionLabel"
       :active-project-count="overview.activeProjects"
@@ -261,7 +333,7 @@ onMounted(() => {
 .data-panel {
   min-width: 0;
   border: 1px solid #e5e6eb;
-  border-radius: 8px;
+  border-radius: 0;
   background: #fff;
   overflow: hidden;
 }
@@ -301,7 +373,7 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   padding: 0 8px;
-  border-radius: 6px;
+  border-radius: 0;
   background: #e8f3ff;
   color: #165dff;
   font-size: 13px;

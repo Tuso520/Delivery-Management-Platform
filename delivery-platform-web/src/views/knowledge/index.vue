@@ -93,10 +93,6 @@ const categorySections = computed<CategoryIndexItem[]>(() => {
   })
 })
 
-const totalFileCount = computed(() =>
-  categorySections.value.reduce((total, section) => total + section.totalFileCount, 0),
-)
-
 const activeSection = computed(() =>
   categorySections.value.find((section) => section.category.id === activeCategoryId.value)
   || categorySections.value[0],
@@ -313,7 +309,6 @@ onBeforeUnmount(() => {
       <div class="category-header">
         <div>
           <h2>知识分类</h2>
-          <p>{{ rootCategories.length }} 个一级分类 · {{ totalFileCount }} 个文件</p>
         </div>
         <a-button size="small" type="text" @click="fetchArticles">刷新</a-button>
       </div>
@@ -508,7 +503,7 @@ onBeforeUnmount(() => {
   min-height: 0;
   height: 100%;
   border: 1px solid var(--color-border-2);
-  border-radius: 6px;
+  border-radius: 0;
   background: var(--color-bg-2);
 }
 
@@ -522,21 +517,18 @@ onBeforeUnmount(() => {
 
 .category-header {
   display: flex;
-  align-items: flex-start;
+  min-height: 50px;
+  align-items: center;
   justify-content: space-between;
-  gap: 4px;
-  margin-bottom: 6px;
+  gap: 6px;
+  margin-bottom: 7px;
+  padding: 0 2px;
 
   h2 {
     margin: 0;
     color: var(--color-text-1);
-    font-size: 14px;
-  }
-
-  p {
-    margin: 2px 0 0;
-    color: var(--color-text-3);
-    font-size: 11px;
+    font-size: 15px;
+    font-weight: 650;
   }
 }
 
@@ -555,9 +547,9 @@ onBeforeUnmount(() => {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 5px;
-  padding: 5px 6px;
+  padding: 7px 8px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: 0;
   background: transparent;
   color: var(--color-text-2);
   cursor: pointer;
@@ -571,10 +563,10 @@ onBeforeUnmount(() => {
   }
 
   em {
-    min-width: 20px;
+    min-width: 22px;
     padding: 0 5px;
-    border-radius: 999px;
-    background: var(--color-fill-2);
+    border-radius: 0;
+    background: transparent;
     color: var(--color-text-3);
     font-size: 11px;
     font-style: normal;
@@ -599,10 +591,11 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  min-height: 34px;
-  padding: 4px 6px;
+  gap: 10px;
+  min-height: 58px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--color-border-2);
+  background: #fff;
 }
 
 .toolbar-title {
@@ -614,7 +607,7 @@ onBeforeUnmount(() => {
   strong {
     overflow: hidden;
     color: var(--color-text-1);
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -623,7 +616,7 @@ onBeforeUnmount(() => {
   span {
     flex: 0 0 auto;
     color: var(--color-text-3);
-    font-size: 11px;
+    font-size: 12px;
   }
 }
 
@@ -640,19 +633,20 @@ onBeforeUnmount(() => {
 
 .file-stream {
   height: 100%;
-  padding: 0 6px 8px;
+  padding: 8px 8px 10px;
   overflow-y: auto;
   overflow-x: hidden;
 }
 
 .file-section {
-  padding-top: 6px;
-  scroll-margin-top: 6px;
+  padding-top: 0;
+  margin-bottom: 10px;
+  scroll-margin-top: 8px;
 }
 
 .file-table {
   border: 1px solid var(--color-border-2);
-  border-radius: 5px;
+  border-radius: 0;
   overflow: hidden;
 }
 
@@ -661,9 +655,9 @@ onBeforeUnmount(() => {
 }
 
 .file-table :deep(.arco-table-cell) {
-  padding: 5px 6px;
+  padding: 7px 8px;
   font-size: 12px;
-  line-height: 1.35;
+  line-height: 1.42;
 }
 
 .file-name-cell {
@@ -709,7 +703,7 @@ onBeforeUnmount(() => {
 .section-empty {
   padding: 20px 0;
   border: 1px dashed var(--color-border-2);
-  border-radius: 6px;
+  border-radius: 0;
   background: var(--color-fill-1);
 }
 
@@ -743,7 +737,7 @@ onBeforeUnmount(() => {
   width: 100%;
   padding: 8px;
   border: 1px solid var(--color-border-2);
-  border-radius: 6px;
+  border-radius: 0;
 }
 
 .preview-meta {
@@ -760,7 +754,7 @@ onBeforeUnmount(() => {
   max-height: 68vh;
   object-fit: contain;
   border: 1px solid var(--color-border-2);
-  border-radius: 8px;
+  border-radius: 0;
   background: var(--color-fill-1);
 }
 
@@ -768,7 +762,7 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 70vh;
   border: 1px solid var(--color-border-2);
-  border-radius: 8px;
+  border-radius: 0;
   background: #fff;
 }
 
@@ -776,7 +770,7 @@ onBeforeUnmount(() => {
   max-height: 70vh;
   padding: 18px;
   border: 1px solid var(--color-border-2);
-  border-radius: 8px;
+  border-radius: 0;
   background: #fff;
   overflow: auto;
 }
@@ -785,7 +779,7 @@ onBeforeUnmount(() => {
   max-height: 70vh;
   padding: 18px;
   border: 1px solid var(--color-border-2);
-  border-radius: 8px;
+  border-radius: 0;
   background: #fff;
   overflow: auto;
   white-space: pre-wrap;
@@ -815,7 +809,7 @@ onBeforeUnmount(() => {
   margin-bottom: 16px;
   padding: 14px;
   border: 1px solid #e5e6eb;
-  border-radius: 8px;
+  border-radius: 0;
 }
 
 .office-preview :deep(.preview-table-wrap) {
