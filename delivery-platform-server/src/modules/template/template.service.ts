@@ -29,6 +29,10 @@ interface TemplateListItem {
   publishedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  attachmentId?: string | null;
+  attachmentFileName?: string | null;
+  previewCount?: number;
+  downloadCount?: number;
   versions?: Array<{ id: string; versionNo: string; publishedAt: Date }>;
 }
 
@@ -94,8 +98,10 @@ export class TemplateService {
       }),
     ]);
 
+    const enrichedList = await this.attachUsageStats(list);
+
     return {
-      list,
+      list: enrichedList,
       pagination: {
         page,
         pageSize,
@@ -103,6 +109,84 @@ export class TemplateService {
         totalPages: Math.ceil(total / pageSize),
       },
     };
+  }
+
+  private async attachUsageStats(
+    list: TemplateListItem[],
+  ): Promise<TemplateListItem[]> {
+    if (!list.length) {
+      return list;
+    }
+
+    const attachments = await this.prisma.attachment.findMany({
+      where: {
+        ownerType: 'DocumentTemplate',
+        ownerId: { in: list.map((item) => item.id) },
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        ownerId: true,
+        originalName: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const latestAttachmentByTemplate = new Map<
+      string,
+      { id: string; originalName: string }
+    >();
+    for (const attachment of attachments) {
+      if (!latestAttachmentByTemplate.has(attachment.ownerId)) {
+        latestAttachmentByTemplate.set(attachment.ownerId, {
+          id: attachment.id,
+          originalName: attachment.originalName,
+        });
+      }
+    }
+
+    const attachmentIds = [...latestAttachmentByTemplate.values()].map(
+      (item) => item.id,
+    );
+    const heatRows = attachmentIds.length
+      ? await this.prisma.operationLog.groupBy({
+          by: ['targetId', 'action'],
+          where: {
+            module: 'attachment',
+            action: { in: ['preview', 'download'] },
+            targetId: { in: attachmentIds },
+            result: 'success',
+          },
+          _count: { _all: true },
+        })
+      : [];
+
+    const heatMap = new Map<string, number>();
+    for (const item of heatRows) {
+      heatMap.set(`${item.targetId}:${item.action}`, item._count._all);
+    }
+
+    return list.map((item) => {
+      const attachment = latestAttachmentByTemplate.get(item.id);
+      if (!attachment) {
+        return {
+          ...item,
+          attachmentId: null,
+          attachmentFileName: null,
+          previewCount: 0,
+          downloadCount: 0,
+        };
+      }
+
+      return {
+        ...item,
+        attachmentId: attachment.id,
+        attachmentFileName: attachment.originalName,
+        previewCount: heatMap.get(`${attachment.id}:preview`) ?? 0,
+        downloadCount: heatMap.get(`${attachment.id}:download`) ?? 0,
+      };
+    });
   }
 
   async findById(id: string) {

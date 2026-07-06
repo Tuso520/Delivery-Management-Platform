@@ -361,15 +361,20 @@ onBeforeUnmount(() => {
             >
               <template #file="{ record }">
                 <div class="file-name-cell">
-                  <strong>{{ record.originalName }}</strong>
-                  <span class="file-heat" title="在线预览热度">
-                    <IconEye />
-                    {{ record.previewCount || 0 }}
-                  </span>
-                  <span class="file-heat" title="下载热度">
-                    <IconDownload />
-                    {{ record.downloadCount || 0 }}
-                  </span>
+                  <div class="file-title-line">
+                    <strong>{{ record.originalName }}</strong>
+                    <span class="file-heat" title="在线预览热度">
+                      <IconEye />
+                      {{ record.previewCount || 0 }}
+                    </span>
+                    <span class="file-heat" title="下载热度">
+                      <IconDownload />
+                      {{ record.downloadCount || 0 }}
+                    </span>
+                  </div>
+                  <p v-if="record.remark" class="file-remark">
+                    {{ record.remark }}
+                  </p>
                 </div>
               </template>
               <template #type="{ record }">
@@ -662,6 +667,12 @@ onBeforeUnmount(() => {
 
 .file-name-cell {
   min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.file-title-line {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -673,6 +684,17 @@ onBeforeUnmount(() => {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+}
+
+.file-remark {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-text-3);
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .file-heat {

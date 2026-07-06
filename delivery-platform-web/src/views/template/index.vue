@@ -1,15 +1,19 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import type { TableColumnData } from '@arco-design/web-vue'
+import { IconDownload, IconEye } from '@arco-design/web-vue/es/icon'
 import { arcoConfirm } from '@/utils/arco-dialog'
 import { templateApi } from '@/api/template'
 import { attachmentApi } from '@/api/attachment'
+import type { AttachmentPreview } from '@/api/attachment'
 import type { DocumentTemplate, QueryTemplateDto } from '@/types/template'
 import type { PaginatedData } from '@/types/api'
 import type { TagType } from '@/types/ui'
 import { downloadBlob } from '@/utils/blob'
+
+type PreviewState = AttachmentPreview & { objectUrl?: string }
 
 interface TemplateStage {
   code: string
@@ -28,6 +32,9 @@ const loading = ref(false)
 const templateList = ref<DocumentTemplate[]>([])
 const activeStageCode = ref('')
 const templateStreamRef = ref<HTMLElement>()
+const previewVisible = ref(false)
+const previewLoading = ref(false)
+const preview = ref<PreviewState>()
 
 const stages: TemplateStage[] = [
   { code: '01_presale', name: '售前与启动', description: '立项、启动会、项目计划和职责分工模板' },
@@ -63,6 +70,8 @@ const activeSection = computed(() =>
   || templateSections.value.find((section) => section.templates.length)
   || templateSections.value[0],
 )
+
+const previewTitle = computed(() => preview.value?.title || preview.value?.fileName || '在线预览')
 
 function columnsFor(stageName: string): TableColumnData[] {
   return [
@@ -163,6 +172,56 @@ async function handlePublish(row: DocumentTemplate): Promise<void> {
   }
 }
 
+function incrementTemplateHeat(templateId: string, key: 'previewCount' | 'downloadCount'): void {
+  const target = templateList.value.find((item) => item.id === templateId)
+  if (target) {
+    target[key] = (target[key] || 0) + 1
+  }
+}
+
+async function handlePreview(row: DocumentTemplate): Promise<void> {
+  releasePreviewObjectUrl()
+  previewVisible.value = true
+  previewLoading.value = true
+  preview.value = {
+    fileName: row.attachmentFileName || row.name,
+    fileExt: row.fileFormat || 'md',
+    mimeType: 'text/markdown;charset=utf-8',
+    previewKind: 'unsupported',
+    viewer: 'download',
+    title: row.name,
+  }
+
+  try {
+    if (row.attachmentId) {
+      const metadata = await attachmentApi.getPreview(row.attachmentId)
+      if (metadata.previewKind === 'image' || metadata.previewKind === 'pdf') {
+        preview.value = {
+          ...metadata,
+          title: row.name,
+          objectUrl: URL.createObjectURL(await attachmentApi.getContent(row.attachmentId)),
+        }
+      } else {
+        preview.value = { ...metadata, title: row.name }
+      }
+    } else {
+      const download = await templateApi.getDownloadInfo(row.id)
+      preview.value = {
+        fileName: download.fileName,
+        fileExt: download.fileExt,
+        mimeType: 'text/markdown;charset=utf-8',
+        previewKind: 'text',
+        viewer: 'text',
+        title: row.name,
+        text: download.generatedContent || '',
+      }
+    }
+    incrementTemplateHeat(row.id, 'previewCount')
+  } finally {
+    previewLoading.value = false
+  }
+}
+
 async function handleDownload(row: DocumentTemplate): Promise<void> {
   try {
     const download = await templateApi.getDownloadInfo(row.id)
@@ -172,8 +231,15 @@ async function handleDownload(row: DocumentTemplate): Promise<void> {
           type: 'text/markdown;charset=utf-8',
         })
     downloadBlob(content, download.fileName)
+    incrementTemplateHeat(row.id, 'downloadCount')
   } catch {
     Message.warning('该模板尚未上传可下载文件')
+  }
+}
+
+function releasePreviewObjectUrl(): void {
+  if (preview.value?.objectUrl) {
+    URL.revokeObjectURL(preview.value.objectUrl)
   }
 }
 
@@ -197,7 +263,15 @@ function formatDate(value?: string | null): string {
   return date.toLocaleDateString('zh-CN')
 }
 
+watch(previewVisible, (visible) => {
+  if (!visible) releasePreviewObjectUrl()
+})
+
 onMounted(fetchList)
+
+onBeforeUnmount(() => {
+  releasePreviewObjectUrl()
+})
 </script>
 
 <template>
@@ -255,7 +329,17 @@ onMounted(fetchList)
             >
               <template #name="{ record }">
                 <div class="template-name-cell">
-                  <strong>{{ record.name }}</strong>
+                  <div class="template-title-line">
+                    <strong>{{ record.name }}</strong>
+                    <span class="template-heat" title="在线预览热度">
+                      <IconEye />
+                      {{ record.previewCount || 0 }}
+                    </span>
+                    <span class="template-heat" title="下载热度">
+                      <IconDownload />
+                      {{ record.downloadCount || 0 }}
+                    </span>
+                  </div>
                   <span>{{ section.stage.description }}</span>
                 </div>
               </template>
@@ -275,6 +359,9 @@ onMounted(fetchList)
               </template>
               <template #actions="{ record }">
                 <a-space size="mini" :wrap="false" class="template-actions">
+                  <a-button type="text" size="mini" @click="handlePreview(record)">
+                    在线预览
+                  </a-button>
                   <a-button
                     v-if="record.status === 'Published'"
                     type="text"
@@ -312,6 +399,45 @@ onMounted(fetchList)
         </div>
       </a-spin>
     </main>
+
+    <a-modal
+      v-model:visible="previewVisible"
+      :title="previewTitle"
+      :footer="false"
+      :width="980"
+      class="preview-modal"
+    >
+      <a-spin :loading="previewLoading">
+        <div class="preview-meta">
+          <a-tag>{{ preview?.viewer || 'preview' }}</a-tag>
+          <span>{{ preview?.fileExt?.toUpperCase() }}</span>
+        </div>
+        <img
+          v-if="preview?.previewKind === 'image' && preview.objectUrl"
+          :src="preview.objectUrl"
+          alt=""
+          class="image-preview"
+        />
+        <iframe
+          v-else-if="preview?.previewKind === 'pdf' && preview.objectUrl"
+          :src="preview.objectUrl"
+          class="pdf-preview"
+          title="PDF 在线预览"
+        />
+        <div
+          v-else-if="preview?.previewKind === 'html'"
+          class="office-preview"
+          v-html="preview.html"
+        />
+        <pre v-else-if="preview?.previewKind === 'text'" class="text-preview">{{ preview.text }}</pre>
+        <a-result
+          v-else
+          status="warning"
+          title="暂不支持在线预览"
+          :subtitle="preview?.reason || '请下载后查看该模板文件。'"
+        />
+      </a-spin>
+    </a-modal>
   </section>
 </template>
 
@@ -506,6 +632,29 @@ onMounted(fetchList)
   }
 }
 
+.template-title-line {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.template-heat {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--color-text-3);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+
+  svg {
+    width: 13px;
+    height: 13px;
+  }
+}
+
 .template-actions {
   white-space: nowrap;
 }
@@ -520,6 +669,46 @@ onMounted(fetchList)
   border: 1px dashed var(--color-border-2);
   border-radius: 0;
   background: var(--color-fill-1);
+}
+
+.preview-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  color: var(--color-text-3);
+  font-size: 12px;
+}
+
+.image-preview {
+  width: 100%;
+  max-height: 68vh;
+  object-fit: contain;
+  border: 1px solid var(--color-border-2);
+  border-radius: 0;
+  background: var(--color-fill-1);
+}
+
+.pdf-preview {
+  width: 100%;
+  height: 70vh;
+  border: 1px solid var(--color-border-2);
+  border-radius: 0;
+  background: #fff;
+}
+
+.office-preview,
+.text-preview {
+  max-height: 70vh;
+  padding: 16px;
+  border: 1px solid var(--color-border-2);
+  border-radius: 0;
+  background: #fff;
+  overflow: auto;
+}
+
+.text-preview {
+  white-space: pre-wrap;
 }
 
 @media (max-width: 980px) {

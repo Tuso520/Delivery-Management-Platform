@@ -3,6 +3,7 @@ import { seedReportsAndPerformance } from './performance';
 import { seedSystemOperations } from './system-operations';
 import { seedTemplatesAndTools } from './templates-tools';
 import { seedProjectOperations } from './project-operations';
+import { seedDemoCoverage } from './demo-coverage';
 interface DictionarySeed {
   code: string;
   name: string;
@@ -199,6 +200,7 @@ export async function seedPlatformData(prisma: PrismaClient): Promise<void> {
   await seedReportsAndPerformance(prisma, admin.id);
   await seedSystemOperations(prisma);
   await seedTemplatesAndTools(prisma);
+  await seedDemoCoverage(prisma);
   console.log('Extended platform data seeding complete.');
 }
 async function cleanupRemovedCredentialFeature(prisma: PrismaClient): Promise<void> {

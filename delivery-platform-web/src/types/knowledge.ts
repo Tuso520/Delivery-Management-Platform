@@ -20,6 +20,7 @@ export interface KnowledgeAttachment {
   fileExt: string
   fileSize: string | number
   mimeType: string
+  remark?: string | null
   createdAt: string
   previewCount?: number
   downloadCount?: number

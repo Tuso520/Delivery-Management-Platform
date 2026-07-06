@@ -52,6 +52,7 @@ interface KnowledgeAttachmentSummary {
   fileExt: string;
   fileSize: bigint;
   mimeType: string;
+  remark: string | null;
   createdAt: Date;
   uploader: { id: string; realName: string; username: string } | null;
   previewCount?: number;
@@ -696,6 +697,7 @@ export class KnowledgeService {
       fileExt: attachment.fileExt,
       fileSize: String(attachment.fileSize),
       mimeType: attachment.mimeType,
+      remark: attachment.remark,
       createdAt: attachment.createdAt,
       uploader: attachment.uploader,
       previewCount: attachment.previewCount ?? 0,

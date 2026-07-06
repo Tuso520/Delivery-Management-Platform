@@ -16,6 +16,10 @@ export interface DocumentTemplate {
   publishedAt: string | null
   createdAt: string
   updatedAt: string
+  attachmentId?: string | null
+  attachmentFileName?: string | null
+  previewCount?: number
+  downloadCount?: number
   versions?: DocumentTemplateVersion[]
 }
 

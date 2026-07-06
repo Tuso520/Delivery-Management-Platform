@@ -32,6 +32,7 @@ const form = ref({
   title: '',
   markdownContent: '',
   contentType: 'article',
+  attachmentRemark: '',
 })
 
 const attachmentColumns: TableColumnData[] = [
@@ -95,6 +96,7 @@ async function fetchArticle(): Promise<void> {
     title: item.title,
     markdownContent: item.markdownContent ?? '',
     contentType: item.contentType || 'article',
+    attachmentRemark: '',
   }
   await fetchAttachments()
 }
@@ -125,8 +127,12 @@ async function uploadPending(ownerId: string): Promise<void> {
   data.append('ownerType', 'KnowledgeArticle')
   data.append('ownerId', ownerId)
   data.append('category', 'document')
+  if (form.value.attachmentRemark.trim()) {
+    data.append('remark', form.value.attachmentRemark.trim())
+  }
   await attachmentApi.upload(data)
   pendingFiles.value = []
+  form.value.attachmentRemark = ''
 }
 
 async function save(): Promise<void> {
@@ -308,6 +314,11 @@ onBeforeUnmount(() => {
               @change="selectFiles"
             />
           </label>
+          <a-textarea
+            v-model="form.attachmentRemark"
+            :auto-size="{ minRows: 2, maxRows: 4 }"
+            placeholder="填写文件简介或备注，保存后会显示在知识库文件列表中"
+          />
           <p v-if="pendingFiles.length" class="pending-files">
             已选择 {{ pendingFiles.length }} 个待上传文件
           </p>
@@ -328,7 +339,10 @@ onBeforeUnmount(() => {
         row-key="id"
       >
         <template #fileName="{ record }">
-          <strong>{{ record.originalName }}</strong>
+          <div class="attachment-name-cell">
+            <strong>{{ record.originalName }}</strong>
+            <p v-if="record.remark">{{ record.remark }}</p>
+          </div>
         </template>
         <template #fileSize="{ record }">
           {{ formatFileSize(record.fileSize) }}
@@ -443,6 +457,29 @@ onBeforeUnmount(() => {
   margin: 8px 0 0;
   color: var(--color-text-3);
   font-size: 12px;
+}
+
+.attachment-name-cell {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+
+  strong {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--color-text-1);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  p {
+    margin: 0;
+    overflow: hidden;
+    color: var(--color-text-3);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 .preview-meta {
