@@ -65,6 +65,7 @@ export async function seedDemoCoverage(prisma: PrismaClient): Promise<void> {
   await seedBusinessListCoverage(prisma, admin.id, users, projects);
   await seedTemplateAttachmentsAndHeat(prisma, storage, samples, admin.id);
   await seedKnowledgeRemarksAndHeat(prisma, admin.id);
+  await seedKnowledgeFileUpdateApprovalCoverage(prisma, storage, samples, admin.id);
 
   console.log('Demo coverage data seeding complete.');
 }
@@ -916,6 +917,155 @@ async function seedKnowledgeRemarksAndHeat(prisma: PrismaClient, adminId: string
     }
     await topUpOperationLogs(prisma, adminId, 'attachment', attachment.id, 'preview', 2 + (index % 8), 'attachment');
     await topUpOperationLogs(prisma, adminId, 'attachment', attachment.id, 'download', 1 + (index % 5), 'attachment');
+  }
+}
+
+async function seedKnowledgeFileUpdateApprovalCoverage(
+  prisma: PrismaClient,
+  storage: StorageContext | undefined,
+  samples: SampleCatalog,
+  adminId: string,
+): Promise<void> {
+  if (!storage) {
+    console.warn('  MinIO environment is incomplete, skipping knowledge update approval seed');
+    return;
+  }
+
+  const original = await prisma.attachment.findFirst({
+    where: {
+      ownerType: 'KnowledgeArticle',
+      deletedAt: null,
+      fileExt: { in: ['docx', 'pdf', 'xlsx', 'pptx'] },
+    },
+    select: {
+      id: true,
+      ownerId: true,
+      originalName: true,
+      fileExt: true,
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+  if (!original) {
+    console.warn('  Knowledge attachment missing, skipping knowledge update approval seed');
+    return;
+  }
+
+  const template = await prisma.approvalTemplate.upsert({
+    where: { templateCode: 'KNOWLEDGE_FILE_UPDATE' },
+    create: {
+      templateCode: 'KNOWLEDGE_FILE_UPDATE',
+      templateName: '知识库文件更新审批',
+      businessType: 'knowledge-file-update',
+      isEnabled: true,
+    },
+    update: {
+      templateName: '知识库文件更新审批',
+      businessType: 'knowledge-file-update',
+      isEnabled: true,
+    },
+    select: { id: true },
+  });
+  await prisma.approvalStep.upsert({
+    where: { templateId_stepOrder: { templateId: template.id, stepOrder: 1 } },
+    create: {
+      templateId: template.id,
+      stepOrder: 1,
+      stepName: '负责人审核',
+      approverType: 'user',
+      approverValue: adminId,
+    },
+    update: {
+      stepName: '负责人审核',
+      approverType: 'user',
+      approverValue: adminId,
+    },
+  });
+
+  const sampleName = selectSample(samples, original.fileExt);
+  const sampleExt = fileExt(sampleName);
+  const buffer = await readFile(join(samples.sampleDir, sampleName));
+  const incomingName = `更新版-${original.originalName.replace(/\.[^.]+$/, '')}.${sampleExt}`;
+  const objectName = `attachments/KnowledgeFileRevision/${original.id}/seed-update-${sanitizeObjectName(incomingName)}`;
+
+  await storage.client.putObject(storage.bucket, objectName, buffer, buffer.length, {
+    'Content-Type': mimeTypeFor(incomingName),
+    'X-Amz-Meta-Original-Name': encodeURIComponent(incomingName),
+  });
+
+  const payload = {
+    revisionType: 'knowledge-file-update',
+    articleId: original.ownerId,
+    originalAttachmentId: original.id,
+    originalName: original.originalName,
+    submittedAt: '2026-07-07T06:00:00.000Z',
+  };
+  const existingRevision = await prisma.attachment.findFirst({
+    where: {
+      ownerType: 'KnowledgeFileRevision',
+      ownerId: original.id,
+      category: 'revision',
+      originalName: incomingName,
+      deletedAt: null,
+    },
+    select: { id: true },
+    orderBy: { createdAt: 'desc' },
+  });
+  const revisionData = {
+    ownerType: 'KnowledgeFileRevision',
+    ownerId: original.id,
+    category: 'revision',
+    fileName: incomingName,
+    originalName: incomingName,
+    fileExt: sampleExt,
+    fileSize: BigInt(buffer.length),
+    mimeType: mimeTypeFor(incomingName),
+    storageBucket: storage.bucket,
+    storagePath: objectName,
+    uploadedBy: adminId,
+    remark: JSON.stringify(payload),
+    createdAt: new Date('2026-07-07T06:00:00.000Z'),
+  };
+  const revision = existingRevision
+    ? await prisma.attachment.update({ where: { id: existingRevision.id }, data: revisionData, select: { id: true } })
+    : await prisma.attachment.create({ data: revisionData, select: { id: true } });
+
+  const existingTask = await prisma.approvalTask.findFirst({
+    where: { businessType: 'knowledge-file-update', businessId: revision.id },
+    select: { id: true },
+  });
+  const taskData = {
+    templateId: template.id,
+    businessType: 'knowledge-file-update',
+    businessId: revision.id,
+    businessTitle: `知识库文件更新：${original.originalName}`,
+    applicantId: adminId,
+    currentStep: 1,
+    approverId: adminId,
+    status: 'Pending',
+    comment: null,
+    decidedAt: null,
+    createdAt: new Date('2026-07-07T06:00:00.000Z'),
+  };
+  const task = existingTask
+    ? await prisma.approvalTask.update({ where: { id: existingTask.id }, data: taskData, select: { id: true } })
+    : await prisma.approvalTask.create({ data: taskData, select: { id: true } });
+
+  const existingAction = await prisma.approvalAction.findFirst({
+    where: { taskId: task.id, action: 'submit' },
+    select: { id: true },
+  });
+  const actionData = {
+    taskId: task.id,
+    stepOrder: 1,
+    action: 'submit',
+    actorId: adminId,
+    comment: '知识库文件更新演示任务，供差异对比和审批链路测试。',
+    createdAt: new Date('2026-07-07T06:00:00.000Z'),
+  };
+  if (existingAction) {
+    await prisma.approvalAction.update({ where: { id: existingAction.id }, data: actionData });
+  } else {
+    await prisma.approvalAction.create({ data: actionData });
   }
 }
 
