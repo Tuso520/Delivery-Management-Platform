@@ -54,7 +54,7 @@ export async function seedKnowledge(prisma: PrismaClient): Promise<void> {
   const categoryIds = await seedKnowledgeCategories(prisma, catalog);
 
   await collapseSeedChildCategories(prisma, catalog, categoryIds);
-  await cleanupLegacyAndDuplicateCategories(prisma);
+  await cleanupLegacyAndDuplicateCategories(prisma, catalog);
 
   const admin = await prisma.user.findUnique({
     where: { username: 'admin' },
@@ -368,7 +368,10 @@ async function softDeleteDuplicateArticles(
   });
 }
 
-async function cleanupLegacyAndDuplicateCategories(prisma: PrismaClient): Promise<void> {
+async function cleanupLegacyAndDuplicateCategories(
+  prisma: PrismaClient,
+  catalog: KnowledgeCatalog,
+): Promise<void> {
   if (typeof prisma.knowledgeCategory.updateMany === 'function') {
     await prisma.knowledgeCategory.updateMany({
       where: {
@@ -383,14 +386,82 @@ async function cleanupLegacyAndDuplicateCategories(prisma: PrismaClient): Promis
     return;
   }
 
+  const catalogModuleNames = new Set(catalog.modules.map((module) => module.name));
+  const rootIdByModuleName = new Map<string, string>();
+  const rootIdByUniqueContentTitle = new Map<string, string>();
+  const contentTitleCounts = new Map<string, number>();
+
+  for (const module of catalog.modules) {
+    for (const content of module.contents) {
+      contentTitleCounts.set(
+        content.title,
+        (contentTitleCounts.get(content.title) ?? 0) + 1,
+      );
+    }
+  }
+
   const activeCategories = await prisma.knowledgeCategory.findMany({
     where: { status: 'Active' },
     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
     select: { id: true, name: true, parentId: true },
   });
 
-  const primaryByIdentity = new Map<string, string>();
   for (const category of activeCategories) {
+    if (!category.parentId && catalogModuleNames.has(category.name)) {
+      rootIdByModuleName.set(category.name, category.id);
+    }
+  }
+
+  for (const module of catalog.modules) {
+    const rootId = rootIdByModuleName.get(module.name);
+    if (!rootId) continue;
+    for (const content of module.contents) {
+      if ((contentTitleCounts.get(content.title) ?? 0) === 1) {
+        rootIdByUniqueContentTitle.set(content.title, rootId);
+      }
+    }
+  }
+
+  for (const category of activeCategories) {
+    if (!category.parentId && catalogModuleNames.has(category.name)) {
+      continue;
+    }
+
+    const activeParent = activeCategories.find(
+      (candidate) =>
+        candidate.id === category.parentId &&
+        !candidate.parentId &&
+        catalogModuleNames.has(candidate.name),
+    );
+    const targetCategoryId =
+      activeParent?.id ?? rootIdByUniqueContentTitle.get(category.name);
+
+    if (targetCategoryId && targetCategoryId !== category.id) {
+      await prisma.knowledgeArticle.updateMany({
+        where: { categoryId: category.id, deletedAt: null },
+        data: { categoryId: targetCategoryId },
+      });
+    }
+
+    await prisma.knowledgeCategory.update({
+      where: { id: category.id },
+      data: {
+        status: 'Inactive',
+        description: category.parentId
+          ? '宸插悎骞跺埌涓€绾х煡璇嗗垎绫伙紝鍘熶簩绾у唴瀹逛繚鐣欏湪鐭ヨ瘑鏉＄洰鏍囬鍜屾枃浠剁储寮曚腑'
+          : '宸叉寜鏍囧噯鐭ヨ瘑搴撶洰褰曟竻鐞嗕负闈炴爣鍑嗗垎绫',
+      },
+    });
+  }
+
+  const normalizedActiveCategories = await prisma.knowledgeCategory.findMany({
+    where: { status: 'Active' },
+    orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    select: { id: true, name: true, parentId: true },
+  });
+
+  const primaryByIdentity = new Map<string, string>();
+  for (const category of normalizedActiveCategories) {
     const identity = `${category.parentId ?? 'root'}::${category.name.trim().toLowerCase()}`;
     const primaryId = primaryByIdentity.get(identity);
     if (!primaryId) {
