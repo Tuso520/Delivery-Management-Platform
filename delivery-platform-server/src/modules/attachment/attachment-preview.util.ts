@@ -1,4 +1,4 @@
-import JSZip from 'jszip';
+import JSZip = require('jszip');
 import { XMLParser } from 'fast-xml-parser';
 
 export type AttachmentPreviewKind =
