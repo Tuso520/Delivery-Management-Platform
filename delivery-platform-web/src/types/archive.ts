@@ -13,6 +13,7 @@ export interface ArchiveItem {
   isStar: boolean
   isSensitive: boolean
   needReview: boolean
+  allowedFileTypes?: string
   responsibleUserId?: string
   reviewUserId?: string
   status: string
@@ -29,10 +30,13 @@ export interface ArchiveItem {
     originalName: string
     fileExt: string
     fileSize?: number
+    mimeType?: string
     versionNo: string
     fileStatus: string
     uploadTime: string
     isCurrent?: boolean
+    remark?: string | null
+    uploadUser?: { id: string; realName: string }
   }>
   children?: ArchiveItem[]
 }

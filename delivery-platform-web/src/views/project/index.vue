@@ -241,7 +241,7 @@ onMounted(() => {
         </a-table-column>
         <a-table-column label="折算人民币" :min-width="150" align="right">
           <template #default="{ row }">
-            <span class="amount-cny">楼 {{ formatAmount(row.convertedAmount) }}</span>
+            <span class="amount-cny">¥ {{ formatAmount(row.convertedAmount) }}</span>
           </template>
         </a-table-column>
         <a-table-column label="项目经理" :min-width="120">
@@ -254,7 +254,7 @@ onMounted(() => {
             {{ getMemberName(row, 'ELEC_LEADER') }}
           </template>
         </a-table-column>
-        <a-table-column label="杞欢负责人" :min-width="120">
+        <a-table-column label="软件负责人" :min-width="120">
           <template #default="{ row }">
             {{ getMemberName(row, 'SOFTWARE_LEADER') }}
           </template>

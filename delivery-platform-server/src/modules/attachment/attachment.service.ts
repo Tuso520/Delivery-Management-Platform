@@ -389,9 +389,7 @@ export class AttachmentService {
         : preview.previewKind === 'pdf'
           ? `<main class="pdf-reader">
               <section class="pdf-native-panel">
-                <object class="preview-frame" data="${safeContentUrl}#toolbar=1&navpanes=0" type="application/pdf" title="${title}">
-                  <iframe class="preview-frame" src="${safeContentUrl}#toolbar=1&navpanes=0" title="${title}"></iframe>
-                </object>
+                <iframe class="preview-frame" src="${safeContentUrl}#toolbar=1&navpanes=0&view=FitH" title="${title}"></iframe>
               </section>
               <section class="pdf-text-panel">
                 ${preview.html || `<section class="preview-empty"><h2>PDF 预览</h2><p>当前浏览器未返回可见文本层，请下载原文件查看。</p></section>`}
@@ -477,8 +475,7 @@ export class AttachmentService {
     }
     .pdf-reader {
       display: grid;
-      grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
-      gap: 14px;
+      gap: 12px;
       min-height: calc(100vh - 92px);
     }
     .pdf-native-panel,
@@ -487,7 +484,12 @@ export class AttachmentService {
       border: 1px solid #d9dfe8;
       background: #fff;
     }
+    .pdf-native-panel {
+      height: calc(100vh - 92px);
+      min-height: 620px;
+    }
     .pdf-text-panel {
+      max-height: 360px;
       overflow: auto;
       padding: 18px;
     }
@@ -664,7 +666,7 @@ export class AttachmentService {
       color: #4e5969;
     }
     @media (max-width: 960px) {
-      .pdf-reader { grid-template-columns: 1fr; }
+      .pdf-native-panel { min-height: 520px; }
       .word-page { min-height: auto; padding: 40px 28px; }
     }
   </style>

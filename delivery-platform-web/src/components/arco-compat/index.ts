@@ -57,6 +57,89 @@ function resolvePath(record: Record<string, unknown>, path?: string): unknown {
   }, record)
 }
 
+function flattenVNodes(nodes: VNode[]): VNode[] {
+  return nodes.flatMap((node) => {
+    if (Array.isArray(node.children)) {
+      return flattenVNodes(node.children as VNode[])
+    }
+    return [node]
+  })
+}
+
+function columnNumber(value: unknown): number | undefined {
+  if (typeof value === 'number') return value
+  if (typeof value === 'string') return Number(value) || undefined
+  return undefined
+}
+
+function columnFixed(value: unknown): string | undefined {
+  if (value === true) return 'right'
+  return typeof value === 'string' ? value : undefined
+}
+
+function normalizeColumnProps(rawProps: Record<string, unknown> = {}) {
+  const dataIndex = String(rawProps.dataIndex ?? rawProps.prop ?? '')
+  return {
+    type: rawProps.type,
+    dataIndex,
+    title: rawProps.title ?? rawProps.label,
+    width: columnNumber(rawProps.width),
+    minWidth: columnNumber(rawProps.minWidth),
+    fixed: columnFixed(rawProps.fixed),
+    align: rawProps.align,
+    tooltip: rawProps.tooltip || rawProps.showOverflowTooltip,
+    formatter: rawProps.formatter as
+      | ((row: unknown, column: unknown, value: unknown) => string)
+      | undefined,
+  }
+}
+
+function legacyColumnsFromSlots(nodes: VNode[]) {
+  return flattenVNodes(nodes)
+    .filter((node) => node.props && typeof node.type !== 'symbol')
+    .map((node) => {
+      const props = normalizeColumnProps(node.props as Record<string, unknown>)
+      const childSlots = node.children as
+        | { default?: (scope: Record<string, unknown>) => unknown }
+        | undefined
+      const column: Record<string, unknown> = {
+        type: props.type,
+        dataIndex: props.dataIndex || undefined,
+        title: props.title,
+        width: props.width,
+        minWidth: props.minWidth,
+        fixed: props.fixed,
+        align: props.align,
+        tooltip: props.tooltip,
+      }
+
+      column.render = (scope: {
+        record?: Record<string, unknown>
+        column?: unknown
+        rowIndex?: number
+      }) => {
+        const record = scope.record ?? {}
+        const rowIndex = scope.rowIndex ?? -1
+        if (childSlots?.default) {
+          return childSlots.default({
+            ...scope,
+            record,
+            row: record,
+            column: scope.column,
+            rowIndex,
+            $index: rowIndex,
+          })
+        }
+        if (props.type === 'index') return rowIndex + 1
+        const value = resolvePath(record, props.dataIndex)
+        if (props.formatter) return props.formatter(record, scope.column, value)
+        return value == null ? '' : String(value)
+      }
+
+      return column
+    })
+}
+
 export const ButtonCompat = defineComponent({
   name: 'AButton',
   inheritAttrs: false,
@@ -162,13 +245,16 @@ export const TableCompat = defineComponent({
     maxHeight: [String, Number],
   },
   setup(props, { attrs, slots }) {
-    return () =>
-      h(
+    return () => {
+      const slotColumns = slots.default ? legacyColumnsFromSlots(slots.default()) : []
+      const { default: _default, ...tableSlots } = slots
+      return h(
         Table,
         {
           ...attrs,
           data: props.data,
           loading: props.loading,
+          columns: attrs.columns ?? (slotColumns.length ? slotColumns : undefined),
           bordered: props.border || props.bordered,
           stripe: props.stripe,
           size: props.size,
@@ -176,8 +262,9 @@ export const TableCompat = defineComponent({
           scroll: props.maxHeight ? { y: props.maxHeight } : undefined,
           pagination: false,
         },
-        slots,
+        tableSlots,
       )
+    }
   },
 })
 

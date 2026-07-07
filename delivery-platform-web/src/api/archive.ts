@@ -17,15 +17,15 @@ export const archiveApi = {
     return request.get<ArchiveStatistics>(`/projects/${projectId}/archives/statistics`)
   },
 
-  getItem(itemId: string) {
-    return request.get<ArchiveItem>(`/projects/archives/${itemId}`)
+  getItem(projectId: string, itemId: string) {
+    return request.get<ArchiveItem>(`/projects/${projectId}/archives/${itemId}`)
   },
 
-  updateItem(itemId: string, data: { responsibleUserId?: string; reviewUserId?: string; status?: string; dueDate?: string }) {
-    return request.put<ArchiveItem>(`/projects/archives/${itemId}`, data)
+  updateItem(projectId: string, itemId: string, data: { responsibleUserId?: string; reviewUserId?: string; status?: string; dueDate?: string }) {
+    return request.put<ArchiveItem>(`/projects/${projectId}/archives/${itemId}`, data)
   },
 
-  markNotApplicable(itemId: string) {
-    return request.post<ArchiveItem>(`/projects/archives/${itemId}/mark-not-applicable`)
+  markNotApplicable(projectId: string, itemId: string) {
+    return request.post<ArchiveItem>(`/projects/${projectId}/archives/${itemId}/mark-not-applicable`)
   },
 }

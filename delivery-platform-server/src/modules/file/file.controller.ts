@@ -12,6 +12,8 @@ import {
   HttpStatus,
   BadRequestException,
   Res,
+  Req,
+  Query,
   StreamableFile,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -24,9 +26,11 @@ import {
   ApiResponse,
 } from '@nestjs/swagger';
 import type { Response } from 'express';
+import type { Request } from 'express';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Permissions } from '../../common/decorators/permissions.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import { RawResponse } from '../../common/decorators/raw-response.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -35,6 +39,8 @@ import { JwtPayload } from '../auth/strategies/jwt.strategy';
 
 import { UploadFileDto } from './dto/upload-file.dto';
 import { FileService } from './file.service';
+
+const FILE_API_BASE_PATH = '/api/v1/files';
 
 @ApiTags('Files')
 @ApiBearerAuth('JWT-auth')
@@ -104,6 +110,63 @@ export class FileController {
     @CurrentUser('sub') userId: string,
   ) {
     return this.fileService.findById(id, userId);
+  }
+
+  @Post(':id/preview-link')
+  @Permissions('file:download')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '生成短时有效的项目档案文件预览链接' })
+  async createPreviewLink(
+    @Param('id') id: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    const previewLink = await this.fileService.createPreviewLink(id, user.sub);
+    return {
+      url: `${FILE_API_BASE_PATH}/${id}/signed-preview?token=${encodeURIComponent(
+        previewLink.token,
+      )}`,
+      expiresAt: previewLink.expiresAt,
+    };
+  }
+
+  @Get(':id/signed-preview')
+  @Public()
+  @RawResponse()
+  @ApiOperation({ summary: '通过短时签名链接打开项目档案文件预览页' })
+  async getSignedPreviewPage(
+    @Param('id') id: string,
+    @Query('token') token: string,
+    @Req() _request: Request,
+    @Res() response: Response,
+  ) {
+    const contentUrl = `${FILE_API_BASE_PATH}/${id}/signed-content?token=${encodeURIComponent(
+      token || '',
+    )}`;
+    const html = await this.fileService.getSignedPreviewPage(
+      id,
+      token,
+      contentUrl,
+    );
+    response.setHeader('Content-Type', 'text/html; charset=utf-8');
+    response.send(html);
+  }
+
+  @Get(':id/signed-content')
+  @Public()
+  @RawResponse()
+  @ApiOperation({ summary: '通过短时签名链接读取项目档案文件流' })
+  async getSignedContent(
+    @Param('id') id: string,
+    @Query('token') token: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const content = await this.fileService.getSignedContent(id, token);
+    response.setHeader('Content-Type', content.mimeType);
+    response.setHeader(
+      'Content-Disposition',
+      `inline; filename*=UTF-8''${encodeURIComponent(content.fileName)}`,
+    );
+    return new StreamableFile(content.stream);
   }
 
   @Get(':id/download')

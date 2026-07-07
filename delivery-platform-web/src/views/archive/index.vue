@@ -1,25 +1,37 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
-import { arcoConfirm, arcoPrompt } from '@/utils/arco-dialog'
 import { archiveApi } from '@/api/archive'
 import { archiveTemplateApi } from '@/api/archive-template'
+import { fileApi } from '@/api/file'
+import { projectApi } from '@/api/project'
+import FileUploader from '@/components/FileUploader/index.vue'
+import { arcoConfirm } from '@/utils/arco-dialog'
+import { downloadBlob } from '@/utils/blob'
+import { localizeProjectStage } from '@/utils/project-localization'
+import { useLocaleStore } from '@/store/locale'
 import type {
-  ArchiveTreeData,
   ArchiveItem,
   ArchiveStatistics,
   ArchiveTemplate,
+  ArchiveTreeData,
 } from '@/types/archive'
 import { ARCHIVE_ITEM_STATUS_OPTIONS } from '@/types/archive'
-import { projectApi } from '@/api/project'
 import type { Project } from '@/types/project'
 import type { TagType } from '@/types/ui'
-import { useLocaleStore } from '@/store/locale'
-import { localizeProjectStage } from '@/utils/project-localization'
 import ProjectRecordsPanel from './components/ProjectRecordsPanel.vue'
+
+type ArchiveFile = NonNullable<ArchiveItem['files']>[number]
+
+interface UploadPoint extends ArchiveItem {
+  parentName?: string
+  guideText: string
+}
+
 const router = useRouter()
 const localeStore = useLocaleStore()
+
 const projectList = ref<Project[]>([])
 const selectedProjectId = ref('')
 const loadingProjects = ref(false)
@@ -31,24 +43,50 @@ const loadingTemplates = ref(false)
 const showGenerateDialog = ref(false)
 const selectedTemplateId = ref('')
 const generatingArchive = ref(false)
+const activeStage = ref('')
+const activeArchiveView = ref<'directory' | 'records'>('directory')
 const showItemDetail = ref(false)
 const currentItem = ref<ArchiveItem | null>(null)
 const loadingItem = ref(false)
-const activeStage = ref('')
-const activeArchiveView = ref<'directory' | 'records'>('directory')
-const fetchProjects = async () => {
+
+const defaultAllowedTypes = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'jpg', 'jpeg', 'png']
+
+const selectedProjectName = computed(() =>
+  projectList.value.find((project) => project.id === selectedProjectId.value)?.projectName || '',
+)
+
+const selectedProject = computed(() =>
+  projectList.value.find((project) => project.id === selectedProjectId.value),
+)
+
+const activeStageName = computed(() =>
+  activeStage.value ? localizeProjectStage(activeStage.value, localeStore.currentLocale) : '项目档案',
+)
+
+const currentStageItems = computed<UploadPoint[]>(() => {
+  if (!archiveTree.value?.stages) return []
+  const stage = archiveTree.value.stages.find((item) => item.stageCode === activeStage.value)
+  return flattenUploadPoints(stage?.items || [])
+})
+
+async function fetchProjects(): Promise<void> {
   loadingProjects.value = true
   try {
     const res = await projectApi.getList({ page: 1, pageSize: 100 })
     const data = res as unknown as { list: Project[] }
     projectList.value = data.list || []
+    if (!selectedProjectId.value && projectList.value.length) {
+      selectedProjectId.value = projectList.value[0].id
+      await fetchArchive()
+    }
   } catch {
     projectList.value = []
   } finally {
     loadingProjects.value = false
   }
 }
-const fetchArchive = async () => {
+
+async function fetchArchive(): Promise<void> {
   if (!selectedProjectId.value) {
     archiveTree.value = null
     statistics.value = null
@@ -62,8 +100,9 @@ const fetchArchive = async () => {
     ])
     archiveTree.value = treeRes as unknown as ArchiveTreeData
     statistics.value = statsRes as unknown as ArchiveStatistics
-    if (archiveTree.value?.stages?.length > 0) {
-      activeStage.value = archiveTree.value.stages[0].stageCode
+    const stages = archiveTree.value?.stages || []
+    if (!stages.some((stage) => stage.stageCode === activeStage.value)) {
+      activeStage.value = stages[0]?.stageCode || ''
     }
   } catch {
     archiveTree.value = null
@@ -72,23 +111,47 @@ const fetchArchive = async () => {
     loadingArchive.value = false
   }
 }
-const fetchTemplates = async () => {
+
+async function fetchTemplates(): Promise<void> {
   loadingTemplates.value = true
   try {
-    const res = await archiveTemplateApi.getList()
-    templateList.value = res as unknown as ArchiveTemplate[]
+    templateList.value = (await archiveTemplateApi.getList()) as unknown as ArchiveTemplate[]
   } catch {
     templateList.value = []
   } finally {
     loadingTemplates.value = false
   }
 }
-const handleProjectChange = () => {
+
+function flattenUploadPoints(items: ArchiveItem[], parentName?: string): UploadPoint[] {
+  return items.flatMap((item) => {
+    if (item.children?.length) {
+      return flattenUploadPoints(item.children, item.secondName || item.name)
+    }
+    const name = item.secondName || item.name
+    return [{
+      ...item,
+      parentName,
+      guideText: item.usageDescription
+        || (parentName ? `请上传“${parentName}”下的“${name}”相关文件。` : `请上传“${name}”对应文件。`),
+    }]
+  })
+}
+
+function handleProjectChange(): void {
+  activeArchiveView.value = 'directory'
   fetchArchive()
 }
-const handleGenerateArchive = async () => {
-  if (!selectedTemplateId.value) {
-    Message.warning('请选择档案模板')
+
+function openGenerateDialog(): void {
+  selectedTemplateId.value = ''
+  fetchTemplates()
+  showGenerateDialog.value = true
+}
+
+async function handleGenerateArchive(): Promise<void> {
+  if (!selectedProjectId.value || !selectedTemplateId.value) {
+    Message.warning('请选择项目和档案模板')
     return
   }
   generatingArchive.value = true
@@ -96,85 +159,128 @@ const handleGenerateArchive = async () => {
     await archiveApi.generate(selectedProjectId.value, selectedTemplateId.value)
     Message.success('档案目录生成成功')
     showGenerateDialog.value = false
-    fetchArchive()
-  } catch { return } finally {
+    await fetchArchive()
+  } finally {
     generatingArchive.value = false
   }
 }
-const openGenerateDialog = () => {
-  selectedTemplateId.value = ''
-  fetchTemplates()
-  showGenerateDialog.value = true
-}
-const viewItemDetail = async (itemId: string) => {
-  loadingItem.value = true
+
+async function viewItemDetail(itemId: string): Promise<void> {
+  if (!selectedProjectId.value) return
   showItemDetail.value = true
+  loadingItem.value = true
   try {
-    const res = await archiveApi.getItem(itemId)
-    currentItem.value = res as unknown as ArchiveItem
-  } catch {
-    currentItem.value = null
+    currentItem.value = await archiveApi.getItem(selectedProjectId.value, itemId) as unknown as ArchiveItem
   } finally {
     loadingItem.value = false
   }
 }
-const handleMarkNotApplicable = async (itemId: string) => {
-  try {
-    await arcoConfirm('确定标记此项“不适用”？', '确认', { type: 'warning' })
-    await archiveApi.markNotApplicable(itemId)
-    Message.success('标记成功')
-    fetchArchive()
-  } catch { return }
+
+async function reloadCurrentItem(): Promise<void> {
+  if (currentItem.value?.id) {
+    await viewItemDetail(currentItem.value.id)
+  }
+  await fetchArchive()
 }
-const handleUpdateStatus = async (itemId: string, status: string) => {
-  try {
-    await archiveApi.updateItem(itemId, { status })
-    Message.success('状态更新成功')
-    fetchArchive()
-  } catch { return }
+
+async function handleUploadSuccess(): Promise<void> {
+  Message.success('文件已上传，并自动进入审批流')
+  await reloadCurrentItem()
 }
-const getStatusTag = (status: string): { type: TagType; label: string } => {
-  const option = ARCHIVE_ITEM_STATUS_OPTIONS.find((o) => o.value === status)
+
+async function handleMarkNotApplicable(itemId: string): Promise<void> {
+  if (!selectedProjectId.value) return
+  await arcoConfirm('确定标记此项“不适用”？', '确认', { type: 'warning' })
+  await archiveApi.markNotApplicable(selectedProjectId.value, itemId)
+  Message.success('标记成功')
+  await fetchArchive()
+}
+
+async function handleUpdateStatus(itemId: string, status: string): Promise<void> {
+  if (!selectedProjectId.value) return
+  await archiveApi.updateItem(selectedProjectId.value, itemId, { status })
+  Message.success('状态更新成功')
+  await fetchArchive()
+}
+
+async function openFilePreview(file: ArchiveFile): Promise<void> {
+  let previewWindow: Window | null = window.open('about:blank', '_blank')
+  if (previewWindow) {
+    previewWindow.opener = null
+  }
+  try {
+    const { url } = await fileApi.createPreviewLink(file.id)
+    if (previewWindow) {
+      previewWindow.location.href = url
+    } else {
+      window.open(url, '_blank', 'noopener,noreferrer')
+    }
+  } catch {
+    previewWindow?.close()
+    Message.error('预览链接生成失败')
+  }
+}
+
+async function downloadFile(file: ArchiveFile): Promise<void> {
+  downloadBlob(await fileApi.download(file.id), file.originalName)
+}
+
+async function deleteFile(file: ArchiveFile): Promise<void> {
+  await arcoConfirm(`确定删除文件“${file.originalName}”？`, '确认删除', {
+    type: 'warning',
+    confirmButtonText: '删除',
+    cancelButtonText: '取消',
+  })
+  await fileApi.delete(file.id)
+  Message.success('文件已删除')
+  await reloadCurrentItem()
+}
+
+function getStageStats(stageCode: string) {
+  return statistics.value?.stages.find((stage) => stage.stageCode === stageCode)
+}
+
+function getStatusTag(status: string): { type: TagType; label: string } {
+  const option = ARCHIVE_ITEM_STATUS_OPTIONS.find((item) => item.value === status)
   return {
     type: (option?.type || 'info') as TagType,
     label: option?.label || status,
   }
 }
-const currentStageItems = computed(() => {
-  if (!archiveTree.value?.stages) return []
-  const stage = archiveTree.value.stages.find((s) => s.stageCode === activeStage.value)
-  return (stage?.items || []).map((item) => ({
-    ...item,
-    usageDescription: [
-      item.usageDescription,
-      ...(item.children || []).map((child) =>
-        `${child.secondName || child.name}${child.usageDescription ? `：${child.usageDescription}` : ''}`,
-      ),
-    ].filter(Boolean).join('；'),
-  }))
-})
-const getStageStats = (stageCode: string) => {
-  return statistics.value?.stages.find((stage) => stage.stageCode === stageCode)
+
+function formatFileSize(value?: number | string): string {
+  const size = Number(value)
+  if (!Number.isFinite(size)) return '-'
+  if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`
+  if (size >= 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${size} B`
 }
-const selectedProjectName = computed(() =>
-  projectList.value.find((project) => project.id === selectedProjectId.value)?.projectName || '',
-)
-const navigateToProject = () => {
+
+function formatDate(value?: string): string {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+function navigateToProject(): void {
   if (selectedProjectId.value) {
     router.push(`/project/detail/${selectedProjectId.value}`)
   }
 }
-onMounted(() => {
-  fetchProjects()
-})
+
+onMounted(fetchProjects)
 </script>
+
 <template>
   <div class="archive-page">
-    <a-card class="selector-card">
-      <a-form :model="{}" inline label-width="auto">
-        <a-form-item label="选择项目">
+    <a-card class="archive-shell" :bordered="false">
+      <div class="archive-topbar">
+        <div class="project-picker">
+          <span>项目</span>
           <a-select
             v-model="selectedProjectId"
+            v-loading="loadingProjects"
             placeholder="请选择项目"
             class="project-selector"
             filterable
@@ -187,238 +293,159 @@ onMounted(() => {
               :value="item.id"
             />
           </a-select>
-        </a-form-item>
-        <a-form-item>
-          <a-button type="primary" :disabled="!selectedProjectId" @click="openGenerateDialog">
-            生成档案目录
-          </a-button>
-          <a-button
-            :disabled="!selectedProjectId"
-            @click="activeArchiveView = 'records'"
-          >
-            上传记录
-          </a-button>
-        </a-form-item>
-      </a-form>
-    </a-card>
-    <a-card v-if="statistics && selectedProjectId" class="stats-card">
-      <div class="stats-row">
-        <div class="stat-item">
-          <div class="stat-value">
-            {{ statistics.totalItems }}
-          </div>
-          <div class="stat-label">
-            总项数          </div>
         </div>
-        <div class="stat-item">
-          <div class="stat-value success">
-            {{ statistics.completedItems }}
-          </div>
-          <div class="stat-label">
-            已完成          </div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-value warning">
-            {{ statistics.totalItems - statistics.completedItems }}
-          </div>
-          <div class="stat-label">
-            未完成          </div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-value">
-            {{ statistics.requiredItems }}
-          </div>
-          <div class="stat-label">
-            必填项          </div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-value primary">
-            {{ statistics.starItems }}
-          </div>
-          <div class="stat-label">
-            星标项          </div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-value" :class="statistics.completionRate >= 80 ? 'success' : 'warning'">
-            {{ statistics.completionRate }}%
-          </div>
-          <div class="stat-label">
-            完成率          </div>
-        </div>
-      </div>
-    </a-card>
-    <a-card v-if="selectedProjectId" v-loading="loadingArchive">
-      <template #header>
-        <div class="archive-header">
+
+        <div class="archive-actions">
           <a-segmented
             v-model="activeArchiveView"
+            size="small"
             :options="[
               { label: '档案目录', value: 'directory' },
-               { label: '项目记录', value: 'records' },
+              { label: '上传记录', value: 'records' },
             ]"
           />
-          <a-button
-            v-if="selectedProjectId"
-            text
-            type="primary"
-            @click="navigateToProject"
-          >
-            查看项目详情
+          <a-button size="small" :disabled="!selectedProjectId" @click="navigateToProject">
+            项目详情
+          </a-button>
+          <a-button size="small" type="primary" :disabled="!selectedProjectId" @click="openGenerateDialog">
+            生成目录
           </a-button>
         </div>
-      </template>
+      </div>
+
+      <div v-if="selectedProjectId" class="archive-summary">
+        <div>
+          <strong>{{ selectedProject?.projectName || selectedProjectName }}</strong>
+          <span>{{ selectedProject?.projectCode || '-' }}</span>
+        </div>
+        <div class="summary-metrics">
+          <span>总项 {{ statistics?.totalItems || 0 }}</span>
+          <span>已完成 {{ statistics?.completedItems || 0 }}</span>
+          <span>必填 {{ statistics?.requiredItems || 0 }}</span>
+          <span>完成率 {{ statistics?.completionRate || 0 }}%</span>
+        </div>
+      </div>
+
       <ProjectRecordsPanel
-        v-if="activeArchiveView === 'records'"
+        v-if="activeArchiveView === 'records' && selectedProjectId"
         :project-id="selectedProjectId"
         :project-name="selectedProjectName"
       />
-      <template v-else-if="archiveTree && archiveTree.stages && archiveTree.stages.length > 0">
-        <a-tabs v-model="activeStage" type="card">
-          <a-tab-pane
-            v-for="stage in archiveTree.stages"
-            :key="stage.stageCode"
-            :label="stage.stageCode"
-            :name="stage.stageCode"
-          >
-            <template #label>
-              <span class="stage-tab-label">
-                {{ localizeProjectStage(stage.stageCode, localeStore.currentLocale) }}
-                <a-tag
-                  v-if="getStageStats(stage.stageCode)"
-                  size="small"
-                  :type="(getStageStats(stage.stageCode)?.completionRate || 0) >= 80 ? 'success' : 'warning'"
-                  class="stage-count"
-                >
-                  {{ getStageStats(stage.stageCode)?.completedItems || 0 }}/{{ getStageStats(stage.stageCode)?.totalItems || 0 }}
-                </a-tag>
-              </span>
-            </template>
-          </a-tab-pane>
-        </a-tabs>
-        <div class="stage-items">
-          <a-table
-            :data="currentStageItems"
-            row-key="id"
-            default-expand-all
-            :tree-props="{ children: 'children' }"
-            border
-            stripe
-            style="width: 100%"
-          >
-            <a-table-column prop="itemNo" label="序号" :width="60" />
-            <a-table-column
-              prop="name"
-              label="档案项名称"
-              :min-width="260"
-              show-overflow-tooltip
+
+      <template v-else-if="selectedProjectId">
+        <a-spin :loading="loadingArchive" class="archive-spin">
+          <template v-if="archiveTree?.stages?.length">
+            <a-tabs v-model="activeStage" type="card" class="stage-tabs">
+              <a-tab-pane
+                v-for="stage in archiveTree.stages"
+                :key="stage.stageCode"
+                :name="stage.stageCode"
+              >
+                <template #label>
+                  <span class="stage-tab-label">
+                    {{ localizeProjectStage(stage.stageCode, localeStore.currentLocale) }}
+                    <a-tag v-if="getStageStats(stage.stageCode)" size="small" class="stage-count">
+                      {{ getStageStats(stage.stageCode)?.completedItems || 0 }}/{{ getStageStats(stage.stageCode)?.totalItems || 0 }}
+                    </a-tag>
+                  </span>
+                </template>
+              </a-tab-pane>
+            </a-tabs>
+
+            <div class="stage-title-row">
+              <h3>{{ activeStageName }}</h3>
+              <span>点击“查看/上传”进入上传、预览、下载和审批状态核查。</span>
+            </div>
+
+            <a-table
+              :data="currentStageItems"
+              row-key="id"
+              border
+              stripe
+              class="archive-table"
+              empty-text="当前阶段暂无档案项"
             >
-              <template #default="{ row }">
-                <div class="archive-name" :class="{ child: row.level > 1 }">
-                  <a-icon v-if="row.level === 1">
-                    <Folder />
-                  </a-icon>
-                  <a-icon v-else>
-                    <Document />
-                  </a-icon>
-                  <span>{{ row.secondName || row.name }}</span>
-                </div>
-              </template>
-            </a-table-column>
-            <a-table-column
-              prop="usageDescription"
-              label="内容要求"
-              :min-width="360"
-              show-overflow-tooltip
-            />
-            <a-table-column
-              prop="isRequired"
-              label="必填"
-              :width="60"
-              align="center"
-            >
-              <template #default="{ row }">
-                <a-tag v-if="row.isRequired" color="red" size="small">
-                  是                </a-tag>
-                <span v-else>否</span>
-              </template>
-            </a-table-column>
-            <a-table-column
-              prop="isStar"
-              label="星标"
-              :width="60"
-              align="center"
-            >
-              <template #default="{ row }">
-                <a-tag v-if="row.isStar" color="orange" size="small">
-                  是                </a-tag>
-                <span v-else>-</span>
-              </template>
-            </a-table-column>
-            <a-table-column label="状态" :width="120">
-              <template #default="{ row }">
-                <a-tag :type="getStatusTag(row.status).type" size="small">
-                  {{ getStatusTag(row.status).label }}
-                </a-tag>
-              </template>
-            </a-table-column>
-            <a-table-column label="负责人" :width="120">
-              <template #default="{ row }">
-                <span>{{ row.responsibleUser?.realName || '-' }}</span>
-              </template>
-            </a-table-column>
-            <a-table-column label="审核人" :width="120">
-              <template #default="{ row }">
-                <span>{{ row.reviewUser?.realName || '-' }}</span>
-              </template>
-            </a-table-column>
-            <a-table-column label="操作" :width="220" fixed="right">
-              <template #default="{ row }">
-                <a-button
-                  text
-                  type="primary"
-                  size="small"
-                  @click="viewItemDetail(row.id)"
-                >
-                  查看
-                </a-button>
-                <a-button
-                  v-if="row.status !== 'NotApplicable' && row.status !== 'Approved'"
-                  text
-                  status="warning" type="secondary"
-                  size="small"
-                  @click="handleMarkNotApplicable(row.id)"
-                >
-                  标记不适用
-                </a-button>
-                <a-button
-                  v-if="row.status === 'Uploaded' || row.status === 'Reviewing'"
-                  text
-                  status="success" type="secondary"
-                  size="small"
-                  @click="handleUpdateStatus(row.id, 'Approved')"
-                >
-                  通过
-                </a-button>
-              </template>
-            </a-table-column>
-          </a-table>
-        </div>
+              <a-table-column label="档案项" :min-width="260">
+                <template #default="{ row }">
+                  <div class="archive-name-cell">
+                    <strong>{{ row.secondName || row.name }}</strong>
+                    <span v-if="row.parentName">{{ row.parentName }}</span>
+                  </div>
+                </template>
+              </a-table-column>
+              <a-table-column label="上传指导" :min-width="360" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span>{{ row.guideText }}</span>
+                </template>
+              </a-table-column>
+              <a-table-column label="文件" :width="72" align="center">
+                <template #default="{ row }">
+                  {{ row.files?.length || 0 }}
+                </template>
+              </a-table-column>
+              <a-table-column label="状态" :width="100">
+                <template #default="{ row }">
+                  <a-tag :type="getStatusTag(row.status).type" size="small">
+                    {{ getStatusTag(row.status).label }}
+                  </a-tag>
+                </template>
+              </a-table-column>
+              <a-table-column label="负责人" :width="110">
+                <template #default="{ row }">
+                  {{ row.responsibleUser?.realName || '-' }}
+                </template>
+              </a-table-column>
+              <a-table-column label="审核人" :width="110">
+                <template #default="{ row }">
+                  {{ row.reviewUser?.realName || row.responsibleUser?.realName || '-' }}
+                </template>
+              </a-table-column>
+              <a-table-column label="操作" :width="190" fixed="right">
+                <template #default="{ row }">
+                  <a-space size="mini" :wrap="false">
+                    <a-button type="text" size="mini" @click="viewItemDetail(row.id)">
+                      查看/上传
+                    </a-button>
+                    <a-button
+                      v-if="row.status !== 'NotApplicable' && row.status !== 'Approved'"
+                      type="text"
+                      status="warning"
+                      size="mini"
+                      @click="handleMarkNotApplicable(row.id)"
+                    >
+                      不适用
+                    </a-button>
+                    <a-button
+                      v-if="row.status === 'Uploaded'"
+                      type="text"
+                      status="success"
+                      size="mini"
+                      @click="handleUpdateStatus(row.id, 'Approved')"
+                    >
+                      通过
+                    </a-button>
+                  </a-space>
+                </template>
+              </a-table-column>
+            </a-table>
+          </template>
+          <a-empty v-else description="暂无档案目录，请先生成目录" class="archive-empty" />
+        </a-spin>
       </template>
-      <a-empty v-else description="暂无档案目录，请先生成" />
     </a-card>
+
     <a-dialog
       v-model="showGenerateDialog"
-      title="生成档案目录"
+      title="生成项目档案目录"
       width="500px"
       :close-on-click-modal="false"
     >
-      <a-form :model="{}" label-width="100px">
-        <a-form-item label="选择模板">
+      <a-form :model="{}" label-width="92px">
+        <a-form-item label="档案模板">
           <a-select
             v-model="selectedTemplateId"
             v-loading="loadingTemplates"
             placeholder="请选择档案模板"
-            style="width: 100%"
             filterable
           >
             <a-option
@@ -431,89 +458,101 @@ onMounted(() => {
         </a-form-item>
       </a-form>
       <template #footer>
-        <a-button @click="showGenerateDialog = false">
-          取消
-        </a-button>
+        <a-button @click="showGenerateDialog = false">取消</a-button>
         <a-button type="primary" :loading="generatingArchive" @click="handleGenerateArchive">
           生成
         </a-button>
       </template>
     </a-dialog>
+
     <a-dialog
       v-model="showItemDetail"
-      :title="currentItem?.name || '档案项详情'"
-      width="700px"
+      :title="currentItem?.secondName || currentItem?.name || '档案项详情'"
+      width="920px"
       :close-on-click-modal="false"
     >
-      <div v-if="currentItem" v-loading="loadingItem">
-        <a-descriptions :column="2" border>
-          <a-descriptions-item label="名称" :span="2">
-            {{ currentItem.name }}
-          </a-descriptions-item>
-          <a-descriptions-item label="第二名称" :span="2">
-            {{ currentItem.secondName || '-' }}
-          </a-descriptions-item>
-          <a-descriptions-item label="阶段">
-            {{ currentItem.stageCode }}
-          </a-descriptions-item>
-          <a-descriptions-item label="层级">
-            L{{ currentItem.level }}
-          </a-descriptions-item>
-          <a-descriptions-item label="必填">
-            <a-tag v-if="currentItem.isRequired" color="red" size="small">
-              是            </a-tag>
-            <span v-else>否</span>
-          </a-descriptions-item>
-          <a-descriptions-item label="星标">
-            <a-tag v-if="currentItem.isStar" color="orange" size="small">
-              是            </a-tag>
-            <span v-else>否</span>
-          </a-descriptions-item>
-          <a-descriptions-item label="状态">
-            <a-tag :type="getStatusTag(currentItem.status).type" size="small">
-              {{ getStatusTag(currentItem.status).label }}
-            </a-tag>
-          </a-descriptions-item>
-          <a-descriptions-item label="需审核">
-            {{ currentItem.needReview ? '是' : '否' }}
-          </a-descriptions-item>
-          <a-descriptions-item label="负责人">
-            {{ currentItem.responsibleUser?.realName || '-' }}
-          </a-descriptions-item>
-          <a-descriptions-item label="审核人">
-            {{ currentItem.reviewUser?.realName || '-' }}
-          </a-descriptions-item>
-        </a-descriptions>
-        <a-divider v-if="currentItem.usageDescription" />
-        <p v-if="currentItem.usageDescription" class="usage-desc">
-          <strong>用途说明：</strong>{{ currentItem.usageDescription }}
-        </p>
-        <a-divider />
-        <h4 class="files-title">
-          已上传文件        </h4>
-        <a-table
-          v-if="currentItem.files && currentItem.files.length > 0"
-          :data="currentItem.files"
-          border
-          stripe
-        >
-          <a-table-column
-            prop="originalName"
-            label="文件名"
-            :min-width="200"
-            show-overflow-tooltip
+      <a-spin :loading="loadingItem">
+        <div v-if="currentItem" class="item-detail">
+          <section class="detail-guide">
+            <div>
+              <h3>{{ currentItem.secondName || currentItem.name }}</h3>
+              <p>{{ currentItem.usageDescription || '请按项目实际情况上传该档案项对应文件。' }}</p>
+            </div>
+            <div class="detail-meta">
+              <a-tag :type="getStatusTag(currentItem.status).type">
+                {{ getStatusTag(currentItem.status).label }}
+              </a-tag>
+              <span>负责人：{{ currentItem.responsibleUser?.realName || '-' }}</span>
+              <span>审核人：{{ currentItem.reviewUser?.realName || currentItem.responsibleUser?.realName || '-' }}</span>
+            </div>
+          </section>
+
+          <FileUploader
+            :project-id="selectedProjectId"
+            :archive-item-id="currentItem.id"
+            :allowed-types="defaultAllowedTypes"
+            @upload-success="handleUploadSuccess"
           />
-          <a-table-column prop="versionNo" label="版本" :width="80" />
-          <a-table-column prop="fileStatus" label="文件状态" :width="100" />
-          <a-table-column prop="uploadTime" label="上传时间" :width="170">
-            <template #default="{ row }">
-              {{ new Date(row.uploadTime).toLocaleString() }}
-            </template>
-          </a-table-column>
-        </a-table>
-        <a-empty v-else description="暂无上传文件" />
-      </div>
+
+          <div class="files-block">
+            <div class="files-heading">
+              <h4>已上传文件</h4>
+              <span>{{ currentItem.files?.length || 0 }} 个文件</span>
+            </div>
+            <a-table
+              v-if="currentItem.files?.length"
+              :data="currentItem.files"
+              row-key="id"
+              border
+              stripe
+              class="file-table"
+            >
+              <a-table-column label="文件名" :min-width="260">
+                <template #default="{ row }">
+                  <button class="file-link" type="button" @click="openFilePreview(row)">
+                    {{ row.originalName }}
+                  </button>
+                </template>
+              </a-table-column>
+              <a-table-column prop="fileExt" label="格式" :width="70" />
+              <a-table-column label="大小" :width="90">
+                <template #default="{ row }">
+                  {{ formatFileSize(row.fileSize) }}
+                </template>
+              </a-table-column>
+              <a-table-column prop="versionNo" label="版本" :width="76" />
+              <a-table-column label="状态" :width="92">
+                <template #default="{ row }">
+                  <a-tag :type="getStatusTag(row.fileStatus).type" size="small">
+                    {{ getStatusTag(row.fileStatus).label }}
+                  </a-tag>
+                </template>
+              </a-table-column>
+              <a-table-column label="上传人" :width="100">
+                <template #default="{ row }">
+                  {{ row.uploadUser?.realName || '-' }}
+                </template>
+              </a-table-column>
+              <a-table-column label="上传时间" :width="150">
+                <template #default="{ row }">
+                  {{ formatDate(row.uploadTime) }}
+                </template>
+              </a-table-column>
+              <a-table-column label="操作" :width="132" fixed="right">
+                <template #default="{ row }">
+                  <a-space size="mini" :wrap="false">
+                    <a-button type="text" size="mini" @click="downloadFile(row)">下载</a-button>
+                    <a-button type="text" status="danger" size="mini" @click="deleteFile(row)">删除</a-button>
+                  </a-space>
+                </template>
+              </a-table-column>
+            </a-table>
+            <a-empty v-else description="暂无上传文件" class="detail-empty" />
+          </div>
+        </div>
+      </a-spin>
     </a-dialog>
   </div>
 </template>
+
 <style scoped lang="scss" src="./index.scss"></style>

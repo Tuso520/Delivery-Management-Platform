@@ -65,6 +65,13 @@ export const fileApi = {
   },
 
   /**
+   * 生成短时有效的在线预览链接
+   */
+  createPreviewLink(id: string) {
+    return request.post<{ url: string; expiresAt: string }>(`/files/${id}/preview-link`)
+  },
+
+  /**
    * 删除文件（软删除）
    */
   delete(id: string) {
