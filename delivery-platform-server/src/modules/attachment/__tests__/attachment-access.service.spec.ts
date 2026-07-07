@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
 import { Readable } from 'stream';
 
 import type { PrismaService } from '../../../database/prisma.service';
@@ -13,6 +14,9 @@ describe('AttachmentService project ownership', () => {
     getBucketName: jest.fn().mockReturnValue('delivery-platform'),
   } as unknown as FileStorageService;
   const operationLog = { log: jest.fn() } as unknown as OperationLogService;
+  const configService = {
+    get: jest.fn().mockReturnValue('unit-test-preview-secret-that-is-long-enough'),
+  } as unknown as ConfigService;
 
   it('rejects a projectId that does not match the checklist owner project', async () => {
     const prisma = {
@@ -31,6 +35,7 @@ describe('AttachmentService project ownership', () => {
       storage,
       operationLog,
       projectAccess,
+      configService,
     );
 
     await expect(
@@ -66,6 +71,7 @@ describe('AttachmentService project ownership', () => {
       storage,
       operationLog,
       projectAccess,
+      configService,
     );
 
     await expect(
@@ -106,6 +112,7 @@ describe('AttachmentService project ownership', () => {
       storage,
       operationLog,
       projectAccess,
+      configService,
     );
 
     await expect(
@@ -174,6 +181,7 @@ describe('AttachmentService project ownership', () => {
       previewStorage,
       operationLog,
       { assertProjectAccess: jest.fn() } as unknown as ProjectAccessService,
+      configService,
     );
 
     const preview = await service.getPreview('attachment-1', 'user-1', {});

@@ -1,19 +1,18 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import type { TableColumnData } from '@arco-design/web-vue'
 import { IconDownload, IconEye } from '@arco-design/web-vue/es/icon'
+import { MdEditor } from 'md-editor-v3'
+import 'md-editor-v3/lib/style.css'
 import { arcoConfirm } from '@/utils/arco-dialog'
 import { templateApi } from '@/api/template'
 import { attachmentApi } from '@/api/attachment'
-import type { AttachmentPreview } from '@/api/attachment'
 import type { DocumentTemplate, QueryTemplateDto } from '@/types/template'
 import type { PaginatedData } from '@/types/api'
 import type { TagType } from '@/types/ui'
 import { downloadBlob } from '@/utils/blob'
-
-type PreviewState = AttachmentPreview & { objectUrl?: string }
 
 interface TemplateStage {
   code: string
@@ -32,9 +31,17 @@ const loading = ref(false)
 const templateList = ref<DocumentTemplate[]>([])
 const activeStageCode = ref('')
 const templateStreamRef = ref<HTMLElement>()
-const previewVisible = ref(false)
-const previewLoading = ref(false)
-const preview = ref<PreviewState>()
+const createVisible = ref(false)
+const createSubmitting = ref(false)
+const createMode = ref<'markdown' | 'upload'>('markdown')
+const createFiles = ref<File[]>([])
+const createForm = ref({
+  name: '',
+  stageCode: '',
+  category: 'Process',
+  markdownContent: '',
+  remark: '',
+})
 
 const stages: TemplateStage[] = [
   { code: '01_presale', name: '售前与启动', description: '立项、启动会、项目计划和职责分工模板' },
@@ -50,6 +57,14 @@ const statusOptions = [
   { value: 'Draft', label: '草稿' },
   { value: 'Published', label: '已发布' },
   { value: 'Deprecated', label: '已废弃' },
+]
+
+const templateCategoryOptions = [
+  { value: 'Process', label: '流程模板' },
+  { value: 'Checklist', label: '清单模板' },
+  { value: 'Form', label: '表单模板' },
+  { value: 'Report', label: '报告模板' },
+  { value: 'Config', label: '配置模板' },
 ]
 
 function normalizeStageCode(stageCode?: string | null): string {
@@ -71,7 +86,9 @@ const activeSection = computed(() =>
   || templateSections.value[0],
 )
 
-const previewTitle = computed(() => preview.value?.title || preview.value?.fileName || '在线预览')
+const totalTemplateCount = computed(() =>
+  templateSections.value.reduce((total, section) => total + section.templates.length, 0),
+)
 
 function columnsFor(stageName: string): TableColumnData[] {
   return [
@@ -140,7 +157,8 @@ function updateActiveStageByScroll(): void {
 }
 
 function handleCreate(): void {
-  router.push('/template/create')
+  resetCreateForm()
+  createVisible.value = true
 }
 
 function handleEdit(row: DocumentTemplate): void {
@@ -179,46 +197,100 @@ function incrementTemplateHeat(templateId: string, key: 'previewCount' | 'downlo
   }
 }
 
-async function handlePreview(row: DocumentTemplate): Promise<void> {
-  releasePreviewObjectUrl()
-  previewVisible.value = true
-  previewLoading.value = true
-  preview.value = {
-    fileName: row.attachmentFileName || row.name,
-    fileExt: row.fileFormat || 'md',
-    mimeType: 'text/markdown;charset=utf-8',
-    previewKind: 'unsupported',
-    viewer: 'download',
-    title: row.name,
+async function openTemplatePreview(row: DocumentTemplate): Promise<void> {
+  try {
+    if (!row.attachmentId) {
+      Message.warning('该模板暂无可预览文件')
+      return
+    }
+    const { url } = await attachmentApi.createPreviewLink(row.attachmentId)
+    window.open(url, '_blank', 'noopener,noreferrer')
+    incrementTemplateHeat(row.id, 'previewCount')
+  } catch {
+    Message.error('预览链接生成失败')
+  }
+}
+
+function resetCreateForm(): void {
+  createMode.value = 'markdown'
+  createFiles.value = []
+  createForm.value = {
+    name: '',
+    stageCode: activeStageCode.value || stages[0].code,
+    category: 'Process',
+    markdownContent: '',
+    remark: '',
+  }
+}
+
+function selectCreateFiles(event: Event): void {
+  createFiles.value = Array.from((event.target as HTMLInputElement).files ?? [])
+}
+
+function safeFileName(value: string): string {
+  const clean = value.trim().replace(/[\\/:*?"<>|]/g, '-')
+  return clean || `template-${Date.now()}`
+}
+
+function fileExtFromName(fileName: string): string {
+  const index = fileName.lastIndexOf('.')
+  return index >= 0 ? fileName.slice(index + 1).toLowerCase() : 'md'
+}
+
+function markdownFile(title: string, content: string): File {
+  return new File([content || `# ${title}\n`], `${safeFileName(title)}.md`, {
+    type: 'text/markdown;charset=utf-8',
+  })
+}
+
+async function submitCreateTemplate(): Promise<void> {
+  const name = createForm.value.name.trim()
+  if (!name || !createForm.value.stageCode || !createForm.value.category) {
+    Message.warning('请填写模板名称、流程和分类')
+    return
+  }
+  if (createMode.value === 'upload' && createFiles.value.length === 0) {
+    Message.warning('请先选择上传文件')
+    return
   }
 
+  createSubmitting.value = true
   try {
-    if (row.attachmentId) {
-      const metadata = await attachmentApi.getPreview(row.attachmentId)
-      if (metadata.previewKind === 'image' || metadata.previewKind === 'pdf') {
-        preview.value = {
-          ...metadata,
-          title: row.name,
-          objectUrl: URL.createObjectURL(await attachmentApi.getContent(row.attachmentId)),
-        }
-      } else {
-        preview.value = { ...metadata, title: row.name }
-      }
-    } else {
-      const download = await templateApi.getDownloadInfo(row.id)
-      preview.value = {
-        fileName: download.fileName,
-        fileExt: download.fileExt,
-        mimeType: 'text/markdown;charset=utf-8',
-        previewKind: 'text',
-        viewer: 'text',
-        title: row.name,
-        text: download.generatedContent || '',
-      }
+    const file =
+      createMode.value === 'markdown'
+        ? markdownFile(name, createForm.value.markdownContent)
+        : createFiles.value[0]
+    const template = await templateApi.create({
+      name,
+      category: createForm.value.category,
+      stageCode: createForm.value.stageCode,
+      language: 'zh-CN',
+      fileFormat: fileExtFromName(file.name),
+    })
+    const data = new FormData()
+    data.append('files', file)
+    data.append('ownerType', 'DocumentTemplate')
+    data.append('ownerId', template.id)
+    data.append('category', 'template-version')
+    if (createForm.value.remark.trim()) {
+      data.append('remark', createForm.value.remark.trim())
     }
-    incrementTemplateHeat(row.id, 'previewCount')
+    const attachments = await attachmentApi.upload(data)
+    await templateApi.addVersion(template.id, {
+      versionNo: 'V1.0',
+      attachmentId: attachments[0]?.id,
+      changeNotes: createForm.value.remark.trim() || '初始版本',
+    })
+    try {
+      await templateApi.publish(template.id)
+    } catch {
+      // Publishing permission is optional for this quick-create path.
+    }
+    Message.success('模板已新增')
+    createVisible.value = false
+    await fetchList()
   } finally {
-    previewLoading.value = false
+    createSubmitting.value = false
   }
 }
 
@@ -234,12 +306,6 @@ async function handleDownload(row: DocumentTemplate): Promise<void> {
     incrementTemplateHeat(row.id, 'downloadCount')
   } catch {
     Message.warning('该模板尚未上传可下载文件')
-  }
-}
-
-function releasePreviewObjectUrl(): void {
-  if (preview.value?.objectUrl) {
-    URL.revokeObjectURL(preview.value.objectUrl)
   }
 }
 
@@ -263,15 +329,7 @@ function formatDate(value?: string | null): string {
   return date.toLocaleDateString('zh-CN')
 }
 
-watch(previewVisible, (visible) => {
-  if (!visible) releasePreviewObjectUrl()
-})
-
 onMounted(fetchList)
-
-onBeforeUnmount(() => {
-  releasePreviewObjectUrl()
-})
 </script>
 
 <template>
@@ -330,7 +388,13 @@ onBeforeUnmount(() => {
               <template #name="{ record }">
                 <div class="template-name-cell">
                   <div class="template-title-line">
-                    <strong>{{ record.name }}</strong>
+                    <button
+                      class="template-title-button"
+                      type="button"
+                      @click="openTemplatePreview(record)"
+                    >
+                      {{ record.name }}
+                    </button>
                     <span class="template-heat" title="在线预览热度">
                       <IconEye />
                       {{ record.previewCount || 0 }}
@@ -359,9 +423,6 @@ onBeforeUnmount(() => {
               </template>
               <template #actions="{ record }">
                 <a-space size="mini" :wrap="false" class="template-actions">
-                  <a-button type="text" size="mini" @click="handlePreview(record)">
-                    在线预览
-                  </a-button>
                   <a-button
                     v-if="record.status === 'Published'"
                     type="text"
@@ -394,49 +455,91 @@ onBeforeUnmount(() => {
               </template>
             </a-table>
 
-            <a-empty v-else description="暂无模板" class="template-empty" />
+            <a-empty v-else-if="!totalTemplateCount" description="暂无模板" class="template-empty" />
           </section>
         </div>
       </a-spin>
     </main>
 
     <a-modal
-      v-model:visible="previewVisible"
-      :title="previewTitle"
-      :footer="false"
-      :width="980"
-      class="preview-modal"
+      v-model:visible="createVisible"
+      title="新增模板"
+      :width="900"
+      :confirm-loading="createSubmitting"
+      ok-text="保存"
+      cancel-text="取消"
+      @ok="submitCreateTemplate"
     >
-      <a-spin :loading="previewLoading">
-        <div class="preview-meta">
-          <a-tag>{{ preview?.viewer || 'preview' }}</a-tag>
-          <span>{{ preview?.fileExt?.toUpperCase() }}</span>
+      <div class="quick-create-form">
+        <a-form :model="createForm" layout="vertical">
+          <a-grid :cols="3" :col-gap="12" :row-gap="12">
+            <a-grid-item>
+              <a-form-item label="模板名称" required>
+                <a-input v-model="createForm.name" placeholder="请输入模板名称" />
+              </a-form-item>
+            </a-grid-item>
+            <a-grid-item>
+              <a-form-item label="交付流程" required>
+                <a-select v-model="createForm.stageCode" placeholder="请选择交付流程">
+                  <a-option
+                    v-for="stage in stages.filter((item) => item.code !== 'unassigned')"
+                    :key="stage.code"
+                    :value="stage.code"
+                  >
+                    {{ stage.name }}
+                  </a-option>
+                </a-select>
+              </a-form-item>
+            </a-grid-item>
+            <a-grid-item>
+              <a-form-item label="模板分类" required>
+                <a-select v-model="createForm.category" placeholder="请选择模板分类">
+                  <a-option
+                    v-for="option in templateCategoryOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </a-option>
+                </a-select>
+              </a-form-item>
+            </a-grid-item>
+          </a-grid>
+
+          <a-form-item label="简介备注">
+            <a-textarea
+              v-model="createForm.remark"
+              placeholder="用于列表展示和版本记录的简短说明"
+              :auto-size="{ minRows: 2, maxRows: 3 }"
+            />
+          </a-form-item>
+        </a-form>
+
+        <div class="create-mode-bar">
+          <a-radio-group v-model="createMode" type="button" size="small">
+            <a-radio value="markdown">书写 Markdown</a-radio>
+            <a-radio value="upload">上传文件</a-radio>
+          </a-radio-group>
         </div>
-        <img
-          v-if="preview?.previewKind === 'image' && preview.objectUrl"
-          :src="preview.objectUrl"
-          alt=""
-          class="image-preview"
+
+        <MdEditor
+          v-if="createMode === 'markdown'"
+          v-model="createForm.markdownContent"
+          language="zh-CN"
+          class="quick-md-editor"
         />
-        <iframe
-          v-else-if="preview?.previewKind === 'pdf' && preview.objectUrl"
-          :src="preview.objectUrl"
-          class="pdf-preview"
-          title="PDF 在线预览"
-        />
-        <div
-          v-else-if="preview?.previewKind === 'html'"
-          class="office-preview"
-          v-html="preview.html"
-        />
-        <pre v-else-if="preview?.previewKind === 'text'" class="text-preview">{{ preview.text }}</pre>
-        <a-result
-          v-else
-          status="warning"
-          title="暂不支持在线预览"
-          :subtitle="preview?.reason || '请下载后查看该模板文件。'"
-        />
-      </a-spin>
+        <label v-else class="file-picker upload-picker">
+          <span>选择文件</span>
+          <input
+            type="file"
+            accept=".doc,.docx,.xls,.xlsx,.ppt,.pptx,.pdf,.png,.jpg,.jpeg,.webp,.txt,.md"
+            @change="selectCreateFiles"
+          />
+          <em v-if="createFiles.length">
+            已选择 {{ createFiles[0].name }}
+          </em>
+        </label>
+      </div>
     </a-modal>
   </section>
 </template>
@@ -615,14 +718,6 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 2px;
 
-  strong {
-    min-width: 0;
-    overflow: hidden;
-    color: var(--color-text-1);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   span {
     overflow: hidden;
     color: var(--color-text-3);
@@ -637,6 +732,26 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.template-title-button {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  color: rgb(var(--primary-6));
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  &:hover {
+    color: rgb(var(--primary-5));
+    text-decoration: underline;
+  }
 }
 
 .template-heat {
@@ -671,44 +786,45 @@ onBeforeUnmount(() => {
   background: var(--color-fill-1);
 }
 
-.preview-meta {
+.quick-create-form {
+  display: grid;
+  gap: 12px;
+}
+
+.create-mode-bar {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-  color: var(--color-text-3);
-  font-size: 12px;
 }
 
-.image-preview {
+.quick-md-editor {
+  height: 420px;
+}
+
+.file-picker {
+  display: grid;
+  gap: 6px;
+}
+
+.file-picker input {
   width: 100%;
-  max-height: 68vh;
-  object-fit: contain;
+  padding: 8px;
   border: 1px solid var(--color-border-2);
   border-radius: 0;
+}
+
+.upload-picker {
+  min-height: 160px;
+  align-content: center;
+  padding: 18px;
+  border: 1px dashed var(--color-border-3);
   background: var(--color-fill-1);
-}
 
-.pdf-preview {
-  width: 100%;
-  height: 70vh;
-  border: 1px solid var(--color-border-2);
-  border-radius: 0;
-  background: #fff;
-}
-
-.office-preview,
-.text-preview {
-  max-height: 70vh;
-  padding: 16px;
-  border: 1px solid var(--color-border-2);
-  border-radius: 0;
-  background: #fff;
-  overflow: auto;
-}
-
-.text-preview {
-  white-space: pre-wrap;
+  em {
+    color: var(--color-text-3);
+    font-size: 12px;
+    font-style: normal;
+  }
 }
 
 @media (max-width: 980px) {

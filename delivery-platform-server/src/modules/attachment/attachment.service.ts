@@ -1,4 +1,5 @@
 import type { Readable } from 'stream';
+import { createHmac, timingSafeEqual } from 'crypto';
 
 import {
   BadRequestException,
@@ -6,6 +7,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
@@ -30,7 +32,26 @@ interface AuditContext {
   userAgent?: string;
 }
 
+interface AttachmentRecord {
+  id: string;
+  ownerType: string;
+  ownerId: string;
+  projectId: string | null;
+  originalName: string;
+  fileExt: string;
+  fileSize: bigint;
+  mimeType: string;
+  storagePath: string;
+}
+
+interface PreviewTokenPayload {
+  attachmentId: string;
+  userId: string;
+  expiresAt: number;
+}
+
 const MAX_SERVER_PREVIEW_BYTES = 25 * 1024 * 1024;
+const PREVIEW_TOKEN_TTL_MS = 10 * 60 * 1000;
 
 @Injectable()
 export class AttachmentService {
@@ -39,6 +60,7 @@ export class AttachmentService {
     private readonly storage: FileStorageService,
     private readonly operationLog: OperationLogService,
     private readonly projectAccess: ProjectAccessService,
+    private readonly configService: ConfigService,
   ) {}
 
   async uploadMany(
@@ -191,7 +213,61 @@ export class AttachmentService {
   ): Promise<AttachmentPreviewResult> {
     const attachment = await this.findById(id);
     await this.assertAttachmentAccess(attachment, userId, 'view');
+    const preview = await this.buildPreviewForAttachment(attachment);
 
+    await this.logAttachmentAction(attachment, userId, 'preview', audit);
+
+    return preview;
+  }
+
+  async createPreviewLink(
+    id: string,
+    userId: string,
+  ): Promise<{ token: string; expiresAt: string }> {
+    const attachment = await this.findById(id);
+    await this.assertAttachmentAccess(attachment, userId, 'view');
+    const expiresAt = new Date(Date.now() + PREVIEW_TOKEN_TTL_MS);
+
+    return {
+      token: this.signPreviewToken({
+        attachmentId: id,
+        userId,
+        expiresAt: expiresAt.getTime(),
+      }),
+      expiresAt: expiresAt.toISOString(),
+    };
+  }
+
+  async getSignedPreviewPage(
+    id: string,
+    token: string | undefined,
+    audit: AuditContext,
+    contentUrl: string,
+  ): Promise<string> {
+    const payload = this.verifyPreviewToken(id, token);
+    const attachment = await this.findById(id);
+    const preview = await this.buildPreviewForAttachment(attachment);
+    await this.logAttachmentAction(attachment, payload.userId, 'preview', audit);
+    return this.renderPreviewPage(preview, contentUrl);
+  }
+
+  async getSignedContent(
+    id: string,
+    token: string | undefined,
+  ): Promise<{ stream: Readable; fileName: string; mimeType: string }> {
+    this.verifyPreviewToken(id, token);
+    const attachment = await this.findById(id);
+    const stream = await this.storage.getObject(attachment.storagePath);
+    return {
+      stream,
+      fileName: attachment.originalName,
+      mimeType: attachment.mimeType,
+    };
+  }
+
+  private async buildPreviewForAttachment(
+    attachment: AttachmentRecord,
+  ): Promise<AttachmentPreviewResult> {
     const fileExt = attachment.fileExt.toLowerCase();
     const base = {
       fileName: attachment.originalName,
@@ -218,17 +294,243 @@ export class AttachmentService {
       preview = await buildAttachmentPreview({ ...base, buffer });
     }
 
+    return preview;
+  }
+
+  private async logAttachmentAction(
+    attachment: AttachmentRecord,
+    userId: string,
+    action: 'preview' | 'download',
+    audit: AuditContext,
+  ): Promise<void> {
     await this.operationLog.log({
       userId,
       module: 'attachment',
-      action: 'preview',
+      action,
       targetType: attachment.ownerType,
-      targetId: id,
+      targetId: attachment.id,
       ipAddress: audit.ipAddress,
       userAgent: audit.userAgent,
     });
+  }
 
-    return preview;
+  private signPreviewToken(payload: PreviewTokenPayload): string {
+    const body = Buffer.from(JSON.stringify(payload), 'utf8').toString(
+      'base64url',
+    );
+    const signature = createHmac('sha256', this.getPreviewSecret())
+      .update(body)
+      .digest('base64url');
+    return `${body}.${signature}`;
+  }
+
+  private verifyPreviewToken(
+    attachmentId: string,
+    token?: string,
+  ): PreviewTokenPayload {
+    if (!token || !token.includes('.')) {
+      throw new ForbiddenException('预览链接无效或已过期');
+    }
+
+    const [body, signature] = token.split('.', 2);
+    const expected = createHmac('sha256', this.getPreviewSecret())
+      .update(body)
+      .digest('base64url');
+    const signatureBuffer = Buffer.from(signature);
+    const expectedBuffer = Buffer.from(expected);
+    if (
+      signatureBuffer.length !== expectedBuffer.length ||
+      !timingSafeEqual(signatureBuffer, expectedBuffer)
+    ) {
+      throw new ForbiddenException('预览链接无效或已过期');
+    }
+
+    let payload: PreviewTokenPayload;
+    try {
+      payload = JSON.parse(
+        Buffer.from(body, 'base64url').toString('utf8'),
+      ) as PreviewTokenPayload;
+    } catch {
+      throw new ForbiddenException('预览链接无效或已过期');
+    }
+
+    if (
+      payload.attachmentId !== attachmentId ||
+      typeof payload.userId !== 'string' ||
+      typeof payload.expiresAt !== 'number' ||
+      Date.now() > payload.expiresAt
+    ) {
+      throw new ForbiddenException('预览链接无效或已过期');
+    }
+
+    return payload;
+  }
+
+  private getPreviewSecret(): string {
+    return this.configService.get<string>('auth.jwtSecret') || process.env.JWT_SECRET || '';
+  }
+
+  private renderPreviewPage(
+    preview: AttachmentPreviewResult,
+    contentUrl: string,
+  ): string {
+    const title = escapeHtml(preview.title || preview.fileName);
+    const safeContentUrl = escapeAttribute(contentUrl);
+    const body =
+      preview.previewKind === 'image'
+        ? `<img class="preview-image" src="${safeContentUrl}" alt="${title}" />`
+        : preview.previewKind === 'pdf'
+          ? `<iframe class="preview-frame" src="${safeContentUrl}#toolbar=1&navpanes=0" title="${title}"></iframe>`
+          : preview.previewKind === 'html'
+            ? `<main class="preview-document">${preview.html || ''}</main>`
+            : preview.previewKind === 'text'
+              ? `<pre class="preview-text">${escapeHtml(preview.text || '')}</pre>`
+              : `<section class="preview-empty"><h2>暂不支持在线预览</h2><p>${escapeHtml(
+                  preview.reason || '请下载后查看该文件。',
+                )}</p></section>`;
+
+    return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${title}</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      color: #1d2129;
+      background: #f2f4f8;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    .preview-page {
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+    .preview-header {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 54px;
+      padding: 10px 18px;
+      border-bottom: 1px solid #e5e6eb;
+      background: rgba(255, 255, 255, 0.96);
+      backdrop-filter: blur(8px);
+    }
+    .preview-header h1 {
+      min-width: 0;
+      margin: 0;
+      overflow: hidden;
+      font-size: 15px;
+      font-weight: 650;
+      line-height: 1.4;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .preview-header span {
+      flex: 0 0 auto;
+      color: #86909c;
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+    .preview-content {
+      flex: 1;
+      min-height: 0;
+      padding: 16px;
+      overflow: auto;
+    }
+    .preview-image {
+      display: block;
+      max-width: 100%;
+      max-height: calc(100vh - 92px);
+      margin: 0 auto;
+      object-fit: contain;
+      background: #fff;
+      border: 1px solid #e5e6eb;
+    }
+    .preview-frame {
+      width: 100%;
+      height: calc(100vh - 92px);
+      border: 1px solid #e5e6eb;
+      background: #fff;
+    }
+    .preview-document,
+    .preview-text,
+    .preview-empty {
+      width: min(1120px, 100%);
+      min-height: calc(100vh - 92px);
+      margin: 0 auto;
+      padding: 24px 28px;
+      border: 1px solid #e5e6eb;
+      background: #fff;
+    }
+    .preview-document .attachment-preview { max-width: none; }
+    .preview-document h2,
+    .preview-document h3 {
+      margin: 0 0 14px;
+      color: #1d2129;
+      line-height: 1.35;
+    }
+    .preview-document p {
+      margin: 0 0 10px;
+      color: #4e5969;
+      line-height: 1.75;
+      white-space: pre-wrap;
+    }
+    .preview-document table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: auto;
+      font-size: 13px;
+    }
+    .preview-document td,
+    .preview-document th {
+      min-width: 96px;
+      padding: 8px 10px;
+      border: 1px solid #e5e6eb;
+      vertical-align: top;
+      word-break: break-word;
+    }
+    .preview-table-wrap { width: 100%; overflow-x: auto; }
+    .preview-slide,
+    .preview-sheet {
+      margin: 0 0 16px;
+      padding: 16px;
+      border: 1px solid #e5e6eb;
+      background: #fbfcff;
+    }
+    .preview-text {
+      overflow: auto;
+      color: #1d2129;
+      line-height: 1.65;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .preview-empty {
+      display: grid;
+      place-content: center;
+      text-align: center;
+      color: #4e5969;
+    }
+  </style>
+</head>
+<body>
+  <div class="preview-page">
+    <header class="preview-header">
+      <h1>${title}</h1>
+      <span>${escapeHtml(preview.fileExt || '')}</span>
+    </header>
+    <section class="preview-content">
+      ${body}
+    </section>
+  </div>
+</body>
+</html>`;
   }
 
   async softDelete(id: string, userId: string): Promise<void> {
@@ -461,4 +763,17 @@ export class AttachmentService {
       throw new ForbiddenException('没有访问该业务附件的权限');
     }
   }
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/gu, '&amp;')
+    .replace(/</gu, '&lt;')
+    .replace(/>/gu, '&gt;')
+    .replace(/"/gu, '&quot;')
+    .replace(/'/gu, '&#39;');
+}
+
+function escapeAttribute(value: string): string {
+  return escapeHtml(value);
 }

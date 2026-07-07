@@ -27,6 +27,7 @@ import type { Request, Response } from 'express';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Permissions } from '../../common/decorators/permissions.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import { RawResponse } from '../../common/decorators/raw-response.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -50,10 +51,12 @@ const allowedExtensions = new Set([
   'jpeg',
   'png',
   'gif',
+  'webp',
   'mp4',
   'mov',
   'webm',
   'md',
+  'txt',
 ]);
 
 @ApiTags('Attachments')
@@ -135,6 +138,72 @@ export class AttachmentController {
       ipAddress: request.ip,
       userAgent: request.get('user-agent'),
     });
+  }
+
+  @Post(':id/preview-link')
+  @Permissions('attachment:download')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '生成短时有效的附件预览链接' })
+  async createPreviewLink(
+    @Param('id') id: string,
+    @CurrentUser() user: JwtPayload,
+    @Req() request: Request,
+  ) {
+    const previewLink = await this.attachmentService.createPreviewLink(
+      id,
+      user.sub,
+    );
+    const baseUrl = `${request.protocol}://${request.get('host')}${request.baseUrl}`;
+    return {
+      url: `${baseUrl}/${id}/signed-preview?token=${encodeURIComponent(
+        previewLink.token,
+      )}`,
+      expiresAt: previewLink.expiresAt,
+    };
+  }
+
+  @Get(':id/signed-preview')
+  @Public()
+  @RawResponse()
+  @ApiOperation({ summary: '通过短时签名链接打开附件预览页' })
+  async getSignedPreviewPage(
+    @Param('id') id: string,
+    @Query('token') token: string,
+    @Req() request: Request,
+    @Res() response: Response,
+  ) {
+    const contentUrl = `${request.protocol}://${request.get('host')}${request.baseUrl}/${id}/signed-content?token=${encodeURIComponent(
+      token || '',
+    )}`;
+    const html = await this.attachmentService.getSignedPreviewPage(
+      id,
+      token,
+      {
+        ipAddress: request.ip,
+        userAgent: request.get('user-agent'),
+      },
+      contentUrl,
+    );
+    response.setHeader('Content-Type', 'text/html; charset=utf-8');
+    response.send(html);
+  }
+
+  @Get(':id/signed-content')
+  @Public()
+  @RawResponse()
+  @ApiOperation({ summary: '通过短时签名链接读取附件预览文件流' })
+  async getSignedContent(
+    @Param('id') id: string,
+    @Query('token') token: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const content = await this.attachmentService.getSignedContent(id, token);
+    response.setHeader('Content-Type', content.mimeType);
+    response.setHeader(
+      'Content-Disposition',
+      `inline; filename*=UTF-8''${encodeURIComponent(content.fileName)}`,
+    );
+    return new StreamableFile(content.stream);
   }
 
   @Delete(':id')

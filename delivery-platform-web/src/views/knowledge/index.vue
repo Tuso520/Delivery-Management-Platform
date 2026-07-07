@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import type { TableColumnData } from '@arco-design/web-vue'
 import { IconDownload, IconEye } from '@arco-design/web-vue/es/icon'
+import { MdEditor } from 'md-editor-v3'
+import 'md-editor-v3/lib/style.css'
 import { attachmentApi } from '@/api/attachment'
-import type { AttachmentPreview } from '@/api/attachment'
 import { knowledgeApi } from '@/api/knowledge'
 import type {
   KnowledgeArticle,
@@ -14,8 +15,6 @@ import type {
   QueryKnowledgeArticleDto,
 } from '@/types/knowledge'
 import { downloadBlob } from '@/utils/blob'
-
-type PreviewState = AttachmentPreview & { objectUrl?: string }
 
 interface KnowledgeFileRow extends KnowledgeAttachment {
   articleId: string
@@ -38,14 +37,21 @@ const articles = ref<KnowledgeArticle[]>([])
 const activeCategoryId = ref('')
 const fileStreamRef = ref<HTMLElement>()
 
-const previewVisible = ref(false)
-const previewLoading = ref(false)
-const preview = ref<PreviewState>()
-
 const revisionVisible = ref(false)
 const revisionSubmitting = ref(false)
 const revisionTarget = ref<KnowledgeFileRow>()
 const replacementFiles = ref<File[]>([])
+
+const createVisible = ref(false)
+const createSubmitting = ref(false)
+const createMode = ref<'markdown' | 'upload'>('markdown')
+const createFiles = ref<File[]>([])
+const createForm = ref({
+  categoryId: '',
+  title: '',
+  markdownContent: '',
+  remark: '',
+})
 
 function fileColumnsFor(categoryName: string): TableColumnData[] {
   return [
@@ -100,7 +106,9 @@ const activeSection = computed(() =>
   || categorySections.value[0],
 )
 
-const previewTitle = computed(() => preview.value?.title || preview.value?.fileName || '在线预览')
+const totalFileCount = computed(() =>
+  categorySections.value.reduce((total, section) => total + section.files.length, 0),
+)
 
 function articleTopic(article: KnowledgeArticle, rootName: string): string {
   const prefix = `${rootName} - `
@@ -121,19 +129,6 @@ function formatDate(value?: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   return date.toLocaleString('zh-CN', { hour12: false })
-}
-
-function viewerLabel(viewer?: AttachmentPreview['viewer']): string {
-  const labels: Record<AttachmentPreview['viewer'], string> = {
-    image: '图片预览',
-    pdf: 'PDF 预览',
-    document: '文档预览',
-    spreadsheet: '表格预览',
-    presentation: '演示预览',
-    text: '文本预览',
-    download: '下载查看',
-  }
-  return viewer ? labels[viewer] : '在线预览'
 }
 
 function incrementFileHeat(fileId: string, key: 'previewCount' | 'downloadCount'): void {
@@ -202,32 +197,91 @@ function updateActiveCategoryByScroll(): void {
   activeCategoryId.value = currentId
 }
 
-async function previewAttachment(file: KnowledgeFileRow | KnowledgeAttachment): Promise<void> {
-  releasePreviewObjectUrl()
-  previewVisible.value = true
-  previewLoading.value = true
-  preview.value = {
-    fileName: file.originalName,
-    fileExt: file.fileExt,
-    mimeType: file.mimeType,
-    previewKind: 'unsupported',
-    viewer: 'download',
-    title: file.originalName,
+async function openAttachmentPreview(file: KnowledgeFileRow | KnowledgeAttachment): Promise<void> {
+  try {
+    const { url } = await attachmentApi.createPreviewLink(file.id)
+    window.open(url, '_blank', 'noopener,noreferrer')
+    incrementFileHeat(file.id, 'previewCount')
+  } catch {
+    Message.error('预览链接生成失败')
+  }
+}
+
+function resetCreateForm(): void {
+  createMode.value = 'markdown'
+  createFiles.value = []
+  createForm.value = {
+    categoryId: activeCategoryId.value || rootCategories.value[0]?.id || '',
+    title: '',
+    markdownContent: '',
+    remark: '',
+  }
+}
+
+function openCreateKnowledge(): void {
+  resetCreateForm()
+  createVisible.value = true
+}
+
+function selectCreateFiles(event: Event): void {
+  createFiles.value = Array.from((event.target as HTMLInputElement).files ?? [])
+}
+
+function safeFileName(value: string): string {
+  const clean = value.trim().replace(/[\\/:*?"<>|]/g, '-')
+  return clean || `knowledge-${Date.now()}`
+}
+
+function markdownFile(title: string, content: string): File {
+  return new File([content || `# ${title}\n`], `${safeFileName(title)}.md`, {
+    type: 'text/markdown;charset=utf-8',
+  })
+}
+
+async function submitCreateKnowledge(): Promise<void> {
+  const categoryId = createForm.value.categoryId
+  const title = createForm.value.title.trim()
+  if (!categoryId || !title) {
+    Message.warning('请填写分类和标题')
+    return
+  }
+  if (createMode.value === 'upload' && createFiles.value.length === 0) {
+    Message.warning('请先选择上传文件')
+    return
   }
 
+  createSubmitting.value = true
   try {
-    const metadata = await attachmentApi.getPreview(file.id)
-    if (metadata.previewKind === 'image' || metadata.previewKind === 'pdf') {
-      preview.value = {
-        ...metadata,
-        objectUrl: URL.createObjectURL(await attachmentApi.getContent(file.id)),
-      }
-    } else {
-      preview.value = metadata
+    const article = await knowledgeApi.createArticle({
+      categoryId,
+      title,
+      contentType: createMode.value === 'upload' ? 'file' : 'article',
+      markdownContent: createForm.value.markdownContent || `# ${title}\n`,
+      sourceStatus: 'Ready',
+    })
+    const uploadFiles =
+      createMode.value === 'markdown'
+        ? [markdownFile(title, createForm.value.markdownContent)]
+        : createFiles.value
+    const data = new FormData()
+    uploadFiles.forEach((file) => data.append('files', file))
+    data.append('ownerType', 'KnowledgeArticle')
+    data.append('ownerId', article.id)
+    data.append('category', 'knowledge')
+    if (createForm.value.remark.trim()) {
+      data.append('remark', createForm.value.remark.trim())
     }
-    incrementFileHeat(file.id, 'previewCount')
+    await attachmentApi.upload(data)
+    try {
+      await knowledgeApi.publishArticle(article.id)
+    } catch {
+      // Publishing permission is optional for this quick-create path.
+    }
+    Message.success('知识资料已新增')
+    createVisible.value = false
+    await fetchArticles()
   } finally {
-    previewLoading.value = false
+    createSubmitting.value = false
   }
 }
 
@@ -288,20 +342,10 @@ function goApprovalTasks(): void {
   router.push('/operations/approval?tab=tasks')
 }
 
-function releasePreviewObjectUrl(): void {
-  if (preview.value?.objectUrl) {
-    URL.revokeObjectURL(preview.value.objectUrl)
-  }
-}
-
 onMounted(async () => {
   await Promise.all([fetchCategories(), fetchArticles()])
   await nextTick()
   updateActiveCategoryByScroll()
-})
-
-onBeforeUnmount(() => {
-  releasePreviewObjectUrl()
 })
 </script>
 
@@ -338,7 +382,7 @@ onBeforeUnmount(() => {
         </div>
         <a-space size="mini">
           <a-button size="small" @click="goApprovalTasks">更新审批</a-button>
-          <a-button size="small" type="primary" @click="router.push('/knowledge/create')">
+          <a-button size="small" type="primary" @click="openCreateKnowledge">
             新增资料
           </a-button>
         </a-space>
@@ -364,7 +408,13 @@ onBeforeUnmount(() => {
               <template #file="{ record }">
                 <div class="file-name-cell">
                   <div class="file-title-line">
-                    <strong>{{ record.originalName }}</strong>
+                    <button
+                      class="file-title-button"
+                      type="button"
+                      @click="openAttachmentPreview(record)"
+                    >
+                      {{ record.originalName }}
+                    </button>
                     <span class="file-heat" title="在线预览热度">
                       <IconEye />
                       {{ record.previewCount || 0 }}
@@ -390,9 +440,6 @@ onBeforeUnmount(() => {
               </template>
               <template #actions="{ record }">
                 <a-space size="mini" :wrap="false" class="file-actions">
-                  <a-button type="text" size="mini" @click="previewAttachment(record)">
-                    在线预览
-                  </a-button>
                   <a-button type="text" size="mini" @click="downloadAttachment(record)">
                     下载
                   </a-button>
@@ -412,7 +459,7 @@ onBeforeUnmount(() => {
             </a-table>
 
             <a-empty
-              v-else
+              v-else-if="!totalFileCount"
               description="暂无文件"
               class="section-empty"
             />
@@ -420,6 +467,75 @@ onBeforeUnmount(() => {
         </div>
       </a-spin>
     </main>
+
+    <a-modal
+      v-model:visible="createVisible"
+      title="新增知识资料"
+      :width="900"
+      :confirm-loading="createSubmitting"
+      ok-text="保存"
+      cancel-text="取消"
+      @ok="submitCreateKnowledge"
+    >
+      <div class="quick-create-form">
+        <a-form :model="createForm" layout="vertical">
+          <a-grid :cols="2" :col-gap="12" :row-gap="12">
+            <a-grid-item>
+              <a-form-item label="知识分类" required>
+                <a-select v-model="createForm.categoryId" placeholder="请选择分类">
+                  <a-option
+                    v-for="section in categorySections"
+                    :key="section.category.id"
+                    :value="section.category.id"
+                  >
+                    {{ section.category.name }}
+                  </a-option>
+                </a-select>
+              </a-form-item>
+            </a-grid-item>
+            <a-grid-item>
+              <a-form-item label="标题" required>
+                <a-input v-model="createForm.title" placeholder="请输入资料标题" />
+              </a-form-item>
+            </a-grid-item>
+          </a-grid>
+
+          <a-form-item label="简介备注">
+            <a-textarea
+              v-model="createForm.remark"
+              placeholder="用于列表展示的简短说明"
+              :auto-size="{ minRows: 2, maxRows: 3 }"
+            />
+          </a-form-item>
+        </a-form>
+
+        <div class="create-mode-bar">
+          <a-radio-group v-model="createMode" type="button" size="small">
+            <a-radio value="markdown">书写 Markdown</a-radio>
+            <a-radio value="upload">上传文件</a-radio>
+          </a-radio-group>
+        </div>
+
+        <MdEditor
+          v-if="createMode === 'markdown'"
+          v-model="createForm.markdownContent"
+          language="zh-CN"
+          class="quick-md-editor"
+        />
+        <label v-else class="file-picker upload-picker">
+          <span>选择文件</span>
+          <input
+            type="file"
+            multiple
+            accept=".doc,.docx,.xls,.xlsx,.ppt,.pptx,.pdf,.png,.jpg,.jpeg,.webp,.txt,.md"
+            @change="selectCreateFiles"
+          />
+          <em v-if="createFiles.length">
+            已选择 {{ createFiles.length }} 个文件
+          </em>
+        </label>
+      </div>
+    </a-modal>
 
     <a-modal
       v-model:visible="revisionVisible"
@@ -452,44 +568,6 @@ onBeforeUnmount(() => {
       </div>
     </a-modal>
 
-    <a-modal
-      v-model:visible="previewVisible"
-      :title="previewTitle"
-      :footer="false"
-      :width="980"
-      class="preview-modal"
-    >
-      <a-spin :loading="previewLoading">
-        <div class="preview-meta">
-          <a-tag>{{ viewerLabel(preview?.viewer) }}</a-tag>
-          <span>{{ preview?.fileExt?.toUpperCase() }}</span>
-        </div>
-        <img
-          v-if="preview?.previewKind === 'image' && preview.objectUrl"
-          :src="preview.objectUrl"
-          alt=""
-          class="image-preview"
-        />
-        <iframe
-          v-else-if="preview?.previewKind === 'pdf' && preview.objectUrl"
-          :src="preview.objectUrl"
-          class="pdf-preview"
-          title="PDF 在线预览"
-        />
-        <div
-          v-else-if="preview?.previewKind === 'html'"
-          class="office-preview"
-          v-html="preview.html"
-        />
-        <pre v-else-if="preview?.previewKind === 'text'" class="text-preview">{{ preview.text }}</pre>
-        <a-result
-          v-else
-          status="warning"
-          title="暂不支持在线预览"
-          :subtitle="preview?.reason || '请下载后查看该文件。'"
-        />
-      </a-spin>
-    </a-modal>
   </section>
 </template>
 
@@ -678,13 +756,25 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 6px;
+}
 
-  strong {
-    min-width: 0;
-    overflow: hidden;
-    color: var(--color-text-1);
-    text-overflow: ellipsis;
-    white-space: nowrap;
+.file-title-button {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  color: rgb(var(--primary-6));
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  &:hover {
+    color: rgb(var(--primary-5));
+    text-decoration: underline;
   }
 }
 
@@ -764,92 +854,33 @@ onBeforeUnmount(() => {
   border-radius: 0;
 }
 
-.preview-meta {
+.quick-create-form {
+  display: grid;
+  gap: 12px;
+}
+
+.create-mode-bar {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-  color: var(--color-text-3);
-  font-size: 12px;
 }
 
-.image-preview {
-  width: 100%;
-  max-height: 68vh;
-  object-fit: contain;
-  border: 1px solid var(--color-border-2);
-  border-radius: 0;
+.quick-md-editor {
+  height: 420px;
+}
+
+.upload-picker {
+  min-height: 160px;
+  align-content: center;
+  padding: 18px;
+  border: 1px dashed var(--color-border-3);
   background: var(--color-fill-1);
-}
 
-.pdf-preview {
-  width: 100%;
-  height: 70vh;
-  border: 1px solid var(--color-border-2);
-  border-radius: 0;
-  background: #fff;
-}
-
-.office-preview {
-  max-height: 70vh;
-  padding: 18px;
-  border: 1px solid var(--color-border-2);
-  border-radius: 0;
-  background: #fff;
-  overflow: auto;
-}
-
-.text-preview {
-  max-height: 70vh;
-  padding: 18px;
-  border: 1px solid var(--color-border-2);
-  border-radius: 0;
-  background: #fff;
-  overflow: auto;
-  white-space: pre-wrap;
-}
-
-.office-preview :deep(.attachment-preview) {
-  color: #1d2129;
-  line-height: 1.7;
-
-  h2 {
-    margin: 0 0 16px;
-    font-size: 20px;
+  em {
+    color: var(--color-text-3);
+    font-size: 12px;
+    font-style: normal;
   }
-
-  h3 {
-    margin: 12px 0 8px;
-    font-size: 16px;
-  }
-
-  p {
-    margin: 0 0 10px;
-  }
-}
-
-.office-preview :deep(.preview-slide),
-.office-preview :deep(.preview-sheet) {
-  margin-bottom: 16px;
-  padding: 14px;
-  border: 1px solid #e5e6eb;
-  border-radius: 0;
-}
-
-.office-preview :deep(.preview-table-wrap) {
-  overflow-x: auto;
-}
-
-.office-preview :deep(table) {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.office-preview :deep(td) {
-  min-width: 110px;
-  padding: 8px 10px;
-  border: 1px solid #e5e6eb;
-  font-size: 13px;
 }
 
 @media (max-width: 980px) {

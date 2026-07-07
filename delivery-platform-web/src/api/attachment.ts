@@ -52,6 +52,9 @@ export const attachmentApi = {
       timeout: 120000,
     })
   },
+  createPreviewLink(id: string) {
+    return request.post<{ url: string; expiresAt: string }>(`/attachments/${id}/preview-link`)
+  },
   delete(id: string) {
     return request.delete<void>(`/attachments/${id}`)
   },
