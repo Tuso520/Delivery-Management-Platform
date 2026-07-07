@@ -484,13 +484,13 @@ function renderPdfFallback(buffer: Buffer, fileName: string): string {
   const text = extractSimplePdfText(buffer);
   const body = text.length
     ? text.map((line) => `<p>${escapeHtml(line)}</p>`).join('\n')
-    : renderMessageBody('当前浏览器如果未显示 PDF 原文，请使用右上角下载查看；该文件未能提取到可读文本层。');
+    : renderMessageBody('当前文件未能提取到可读文本层，请使用下方原始 PDF 阅读器或下载后查看。');
 
   return wrapPreviewHtml(
     fileName,
     `
       <section class="pdf-page-fallback">
-        <div class="pdf-page-label">PDF 文本层备用预览</div>
+        <div class="pdf-page-label">PDF 只读文本预览</div>
         ${body}
       </section>
     `,
@@ -508,6 +508,28 @@ function extractSimplePdfText(buffer: Buffer): string[] {
     const decoded = decodePdfLiteral(raw).trim();
     if (decoded) texts.push(decoded);
   }
+
+  const textArrayOperator = /\[(?<content>[\s\S]*?)\]\s*TJ/gu;
+  while ((match = textArrayOperator.exec(source))) {
+    const content = match.groups?.content ?? '';
+    const segments = content.match(/\((?:\\.|[^\\()])*\)|<[\dA-Fa-f\s]+>/gu) ?? [];
+    const decoded = segments
+      .map((segment) =>
+        segment.startsWith('<')
+          ? decodePdfHexString(segment)
+          : decodePdfLiteral(segment.slice(1, -1)),
+      )
+      .join('')
+      .trim();
+    if (decoded) texts.push(decoded);
+  }
+
+  const hexTextOperator = /<(?<content>[\dA-Fa-f\s]+)>\s*Tj/gu;
+  while ((match = hexTextOperator.exec(source))) {
+    const decoded = decodePdfHexString(`<${match.groups?.content ?? ''}>`).trim();
+    if (decoded) texts.push(decoded);
+  }
+
   return texts
     .map((line) => line.replace(/\s+/gu, ' ').trim())
     .filter(Boolean);
@@ -521,6 +543,21 @@ function decodePdfLiteral(value: string): string {
     .replace(/\\\(/gu, '(')
     .replace(/\\\)/gu, ')')
     .replace(/\\\\/gu, '\\');
+}
+
+function decodePdfHexString(value: string): string {
+  const hex = value.replace(/[<>\s]/gu, '');
+  if (!hex) return '';
+  const normalized = hex.length % 2 === 0 ? hex : `${hex}0`;
+  const buffer = Buffer.from(normalized, 'hex');
+  if (buffer.length >= 2 && buffer[0] === 0xfe && buffer[1] === 0xff) {
+    const chars: string[] = [];
+    for (let index = 2; index + 1 < buffer.length; index += 2) {
+      chars.push(String.fromCharCode(buffer.readUInt16BE(index)));
+    }
+    return chars.join('');
+  }
+  return buffer.toString('latin1');
 }
 
 function isLikelyDuplicateFileTitle(paragraph: string | undefined, fileName: string): boolean {

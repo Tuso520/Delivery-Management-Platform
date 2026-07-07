@@ -688,12 +688,14 @@ export class FileService {
         ? preview.html || `<img class="preview-image" src="${safeContentUrl}" alt="${title}" />`
         : preview.previewKind === 'pdf'
           ? `<main class="pdf-reader">
-              <section class="pdf-native-panel">
-                <iframe class="preview-frame" src="${safeContentUrl}#toolbar=1&navpanes=0&view=FitH" title="${title}"></iframe>
+              <section class="pdf-text-panel pdf-text-primary" aria-label="PDF 文本预览">
+                ${preview.html || '<section class="preview-empty"><h2>PDF 预览</h2><p>当前文件未提取到可读文本层，请使用下方原始 PDF 阅读器查看。</p></section>'}
               </section>
-              <details class="pdf-text-panel">
-                <summary>PDF 文本层备用预览</summary>
-                ${preview.html || '<section class="preview-empty"><h2>PDF 预览</h2><p>当前浏览器未返回可见文本层，请下载原文件查看。</p></section>'}
+              <details class="pdf-native-details">
+                <summary>打开原始 PDF 阅读器</summary>
+                <section class="pdf-native-panel">
+                  <iframe class="preview-frame" src="${safeContentUrl}#toolbar=1&navpanes=0&view=FitH" title="${title}"></iframe>
+                </section>
               </details>
             </main>`
           : preview.previewKind === 'html'
@@ -722,11 +724,13 @@ export class FileService {
     .preview-image { display: block; max-width: 100%; max-height: calc(100vh - 92px); margin: 0 auto; object-fit: contain; background: #fff; border: 1px solid #e5e6eb; }
     .preview-frame { width: 100%; height: 100%; border: 0; background: #fff; }
     .pdf-reader { display: grid; gap: 12px; min-height: calc(100vh - 92px); }
-    .pdf-native-panel { height: calc(100vh - 92px); min-height: 640px; border: 1px solid #d9dfe8; background: #fff; }
-    .pdf-text-panel { overflow: auto; padding: 18px; border: 1px solid #d9dfe8; background: #fff; }
-    .pdf-text-primary { min-height: calc(100vh - 92px); }
+    .pdf-native-details { width: min(960px, 100%); margin: 0 auto; border: 1px solid #d9dfe8; background: #fff; }
+    .pdf-native-details summary { cursor: pointer; padding: 10px 14px; color: #4e5969; font-size: 13px; }
+    .pdf-native-panel { height: min(760px, calc(100vh - 92px)); min-height: 520px; border-top: 1px solid #d9dfe8; background: #fff; }
+    .pdf-text-panel { overflow: auto; }
+    .pdf-text-primary { width: min(960px, 100%); min-height: calc(100vh - 92px); margin: 0 auto; }
     .pdf-page-fallback, .word-page { border: 1px solid #d9dfe8; background: #fff; }
-    .pdf-page-fallback { min-height: 100%; padding: 26px 30px; }
+    .pdf-page-fallback { min-height: calc(100vh - 92px); padding: 34px 42px; box-shadow: 0 16px 42px rgba(15, 23, 42, 0.12); }
     .pdf-page-label, .word-page-meta { margin-bottom: 18px; color: #86909c; font-size: 12px; }
     .preview-document, .preview-text, .preview-empty { width: min(1240px, 100%); min-height: calc(100vh - 92px); margin: 0 auto; }
     .attachment-preview > header { display: none; }
@@ -751,7 +755,7 @@ export class FileService {
     .preview-document p { margin: 0 0 10px; color: #4e5969; line-height: 1.75; white-space: pre-wrap; }
     .preview-text { padding: 24px 28px; border: 1px solid #e5e6eb; background: #fff; overflow: auto; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
     .preview-empty { display: grid; place-content: center; padding: 24px 28px; border: 1px solid #e5e6eb; background: #fff; text-align: center; color: #4e5969; }
-    @media (max-width: 960px) { .pdf-native-panel { min-height: 520px; } .word-page { min-height: auto; padding: 40px 28px; } }
+    @media (max-width: 960px) { .pdf-native-panel { min-height: 520px; } .pdf-page-fallback { padding: 26px 24px; } .word-page { min-height: auto; padding: 40px 28px; } }
   </style>
 </head>
 <body>
