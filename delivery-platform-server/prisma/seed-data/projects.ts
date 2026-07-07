@@ -450,8 +450,13 @@ export async function seedProjects(prisma: PrismaClient) {
     // Role-based user assignments for archive items
     // Map of role -> userId for member lookup
     let totalArchiveItems = 0;
+    const projectsForArchive = await prisma.project.findMany({
+      where: { deletedAt: null },
+      select: { id: true, projectCode: true },
+      orderBy: { createdAt: 'asc' },
+    });
 
-    for (const project of createdProjects) {
+    for (const project of projectsForArchive) {
       // Get project members for role mapping
       const members = await prisma.projectMember.findMany({
         where: { projectId: project.id },
@@ -533,7 +538,7 @@ export async function seedProjects(prisma: PrismaClient) {
     }
 
     console.log(
-      `  Created ${totalArchiveItems} missing archive items across ${createdProjects.length} projects`,
+      `  Created ${totalArchiveItems} missing archive items across ${projectsForArchive.length} projects`,
     );
   }
 
