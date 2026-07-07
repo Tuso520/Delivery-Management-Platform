@@ -12,6 +12,7 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
 import { FileStorageService } from '../file/file-storage.service';
+import { withNormalizedUploadFileName } from '../file/upload-file-name.util';
 import { OperationLogService } from '../operation-log/operation-log.service';
 import { ProjectAccessService } from '../project/project-access.service';
 
@@ -90,12 +91,13 @@ export class AttachmentService {
 
     const created = [];
     for (const file of files) {
+      const uploadFile = withNormalizedUploadFileName(file);
       const storagePath = await this.storage.upload(
-        file,
+        uploadFile,
         `attachments/${dto.ownerType}/${dto.ownerId}`,
       );
-      const fileExt = file.originalname.includes('.')
-        ? file.originalname.split('.').pop()!.toLowerCase()
+      const fileExt = uploadFile.originalname.includes('.')
+        ? uploadFile.originalname.split('.').pop()!.toLowerCase()
         : '';
       created.push(
         await this.prisma.attachment.create({
@@ -104,11 +106,11 @@ export class AttachmentService {
             ownerId: dto.ownerId,
             projectId,
             category: dto.category,
-            fileName: file.originalname,
-            originalName: file.originalname,
+            fileName: uploadFile.originalname,
+            originalName: uploadFile.originalname,
             fileExt,
-            fileSize: BigInt(file.size),
-            mimeType: file.mimetype,
+            fileSize: BigInt(uploadFile.size),
+            mimeType: uploadFile.mimetype,
             storageBucket: this.storage.getBucketName(),
             storagePath,
             uploadedBy: userId,

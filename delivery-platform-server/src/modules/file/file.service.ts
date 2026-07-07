@@ -21,6 +21,7 @@ import { ProjectAccessService } from '../project/project-access.service';
 
 import { UploadFileDto } from './dto/upload-file.dto';
 import { FileStorageService } from './file-storage.service';
+import { withNormalizedUploadFileName } from './upload-file-name.util';
 
 interface FileListItem {
   id: string;
@@ -75,6 +76,7 @@ export class FileService {
     dto: UploadFileDto,
     userId: string,
   ): Promise<FileListItem> {
+    const uploadFile = withNormalizedUploadFileName(file);
     const { projectId, archiveItemId, remark } = dto;
 
     // Verify project exists
@@ -116,10 +118,10 @@ export class FileService {
 
     // Save file to storage
     const subPath = `projects/${projectId}`;
-    const storagePath = await this.fileStorage.upload(file, subPath);
+    const storagePath = await this.fileStorage.upload(uploadFile, subPath);
 
     // Extract file extension
-    const fileExt = this.getFileExtension(file.originalname);
+    const fileExt = this.getFileExtension(uploadFile.originalname);
 
     // Create DB record within transaction so all writes are atomic
     const dbFile = await this.prisma.$transaction(async (tx) => {
@@ -144,11 +146,11 @@ export class FileService {
         data: {
           projectId,
           archiveItemId: archiveItemId || null,
-          fileName: file.originalname,
-          originalName: file.originalname,
+          fileName: uploadFile.originalname,
+          originalName: uploadFile.originalname,
           fileExt,
-          fileSize: BigInt(file.size),
-          mimeType: file.mimetype,
+          fileSize: BigInt(uploadFile.size),
+          mimeType: uploadFile.mimetype,
           storageProvider: 'minio',
           storageBucket: this.fileStorage.getBucketName(),
           storagePath,

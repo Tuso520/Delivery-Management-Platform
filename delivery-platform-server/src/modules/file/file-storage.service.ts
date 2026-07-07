@@ -12,6 +12,8 @@ import { ConfigService } from '@nestjs/config';
 import { Client } from 'minio';
 import { v4 as uuidv4 } from 'uuid';
 
+import { withNormalizedUploadFileName } from './upload-file-name.util';
+
 interface StorageConfig {
   endpoint: string;
   port: number;
@@ -49,9 +51,10 @@ export class FileStorageService {
   }
 
   async upload(file: Express.Multer.File, subPath: string): Promise<string> {
+    const uploadFile = withNormalizedUploadFileName(file);
     await this.ensureBucket();
-    const extension = extname(file.originalname).toLowerCase();
-    const safeName = basename(file.originalname, extension)
+    const extension = extname(uploadFile.originalname).toLowerCase();
+    const safeName = basename(uploadFile.originalname, extension)
       .replace(/[^\p{L}\p{N}._-]+/gu, '-')
       .slice(0, 80);
     const objectName = [
@@ -61,17 +64,17 @@ export class FileStorageService {
       .filter(Boolean)
       .join('/');
 
-    const fileBody = this.getUploadBody(file);
+    const fileBody = this.getUploadBody(uploadFile);
 
     try {
       await this.client.putObject(
         this.bucket,
         objectName,
         fileBody,
-        file.size,
+        uploadFile.size,
         {
-          'Content-Type': file.mimetype,
-          'X-Amz-Meta-Original-Name': encodeURIComponent(file.originalname),
+          'Content-Type': uploadFile.mimetype,
+          'X-Amz-Meta-Original-Name': encodeURIComponent(uploadFile.originalname),
         },
       );
       this.logger.log(`Object uploaded: ${this.bucket}/${objectName}`);
