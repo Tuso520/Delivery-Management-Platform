@@ -1,7 +1,13 @@
+import { createReadStream } from 'fs';
 import { basename, extname } from 'path';
 import type { Readable } from 'stream';
 
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Client } from 'minio';
 import { v4 as uuidv4 } from 'uuid';
@@ -55,11 +61,13 @@ export class FileStorageService {
       .filter(Boolean)
       .join('/');
 
+    const fileBody = this.getUploadBody(file);
+
     try {
       await this.client.putObject(
         this.bucket,
         objectName,
-        file.buffer,
+        fileBody,
         file.size,
         {
           'Content-Type': file.mimetype,
@@ -176,5 +184,39 @@ export class FileStorageService {
       .split('/')
       .filter((segment) => segment && segment !== '.' && segment !== '..')
       .join('/');
+  }
+
+  private getUploadBody(
+    file: Express.Multer.File,
+  ): Buffer | Readable | string {
+    const rawBuffer = (file as unknown as { buffer?: unknown }).buffer;
+
+    if (Buffer.isBuffer(rawBuffer)) {
+      return rawBuffer;
+    }
+
+    if (rawBuffer instanceof ArrayBuffer) {
+      return Buffer.from(rawBuffer);
+    }
+
+    if (ArrayBuffer.isView(rawBuffer)) {
+      return Buffer.from(
+        rawBuffer.buffer,
+        rawBuffer.byteOffset,
+        rawBuffer.byteLength,
+      );
+    }
+
+    const path = (file as Express.Multer.File & { path?: string }).path;
+    if (path) {
+      return createReadStream(path);
+    }
+
+    const stream = (file as Express.Multer.File & { stream?: Readable }).stream;
+    if (stream) {
+      return stream;
+    }
+
+    throw new BadRequestException('上传文件内容为空或格式异常');
   }
 }
