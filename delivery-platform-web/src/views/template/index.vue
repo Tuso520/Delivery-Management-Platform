@@ -13,6 +13,7 @@ import type { DocumentTemplate, QueryTemplateDto } from '@/types/template'
 import type { PaginatedData } from '@/types/api'
 import type { TagType } from '@/types/ui'
 import { downloadBlob } from '@/utils/blob'
+import { openPreviewUrl } from '@/utils/preview-window'
 
 interface TemplateStage {
   code: string
@@ -198,25 +199,15 @@ function incrementTemplateHeat(templateId: string, key: 'previewCount' | 'downlo
 }
 
 async function openTemplatePreview(row: DocumentTemplate): Promise<void> {
-  let previewWindow: Window | null = null
   try {
     if (!row.attachmentId) {
       Message.warning('该模板暂无可预览文件')
       return
     }
-    previewWindow = window.open('about:blank', '_blank')
-    if (previewWindow) {
-      previewWindow.opener = null
-    }
     const { url } = await attachmentApi.createPreviewLink(row.attachmentId)
-    if (previewWindow) {
-      previewWindow.location.href = url
-    } else {
-      window.open(url, '_blank', 'noopener,noreferrer')
-    }
+    openPreviewUrl(url)
     incrementTemplateHeat(row.id, 'previewCount')
   } catch {
-    previewWindow?.close()
     Message.error('预览链接生成失败')
   }
 }

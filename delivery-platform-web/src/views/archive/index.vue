@@ -9,6 +9,7 @@ import { projectApi } from '@/api/project'
 import FileUploader from '@/components/FileUploader/index.vue'
 import { arcoConfirm } from '@/utils/arco-dialog'
 import { downloadBlob } from '@/utils/blob'
+import { openPreviewUrl } from '@/utils/preview-window'
 import { localizeProjectStage } from '@/utils/project-localization'
 import { useLocaleStore } from '@/store/locale'
 import type {
@@ -189,19 +190,10 @@ async function handleUploadSuccess(): Promise<void> {
 }
 
 async function openFilePreview(file: ArchiveFile): Promise<void> {
-  let previewWindow: Window | null = window.open('about:blank', '_blank')
-  if (previewWindow) {
-    previewWindow.opener = null
-  }
   try {
     const { url } = await fileApi.createPreviewLink(file.id)
-    if (previewWindow) {
-      previewWindow.location.href = url
-    } else {
-      window.open(url, '_blank', 'noopener,noreferrer')
-    }
+    openPreviewUrl(url)
   } catch {
-    previewWindow?.close()
     Message.error('预览链接生成失败')
   }
 }

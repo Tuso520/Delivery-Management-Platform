@@ -15,6 +15,7 @@ import type {
   QueryKnowledgeArticleDto,
 } from '@/types/knowledge'
 import { downloadBlob } from '@/utils/blob'
+import { openPreviewUrl } from '@/utils/preview-window'
 
 interface KnowledgeFileRow extends KnowledgeAttachment {
   articleId: string
@@ -198,20 +199,11 @@ function updateActiveCategoryByScroll(): void {
 }
 
 async function openAttachmentPreview(file: KnowledgeFileRow | KnowledgeAttachment): Promise<void> {
-  const previewWindow = window.open('about:blank', '_blank')
-  if (previewWindow) {
-    previewWindow.opener = null
-  }
   try {
     const { url } = await attachmentApi.createPreviewLink(file.id)
-    if (previewWindow) {
-      previewWindow.location.href = url
-    } else {
-      window.open(url, '_blank', 'noopener,noreferrer')
-    }
+    openPreviewUrl(url)
     incrementFileHeat(file.id, 'previewCount')
   } catch {
-    previewWindow?.close()
     Message.error('预览链接生成失败')
   }
 }
