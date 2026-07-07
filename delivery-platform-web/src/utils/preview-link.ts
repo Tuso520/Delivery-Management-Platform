@@ -10,6 +10,30 @@ interface OpenSignedPreviewOptions {
   onOpened?: () => void
 }
 
+type PreviewSource = 'attachment' | 'file'
+
+export function openPreviewRedirect(
+  source: PreviewSource,
+  id: string,
+  options: OpenSignedPreviewOptions = {},
+): void {
+  const params = new URLSearchParams({
+    source,
+    id,
+  })
+  if (options.title) {
+    params.set('title', options.title)
+  }
+
+  const targetUrl = `${window.location.origin}${window.location.pathname}${window.location.search}#/preview?${params.toString()}`
+  const opened = window.open(targetUrl, '_blank', 'noopener,noreferrer')
+  if (!opened) {
+    window.location.href = targetUrl
+    Message.warning('浏览器阻止了新窗口，已在当前窗口打开预览')
+  }
+  options.onOpened?.()
+}
+
 export async function openSignedPreview(
   createLink: () => Promise<PreviewLink>,
   options: OpenSignedPreviewOptions = {},

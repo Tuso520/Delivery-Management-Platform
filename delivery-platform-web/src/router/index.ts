@@ -130,6 +130,7 @@ const children: RouteRecordRaw[] = [
 
 export const routes: RouteRecordRaw[] = [
   { path: '/login', name: 'Login', component: () => import('@/views/login/index.vue'), meta: { title: '登录', hidden: true } },
+  { path: '/preview', name: 'PreviewRedirect', component: () => import('@/views/preview/redirect.vue'), meta: { title: '在线预览', hidden: true } },
   { path: '/', component: BasicLayout, redirect: '/dashboard', children },
   { path: '/:pathMatch(.*)*', name: 'NotFound', component: NotFound, meta: { title: '404', hidden: true } },
 ]

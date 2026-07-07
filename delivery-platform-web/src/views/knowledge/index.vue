@@ -19,7 +19,7 @@ import type {
 import type { ApprovalTask } from '@/types/platform'
 import { downloadBlob } from '@/utils/blob'
 import { arcoPrompt } from '@/utils/arco-dialog'
-import { openSignedPreview } from '@/utils/preview-link'
+import { openPreviewRedirect } from '@/utils/preview-link'
 
 interface KnowledgeFileRow extends KnowledgeAttachment {
   articleId: string
@@ -239,14 +239,11 @@ function updateActiveCategoryByScroll(): void {
   activeCategoryId.value = currentId
 }
 
-async function openAttachmentPreview(file: KnowledgeFileRow | KnowledgeAttachment): Promise<void> {
-  await openSignedPreview(
-    () => attachmentApi.createPreviewLink(file.id),
-    {
-      title: file.originalName,
-      onOpened: () => incrementFileHeat(file.id, 'previewCount'),
-    },
-  )
+function openAttachmentPreview(file: KnowledgeFileRow | KnowledgeAttachment): void {
+  openPreviewRedirect('attachment', file.id, {
+    title: file.originalName,
+    onOpened: () => incrementFileHeat(file.id, 'previewCount'),
+  })
 }
 
 function resetCreateForm(): void {

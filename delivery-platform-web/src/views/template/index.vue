@@ -13,7 +13,7 @@ import type { DocumentTemplate, QueryTemplateDto } from '@/types/template'
 import type { PaginatedData } from '@/types/api'
 import type { TagType } from '@/types/ui'
 import { downloadBlob } from '@/utils/blob'
-import { openSignedPreview } from '@/utils/preview-link'
+import { openPreviewRedirect } from '@/utils/preview-link'
 
 interface TemplateStage {
   code: string
@@ -209,18 +209,15 @@ function isHotTemplate(template: DocumentTemplate): boolean {
   return (template.previewCount || 0) + (template.downloadCount || 0) >= HOT_TEMPLATE_THRESHOLD
 }
 
-async function openTemplatePreview(row: DocumentTemplate): Promise<void> {
+function openTemplatePreview(row: DocumentTemplate): void {
   if (!row.attachmentId) {
     Message.warning('该模板暂无可预览文件')
     return
   }
-  await openSignedPreview(
-    () => attachmentApi.createPreviewLink(row.attachmentId as string),
-    {
-      title: row.name,
-      onOpened: () => incrementTemplateHeat(row.id, 'previewCount'),
-    },
-  )
+  openPreviewRedirect('attachment', row.attachmentId as string, {
+    title: row.name,
+    onOpened: () => incrementTemplateHeat(row.id, 'previewCount'),
+  })
 }
 
 function resetCreateForm(): void {
