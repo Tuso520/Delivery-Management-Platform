@@ -3,8 +3,8 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { MdPreview } from 'md-editor-v3'
 import 'md-editor-v3/lib/style.css'
-import * as pdfjsLib from 'pdfjs-dist'
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
+import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { attachmentApi } from '@/api/attachment'
 import type { AttachmentPreview } from '@/api/attachment'
 
@@ -94,7 +94,7 @@ async function renderPdf(blob: Blob): Promise<void> {
 
       wrapper.append(pageLabel, canvas)
       container.appendChild(wrapper)
-      await page.render({ canvas, canvasContext: context, viewport }).promise
+      await page.render({ canvasContext: context, viewport }).promise
     }
 
     await loadingTask.destroy()
