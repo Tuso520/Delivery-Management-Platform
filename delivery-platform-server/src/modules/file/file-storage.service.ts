@@ -207,6 +207,11 @@ export class FileStorageService {
       );
     }
 
+    const serializedBuffer = this.restoreSerializedBuffer(rawBuffer);
+    if (serializedBuffer) {
+      return serializedBuffer;
+    }
+
     const path = (file as Express.Multer.File & { path?: string }).path;
     if (path) {
       return createReadStream(path);
@@ -226,5 +231,40 @@ export class FileStorageService {
       `Uploaded file body is missing. fields=${fileShape}; bufferType=${typeof rawBuffer}; bufferClass=${bufferValue?.constructor?.name ?? 'unknown'}; bufferTag=${Object.prototype.toString.call(rawBuffer)}; bufferLength=${bufferValue?.length ?? 'unknown'}; bufferByteLength=${bufferValue?.byteLength ?? 'unknown'}; size=${file?.size ?? 'unknown'}; mimetype=${file?.mimetype ?? 'unknown'}`,
     );
     throw new BadRequestException('上传文件内容为空或格式异常');
+  }
+
+  private restoreSerializedBuffer(value: unknown): Buffer | null {
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+
+    const maybeBuffer = value as {
+      type?: unknown;
+      data?: unknown;
+      [key: string]: unknown;
+    };
+
+    if (
+      maybeBuffer.type === 'Buffer' &&
+      Array.isArray(maybeBuffer.data) &&
+      maybeBuffer.data.every((item) => typeof item === 'number')
+    ) {
+      return Buffer.from(maybeBuffer.data);
+    }
+
+    const keys = Object.keys(maybeBuffer);
+    if (
+      keys.length > 0 &&
+      keys.every((key) => /^\d+$/.test(key)) &&
+      keys.every((key) => typeof maybeBuffer[key] === 'number')
+    ) {
+      return Buffer.from(
+        keys
+          .sort((left, right) => Number(left) - Number(right))
+          .map((key) => maybeBuffer[key] as number),
+      );
+    }
+
+    return null;
   }
 }
