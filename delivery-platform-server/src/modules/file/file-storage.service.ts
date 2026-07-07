@@ -217,6 +217,10 @@ export class FileStorageService {
       return stream;
     }
 
+    const fileShape = Object.getOwnPropertyNames(file ?? {}).join(',');
+    this.logger.warn(
+      `Uploaded file body is missing. fields=${fileShape}; size=${file?.size ?? 'unknown'}; mimetype=${file?.mimetype ?? 'unknown'}`,
+    );
     throw new BadRequestException('上传文件内容为空或格式异常');
   }
 }
