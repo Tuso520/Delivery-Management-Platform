@@ -69,11 +69,14 @@ onMounted(fetchPendingReviews)
             {{ row.archiveItem.name }}
           </template>
         </a-table-column>
-        <a-table-column label="项目" :min-width="120">
+        <a-table-column label="项目" :min-width="180">
           <template #default="{ row }">
-            <a-tag size="small">
-              {{ row.archiveItemId.slice(0, 8) }}...
-            </a-tag>
+            <div class="project-info">
+              <span class="project-name">{{ row.file.project?.projectName || '-' }}</span>
+              <span v-if="row.file.project?.projectCode" class="project-code">
+                {{ row.file.project.projectCode }}
+              </span>
+            </div>
           </template>
         </a-table-column>
         <a-table-column label="审核人" :width="120">
@@ -125,5 +128,27 @@ onMounted(fetchPendingReviews)
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.project-info {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.25;
+}
+
+.project-name {
+  overflow: hidden;
+  color: var(--color-text-1);
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-code {
+  color: var(--color-text-3);
+  font-size: 12px;
 }
 </style>

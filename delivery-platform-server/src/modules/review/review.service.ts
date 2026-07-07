@@ -27,6 +27,11 @@ interface ReviewListItem {
     id: string;
     fileName: string;
     versionNo: string;
+    project?: {
+      id: string;
+      projectName: string;
+      projectCode: string;
+    } | null;
   };
   archiveItem: {
     id: string;
@@ -236,7 +241,14 @@ export class ReviewService {
     const [files, archiveItems] = await Promise.all([
       this.prisma.file.findMany({
         where: { id: { in: fileIds }, deletedAt: null },
-        select: { id: true, fileName: true, versionNo: true },
+        select: {
+          id: true,
+          fileName: true,
+          versionNo: true,
+          project: {
+            select: { id: true, projectName: true, projectCode: true },
+          },
+        },
       }),
       this.prisma.projectArchiveItem.findMany({
         where: { id: { in: archiveItemIds } },
@@ -249,7 +261,12 @@ export class ReviewService {
 
     return reviews.map((review) => ({
       ...review,
-      file: fileMap.get(review.fileId) || { id: review.fileId, fileName: '已删除文件', versionNo: '' },
+      file: fileMap.get(review.fileId) || {
+        id: review.fileId,
+        fileName: '已删除文件',
+        versionNo: '',
+        project: null,
+      },
       archiveItem: archiveItemMap.get(review.archiveItemId) || { id: review.archiveItemId, name: 'Unknown' },
     }));
   }

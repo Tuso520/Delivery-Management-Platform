@@ -39,6 +39,11 @@ export interface FileReview {
     id: string
     fileName: string
     versionNo: string
+    project?: {
+      id: string
+      projectName: string
+      projectCode: string
+    } | null
   }
   archiveItem: {
     id: string
