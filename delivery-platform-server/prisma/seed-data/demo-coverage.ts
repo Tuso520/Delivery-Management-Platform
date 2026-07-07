@@ -987,6 +987,10 @@ async function normalizeArchiveFileRemarks(prisma: PrismaClient): Promise<void> 
     where: {
       deletedAt: null,
       archiveItemId: { not: null },
+      OR: [
+        { remark: { contains: '????' } },
+        { remark: { contains: '�' } },
+      ],
     },
     select: {
       id: true,
@@ -1001,9 +1005,10 @@ async function normalizeArchiveFileRemarks(prisma: PrismaClient): Promise<void> 
         },
       },
     },
-    take: 500,
+    take: 2000,
   });
 
+  let fixedCount = 0;
   for (const file of files) {
     if (!hasCorruptText(file.remark)) continue;
     const stageName = projectStageName(file.archiveItem?.stageCode ?? 'other');
@@ -1014,6 +1019,10 @@ async function normalizeArchiveFileRemarks(prisma: PrismaClient): Promise<void> 
         remark: `示例档案：${file.project.projectCode} / ${stageName} / ${itemName}。上传人员应补充正式版本、签字扫描件或现场记录，审批通过后用于项目档案查阅。`,
       },
     });
+    fixedCount += 1;
+  }
+  if (fixedCount > 0) {
+    console.log(`  Fixed ${fixedCount} archive file remarks with corrupted text.`);
   }
 }
 
