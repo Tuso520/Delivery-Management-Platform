@@ -397,13 +397,13 @@ export class AttachmentService {
         ? preview.html || `<img class="preview-image" src="${safeContentUrl}" alt="${title}" />`
         : preview.previewKind === 'pdf'
           ? `<main class="pdf-reader">
-              <section class="pdf-native-main" aria-label="PDF 原始预览">
-                <iframe class="preview-frame" src="${safeContentUrl}#toolbar=1&navpanes=0&view=FitH" title="${title}"></iframe>
+              <section class="pdf-text-panel pdf-text-primary" aria-label="PDF 文本预览">
+                ${preview.html || `<section class="preview-empty"><h2>PDF 预览</h2><p>当前文件未提取到可读文本层，请下载后查看原文件。</p></section>`}
               </section>
-              <details class="pdf-text-details">
-                <summary>查看 PDF 文本层</summary>
-                <section class="pdf-text-panel pdf-text-primary" aria-label="PDF 文本预览">
-                  ${preview.html || `<section class="preview-empty"><h2>PDF 预览</h2><p>当前文件未提取到可读文本层，请使用上方原始 PDF 阅读器查看。</p></section>`}
+              <details class="pdf-native-details">
+                <summary>浏览器原始 PDF 阅读器</summary>
+                <section class="pdf-native-panel" aria-label="PDF 原始预览">
+                  <iframe class="preview-frame" src="${safeContentUrl}#toolbar=1&navpanes=0&view=FitH" title="${title}"></iframe>
                 </section>
               </details>
             </main>`
