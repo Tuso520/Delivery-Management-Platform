@@ -5,10 +5,10 @@ import { archiveApi } from '@/api/archive'
 import { archiveTemplateApi } from '@/api/archive-template'
 import { fileApi } from '@/api/file'
 import { projectApi } from '@/api/project'
+import AttachmentPreviewModal from '@/components/AttachmentPreviewModal/index.vue'
 import FileUploader from '@/components/FileUploader/index.vue'
 import { arcoConfirm } from '@/utils/arco-dialog'
 import { downloadBlob } from '@/utils/blob'
-import { openPreviewUrl } from '@/utils/preview-window'
 import { localizeProjectStage } from '@/utils/project-localization'
 import { useLocaleStore } from '@/store/locale'
 import type {
@@ -48,6 +48,8 @@ const showItemDetail = ref(false)
 const showProjectDetail = ref(false)
 const currentItem = ref<ArchiveItem | null>(null)
 const loadingItem = ref(false)
+const previewVisible = ref(false)
+const previewTarget = ref<ArchiveFile | null>(null)
 
 const defaultAllowedTypes = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'jpg', 'jpeg', 'png']
 
@@ -188,16 +190,9 @@ async function handleUploadSuccess(): Promise<void> {
   await reloadCurrentItem()
 }
 
-async function openFilePreview(file: ArchiveFile): Promise<void> {
-  try {
-    const { url } = await fileApi.createPreviewLink(file.id)
-    const opened = openPreviewUrl(url)
-    if (!opened) {
-      Message.warning('浏览器阻止了新窗口，请允许弹窗后重试')
-    }
-  } catch {
-    Message.error('预览链接生成失败')
-  }
+function openFilePreview(file: ArchiveFile): void {
+  previewTarget.value = file
+  previewVisible.value = true
 }
 
 async function downloadFile(file: ArchiveFile): Promise<void> {
@@ -550,6 +545,13 @@ onMounted(fetchProjects)
         </div>
       </a-spin>
     </a-dialog>
+
+    <AttachmentPreviewModal
+      v-model:visible="previewVisible"
+      source="file"
+      :attachment-id="previewTarget?.id"
+      :title="previewTarget?.originalName || '档案文件预览'"
+    />
   </div>
 </template>
 

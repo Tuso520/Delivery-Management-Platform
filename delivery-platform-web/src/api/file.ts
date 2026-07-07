@@ -1,5 +1,6 @@
 import request from './request'
 import type { AxiosProgressEvent } from 'axios'
+import type { AttachmentPreview } from './attachment'
 import type { UploadedFile } from '@/types/file'
 
 export interface UploadProgressEvent {
@@ -69,6 +70,15 @@ export const fileApi = {
    */
   createPreviewLink(id: string) {
     return request.post<{ url: string; expiresAt: string }>(`/files/${id}/preview-link`)
+  },
+
+  /**
+   * 获取在线预览结构化内容
+   */
+  getPreview(id: string) {
+    return request.get<AttachmentPreview>(`/files/${id}/preview`, {
+      timeout: 120000,
+    })
   },
 
   /**

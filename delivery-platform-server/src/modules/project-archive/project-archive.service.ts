@@ -146,7 +146,7 @@ export class ProjectArchiveService {
           select: { id: true, realName: true, username: true },
         },
         files: {
-          where: { isCurrent: true },
+          where: { isCurrent: true, deletedAt: null },
           select: {
             id: true,
             fileName: true,
@@ -227,7 +227,7 @@ export class ProjectArchiveService {
           select: { id: true, realName: true, username: true },
         },
         files: {
-          where: { isCurrent: true },
+          where: { isCurrent: true, deletedAt: null },
           select: {
             id: true,
             fileName: true,

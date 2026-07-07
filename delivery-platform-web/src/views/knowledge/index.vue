@@ -88,6 +88,9 @@ const approvalColumns: TableColumnData[] = [
   { title: '操作', slotName: 'actions', width: 190, fixed: 'right' },
 ]
 
+const NEW_FILE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+const HOT_FILE_THRESHOLD = 20
+
 const rootCategories = computed(() => categories.value.filter((category) => !category.parentId))
 
 const categoryRootLookup = computed(() => {
@@ -171,6 +174,15 @@ function incrementFileHeat(fileId: string, key: 'previewCount' | 'downloadCount'
       return
     }
   }
+}
+
+function isNewFile(file: KnowledgeFileRow | KnowledgeAttachment): boolean {
+  const createdAt = new Date(file.createdAt).getTime()
+  return Number.isFinite(createdAt) && Date.now() - createdAt <= NEW_FILE_WINDOW_MS
+}
+
+function isHotFile(file: KnowledgeFileRow | KnowledgeAttachment): boolean {
+  return (file.previewCount || 0) + (file.downloadCount || 0) >= HOT_FILE_THRESHOLD
 }
 
 async function fetchCategories(): Promise<void> {
@@ -566,6 +578,8 @@ onMounted(async () => {
                       <IconDownload />
                       {{ record.downloadCount || 0 }}
                     </span>
+                    <span v-if="isNewFile(record)" class="file-badge file-badge-new">NEW</span>
+                    <span v-if="isHotFile(record)" class="file-badge file-badge-hot">热门</span>
                   </div>
                   <p v-if="record.remark" class="file-remark">
                     {{ record.remark }}
@@ -1070,6 +1084,32 @@ onMounted(async () => {
     width: 13px;
     height: 13px;
   }
+}
+
+.file-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--color-border-2);
+  color: var(--color-text-3);
+  background: var(--color-fill-1);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.file-badge-new {
+  border-color: rgb(var(--primary-2));
+  color: rgb(var(--primary-6));
+  background: rgb(var(--primary-1));
+}
+
+.file-badge-hot {
+  border-color: #f7c88a;
+  color: #a86612;
+  background: #fff7e8;
 }
 
 .file-actions {

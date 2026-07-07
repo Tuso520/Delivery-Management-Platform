@@ -131,6 +131,16 @@ export class FileController {
     };
   }
 
+  @Get(':id/preview')
+  @Permissions('file:download')
+  @ApiOperation({ summary: '获取项目档案文件在线预览内容' })
+  async getPreview(
+    @Param('id') id: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.fileService.getPreview(id, user.sub);
+  }
+
   @Get(':id/signed-preview')
   @Public()
   @RawResponse()

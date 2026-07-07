@@ -70,6 +70,9 @@ const templateCategoryOptions = [
   { value: 'Config', label: '配置模板' },
 ]
 
+const NEW_TEMPLATE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+const HOT_TEMPLATE_THRESHOLD = 20
+
 function normalizeStageCode(stageCode?: string | null): string {
   return stageCode || 'unassigned'
 }
@@ -197,6 +200,15 @@ function incrementTemplateHeat(templateId: string, key: 'previewCount' | 'downlo
   if (target) {
     target[key] = (target[key] || 0) + 1
   }
+}
+
+function isNewTemplate(template: DocumentTemplate): boolean {
+  const createdAt = new Date(template.publishedAt || template.createdAt).getTime()
+  return Number.isFinite(createdAt) && Date.now() - createdAt <= NEW_TEMPLATE_WINDOW_MS
+}
+
+function isHotTemplate(template: DocumentTemplate): boolean {
+  return (template.previewCount || 0) + (template.downloadCount || 0) >= HOT_TEMPLATE_THRESHOLD
 }
 
 function openTemplatePreview(row: DocumentTemplate): void {
@@ -343,7 +355,6 @@ onMounted(fetchList)
     <aside class="template-sidebar">
       <div class="template-sidebar-header">
         <h2>交付流程</h2>
-        <a-button size="small" type="text" @click="fetchList">刷新</a-button>
       </div>
 
       <div class="stage-list">
@@ -409,6 +420,8 @@ onMounted(fetchList)
                       <IconDownload />
                       {{ record.downloadCount || 0 }}
                     </span>
+                    <span v-if="isNewTemplate(record)" class="template-badge template-badge-new">NEW</span>
+                    <span v-if="isHotTemplate(record)" class="template-badge template-badge-hot">热门</span>
                   </div>
                   <span>{{ section.stage.description }}</span>
                 </div>
@@ -780,6 +793,32 @@ onMounted(fetchList)
     width: 13px;
     height: 13px;
   }
+}
+
+.template-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--color-border-2);
+  color: var(--color-text-3);
+  background: var(--color-fill-1);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.template-badge-new {
+  border-color: rgb(var(--primary-2));
+  color: rgb(var(--primary-6));
+  background: rgb(var(--primary-1));
+}
+
+.template-badge-hot {
+  border-color: #f7c88a;
+  color: #a86612;
+  background: #fff7e8;
 }
 
 .template-actions {

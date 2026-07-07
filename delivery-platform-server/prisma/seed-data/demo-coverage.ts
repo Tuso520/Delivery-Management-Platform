@@ -387,68 +387,124 @@ async function seedProjectFilesAndReviews(
 ): Promise<void> {
   const archiveItems = await prisma.projectArchiveItem.findMany({
     where: { projectId: { in: projects.map((project) => project.id) } },
-    select: { id: true, projectId: true },
-    orderBy: { createdAt: 'asc' },
-    take: 40,
+    select: {
+      id: true,
+      projectId: true,
+      parentId: true,
+      stageCode: true,
+      itemNo: true,
+      name: true,
+      secondName: true,
+      usageDescription: true,
+    },
+    orderBy: [{ projectId: 'asc' }, { stageCode: 'asc' }, { sortOrder: 'asc' }, { itemNo: 'asc' }],
   });
   if (!archiveItems.length) return;
 
-  for (let index = 0; index < 10; index += 1) {
-    const archiveItem = archiveItems[index % archiveItems.length];
-    const project = projects.find((item) => item.id === archiveItem.projectId) ?? projects[index % projects.length];
-    const sampleName = samples.names[index % samples.names.length];
-    const sampleExt = fileExt(sampleName);
-    const buffer = await readFile(join(samples.sampleDir, sampleName));
-    const originalName = `项目资料样例-${pad(index + 1)}.${sampleExt}`;
-    const storagePath = `files/${project.id}/seed-${pad(index + 1)}-${sanitizeObjectName(originalName)}`;
+  const parentIds = new Set(archiveItems.map((item) => item.parentId).filter(Boolean) as string[]);
+  const leafItems = archiveItems.filter((item) => !parentIds.has(item.id));
+  const itemsByProject = new Map<string, typeof leafItems>();
+  for (const item of leafItems) {
+    const current = itemsByProject.get(item.projectId) ?? [];
+    current.push(item);
+    itemsByProject.set(item.projectId, current);
+  }
 
-    if (storage) {
-      await storage.client.putObject(storage.bucket, storagePath, buffer, buffer.length, {
-        'Content-Type': mimeTypeFor(originalName),
-      });
+  const preferredExts = ['docx', 'xlsx', 'pptx', 'pdf', 'png', 'docx', 'xlsx', 'pdf', 'pptx', 'docx'];
+  const targetFileCountPerProject = 10;
+  let globalIndex = 0;
+
+  for (const project of projects) {
+    const projectItems = itemsByProject.get(project.id) ?? [];
+    if (!projectItems.length) continue;
+
+    const selectedItems: typeof projectItems = [];
+    const usedItemIds = new Set<string>();
+    for (const stageCode of PROJECT_STAGE_CODES) {
+      const stageItem = projectItems.find((item) => item.stageCode === stageCode && !usedItemIds.has(item.id));
+      if (stageItem) {
+        selectedItems.push(stageItem);
+        usedItemIds.add(stageItem.id);
+      }
+    }
+    for (const item of projectItems) {
+      if (selectedItems.length >= targetFileCountPerProject) break;
+      if (!usedItemIds.has(item.id)) {
+        selectedItems.push(item);
+        usedItemIds.add(item.id);
+      }
     }
 
-    const existingFile = await prisma.file.findFirst({
-      where: { projectId: project.id, archiveItemId: archiveItem.id, originalName, deletedAt: null },
-      select: { id: true },
-    });
-    const fileData = {
-      project: { connect: { id: project.id } },
-      archiveItem: { connect: { id: archiveItem.id } },
-      fileName: originalName,
-      originalName,
-      fileExt: sampleExt,
-      fileSize: BigInt(buffer.length),
-      mimeType: mimeTypeFor(originalName),
-      storageProvider: 'minio',
-      storageBucket: storage?.bucket ?? 'delivery-platform',
-      storagePath,
-      versionNo: 'V1.0',
-      isCurrent: true,
-      fileStatus: index % 2 === 0 ? FileStatus.Reviewing : FileStatus.Approved,
-      uploadUser: { connect: { id: adminId } },
-      remark: `演示文件：${project.projectCode} 档案目录上传资料。`,
-    };
-    const file = existingFile
-      ? await prisma.file.update({ where: { id: existingFile.id }, data: fileData, select: { id: true } })
-      : await prisma.file.create({ data: fileData, select: { id: true } });
+    for (const [index, archiveItem] of selectedItems.entries()) {
+      const sampleName = selectSample(samples, preferredExts[index % preferredExts.length]);
+      const sampleExt = fileExt(sampleName);
+      const buffer = await readFile(join(samples.sampleDir, sampleName));
+      const stageName = projectStageName(archiveItem.stageCode);
+      const itemName = archiveItem.secondName || archiveItem.name;
+      const originalName = `${project.projectCode}-${stageName}-${itemName}-示例${pad(index + 1)}.${sampleExt}`;
+      const storagePath = `files/${project.id}/archive-demo-${archiveItem.id}-${sanitizeObjectName(originalName)}`;
 
-    const reviewUserId = users[(index + 1) % users.length].id;
-    const existingReview = await prisma.fileReview.findFirst({
-      where: { fileId: file.id, reviewUserId },
-      select: { id: true },
-    });
-    const reviewData = {
-      fileId: file.id,
-      archiveItemId: archiveItem.id,
-      reviewUserId,
-      reviewStatus: index % 2 === 0 ? 'Pending' : 'Approved',
-      reviewComment: index % 2 === 0 ? '待复核文件完整性。' : '资料内容完整，允许归档。',
-    };
-    if (existingReview) {
-      await prisma.fileReview.update({ where: { id: existingReview.id }, data: reviewData });
-    } else {
-      await prisma.fileReview.create({ data: reviewData });
+      if (storage) {
+        await storage.client.putObject(storage.bucket, storagePath, buffer, buffer.length, {
+          'Content-Type': mimeTypeFor(originalName),
+        });
+      }
+
+      const existingFile = await prisma.file.findFirst({
+        where: { projectId: project.id, archiveItemId: archiveItem.id, originalName, deletedAt: null },
+        select: { id: true },
+      });
+      const fileStatus = (globalIndex % 4 === 0 ? FileStatus.Reviewing : FileStatus.Approved) as FileStatus;
+      const fileData = {
+        project: { connect: { id: project.id } },
+        archiveItem: { connect: { id: archiveItem.id } },
+        fileName: originalName,
+        originalName,
+        fileExt: sampleExt,
+        fileSize: BigInt(buffer.length),
+        mimeType: mimeTypeFor(originalName),
+        storageProvider: 'minio',
+        storageBucket: storage?.bucket ?? 'delivery-platform',
+        storagePath,
+        versionNo: 'V1.0',
+        isCurrent: true,
+        fileStatus,
+        uploadUser: { connect: { id: adminId } },
+        remark: `示例档案：${project.projectCode} / ${stageName} / ${itemName}。上传人员应补充正式版本、签字扫描件或现场记录，审批通过后用于项目档案查阅。`,
+      };
+      const file = existingFile
+        ? await prisma.file.update({ where: { id: existingFile.id }, data: fileData, select: { id: true } })
+        : await prisma.file.create({ data: fileData, select: { id: true } });
+
+      await prisma.projectArchiveItem.update({
+        where: { id: archiveItem.id },
+        data: {
+          status: fileStatus === FileStatus.Approved ? 'Approved' : 'Reviewing',
+          completedAt: fileStatus === FileStatus.Approved ? new Date() : null,
+        },
+      });
+
+      const reviewUserId = users[(globalIndex + 1) % users.length].id;
+      const existingReview = await prisma.fileReview.findFirst({
+        where: { fileId: file.id, reviewUserId },
+        select: { id: true },
+      });
+      const reviewData = {
+        fileId: file.id,
+        archiveItemId: archiveItem.id,
+        reviewUserId,
+        reviewStatus: fileStatus === FileStatus.Approved ? 'Approved' : 'Pending',
+        reviewComment: fileStatus === FileStatus.Approved
+          ? '资料内容完整，已完成示例审批。'
+          : '待复核文件完整性、签字页和版本号。',
+      };
+      if (existingReview) {
+        await prisma.fileReview.update({ where: { id: existingReview.id }, data: reviewData });
+      } else {
+        await prisma.fileReview.create({ data: reviewData });
+      }
+
+      globalIndex += 1;
     }
   }
 }
@@ -1192,6 +1248,30 @@ function sanitizeObjectName(value: string): string {
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
     .slice(0, 120);
+}
+
+const PROJECT_STAGE_CODES = [
+  '01_sale',
+  '02_design',
+  '03_procurement',
+  '04_construction',
+  '05_acceptance',
+  '06_review',
+  '07_misc',
+] as const;
+
+const PROJECT_STAGE_NAMES: Record<string, string> = {
+  '01_sale': '售前立项',
+  '02_design': '深化设计',
+  '03_procurement': '采购生产',
+  '04_construction': '施工调试',
+  '05_acceptance': '项目验收',
+  '06_review': '复盘归档',
+  '07_misc': '综合资料',
+};
+
+function projectStageName(stageCode: string): string {
+  return PROJECT_STAGE_NAMES[stageCode] ?? stageCode;
 }
 
 function pad(value: number): string {

@@ -7,14 +7,19 @@ import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { attachmentApi } from '@/api/attachment'
 import type { AttachmentPreview } from '@/api/attachment'
+import { fileApi } from '@/api/file'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `${pdfWorkerUrl}?v=pdfjs-canvas-20260708`
 
+type PreviewSource = 'attachment' | 'file'
+
 const props = withDefaults(defineProps<{
   attachmentId?: string
+  source?: PreviewSource
   height?: string
   compact?: boolean
 }>(), {
+  source: 'attachment',
   height: '72vh',
   compact: false,
 })
@@ -23,10 +28,12 @@ const loading = ref(false)
 const preview = ref<AttachmentPreview>()
 const objectUrl = ref('')
 const pdfContainerRef = ref<HTMLElement>()
+const htmlContainerRef = ref<HTMLElement>()
 const pdfPageCount = ref(0)
 const pdfRenderError = ref('')
 const pdfFallbackHtml = ref('')
 let pdfRenderToken = 0
+let htmlCleanup: Array<() => void> = []
 
 const isMarkdown = computed(() => (preview.value?.fileExt || '').toLowerCase() === 'md')
 const paneStyle = computed(() => ({ '--preview-pane-height': props.height }))
@@ -46,6 +53,23 @@ function clearPdfPreview(): void {
   if (pdfContainerRef.value) {
     pdfContainerRef.value.innerHTML = ''
   }
+}
+
+function clearHtmlEnhancements(): void {
+  htmlCleanup.forEach((cleanup) => cleanup())
+  htmlCleanup = []
+}
+
+async function loadPreviewMeta(id: string): Promise<AttachmentPreview> {
+  return props.source === 'file'
+    ? fileApi.getPreview(id)
+    : attachmentApi.getPreview(id)
+}
+
+async function loadPreviewBlob(id: string): Promise<Blob> {
+  return props.source === 'file'
+    ? fileApi.download(id)
+    : attachmentApi.getContent(id)
 }
 
 async function renderPdf(blob: Blob, fallbackHtml = ''): Promise<void> {
@@ -111,23 +135,171 @@ async function renderPdf(blob: Blob, fallbackHtml = ''): Promise<void> {
   }
 }
 
+function isTableResizeHotspot(event: PointerEvent | MouseEvent, target: HTMLElement): boolean {
+  const cell = target.closest('td, th') as HTMLElement | null
+  if (!cell) return false
+  const rect = cell.getBoundingClientRect()
+  return rect.right - event.clientX <= 8 || rect.bottom - event.clientY <= 8
+}
+
+function enableDragScroll(wrap: HTMLElement): void {
+  let dragging = false
+  let startX = 0
+  let startY = 0
+  let startLeft = 0
+  let startTop = 0
+
+  const onPointerDown = (event: PointerEvent) => {
+    if (event.button !== 0) return
+    const target = event.target as HTMLElement
+    if (target.closest('button, a, input, textarea, select')) return
+    if (isTableResizeHotspot(event, target)) return
+    dragging = true
+    startX = event.clientX
+    startY = event.clientY
+    startLeft = wrap.scrollLeft
+    startTop = wrap.scrollTop
+    wrap.classList.add('is-dragging')
+    wrap.setPointerCapture(event.pointerId)
+  }
+
+  const onPointerMove = (event: PointerEvent) => {
+    if (!dragging) return
+    event.preventDefault()
+    wrap.scrollLeft = startLeft - (event.clientX - startX)
+    wrap.scrollTop = startTop - (event.clientY - startY)
+  }
+
+  const onPointerUp = (event: PointerEvent) => {
+    if (!dragging) return
+    dragging = false
+    wrap.classList.remove('is-dragging')
+    if (wrap.hasPointerCapture(event.pointerId)) {
+      wrap.releasePointerCapture(event.pointerId)
+    }
+  }
+
+  wrap.addEventListener('pointerdown', onPointerDown)
+  wrap.addEventListener('pointermove', onPointerMove)
+  wrap.addEventListener('pointerup', onPointerUp)
+  wrap.addEventListener('pointercancel', onPointerUp)
+  htmlCleanup.push(() => {
+    wrap.removeEventListener('pointerdown', onPointerDown)
+    wrap.removeEventListener('pointermove', onPointerMove)
+    wrap.removeEventListener('pointerup', onPointerUp)
+    wrap.removeEventListener('pointercancel', onPointerUp)
+  })
+}
+
+function enableTableResize(table: HTMLTableElement): void {
+  const getCell = (target: EventTarget | null) =>
+    target instanceof HTMLElement ? target.closest('td, th') as HTMLElement | null : null
+
+  const onMouseMove = (event: MouseEvent) => {
+    const cell = getCell(event.target)
+    if (!cell) {
+      table.style.cursor = ''
+      return
+    }
+    const rect = cell.getBoundingClientRect()
+    const nearRight = rect.right - event.clientX <= 8
+    const nearBottom = rect.bottom - event.clientY <= 8
+    table.style.cursor = nearRight && nearBottom
+      ? 'nwse-resize'
+      : nearRight
+        ? 'col-resize'
+        : nearBottom
+          ? 'row-resize'
+          : ''
+  }
+
+  const onPointerDown = (event: PointerEvent) => {
+    if (event.button !== 0) return
+    const cell = getCell(event.target)
+    if (!cell) return
+
+    const rect = cell.getBoundingClientRect()
+    const nearRight = rect.right - event.clientX <= 8
+    const nearBottom = rect.bottom - event.clientY <= 8
+    if (!nearRight && !nearBottom) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    const row = cell.parentElement as HTMLTableRowElement | null
+    const columnIndex = row ? Array.from(row.children).indexOf(cell) : -1
+    const startX = event.clientX
+    const startY = event.clientY
+    const startWidth = cell.getBoundingClientRect().width
+    const startHeight = row?.getBoundingClientRect().height || cell.getBoundingClientRect().height
+    const columnCells = columnIndex >= 0
+      ? Array.from(table.querySelectorAll<HTMLElement>(`tr > *:nth-child(${columnIndex + 1})`))
+      : []
+
+    const onDocumentMove = (moveEvent: PointerEvent) => {
+      if (nearRight) {
+        const width = Math.max(56, startWidth + moveEvent.clientX - startX)
+        columnCells.forEach((item) => {
+          item.style.width = `${width}px`
+          item.style.minWidth = `${width}px`
+          item.style.maxWidth = 'none'
+        })
+      }
+      if (nearBottom && row) {
+        const height = Math.max(28, startHeight + moveEvent.clientY - startY)
+        row.style.height = `${height}px`
+        Array.from(row.children).forEach((item) => {
+          const cellElement = item as HTMLElement
+          cellElement.style.height = `${height}px`
+        })
+      }
+    }
+
+    const onDocumentUp = () => {
+      document.removeEventListener('pointermove', onDocumentMove)
+      document.removeEventListener('pointerup', onDocumentUp)
+    }
+
+    document.addEventListener('pointermove', onDocumentMove)
+    document.addEventListener('pointerup', onDocumentUp)
+  }
+
+  table.addEventListener('mousemove', onMouseMove)
+  table.addEventListener('pointerdown', onPointerDown)
+  htmlCleanup.push(() => {
+    table.removeEventListener('mousemove', onMouseMove)
+    table.removeEventListener('pointerdown', onPointerDown)
+  })
+}
+
+async function enhanceHtmlPreview(): Promise<void> {
+  clearHtmlEnhancements()
+  await nextTick()
+  const container = htmlContainerRef.value
+  if (!container) return
+  container.querySelectorAll<HTMLElement>('.preview-table-wrap').forEach(enableDragScroll)
+  container.querySelectorAll<HTMLTableElement>('table').forEach(enableTableResize)
+}
+
 async function loadPreview(): Promise<void> {
   revokeObjectUrl()
   clearPdfPreview()
+  clearHtmlEnhancements()
   preview.value = undefined
   if (!props.attachmentId) return
 
   loading.value = true
   try {
-    const nextPreview = await attachmentApi.getPreview(props.attachmentId)
+    const nextPreview = await loadPreviewMeta(props.attachmentId)
     preview.value = nextPreview
 
     if (nextPreview.previewKind === 'image') {
-      const blob = await attachmentApi.getContent(props.attachmentId)
+      const blob = await loadPreviewBlob(props.attachmentId)
       objectUrl.value = URL.createObjectURL(blob)
     } else if (nextPreview.previewKind === 'pdf') {
-      const blob = await attachmentApi.getContent(props.attachmentId)
+      const blob = await loadPreviewBlob(props.attachmentId)
       await renderPdf(blob, nextPreview.html || '')
+    } else if (nextPreview.previewKind === 'html') {
+      await enhanceHtmlPreview()
     }
   } catch {
     Message.error('预览内容加载失败')
@@ -140,7 +312,10 @@ watch(() => props.attachmentId, loadPreview, { immediate: true })
 onBeforeUnmount(() => {
   revokeObjectUrl()
   clearPdfPreview()
+  clearHtmlEnhancements()
 })
+
+watch(() => props.source, loadPreview)
 </script>
 
 <template>
@@ -187,6 +362,7 @@ onBeforeUnmount(() => {
 
       <div
         v-else-if="preview.previewKind === 'html'"
+        ref="htmlContainerRef"
         class="preview-html"
         v-html="preview.html || ''"
       />
@@ -218,6 +394,7 @@ onBeforeUnmount(() => {
   height: 100%;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 16px;
 
   &.compact {
@@ -330,9 +507,9 @@ onBeforeUnmount(() => {
 }
 
 .preview-html :deep(.word-page) {
-  width: min(900px, 100%);
-  min-height: 1120px;
-  padding: 72px 82px;
+  width: min(794px, calc(100% - 24px));
+  min-height: 1123px;
+  padding: 68px 72px;
   border: 1px solid #d9dfe8;
   background: #fff;
   box-shadow: 0 16px 42px rgba(15, 23, 42, 0.12);
@@ -367,15 +544,19 @@ onBeforeUnmount(() => {
   min-height: 100%;
   border: 1px solid #d9dfe8;
   background: #f7f9fc;
+  padding: 12px;
 }
 
 .preview-html :deep(.excel-workbook) {
-  min-width: 980px;
+  min-width: max(980px, 100%);
+  display: grid;
+  gap: 12px;
 }
 
 .preview-html :deep(.preview-sheet) {
   margin: 0;
-  padding: 0 0 30px;
+  padding: 0;
+  border: 1px solid #d9dfe8;
   background: #fff;
 }
 
@@ -396,9 +577,17 @@ onBeforeUnmount(() => {
   width: 100%;
   max-height: 58vh;
   overflow: auto;
+  overscroll-behavior: contain;
   resize: both;
-  padding: 10px;
+  padding: 12px;
   background: #fff;
+  cursor: grab;
+  user-select: auto;
+}
+
+.preview-html :deep(.preview-table-wrap.is-dragging) {
+  cursor: grabbing;
+  user-select: none;
 }
 
 .preview-html :deep(table) {
@@ -419,7 +608,8 @@ onBeforeUnmount(() => {
   border: 1px solid #d9dfe8;
   vertical-align: top;
   overflow: auto;
-  resize: both;
+  resize: none;
+  white-space: pre-wrap;
   word-break: break-word;
 }
 

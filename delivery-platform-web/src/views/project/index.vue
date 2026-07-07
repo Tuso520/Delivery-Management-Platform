@@ -163,20 +163,22 @@ onMounted(() => {
   <div class="project-page">
     <a-card class="search-card">
       <div class="project-search-row">
-        <a-form :model="searchForm" inline label-width="auto" class="project-search-form">
-          <a-form-item label="关键词" class="keyword-item">
-            <a-input
-              v-model="searchForm.keyword"
-              placeholder="项目名称或客户名称"
-              clearable
-              class="keyword-input"
-              @keyup.enter="handleSearch"
-            />
-          </a-form-item>
-        </a-form>
-        <div class="project-search-actions">
+        <div class="project-search-left">
+          <a-form :model="searchForm" inline label-width="auto" class="project-search-form">
+            <a-form-item label="关键词" class="keyword-item">
+              <a-input
+                v-model="searchForm.keyword"
+                placeholder="项目名称或客户名称"
+                clearable
+                class="keyword-input"
+                @keyup.enter="handleSearch"
+              />
+            </a-form-item>
+          </a-form>
           <a-button type="primary" @click="handleSearch">查询</a-button>
           <a-button @click="handleReset">重置</a-button>
+        </div>
+        <div class="project-search-actions">
           <a-button type="primary" @click="handleCreate">新建项目</a-button>
         </div>
       </div>
@@ -381,9 +383,17 @@ onMounted(() => {
   gap: 18px;
 }
 
+.project-search-left {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+}
+
 .project-search-form {
   min-width: 0;
-  flex: 1;
+  flex: 0 1 520px;
 }
 
 .keyword-item {
@@ -408,6 +418,12 @@ onMounted(() => {
 
 @media (max-width: 760px) {
   .project-search-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .project-search-left {
     align-items: stretch;
     flex-direction: column;
     gap: 10px;

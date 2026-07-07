@@ -105,7 +105,7 @@ export class ReviewService {
       // Update archive item status
       await tx.projectArchiveItem.update({
         where: { id: archiveItemId },
-        data: { status: 'Reviewing' },
+        data: { status: 'Reviewing', completedAt: null },
       });
 
       return created;
@@ -208,11 +208,13 @@ export class ReviewService {
    * Get pending reviews for a specific reviewer.
    */
   async findPending(userId: string): Promise<ReviewListItem[]> {
-    // Find reviews that are pending for this reviewer
+    const canReviewAll = await this.isElevatedUser(userId);
+
+    // Elevated users can process all pending file reviews; other users only see assigned reviews.
     const reviews = await this.prisma.fileReview.findMany({
       where: {
-        reviewUserId: userId,
         reviewStatus: 'Pending',
+        ...(canReviewAll ? {} : { reviewUserId: userId }),
       },
       select: {
         id: true,
@@ -291,8 +293,13 @@ export class ReviewService {
     await this.checkProjectAccess(file.projectId, reviewerId);
 
     // Update the latest pending review
+    const canReviewAll = await this.isElevatedUser(reviewerId);
     const pendingReview = await this.prisma.fileReview.findFirst({
-      where: { fileId, reviewUserId: reviewerId, reviewStatus: 'Pending' },
+      where: {
+        fileId,
+        reviewStatus: 'Pending',
+        ...(canReviewAll ? {} : { reviewUserId: reviewerId }),
+      },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -322,7 +329,7 @@ export class ReviewService {
       if (file.archiveItemId) {
         await tx.projectArchiveItem.update({
           where: { id: file.archiveItemId },
-          data: { status: 'Approved' },
+          data: { status: 'Approved', completedAt: new Date() },
         });
       }
     });
@@ -349,8 +356,13 @@ export class ReviewService {
     // Data scope authorization
     await this.checkProjectAccess(file.projectId, reviewerId);
 
+    const canReviewAll = await this.isElevatedUser(reviewerId);
     const pendingReview = await this.prisma.fileReview.findFirst({
-      where: { fileId, reviewUserId: reviewerId, reviewStatus: 'Pending' },
+      where: {
+        fileId,
+        reviewStatus: 'Pending',
+        ...(canReviewAll ? {} : { reviewUserId: reviewerId }),
+      },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -380,7 +392,7 @@ export class ReviewService {
       if (file.archiveItemId) {
         await tx.projectArchiveItem.update({
           where: { id: file.archiveItemId },
-          data: { status: 'Rejected' },
+          data: { status: 'Rejected', completedAt: null },
         });
       }
     });
@@ -393,6 +405,17 @@ export class ReviewService {
    * Elevated roles (SUPER_ADMIN, SYSTEM_ADMIN, DELIVERY_MANAGER) bypass the check.
    * Other users must be a member of the project.
    */
+  private async isElevatedUser(userId: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { userRoles: { include: { role: true } } },
+    });
+    const roles = user?.userRoles.map((ur) => ur.role.roleCode) ?? [];
+    return roles.some((role) =>
+      ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'DELIVERY_MANAGER'].includes(role),
+    );
+  }
+
   private async checkProjectAccess(projectId: string, userId: string): Promise<void> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },

@@ -8,7 +8,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma } from '@prisma/client';
+import { Prisma, type ArchiveItemStatus, type FileStatus } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
 import {
@@ -112,6 +112,9 @@ export class FileService {
         throw new NotFoundException('档案目录项不存在');
       }
     }
+    const reviewUserId = archiveItemId
+      ? await this.resolveArchiveReviewUserId(archiveItem, userId)
+      : null;
 
     // Generate version number
     const versionNo = await this.generateVersionNo(projectId, archiveItemId);
@@ -125,7 +128,6 @@ export class FileService {
 
     // Create DB record within transaction so all writes are atomic
     const dbFile = await this.prisma.$transaction(async (tx) => {
-      const reviewUserId = archiveItem?.reviewUserId ?? archiveItem?.responsibleUserId ?? null;
       const shouldCreateReview = Boolean(archiveItemId && reviewUserId);
       const initialFileStatus = shouldCreateReview ? 'Reviewing' : 'Uploaded';
 
@@ -188,7 +190,7 @@ export class FileService {
       if (archiveItemId) {
         await tx.projectArchiveItem.update({
           where: { id: archiveItemId },
-          data: { status: initialFileStatus },
+          data: { status: initialFileStatus, completedAt: null },
         });
       }
 
@@ -385,6 +387,22 @@ export class FileService {
     };
   }
 
+  async getPreview(fileId: string, userId: string): Promise<AttachmentPreviewResult> {
+    const fileRecord = await this.findById(fileId, userId);
+    const preview = await this.buildPreviewForFile(fileRecord);
+    await this.prisma.operationLog.create({
+      data: {
+        userId,
+        module: 'file',
+        action: 'preview',
+        targetType: 'file',
+        targetId: fileId,
+        result: 'success',
+      },
+    });
+    return preview;
+  }
+
   async getSignedPreviewPage(
     fileId: string,
     token: string | undefined,
@@ -429,9 +447,38 @@ export class FileService {
     // Data scope authorization
     await this.checkProjectAccess(file.projectId, userId);
 
-    await this.prisma.file.update({
-      where: { id: fileId },
-      data: { deletedAt: new Date() },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.file.update({
+        where: { id: fileId },
+        data: { deletedAt: new Date(), isCurrent: false },
+      });
+
+      if (!file.archiveItemId) return;
+
+      const latestFile = await tx.file.findFirst({
+        where: {
+          projectId: file.projectId,
+          archiveItemId: file.archiveItemId,
+          deletedAt: null,
+        },
+        select: { id: true, fileStatus: true },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      await tx.projectArchiveItem.update({
+        where: { id: file.archiveItemId },
+        data: {
+          status: this.fileStatusToArchiveStatus(latestFile?.fileStatus),
+          completedAt: latestFile?.fileStatus === 'Approved' ? new Date() : null,
+        },
+      });
+
+      if (latestFile) {
+        await tx.file.update({
+          where: { id: latestFile.id },
+          data: { isCurrent: true },
+        });
+      }
     });
 
     this.logger.log(`File soft-deleted: ${fileId}`);
@@ -642,12 +689,12 @@ export class FileService {
         : preview.previewKind === 'pdf'
           ? `<main class="pdf-reader">
               <section class="pdf-native-panel">
-                <object class="preview-frame" data="${safeContentUrl}#toolbar=1&navpanes=0&view=FitH" type="application/pdf">
-                  <div class="pdf-text-panel pdf-text-primary">
-                    ${preview.html || '<section class="preview-empty"><h2>PDF 预览</h2><p>当前浏览器未返回可见文本层，请下载原文件查看。</p></section>'}
-                  </div>
-                </object>
+                <iframe class="preview-frame" src="${safeContentUrl}#toolbar=1&navpanes=0&view=FitH" title="${title}"></iframe>
               </section>
+              <details class="pdf-text-panel">
+                <summary>PDF 文本层备用预览</summary>
+                ${preview.html || '<section class="preview-empty"><h2>PDF 预览</h2><p>当前浏览器未返回可见文本层，请下载原文件查看。</p></section>'}
+              </details>
             </main>`
           : preview.previewKind === 'html'
             ? `<main class="preview-document">${preview.html || ''}</main>`
@@ -675,7 +722,7 @@ export class FileService {
     .preview-image { display: block; max-width: 100%; max-height: calc(100vh - 92px); margin: 0 auto; object-fit: contain; background: #fff; border: 1px solid #e5e6eb; }
     .preview-frame { width: 100%; height: 100%; border: 0; background: #fff; }
     .pdf-reader { display: grid; gap: 12px; min-height: calc(100vh - 92px); }
-    .pdf-native-panel { min-height: calc(100vh - 92px); border: 1px solid #d9dfe8; background: #fff; }
+    .pdf-native-panel { height: calc(100vh - 92px); min-height: 640px; border: 1px solid #d9dfe8; background: #fff; }
     .pdf-text-panel { overflow: auto; padding: 18px; border: 1px solid #d9dfe8; background: #fff; }
     .pdf-text-primary { min-height: calc(100vh - 92px); }
     .pdf-page-fallback, .word-page { border: 1px solid #d9dfe8; background: #fff; }
@@ -719,6 +766,49 @@ export class FileService {
    */
   private async checkProjectAccess(projectId: string, userId: string): Promise<void> {
     await this.projectAccess.assertProjectAccess(projectId, userId);
+  }
+
+  private fileStatusToArchiveStatus(status?: FileStatus): ArchiveItemStatus {
+    const map: Record<FileStatus, ArchiveItemStatus> = {
+      Draft: 'PendingUpload',
+      Uploaded: 'Uploaded',
+      Reviewing: 'Reviewing',
+      Approved: 'Approved',
+      Rejected: 'Rejected',
+      Deprecated: 'Uploaded',
+      Archived: 'Archived',
+    };
+    return status ? map[status] : 'NotStarted';
+  }
+
+  private async resolveArchiveReviewUserId(
+    archiveItem: { reviewUserId: string | null; responsibleUserId: string | null } | null,
+    uploaderId: string,
+  ): Promise<string | null> {
+    if (!archiveItem) return null;
+    if (archiveItem.reviewUserId) return archiveItem.reviewUserId;
+    if (archiveItem.responsibleUserId && archiveItem.responsibleUserId !== uploaderId) {
+      return archiveItem.responsibleUserId;
+    }
+
+    const elevatedReviewer = await this.prisma.user.findFirst({
+      where: {
+        deletedAt: null,
+        status: 'Active',
+        id: { not: uploaderId },
+        userRoles: {
+          some: {
+            role: {
+              roleCode: { in: ['DELIVERY_MANAGER', 'SYSTEM_ADMIN', 'SUPER_ADMIN'] },
+            },
+          },
+        },
+      },
+      select: { id: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return elevatedReviewer?.id ?? archiveItem.responsibleUserId ?? uploaderId;
   }
 }
 

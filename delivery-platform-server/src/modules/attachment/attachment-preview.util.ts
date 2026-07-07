@@ -165,8 +165,10 @@ async function renderDocx(buffer: Buffer, fileName: string): Promise<string> {
     return renderMessage(fileName, '文档没有可提取的文本内容。');
   }
 
-  const title = paragraphs[0] || fileName;
-  const documentBodyHtml = paragraphs
+  const bodyParagraphs = isLikelyDuplicateFileTitle(paragraphs[0], fileName)
+    ? paragraphs.slice(1)
+    : paragraphs;
+  const documentBodyHtml = bodyParagraphs
     .map((paragraph, index) =>
       index === 0
         ? `<h1>${escapeHtml(paragraph)}</h1>`
@@ -180,7 +182,7 @@ async function renderDocx(buffer: Buffer, fileName: string): Promise<string> {
       <section class="word-page">
         <div class="word-page-meta">Word 只读预览</div>
         <article class="word-body">
-          ${documentBodyHtml || `<h1>${escapeHtml(title)}</h1>`}
+          ${documentBodyHtml || renderMessageBody('文档没有可提取的正文内容。')}
         </article>
       </section>
     `,
@@ -221,12 +223,14 @@ async function renderPptx(buffer: Buffer, fileName: string): Promise<string> {
   return wrapPreviewHtml(
     fileName,
     slides.length ? slides.join('\n') : renderMessageBody('演示文稿没有可提取的文本内容。'),
+    'office-presentation',
   );
 }
 
 async function renderXlsx(buffer: Buffer, fileName: string): Promise<string> {
   const zip = await JSZip.loadAsync(buffer);
   const sharedStrings = await readSharedStrings(zip);
+  const workbookSheetNames = await readWorkbookSheetNames(zip);
   const sheetNames = Object.keys(zip.files)
     .filter((name) => /^xl\/worksheets\/sheet\d+\.xml$/u.test(name))
     .sort((left, right) => extractNumber(left) - extractNumber(right));
@@ -242,7 +246,7 @@ async function renderXlsx(buffer: Buffer, fileName: string): Promise<string> {
     const parsed = xmlParser.parse(sheetXml) as unknown;
     const sheetData = getPath(parsed, ['worksheet', 'sheetData']);
     const rows = asArray(getProperty(sheetData, 'row'))
-      .slice(0, 80)
+      .slice(0, 120)
       .map((row) => readXlsxRow(row, sharedStrings));
 
     const visibleRows = rows.filter((row) => row.some(Boolean));
@@ -250,12 +254,13 @@ async function renderXlsx(buffer: Buffer, fileName: string): Promise<string> {
 
     const columnCount = Math.min(
       Math.max(...visibleRows.map((row) => row.length), 1),
-      12,
+      32,
     );
+    const sheetTitle = workbookSheetNames[index] || `工作表 ${index + 1}`;
 
     tables.push(`
       <section class="preview-sheet">
-        <h3>工作表 ${index + 1}</h3>
+        <h3>${escapeHtml(sheetTitle)}</h3>
         <div class="preview-table-wrap">
           <table>
             <tbody>
@@ -277,7 +282,10 @@ async function renderXlsx(buffer: Buffer, fileName: string): Promise<string> {
 
   return wrapPreviewHtml(
     fileName,
-    tables.length ? tables.join('\n') : renderMessageBody('工作簿没有可提取的单元格内容。'),
+    tables.length
+      ? `<div class="excel-workbook">${tables.join('\n')}</div>`
+      : renderMessageBody('工作簿没有可提取的单元格内容。'),
+    'office-excel',
   );
 }
 
@@ -333,6 +341,16 @@ async function readSharedStrings(zip: JSZip): Promise<string[]> {
   const parsed = xmlParser.parse(sharedStringsXml) as unknown;
   const entries = asArray(getPath(parsed, ['sst', 'si']));
   return entries.map((entry) => collectTagText(entry, 't').join(''));
+}
+
+async function readWorkbookSheetNames(zip: JSZip): Promise<string[]> {
+  const workbookXml = await readZipText(zip, 'xl/workbook.xml');
+  if (!workbookXml) return [];
+
+  const parsed = xmlParser.parse(workbookXml) as unknown;
+  return asArray(getPath(parsed, ['workbook', 'sheets', 'sheet']))
+    .map((sheet) => stringifyValue(getProperty(sheet, '@_name')).trim())
+    .filter(Boolean);
 }
 
 function readXlsxRow(row: unknown, sharedStrings: string[]): string[] {
@@ -503,6 +521,16 @@ function decodePdfLiteral(value: string): string {
     .replace(/\\\(/gu, '(')
     .replace(/\\\)/gu, ')')
     .replace(/\\\\/gu, '\\');
+}
+
+function isLikelyDuplicateFileTitle(paragraph: string | undefined, fileName: string): boolean {
+  if (!paragraph) return false;
+  const normalize = (value: string) =>
+    value
+      .replace(/\.[^.]+$/u, '')
+      .replace(/[\s\-＿_—–·•《》“”"']/gu, '')
+      .toLowerCase();
+  return normalize(paragraph) === normalize(fileName);
 }
 
 function wrapPreviewHtml(title: string, body: string, className = ''): string {

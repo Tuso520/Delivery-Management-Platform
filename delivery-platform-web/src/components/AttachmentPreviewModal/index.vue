@@ -5,8 +5,10 @@ import AttachmentPreviewPane from '@/components/AttachmentPreviewPane/index.vue'
 const props = withDefaults(defineProps<{
   visible: boolean
   attachmentId?: string
+  source?: 'attachment' | 'file'
   title?: string
 }>(), {
+  source: 'attachment',
   title: '在线预览',
 })
 
@@ -30,6 +32,7 @@ const modalTitle = computed(() => props.title || '在线预览')
     <AttachmentPreviewPane
       v-if="props.visible"
       :attachment-id="props.attachmentId"
+      :source="props.source"
       height="76vh"
     />
   </a-modal>
