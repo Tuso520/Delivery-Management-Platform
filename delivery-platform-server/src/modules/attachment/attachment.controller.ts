@@ -59,6 +59,8 @@ const allowedExtensions = new Set([
   'txt',
 ]);
 
+const ATTACHMENT_API_BASE_PATH = '/api/v1/attachments';
+
 @ApiTags('Attachments')
 @ApiBearerAuth('JWT-auth')
 @Controller('attachments')
@@ -147,15 +149,13 @@ export class AttachmentController {
   async createPreviewLink(
     @Param('id') id: string,
     @CurrentUser() user: JwtPayload,
-    @Req() request: Request,
   ) {
     const previewLink = await this.attachmentService.createPreviewLink(
       id,
       user.sub,
     );
-    const baseUrl = `${request.protocol}://${request.get('host')}${request.baseUrl}`;
     return {
-      url: `${baseUrl}/${id}/signed-preview?token=${encodeURIComponent(
+      url: `${ATTACHMENT_API_BASE_PATH}/${id}/signed-preview?token=${encodeURIComponent(
         previewLink.token,
       )}`,
       expiresAt: previewLink.expiresAt,
@@ -172,7 +172,7 @@ export class AttachmentController {
     @Req() request: Request,
     @Res() response: Response,
   ) {
-    const contentUrl = `${request.protocol}://${request.get('host')}${request.baseUrl}/${id}/signed-content?token=${encodeURIComponent(
+    const contentUrl = `${ATTACHMENT_API_BASE_PATH}/${id}/signed-content?token=${encodeURIComponent(
       token || '',
     )}`;
     const html = await this.attachmentService.getSignedPreviewPage(
