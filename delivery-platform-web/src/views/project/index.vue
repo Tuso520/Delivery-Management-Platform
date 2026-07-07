@@ -184,27 +184,27 @@ onMounted(() => {
 
     <!-- Table -->
     <a-card class="project-table-card">
-      <a-table
-        v-loading="loading"
-        :data="projectList"
-        border
-        stripe
-        class="project-table"
-        :scroll="{ x: 1580 }"
-        style="width: 100%"
-      >
+      <div class="project-table-shell">
+        <a-table
+          v-loading="loading"
+          :data="projectList"
+          border
+          stripe
+          :scroll="{ x: 1580 }"
+          style="width: 100%"
+        >
         <a-table-column
           prop="projectName"
           label="项目名称"
-          :min-width="230"
+          :width="250"
           show-overflow-tooltip
         />
-        <a-table-column prop="countryCode" label="国家" :min-width="100">
+        <a-table-column prop="countryCode" label="国家" :width="92">
           <template #default="{ row }">
             <span>{{ getCountryLabel(row.countryCode) }}</span>
           </template>
         </a-table-column>
-        <a-table-column prop="projectType" label="项目类型" :min-width="110">
+        <a-table-column prop="projectType" label="项目类型" :width="118">
           <template #default="{ row }">
             <span>{{ getTypeLabel(row.projectType || '') }}</span>
           </template>
@@ -223,7 +223,7 @@ onMounted(() => {
             </a-tag>
           </template>
         </a-table-column>
-        <a-table-column prop="currentStage" label="当前阶段" :min-width="140">
+        <a-table-column prop="currentStage" label="当前阶段" :width="128">
           <template #default="{ row }">
             <span>{{ getStageLabel(row.currentStage || '') }}</span>
           </template>
@@ -231,7 +231,7 @@ onMounted(() => {
         <a-table-column
           prop="contractAmount"
           label="合同金额"
-          :min-width="160"
+          :width="150"
           align="right"
         >
           <template #default="{ row }">
@@ -241,27 +241,27 @@ onMounted(() => {
             <span v-else>-</span>
           </template>
         </a-table-column>
-        <a-table-column label="折算人民币" :min-width="150" align="right">
+        <a-table-column label="折算人民币" :width="150" align="right">
           <template #default="{ row }">
             <span class="amount-cny">¥ {{ formatAmount(row.convertedAmount) }}</span>
           </template>
         </a-table-column>
-        <a-table-column label="项目经理" :min-width="120">
+        <a-table-column label="项目经理" :width="110">
           <template #default="{ row }">
             {{ getMemberName(row, 'PROJECT_MANAGER') }}
           </template>
         </a-table-column>
-        <a-table-column label="电气负责人" :min-width="120">
+        <a-table-column label="电气负责人" :width="112">
           <template #default="{ row }">
             {{ getMemberName(row, 'ELEC_LEADER') }}
           </template>
         </a-table-column>
-        <a-table-column label="软件负责人" :min-width="120">
+        <a-table-column label="软件负责人" :width="112">
           <template #default="{ row }">
             {{ getMemberName(row, 'SOFTWARE_LEADER') }}
           </template>
         </a-table-column>
-        <a-table-column label="操作" :width="190" fixed="right">
+        <a-table-column label="操作" :width="172" fixed="right">
           <template #default="{ row }">
             <a-button
               text
@@ -288,8 +288,9 @@ onMounted(() => {
               删除
             </a-button>
           </template>
-        </a-table-column>
-      </a-table>
+          </a-table-column>
+        </a-table>
+      </div>
 
       <!-- Pagination -->
       <div class="pagination-wrapper">
@@ -322,24 +323,54 @@ onMounted(() => {
   padding: 8px;
 }
 
-.project-table {
+.project-table-shell {
+  min-width: 0;
   border-radius: 0;
 }
 
-.project-table :deep(.arco-table-th),
-.project-table :deep(.arco-table-cell),
-.project-table :deep(.arco-table-td-content) {
-  white-space: nowrap;
+.project-table-shell :deep(.arco-table) {
+  border-radius: 0;
 }
 
-.project-table :deep(.arco-table-th),
-.project-table :deep(.arco-table-cell) {
+.project-table-shell :deep(.arco-table-container),
+.project-table-shell :deep(.arco-table-content),
+.project-table-shell :deep(.arco-scrollbar-container) {
+  min-width: 0;
+}
+
+.project-table-shell :deep(.arco-table-element) {
+  min-width: 1580px;
+  table-layout: fixed;
+}
+
+.project-table-shell :deep(.arco-table-th),
+.project-table-shell :deep(.arco-table-td),
+.project-table-shell :deep(.arco-table-cell),
+.project-table-shell :deep(.arco-table-td-content),
+.project-table-shell :deep(.arco-table-th-title) {
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow-wrap: normal !important;
+}
+
+.project-table-shell :deep(.arco-table-cell) {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-table-shell :deep(.arco-table-th),
+.project-table-shell :deep(.arco-table-cell) {
   padding: 8px 10px;
   font-size: 12px;
   line-height: 1.45;
 }
 
-.project-table :deep(.arco-tag) {
+.project-table-shell :deep(.arco-table-td) {
+  vertical-align: middle;
+}
+
+.project-table-shell :deep(.arco-tag) {
   border-radius: 0;
 }
 
