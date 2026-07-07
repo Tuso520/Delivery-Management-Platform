@@ -25,6 +25,7 @@ const objectUrl = ref('')
 const pdfContainerRef = ref<HTMLElement>()
 const pdfPageCount = ref(0)
 const pdfRenderError = ref('')
+const pdfFallbackHtml = ref('')
 let pdfRenderToken = 0
 
 const isMarkdown = computed(() => (preview.value?.fileExt || '').toLowerCase() === 'md')
@@ -41,15 +42,17 @@ function clearPdfPreview(): void {
   pdfRenderToken += 1
   pdfPageCount.value = 0
   pdfRenderError.value = ''
+  pdfFallbackHtml.value = ''
   if (pdfContainerRef.value) {
     pdfContainerRef.value.innerHTML = ''
   }
 }
 
-async function renderPdf(blob: Blob): Promise<void> {
+async function renderPdf(blob: Blob, fallbackHtml = ''): Promise<void> {
   const token = ++pdfRenderToken
   pdfPageCount.value = 0
   pdfRenderError.value = ''
+  pdfFallbackHtml.value = ''
   await nextTick()
 
   const container = pdfContainerRef.value
@@ -57,8 +60,9 @@ async function renderPdf(blob: Blob): Promise<void> {
 
   container.innerHTML = ''
   try {
+    const data = new Uint8Array(await blob.arrayBuffer())
     const loadingTask = pdfjsLib.getDocument({
-      data: await blob.arrayBuffer(),
+      data,
     })
     const pdf = await loadingTask.promise
     if (token !== pdfRenderToken) {
@@ -100,7 +104,8 @@ async function renderPdf(blob: Blob): Promise<void> {
     await loadingTask.destroy()
   } catch (error) {
     if (token === pdfRenderToken) {
-      console.error(error)
+      console.error('PDF preview render failed', error)
+      pdfFallbackHtml.value = fallbackHtml
       pdfRenderError.value = 'PDF 内容渲染失败，请下载后查看原文件。'
     }
   }
@@ -122,7 +127,7 @@ async function loadPreview(): Promise<void> {
       objectUrl.value = URL.createObjectURL(blob)
     } else if (nextPreview.previewKind === 'pdf') {
       const blob = await attachmentApi.getContent(props.attachmentId)
-      await renderPdf(blob)
+      await renderPdf(blob, nextPreview.html || '')
     }
   } catch {
     Message.error('预览内容加载失败')
@@ -157,8 +162,13 @@ onBeforeUnmount(() => {
           <span v-if="pdfPageCount">{{ pdfPageCount }} 页</span>
         </div>
         <div ref="pdfContainerRef" class="pdf-page-list" />
+        <div
+          v-if="pdfRenderError && pdfFallbackHtml"
+          class="preview-html pdf-fallback-html"
+          v-html="pdfFallbackHtml"
+        />
         <a-empty
-          v-if="pdfRenderError"
+          v-else-if="pdfRenderError"
           :description="pdfRenderError"
           class="preview-empty"
         />
