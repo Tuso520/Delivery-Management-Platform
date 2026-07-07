@@ -8,7 +8,7 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { attachmentApi } from '@/api/attachment'
 import type { AttachmentPreview } from '@/api/attachment'
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+pdfjsLib.GlobalWorkerOptions.workerSrc = `${pdfWorkerUrl}?v=pdfjs-canvas-20260708`
 
 const props = withDefaults(defineProps<{
   attachmentId?: string
