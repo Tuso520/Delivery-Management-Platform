@@ -54,7 +54,7 @@ export class FileController {
   @UseInterceptors(FileInterceptor('file', {
     limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
     fileFilter: (_req, file, cb) => {
-      const allowedTypes = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png', 'gif', 'zip', 'rar', 'dwg'];
+      const allowedTypes = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png', 'gif', 'zip', 'rar', 'dwg'];
       const ext = file.originalname.split('.').pop()?.toLowerCase();
       if (ext && allowedTypes.includes(ext)) {
         cb(null, true);
