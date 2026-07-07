@@ -218,8 +218,12 @@ export class FileStorageService {
     }
 
     const fileShape = Object.getOwnPropertyNames(file ?? {}).join(',');
+    const bufferValue = rawBuffer as
+      | { constructor?: { name?: string }; length?: number; byteLength?: number }
+      | null
+      | undefined;
     this.logger.warn(
-      `Uploaded file body is missing. fields=${fileShape}; size=${file?.size ?? 'unknown'}; mimetype=${file?.mimetype ?? 'unknown'}`,
+      `Uploaded file body is missing. fields=${fileShape}; bufferType=${typeof rawBuffer}; bufferClass=${bufferValue?.constructor?.name ?? 'unknown'}; bufferTag=${Object.prototype.toString.call(rawBuffer)}; bufferLength=${bufferValue?.length ?? 'unknown'}; bufferByteLength=${bufferValue?.byteLength ?? 'unknown'}; size=${file?.size ?? 'unknown'}; mimetype=${file?.mimetype ?? 'unknown'}`,
     );
     throw new BadRequestException('上传文件内容为空或格式异常');
   }
