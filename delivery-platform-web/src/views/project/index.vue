@@ -183,12 +183,14 @@ onMounted(() => {
     </a-card>
 
     <!-- Table -->
-    <a-card>
+    <a-card class="project-table-card">
       <a-table
         v-loading="loading"
         :data="projectList"
         border
         stripe
+        class="project-table"
+        :scroll="{ x: 1580 }"
         style="width: 100%"
       >
         <a-table-column
@@ -314,6 +316,31 @@ onMounted(() => {
 
 .project-page {
   min-width: 0;
+}
+
+.project-table-card :deep(.arco-card-body) {
+  padding: 8px;
+}
+
+.project-table {
+  border-radius: 0;
+}
+
+.project-table :deep(.arco-table-th),
+.project-table :deep(.arco-table-cell),
+.project-table :deep(.arco-table-td-content) {
+  white-space: nowrap;
+}
+
+.project-table :deep(.arco-table-th),
+.project-table :deep(.arco-table-cell) {
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.project-table :deep(.arco-tag) {
+  border-radius: 0;
 }
 
 .project-search-row {
