@@ -198,15 +198,25 @@ function incrementTemplateHeat(templateId: string, key: 'previewCount' | 'downlo
 }
 
 async function openTemplatePreview(row: DocumentTemplate): Promise<void> {
+  let previewWindow: Window | null = null
   try {
     if (!row.attachmentId) {
       Message.warning('该模板暂无可预览文件')
       return
     }
+    previewWindow = window.open('about:blank', '_blank')
+    if (previewWindow) {
+      previewWindow.opener = null
+    }
     const { url } = await attachmentApi.createPreviewLink(row.attachmentId)
-    window.open(url, '_blank', 'noopener,noreferrer')
+    if (previewWindow) {
+      previewWindow.location.href = url
+    } else {
+      window.open(url, '_blank', 'noopener,noreferrer')
+    }
     incrementTemplateHeat(row.id, 'previewCount')
   } catch {
+    previewWindow?.close()
     Message.error('预览链接生成失败')
   }
 }
