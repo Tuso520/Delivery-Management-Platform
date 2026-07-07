@@ -397,13 +397,13 @@ export class AttachmentService {
         ? preview.html || `<img class="preview-image" src="${safeContentUrl}" alt="${title}" />`
         : preview.previewKind === 'pdf'
           ? `<main class="pdf-reader">
-              <section class="pdf-text-panel pdf-text-primary" aria-label="PDF 文本预览">
-                ${preview.html || `<section class="preview-empty"><h2>PDF 预览</h2><p>当前文件未提取到可读文本层，请使用下方原始 PDF 阅读器查看。</p></section>`}
+              <section class="pdf-native-main" aria-label="PDF 原始预览">
+                <iframe class="preview-frame" src="${safeContentUrl}#toolbar=1&navpanes=0&view=FitH" title="${title}"></iframe>
               </section>
-              <details class="pdf-native-details">
-                <summary>打开原始 PDF 阅读器</summary>
-                <section class="pdf-native-panel">
-                  <iframe class="preview-frame" src="${safeContentUrl}#toolbar=1&navpanes=0&view=FitH" title="${title}"></iframe>
+              <details class="pdf-text-details">
+                <summary>查看 PDF 文本层</summary>
+                <section class="pdf-text-panel pdf-text-primary" aria-label="PDF 文本预览">
+                  ${preview.html || `<section class="preview-empty"><h2>PDF 预览</h2><p>当前文件未提取到可读文本层，请使用上方原始 PDF 阅读器查看。</p></section>`}
                 </section>
               </details>
             </main>`
@@ -490,6 +490,15 @@ export class AttachmentService {
       gap: 12px;
       min-height: calc(100vh - 92px);
     }
+    .pdf-native-main {
+      width: min(1120px, 100%);
+      height: calc(100vh - 92px);
+      min-height: 720px;
+      margin: 0 auto;
+      border: 1px solid #d9dfe8;
+      background: #fff;
+      box-shadow: 0 16px 42px rgba(15, 23, 42, 0.08);
+    }
     .pdf-native-details {
       width: min(960px, 100%);
       margin: 0 auto;
@@ -507,6 +516,18 @@ export class AttachmentService {
       min-height: 520px;
       border-top: 1px solid #d9dfe8;
       background: #fff;
+    }
+    .pdf-text-details {
+      width: min(1120px, 100%);
+      margin: 0 auto;
+      border: 1px solid #d9dfe8;
+      background: #fff;
+    }
+    .pdf-text-details summary {
+      cursor: pointer;
+      padding: 10px 14px;
+      color: #4e5969;
+      font-size: 13px;
     }
     .pdf-text-panel {
       overflow: auto;
@@ -624,6 +645,18 @@ export class AttachmentService {
         linear-gradient(#f7f9fc, #f7f9fc) 0 0 / 100% 34px no-repeat,
         #fff;
     }
+    .preview-table-block {
+      padding: 12px;
+    }
+    .preview-table-block + .preview-table-block {
+      border-top: 1px dashed #d9dfe8;
+    }
+    .preview-table-caption {
+      margin-bottom: 8px;
+      color: #4e5969;
+      font-size: 12px;
+      font-weight: 650;
+    }
     .office-presentation {
       display: grid;
       gap: 16px;
@@ -698,6 +731,7 @@ export class AttachmentService {
       color: #4e5969;
     }
     @media (max-width: 960px) {
+      .pdf-native-main { min-height: 520px; }
       .pdf-native-panel { min-height: 520px; }
       .pdf-page-fallback { padding: 26px 24px; }
       .word-page { min-height: auto; padding: 40px 28px; }

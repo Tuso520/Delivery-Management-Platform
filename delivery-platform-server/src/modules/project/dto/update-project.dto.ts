@@ -62,6 +62,11 @@ export class UpdateProjectDto {
   @MaxLength(10)
   projectLanguage?: string;
 
+  @ApiPropertyOptional({ description: '销售负责人ID' })
+  @IsOptional()
+  @IsString()
+  salesOwnerId?: string;
+
   @ApiPropertyOptional({ description: '项目经理ID' })
   @IsOptional()
   @IsString()

@@ -9,11 +9,11 @@ import 'md-editor-v3/lib/style.css'
 import { arcoConfirm } from '@/utils/arco-dialog'
 import { templateApi } from '@/api/template'
 import { attachmentApi } from '@/api/attachment'
-import AttachmentPreviewModal from '@/components/AttachmentPreviewModal/index.vue'
 import type { DocumentTemplate, QueryTemplateDto } from '@/types/template'
 import type { PaginatedData } from '@/types/api'
 import type { TagType } from '@/types/ui'
 import { downloadBlob } from '@/utils/blob'
+import { openSignedPreview } from '@/utils/preview-link'
 
 interface TemplateStage {
   code: string
@@ -32,8 +32,6 @@ const loading = ref(false)
 const templateList = ref<DocumentTemplate[]>([])
 const activeStageCode = ref('')
 const templateStreamRef = ref<HTMLElement>()
-const previewVisible = ref(false)
-const previewTarget = ref<DocumentTemplate>()
 const createVisible = ref(false)
 const createSubmitting = ref(false)
 const createMode = ref<'markdown' | 'upload'>('markdown')
@@ -211,14 +209,18 @@ function isHotTemplate(template: DocumentTemplate): boolean {
   return (template.previewCount || 0) + (template.downloadCount || 0) >= HOT_TEMPLATE_THRESHOLD
 }
 
-function openTemplatePreview(row: DocumentTemplate): void {
+async function openTemplatePreview(row: DocumentTemplate): Promise<void> {
   if (!row.attachmentId) {
     Message.warning('该模板暂无可预览文件')
     return
   }
-  previewTarget.value = row
-  previewVisible.value = true
-  incrementTemplateHeat(row.id, 'previewCount')
+  await openSignedPreview(
+    () => attachmentApi.createPreviewLink(row.attachmentId as string),
+    {
+      title: row.name,
+      onOpened: () => incrementTemplateHeat(row.id, 'previewCount'),
+    },
+  )
 }
 
 function resetCreateForm(): void {
@@ -479,12 +481,6 @@ onMounted(fetchList)
         </div>
       </a-spin>
     </main>
-
-    <AttachmentPreviewModal
-      v-model:visible="previewVisible"
-      :attachment-id="previewTarget?.attachmentId || undefined"
-      :title="previewTarget?.name || '模板预览'"
-    />
 
     <a-modal
       v-model:visible="createVisible"

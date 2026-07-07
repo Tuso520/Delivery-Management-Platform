@@ -176,7 +176,7 @@ onMounted(() => {
             </a-form-item>
           </a-form>
           <a-button type="primary" @click="handleSearch">查询</a-button>
-          <a-button @click="handleReset">重置</a-button>
+          <a-button class="reset-button" @click="handleReset">重置</a-button>
         </div>
         <div class="project-search-actions">
           <a-button type="primary" @click="handleCreate">新建项目</a-button>
@@ -192,7 +192,7 @@ onMounted(() => {
           :data="projectList"
           border
           stripe
-          :scroll="{ x: 1580 }"
+          :scroll="{ x: 1700 }"
           style="width: 100%"
         >
         <a-table-column
@@ -246,6 +246,11 @@ onMounted(() => {
         <a-table-column label="折算人民币" :width="150" align="right">
           <template #default="{ row }">
             <span class="amount-cny">¥ {{ formatAmount(row.convertedAmount) }}</span>
+          </template>
+        </a-table-column>
+        <a-table-column label="销售负责人" :width="112">
+          <template #default="{ row }">
+            {{ getMemberName(row, 'SALES_OWNER') }}
           </template>
         </a-table-column>
         <a-table-column label="项目经理" :width="110">
@@ -341,7 +346,7 @@ onMounted(() => {
 }
 
 .project-table-shell :deep(.arco-table-element) {
-  min-width: 1580px;
+  min-width: 1700px;
   table-layout: fixed;
 }
 
@@ -388,16 +393,16 @@ onMounted(() => {
   display: flex;
   flex: 1;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .project-search-form {
   min-width: 0;
-  flex: 0 1 520px;
+  flex: 0 1 460px;
 }
 
 .keyword-item {
-  width: min(520px, 100%);
+  width: min(460px, 100%);
   margin-bottom: 0 !important;
 }
 
@@ -410,6 +415,10 @@ onMounted(() => {
   flex: 0 0 auto;
   align-items: center;
   gap: 12px;
+}
+
+.reset-button {
+  margin-left: 4px;
 }
 
 .project-search-actions .arco-btn + .arco-btn {

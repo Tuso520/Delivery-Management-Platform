@@ -32,6 +32,25 @@ export interface Level2Def {
 
 const DEFAULT_FILE_TYPES = 'pdf,doc,docx,xls,xlsx,jpg,jpeg,png,dwg,cad,zip,rar';
 
+const archiveStageLabels: Record<string, string> = {
+  '01_sale': '售前与合同阶段',
+  '02_design': '深化方案阶段',
+  '03_procurement': '采购与生产阶段',
+  '04_construction': '施工与调试阶段',
+  '05_acceptance': '验收与移交阶段',
+  '06_review': '复盘与归档阶段',
+  '07_misc': '其他杂项',
+};
+
+function buildUploadGuide(def: Level1Def | Level2Def): string {
+  const configured = def.usageDescription?.trim();
+  if (configured) return configured;
+
+  const subject = 'secondName' in def ? def.secondName || def.name : def.name;
+  const stageLabel = archiveStageLabels[def.stageCode] ?? '项目交付阶段';
+  return `请上传${stageLabel}“${subject}”相关的最终版文件、过程记录、审批或签字确认材料；如该项暂不适用，请上传说明文件或在备注中说明原因。`;
+}
+
 export async function seedArchiveTemplates(prisma: PrismaClient) {
   console.log('Seeding archive templates...');
 
@@ -69,7 +88,7 @@ export async function seedArchiveTemplates(prisma: PrismaClient) {
       needReview: def.needReview ?? false,
       responsibleRole: def.responsibleRole ?? null,
       reviewRole: def.reviewRole ?? null,
-      usageDescription: def.usageDescription ?? null,
+      usageDescription: buildUploadGuide(def),
       allowedFileTypes: def.allowedFileTypes ?? DEFAULT_FILE_TYPES,
       sortOrder: def.itemNo * 10,
     };
@@ -112,7 +131,7 @@ export async function seedArchiveTemplates(prisma: PrismaClient) {
       level: 2,
       name: def.name,
       secondName: def.secondName,
-      usageDescription: def.usageDescription ?? null,
+      usageDescription: buildUploadGuide(def),
       isRequired: true,
       allowedFileTypes: DEFAULT_FILE_TYPES,
       sortOrder: def.itemNo,

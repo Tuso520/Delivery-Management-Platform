@@ -149,6 +149,7 @@ model Project {
   exchangeRateDate   DateTime?     @map("exchange_rate_date")
   exchangeRateSource String?       @map("exchange_rate_source") @db.VarChar(50)
   projectLanguage    String?       @map("project_language") @db.VarChar(10)
+  salesOwnerId       String?       @map("sales_owner_id") @db.VarChar(36)
   projectManagerId   String?       @map("project_manager_id") @db.VarChar(36)
   electricLeaderId   String?       @map("electric_leader_id") @db.VarChar(36)
   softwareLeaderId   String?       @map("software_leader_id") @db.VarChar(36)

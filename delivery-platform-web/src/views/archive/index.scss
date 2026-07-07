@@ -169,10 +169,22 @@
   overflow: hidden;
 }
 
+.archive-review-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .archive-table :deep(.arco-table-container),
 .archive-table :deep(.arco-scrollbar),
 .archive-table :deep(.arco-scrollbar-container) {
   height: 100%;
+}
+
+.archive-table :deep(.arco-table-body),
+.archive-table :deep(.arco-table-content-scroll-y) {
+  min-height: 0;
 }
 
 .archive-table :deep(.arco-table-th),

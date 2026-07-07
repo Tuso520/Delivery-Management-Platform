@@ -34,6 +34,7 @@ const dictionaries: DictionarySeed[] = [
       { value: '04_construction', label: '施工与安装' },
       { value: '05_acceptance', label: '调试与验收' },
       { value: '06_review', label: '收尾与复盘' },
+      { value: '07_misc', label: '其他杂项' },
     ],
   },
   {

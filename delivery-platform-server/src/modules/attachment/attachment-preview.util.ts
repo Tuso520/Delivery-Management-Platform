@@ -249,33 +249,39 @@ async function renderXlsx(buffer: Buffer, fileName: string): Promise<string> {
       .slice(0, 120)
       .map((row) => readXlsxRow(row, sharedStrings));
 
-    const visibleRows = rows.filter((row) => row.some(Boolean));
-    if (!visibleRows.length) continue;
-
-    const columnCount = Math.min(
-      Math.max(...visibleRows.map((row) => row.length), 1),
-      32,
-    );
+    const rowGroups = splitXlsxTableGroups(rows);
+    if (!rowGroups.length) continue;
     const sheetTitle = workbookSheetNames[index] || `工作表 ${index + 1}`;
 
     tables.push(`
       <section class="preview-sheet">
         <h3>${escapeHtml(sheetTitle)}</h3>
-        <div class="preview-table-wrap">
-          <table>
-            <tbody>
-              ${visibleRows
-                .map((row) => `
-                  <tr>
-                    ${Array.from({ length: columnCount }, (_, cellIndex) =>
-                      `<td>${escapeHtml(row[cellIndex] ?? '')}</td>`,
-                    ).join('')}
-                  </tr>
-                `)
-                .join('\n')}
-            </tbody>
-          </table>
-        </div>
+        ${rowGroups.map((visibleRows, groupIndex) => {
+          const columnCount = Math.min(
+            Math.max(...visibleRows.map((row) => row.length), 1),
+            32,
+          );
+          return `
+            <div class="preview-table-block">
+              ${rowGroups.length > 1 ? `<div class="preview-table-caption">表 ${groupIndex + 1}</div>` : ''}
+              <div class="preview-table-wrap">
+                <table>
+                  <tbody>
+                    ${visibleRows
+                      .map((row) => `
+                        <tr>
+                          ${Array.from({ length: columnCount }, (_, cellIndex) =>
+                            `<td>${escapeHtml(row[cellIndex] ?? '')}</td>`,
+                          ).join('')}
+                        </tr>
+                      `)
+                      .join('\n')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          `;
+        }).join('\n')}
       </section>
     `);
   }
@@ -380,6 +386,29 @@ function readXlsxCellValue(cell: unknown, sharedStrings: string[]): string {
     return rawValue;
   }
   return rawValue;
+}
+
+function splitXlsxTableGroups(rows: string[][]): string[][][] {
+  const groups: string[][][] = [];
+  let current: string[][] = [];
+
+  for (const row of rows) {
+    const hasValue = row.some((cell) => cell.trim());
+    if (!hasValue) {
+      if (current.length) {
+        groups.push(current);
+        current = [];
+      }
+      continue;
+    }
+    current.push(row);
+  }
+
+  if (current.length) {
+    groups.push(current);
+  }
+
+  return groups;
 }
 
 function columnNameToIndex(reference: string): number {

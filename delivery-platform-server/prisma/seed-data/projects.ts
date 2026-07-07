@@ -21,6 +21,7 @@ export async function seedProjects(prisma: PrismaClient) {
       exchangeRateDate: new Date('2026-06-22'),
       exchangeRateSource: 'seed',
       projectLanguage: 'zh-CN',
+      salesOwnerId: null,
       projectStatus: 'Active' as const,
       riskLevel: 'Medium' as const,
       currentStage: '04_construction',
@@ -42,6 +43,7 @@ export async function seedProjects(prisma: PrismaClient) {
       exchangeRateDate: new Date('2026-06-22'),
       exchangeRateSource: 'seed',
       projectLanguage: 'zh-CN',
+      salesOwnerId: null,
       projectStatus: 'Active' as const,
       riskLevel: 'Low' as const,
       currentStage: '02_design',
@@ -63,6 +65,7 @@ export async function seedProjects(prisma: PrismaClient) {
       exchangeRateDate: new Date('2026-06-22'),
       exchangeRateSource: 'seed',
       projectLanguage: 'en-US',
+      salesOwnerId: null,
       projectStatus: 'Draft' as const,
       riskLevel: 'Low' as const,
       currentStage: '01_presale',
@@ -84,6 +87,7 @@ export async function seedProjects(prisma: PrismaClient) {
       exchangeRateDate: new Date('2026-06-22'),
       exchangeRateSource: 'seed',
       projectLanguage: 'en-US',
+      salesOwnerId: null,
       projectStatus: 'Active' as const,
       riskLevel: 'High' as const,
       currentStage: '05_acceptance',
@@ -105,6 +109,7 @@ export async function seedProjects(prisma: PrismaClient) {
       exchangeRateDate: new Date('2026-06-22'),
       exchangeRateSource: 'seed',
       projectLanguage: 'en-US',
+      salesOwnerId: null,
       projectStatus: 'Suspended' as const,
       riskLevel: 'High' as const,
       currentStage: '04_construction',
@@ -126,6 +131,7 @@ export async function seedProjects(prisma: PrismaClient) {
       exchangeRateDate: new Date('2026-06-22'),
       exchangeRateSource: 'seed',
       projectLanguage: 'en-US',
+      salesOwnerId: null,
       projectStatus: 'Active' as const,
       riskLevel: 'Medium' as const,
       currentStage: '03_procurement',
@@ -147,6 +153,7 @@ export async function seedProjects(prisma: PrismaClient) {
       exchangeRateDate: new Date('2026-06-22'),
       exchangeRateSource: 'seed',
       projectLanguage: 'en-US',
+      salesOwnerId: null,
       projectStatus: 'Accepted' as const,
       riskLevel: 'Low' as const,
       currentStage: '06_review',
@@ -169,6 +176,7 @@ export async function seedProjects(prisma: PrismaClient) {
       exchangeRateDate: new Date('2026-06-22'),
       exchangeRateSource: 'seed',
       projectLanguage: 'th-TH',
+      salesOwnerId: null,
       projectStatus: 'Draft' as const,
       riskLevel: 'Medium' as const,
       currentStage: '01_presale',
@@ -190,6 +198,7 @@ export async function seedProjects(prisma: PrismaClient) {
       exchangeRateDate: new Date('2026-06-22'),
       exchangeRateSource: 'seed',
       projectLanguage: 'vi-VN',
+      salesOwnerId: null,
       projectStatus: 'Delayed' as const,
       riskLevel: 'Critical' as const,
       currentStage: '04_construction',
@@ -211,6 +220,7 @@ export async function seedProjects(prisma: PrismaClient) {
       exchangeRateDate: new Date('2026-06-22'),
       exchangeRateSource: 'seed',
       projectLanguage: 'en-US',
+      salesOwnerId: null,
       projectStatus: 'Archived' as const,
       riskLevel: 'Low' as const,
       currentStage: '06_review',
@@ -268,12 +278,43 @@ export async function seedProjects(prisma: PrismaClient) {
     userMap.set(user.username, user.id);
   }
 
+  const salesOwnerAssignments: Record<string, string> = {
+    'VN-LG-2026-001': 'country_chen',
+    'TH-PTT-2026-001': 'country_deng',
+    'SG-ESA-2026-001': 'delivery_mgr',
+    'ID-FMCS-2026-001': 'country_chen',
+    'MY-CL-2026-001': 'country_deng',
+    'OM-JA-2026-001': 'delivery_mgr',
+    'AE-AB-2026-001': 'country_chen',
+    'TH-SC-2026-002': 'country_deng',
+    'VN-HN-2026-002': 'country_chen',
+    'ID-JK-2026-002': 'delivery_mgr',
+  };
+
+  for (const project of createdProjects) {
+    const salesUsername = salesOwnerAssignments[project.projectCode];
+    const salesOwnerId = salesUsername ? userMap.get(salesUsername) : undefined;
+    if (!salesOwnerId) continue;
+    await prisma.project.update({
+      where: { id: project.id },
+      data: { salesOwnerId },
+    });
+  }
+
   // ── Member assignments per project ────────────────────────────────
   const memberAssignments: Array<{
     projectCode: string;
     username: string;
     projectRole: string;
   }> = [];
+
+  for (const [projectCode, username] of Object.entries(salesOwnerAssignments)) {
+    memberAssignments.push({
+      projectCode,
+      username,
+      projectRole: 'SALES_OWNER',
+    });
+  }
 
   // admin is PM of ALL projects
   for (const p of createdProjects) {

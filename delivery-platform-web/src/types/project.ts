@@ -14,6 +14,7 @@ export interface Project {
   exchangeRateDate?: string
   exchangeRateSource?: string
   projectLanguage?: string
+  salesOwnerId?: string
   projectManagerId?: string
   electricLeaderId?: string
   softwareLeaderId?: string
@@ -59,6 +60,7 @@ export interface CreateProjectDto {
   baseCurrency?: string
   contractAmount?: number
   projectLanguage?: string
+  salesOwnerId?: string
   projectManagerId?: string
   electricLeaderId?: string
   softwareLeaderId?: string
@@ -80,6 +82,7 @@ export interface UpdateProjectDto {
   baseCurrency?: string
   contractAmount?: number
   projectLanguage?: string
+  salesOwnerId?: string
   projectManagerId?: string
   electricLeaderId?: string
   softwareLeaderId?: string
@@ -174,6 +177,7 @@ export const STAGE_OPTIONS = [
 ]
 
 export const PROJECT_ROLE_OPTIONS = [
+  { value: 'SALES_OWNER', label: '销售负责人' },
   { value: 'PROJECT_MANAGER', label: '项目经理' },
   { value: 'DELIVERY_MANAGER', label: '交付经理' },
   { value: 'COUNTRY_MANAGER', label: '国家负责人' },

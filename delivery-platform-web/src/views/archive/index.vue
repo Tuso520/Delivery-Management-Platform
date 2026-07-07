@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { archiveApi } from '@/api/archive'
 import { archiveTemplateApi } from '@/api/archive-template'
 import { fileApi } from '@/api/file'
 import { projectApi } from '@/api/project'
+import { reviewApi } from '@/api/review'
 import AttachmentPreviewModal from '@/components/AttachmentPreviewModal/index.vue'
 import FileUploader from '@/components/FileUploader/index.vue'
 import { arcoConfirm } from '@/utils/arco-dialog'
@@ -18,11 +19,17 @@ import type {
   ArchiveTreeData,
 } from '@/types/archive'
 import { ARCHIVE_ITEM_STATUS_OPTIONS } from '@/types/archive'
+import type { PendingReview } from '@/types/file'
 import type { Project } from '@/types/project'
 import type { TagType } from '@/types/ui'
 import ProjectRecordsPanel from './components/ProjectRecordsPanel.vue'
+import ReviewDialog from '../review/components/ReviewDialog.vue'
 
 type ArchiveFile = NonNullable<ArchiveItem['files']>[number]
+type PreviewTarget = {
+  id: string
+  originalName: string
+}
 
 interface UploadPoint extends ArchiveItem {
   parentName?: string
@@ -43,13 +50,18 @@ const showGenerateDialog = ref(false)
 const selectedTemplateId = ref('')
 const generatingArchive = ref(false)
 const activeStage = ref('')
-const activeArchiveView = ref<'directory' | 'records'>('directory')
+const activeArchiveView = ref<'directory' | 'records' | 'reviews'>('directory')
 const showItemDetail = ref(false)
 const showProjectDetail = ref(false)
 const currentItem = ref<ArchiveItem | null>(null)
 const loadingItem = ref(false)
 const previewVisible = ref(false)
-const previewTarget = ref<ArchiveFile | null>(null)
+const previewTarget = ref<PreviewTarget | null>(null)
+const pendingReviews = ref<PendingReview[]>([])
+const loadingReviews = ref(false)
+const reviewDialogVisible = ref(false)
+const selectedReviewFileId = ref('')
+const selectedReviewFileName = ref('')
 
 const defaultAllowedTypes = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'jpg', 'jpeg', 'png']
 
@@ -70,6 +82,10 @@ const currentStageItems = computed<UploadPoint[]>(() => {
   const stage = archiveTree.value.stages.find((item) => item.stageCode === activeStage.value)
   return flattenUploadPoints(stage?.items || [])
 })
+
+const currentProjectReviews = computed(() =>
+  pendingReviews.value.filter((review) => review.file.project?.id === selectedProjectId.value),
+)
 
 async function fetchProjects(): Promise<void> {
   loadingProjects.value = true
@@ -145,6 +161,17 @@ function handleProjectChange(): void {
   fetchArchive()
 }
 
+async function fetchPendingReviews(): Promise<void> {
+  loadingReviews.value = true
+  try {
+    pendingReviews.value = await reviewApi.getPending()
+  } catch {
+    pendingReviews.value = []
+  } finally {
+    loadingReviews.value = false
+  }
+}
+
 function openGenerateDialog(): void {
   selectedTemplateId.value = ''
   fetchTemplates()
@@ -188,11 +215,38 @@ async function reloadCurrentItem(): Promise<void> {
 async function handleUploadSuccess(): Promise<void> {
   Message.success('文件已上传，并自动进入审批流')
   await reloadCurrentItem()
+  await fetchPendingReviews()
 }
 
 function openFilePreview(file: ArchiveFile): void {
-  previewTarget.value = file
+  previewTarget.value = {
+    id: file.id,
+    originalName: file.originalName,
+  }
   previewVisible.value = true
+}
+
+function openReviewPreview(row: PendingReview): void {
+  previewTarget.value = {
+    id: row.fileId,
+    originalName: row.file.fileName,
+  }
+  previewVisible.value = true
+}
+
+function openReviewDialog(row: PendingReview): void {
+  selectedReviewFileId.value = row.fileId
+  selectedReviewFileName.value = row.file.fileName
+  reviewDialogVisible.value = true
+}
+
+async function handleReviewComplete(): Promise<void> {
+  reviewDialogVisible.value = false
+  Message.success('审核完成')
+  await Promise.all([fetchPendingReviews(), fetchArchive()])
+  if (currentItem.value?.id) {
+    await reloadCurrentItem()
+  }
 }
 
 async function downloadFile(file: ArchiveFile): Promise<void> {
@@ -242,6 +296,12 @@ function openProjectDetail(): void {
 }
 
 onMounted(fetchProjects)
+
+watch(activeArchiveView, (view) => {
+  if (view === 'reviews') {
+    fetchPendingReviews()
+  }
+})
 </script>
 
 <template>
@@ -280,6 +340,7 @@ onMounted(fetchProjects)
             :options="[
               { label: '档案目录', value: 'directory' },
               { label: '上传记录', value: 'records' },
+              { label: '待审核', value: 'reviews' },
             ]"
           />
           <a-button size="small" type="primary" :disabled="!selectedProjectId" @click="openGenerateDialog">
@@ -293,6 +354,64 @@ onMounted(fetchProjects)
         :project-id="selectedProjectId"
         :project-name="selectedProjectName"
       />
+
+      <div v-else-if="activeArchiveView === 'reviews' && selectedProjectId" class="archive-review-panel">
+        <div class="stage-title-row">
+          <h3>待审核文件</h3>
+          <span>上传后自动进入这里，由负责人或交付管理人员完成预览、通过或驳回。</span>
+        </div>
+        <a-table
+          :loading="loadingReviews"
+          :data="currentProjectReviews"
+          row-key="id"
+          border
+          stripe
+          class="archive-table"
+          empty-text="当前项目暂无待审核文件"
+          :scroll="{ y: '100%', x: 980 }"
+        >
+          <a-table-column label="文件名" :min-width="260">
+            <template #default="{ row }">
+              <button class="file-link" type="button" @click="openReviewPreview(row)">
+                {{ row.file.fileName }}
+              </button>
+            </template>
+          </a-table-column>
+          <a-table-column label="档案项" :min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ row.archiveItem.name }}
+            </template>
+          </a-table-column>
+          <a-table-column label="版本" :width="76" align="center">
+            <template #default="{ row }">
+              {{ row.file.versionNo }}
+            </template>
+          </a-table-column>
+          <a-table-column label="审核人" :width="108">
+            <template #default="{ row }">
+              {{ row.reviewer.realName }}
+            </template>
+          </a-table-column>
+          <a-table-column label="提交时间" :width="152">
+            <template #default="{ row }">
+              {{ formatDate(row.createdAt) }}
+            </template>
+          </a-table-column>
+          <a-table-column label="状态" :width="90" align="center">
+            <template #default>
+              <a-tag color="orange" size="small">待审核</a-tag>
+            </template>
+          </a-table-column>
+          <a-table-column label="操作" :width="124" fixed="right">
+            <template #default="{ row }">
+              <a-space size="mini" :wrap="false">
+                <a-button type="text" size="mini" @click="openReviewPreview(row)">预览</a-button>
+                <a-button type="primary" size="mini" @click="openReviewDialog(row)">审核</a-button>
+              </a-space>
+            </template>
+          </a-table-column>
+        </a-table>
+      </div>
 
       <template v-else-if="selectedProjectId">
         <a-spin :loading="loadingArchive" class="archive-spin">
@@ -334,6 +453,7 @@ onMounted(fetchProjects)
               stripe
               class="archive-table"
               empty-text="当前阶段暂无档案项"
+              :scroll="{ y: '100%', x: 1080 }"
             >
               <a-table-column label="档案项" :min-width="260">
                 <template #default="{ row }">
@@ -551,6 +671,13 @@ onMounted(fetchProjects)
       source="file"
       :attachment-id="previewTarget?.id"
       :title="previewTarget?.originalName || '档案文件预览'"
+    />
+
+    <ReviewDialog
+      v-model:visible="reviewDialogVisible"
+      :file-id="selectedReviewFileId"
+      :file-name="selectedReviewFileName"
+      @review-complete="handleReviewComplete"
     />
   </div>
 </template>

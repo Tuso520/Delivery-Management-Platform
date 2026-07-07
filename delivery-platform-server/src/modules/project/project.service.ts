@@ -29,6 +29,7 @@ interface ProjectListItem {
   exchangeRateDate: Date | null;
   exchangeRateSource: string | null;
   projectLanguage: string | null;
+  salesOwnerId: string | null;
   currentStage: string | null;
   projectStatus: string;
   riskLevel: string;
@@ -102,6 +103,7 @@ export class ProjectService {
           exchangeRateDate: true,
           exchangeRateSource: true,
           projectLanguage: true,
+          salesOwnerId: true,
           currentStage: true,
           projectStatus: true,
           riskLevel: true,
@@ -238,6 +240,7 @@ export class ProjectService {
         contractAmount: dto.contractAmount ?? undefined,
         ...amountData,
         projectLanguage: dto.projectLanguage,
+        salesOwnerId: dto.salesOwnerId,
         projectManagerId: dto.projectManagerId,
         electricLeaderId: dto.electricLeaderId,
         softwareLeaderId: dto.softwareLeaderId,
@@ -293,6 +296,7 @@ export class ProjectService {
       Object.assign(updateData, amountData);
     }
     if (dto.projectLanguage !== undefined) updateData.projectLanguage = dto.projectLanguage;
+    if (dto.salesOwnerId !== undefined) updateData.salesOwnerId = dto.salesOwnerId;
     if (dto.projectManagerId !== undefined) updateData.projectManagerId = dto.projectManagerId;
     if (dto.electricLeaderId !== undefined) updateData.electricLeaderId = dto.electricLeaderId;
     if (dto.softwareLeaderId !== undefined) updateData.softwareLeaderId = dto.softwareLeaderId;
@@ -401,6 +405,7 @@ export class ProjectService {
     creatorId?: string,
   ): Promise<void> {
     const assignments = [
+      [dto.salesOwnerId, 'SALES_OWNER'],
       [dto.projectManagerId, 'PROJECT_MANAGER'],
       [dto.electricLeaderId, 'ELEC_LEADER'],
       [dto.softwareLeaderId, 'SOFTWARE_LEADER'],

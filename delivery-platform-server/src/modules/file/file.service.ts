@@ -682,19 +682,19 @@ export class FileService {
     contentUrl: string,
   ): string {
     const title = escapeHtml(preview.title || preview.fileName);
-    const safeContentUrl = escapeHtml(contentUrl);
+    const safeContentUrl = escapeAttribute(contentUrl);
     const body =
       preview.previewKind === 'image'
         ? preview.html || `<img class="preview-image" src="${safeContentUrl}" alt="${title}" />`
         : preview.previewKind === 'pdf'
           ? `<main class="pdf-reader">
-              <section class="pdf-text-panel pdf-text-primary" aria-label="PDF 文本预览">
-                ${preview.html || '<section class="preview-empty"><h2>PDF 预览</h2><p>当前文件未提取到可读文本层，请使用下方原始 PDF 阅读器查看。</p></section>'}
+              <section class="pdf-native-main" aria-label="PDF 原始预览">
+                <iframe class="preview-frame" src="${safeContentUrl}#toolbar=1&navpanes=0&view=FitH" title="${title}"></iframe>
               </section>
-              <details class="pdf-native-details">
-                <summary>打开原始 PDF 阅读器</summary>
-                <section class="pdf-native-panel">
-                  <iframe class="preview-frame" src="${safeContentUrl}#toolbar=1&navpanes=0&view=FitH" title="${title}"></iframe>
+              <details class="pdf-text-details">
+                <summary>查看 PDF 文本层</summary>
+                <section class="pdf-text-panel pdf-text-primary" aria-label="PDF 文本预览">
+                  ${preview.html || '<section class="preview-empty"><h2>PDF 预览</h2><p>当前文件未提取到可读文本层，请使用上方原始 PDF 阅读器查看。</p></section>'}
                 </section>
               </details>
             </main>`
@@ -724,9 +724,12 @@ export class FileService {
     .preview-image { display: block; max-width: 100%; max-height: calc(100vh - 92px); margin: 0 auto; object-fit: contain; background: #fff; border: 1px solid #e5e6eb; }
     .preview-frame { width: 100%; height: 100%; border: 0; background: #fff; }
     .pdf-reader { display: grid; gap: 12px; min-height: calc(100vh - 92px); }
+    .pdf-native-main { width: min(1120px, 100%); height: calc(100vh - 92px); min-height: 720px; margin: 0 auto; border: 1px solid #d9dfe8; background: #fff; box-shadow: 0 16px 42px rgba(15, 23, 42, 0.08); }
     .pdf-native-details { width: min(960px, 100%); margin: 0 auto; border: 1px solid #d9dfe8; background: #fff; }
     .pdf-native-details summary { cursor: pointer; padding: 10px 14px; color: #4e5969; font-size: 13px; }
     .pdf-native-panel { height: min(760px, calc(100vh - 92px)); min-height: 520px; border-top: 1px solid #d9dfe8; background: #fff; }
+    .pdf-text-details { width: min(1120px, 100%); margin: 0 auto; border: 1px solid #d9dfe8; background: #fff; }
+    .pdf-text-details summary { cursor: pointer; padding: 10px 14px; color: #4e5969; font-size: 13px; }
     .pdf-text-panel { overflow: auto; }
     .pdf-text-primary { width: min(960px, 100%); min-height: calc(100vh - 92px); margin: 0 auto; }
     .pdf-page-fallback, .word-page { border: 1px solid #d9dfe8; background: #fff; }
@@ -743,6 +746,9 @@ export class FileService {
     .excel-workbook { display: grid; gap: 18px; }
     .preview-sheet { margin: 0; padding: 0 0 38px; background: #fff; }
     .preview-sheet h3 { position: sticky; top: 0; z-index: 1; margin: 0; padding: 10px 14px; border-bottom: 1px solid #d9dfe8; background: #f2f5f9; font-size: 13px; font-weight: 650; }
+    .preview-table-block { padding: 12px; }
+    .preview-table-block + .preview-table-block { border-top: 1px dashed #d9dfe8; }
+    .preview-table-caption { margin-bottom: 8px; color: #4e5969; font-size: 12px; font-weight: 650; }
     .preview-table-wrap { width: 100%; max-height: 70vh; overflow: auto; resize: both; padding: 10px; background: #fff; }
     .preview-document table { width: max-content; min-width: 100%; border-collapse: collapse; table-layout: auto; font-size: 13px; background: #fff; }
     .preview-document td, .preview-document th { min-width: 112px; max-width: 360px; height: 34px; padding: 7px 9px; border: 1px solid #d9dfe8; vertical-align: top; overflow: auto; resize: both; word-break: break-word; }
@@ -755,7 +761,7 @@ export class FileService {
     .preview-document p { margin: 0 0 10px; color: #4e5969; line-height: 1.75; white-space: pre-wrap; }
     .preview-text { padding: 24px 28px; border: 1px solid #e5e6eb; background: #fff; overflow: auto; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
     .preview-empty { display: grid; place-content: center; padding: 24px 28px; border: 1px solid #e5e6eb; background: #fff; text-align: center; color: #4e5969; }
-    @media (max-width: 960px) { .pdf-native-panel { min-height: 520px; } .pdf-page-fallback { padding: 26px 24px; } .word-page { min-height: auto; padding: 40px 28px; } }
+    @media (max-width: 960px) { .pdf-native-main { min-height: 520px; } .pdf-native-panel { min-height: 520px; } .pdf-page-fallback { padding: 26px 24px; } .word-page { min-height: auto; padding: 40px 28px; } }
   </style>
 </head>
 <body>
@@ -827,4 +833,8 @@ function escapeHtml(value: string): string {
     .replace(/>/gu, '&gt;')
     .replace(/"/gu, '&quot;')
     .replace(/'/gu, '&#39;');
+}
+
+function escapeAttribute(value: string): string {
+  return escapeHtml(value).replace(/`/gu, '&#96;');
 }

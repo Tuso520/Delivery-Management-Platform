@@ -61,11 +61,10 @@ const formData = reactive({
   baseCurrency: 'CNY',
   contractAmount: undefined as number | undefined,
   projectLanguage: '',
+  salesOwnerId: '' as string,
   projectManagerId: '' as string,
   electricLeaderId: '' as string,
   softwareLeaderId: '' as string,
-  purchaseOwnerId: '' as string,
-  financeOwnerId: '' as string,
   currentStage: 'Initiation',
   riskLevel: 'Low',
   projectStatus: 'Draft',
@@ -144,11 +143,10 @@ const loadProject = async () => {
     baseCurrency: project.baseCurrency || '',
     contractAmount: project.contractAmount,
     projectLanguage: project.projectLanguage || '',
+    salesOwnerId: project.salesOwnerId || '',
     projectManagerId: project.projectManagerId || '',
     electricLeaderId: project.electricLeaderId || '',
     softwareLeaderId: project.softwareLeaderId || '',
-    purchaseOwnerId: project.purchaseOwnerId || '',
-    financeOwnerId: project.financeOwnerId || '',
     currentStage: project.currentStage || 'Initiation',
     riskLevel: project.riskLevel,
     projectStatus: project.projectStatus,
@@ -174,6 +172,7 @@ const handleSubmit = async () => {
       baseCurrency: formData.baseCurrency || undefined,
       contractAmount: formData.contractAmount,
       projectLanguage: formData.projectLanguage || undefined,
+      salesOwnerId: formData.salesOwnerId || undefined,
       projectManagerId: formData.projectManagerId || undefined,
       electricLeaderId: formData.electricLeaderId || undefined,
       softwareLeaderId: formData.softwareLeaderId || undefined,
@@ -446,6 +445,24 @@ onMounted(async () => {
         </a-divider>
         <a-row :gutter="20">
           <a-col :span="12">
+            <a-form-item label="销售负责人">
+              <a-select
+                v-model="formData.salesOwnerId"
+                filterable
+                placeholder="请选择"
+                clearable
+                style="width: 100%"
+              >
+                <a-option
+                  v-for="item in userOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
             <a-form-item label="项目经理">
               <a-select
                 v-model="formData.projectManagerId"
@@ -463,6 +480,8 @@ onMounted(async () => {
               </a-select>
             </a-form-item>
           </a-col>
+        </a-row>
+        <a-row :gutter="20">
           <a-col :span="12">
             <a-form-item label="电气负责人">
               <a-select
@@ -481,8 +500,6 @@ onMounted(async () => {
               </a-select>
             </a-form-item>
           </a-col>
-        </a-row>
-        <a-row :gutter="20">
           <a-col :span="12">
             <a-form-item label="软件负责人">
               <a-select

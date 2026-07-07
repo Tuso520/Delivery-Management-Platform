@@ -297,6 +297,7 @@ async function loadPreview(): Promise<void> {
       objectUrl.value = URL.createObjectURL(blob)
     } else if (nextPreview.previewKind === 'pdf') {
       const blob = await loadPreviewBlob(props.attachmentId)
+      objectUrl.value = URL.createObjectURL(blob)
       await renderPdf(blob, nextPreview.html || '')
     } else if (nextPreview.previewKind === 'html') {
       await enhanceHtmlPreview()
@@ -342,8 +343,18 @@ watch(() => props.source, loadPreview)
           class="preview-html pdf-fallback-html"
           v-html="pdfFallbackHtml"
         />
+        <section v-if="objectUrl" class="pdf-native-reader" :class="{ open: pdfRenderError }">
+          <details :open="Boolean(pdfRenderError)">
+            <summary>浏览器原始 PDF 阅读器</summary>
+            <iframe
+              class="pdf-native-frame"
+              :src="`${objectUrl}#toolbar=1&navpanes=0&view=FitH`"
+              title="PDF 原始预览"
+            />
+          </details>
+        </section>
         <a-empty
-          v-else-if="pdfRenderError"
+          v-else-if="pdfRenderError && !objectUrl"
           :description="pdfRenderError"
           class="preview-empty"
         />
@@ -475,6 +486,34 @@ watch(() => props.source, loadPreview)
   height: auto !important;
 }
 
+.pdf-native-reader {
+  width: min(1040px, 100%);
+  margin: 0 auto 10px;
+  border: 1px solid #d9dfe8;
+  background: #fff;
+
+  summary {
+    cursor: pointer;
+    padding: 10px 12px;
+    color: #4e5969;
+    font-size: 13px;
+    user-select: none;
+  }
+
+  &.open {
+    min-height: 560px;
+  }
+}
+
+.pdf-native-frame {
+  width: 100%;
+  height: min(72vh, 760px);
+  min-height: 520px;
+  border: 0;
+  border-top: 1px solid #d9dfe8;
+  background: #fff;
+}
+
 .markdown-preview {
   padding: 22px 28px;
   border: 1px solid var(--color-border-2);
@@ -573,13 +612,28 @@ watch(() => props.source, loadPreview)
   font-weight: 650;
 }
 
+.preview-html :deep(.preview-table-block) {
+  padding: 12px;
+}
+
+.preview-html :deep(.preview-table-block + .preview-table-block) {
+  border-top: 1px dashed #d9dfe8;
+}
+
+.preview-html :deep(.preview-table-caption) {
+  margin-bottom: 8px;
+  color: #4e5969;
+  font-size: 12px;
+  font-weight: 650;
+}
+
 .preview-html :deep(.preview-table-wrap) {
   width: 100%;
   max-height: 58vh;
   overflow: auto;
   overscroll-behavior: contain;
   resize: both;
-  padding: 12px;
+  padding: 10px;
   background: #fff;
   cursor: grab;
   user-select: auto;
