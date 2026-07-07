@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { MdPreview } from 'md-editor-v3'
 import 'md-editor-v3/lib/style.css'
+import * as pdfjsLib from 'pdfjs-dist'
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { attachmentApi } from '@/api/attachment'
 import type { AttachmentPreview } from '@/api/attachment'
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
 const props = withDefaults(defineProps<{
   attachmentId?: string
@@ -18,6 +22,10 @@ const props = withDefaults(defineProps<{
 const loading = ref(false)
 const preview = ref<AttachmentPreview>()
 const objectUrl = ref('')
+const pdfContainerRef = ref<HTMLElement>()
+const pdfPageCount = ref(0)
+const pdfRenderError = ref('')
+let pdfRenderToken = 0
 
 const isMarkdown = computed(() => (preview.value?.fileExt || '').toLowerCase() === 'md')
 const paneStyle = computed(() => ({ '--preview-pane-height': props.height }))
@@ -29,8 +37,78 @@ function revokeObjectUrl(): void {
   }
 }
 
+function clearPdfPreview(): void {
+  pdfRenderToken += 1
+  pdfPageCount.value = 0
+  pdfRenderError.value = ''
+  if (pdfContainerRef.value) {
+    pdfContainerRef.value.innerHTML = ''
+  }
+}
+
+async function renderPdf(blob: Blob): Promise<void> {
+  const token = ++pdfRenderToken
+  pdfPageCount.value = 0
+  pdfRenderError.value = ''
+  await nextTick()
+
+  const container = pdfContainerRef.value
+  if (!container) return
+
+  container.innerHTML = ''
+  try {
+    const loadingTask = pdfjsLib.getDocument({
+      data: await blob.arrayBuffer(),
+    })
+    const pdf = await loadingTask.promise
+    if (token !== pdfRenderToken) {
+      await loadingTask.destroy()
+      return
+    }
+
+    pdfPageCount.value = pdf.numPages
+    const scale = 1.35
+    const pixelRatio = window.devicePixelRatio || 1
+
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      if (token !== pdfRenderToken) break
+      const page = await pdf.getPage(pageNumber)
+      const viewport = page.getViewport({ scale })
+      const wrapper = document.createElement('section')
+      wrapper.className = 'pdf-page-shell'
+
+      const pageLabel = document.createElement('div')
+      pageLabel.className = 'pdf-page-label'
+      pageLabel.textContent = `${pageNumber} / ${pdf.numPages}`
+
+      const canvas = document.createElement('canvas')
+      canvas.className = 'pdf-page-canvas'
+      canvas.width = Math.floor(viewport.width * pixelRatio)
+      canvas.height = Math.floor(viewport.height * pixelRatio)
+      canvas.style.width = `${Math.floor(viewport.width)}px`
+      canvas.style.height = `${Math.floor(viewport.height)}px`
+
+      const context = canvas.getContext('2d')
+      if (!context) throw new Error('PDF canvas context unavailable')
+      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
+
+      wrapper.append(pageLabel, canvas)
+      container.appendChild(wrapper)
+      await page.render({ canvas, canvasContext: context, viewport }).promise
+    }
+
+    await loadingTask.destroy()
+  } catch (error) {
+    if (token === pdfRenderToken) {
+      console.error(error)
+      pdfRenderError.value = 'PDF 内容渲染失败，请下载后查看原文件。'
+    }
+  }
+}
+
 async function loadPreview(): Promise<void> {
   revokeObjectUrl()
+  clearPdfPreview()
   preview.value = undefined
   if (!props.attachmentId) return
 
@@ -39,9 +117,12 @@ async function loadPreview(): Promise<void> {
     const nextPreview = await attachmentApi.getPreview(props.attachmentId)
     preview.value = nextPreview
 
-    if (nextPreview.previewKind === 'image' || nextPreview.previewKind === 'pdf') {
+    if (nextPreview.previewKind === 'image') {
       const blob = await attachmentApi.getContent(props.attachmentId)
       objectUrl.value = URL.createObjectURL(blob)
+    } else if (nextPreview.previewKind === 'pdf') {
+      const blob = await attachmentApi.getContent(props.attachmentId)
+      await renderPdf(blob)
     }
   } catch {
     Message.error('预览内容加载失败')
@@ -51,7 +132,10 @@ async function loadPreview(): Promise<void> {
 }
 
 watch(() => props.attachmentId, loadPreview, { immediate: true })
-onBeforeUnmount(revokeObjectUrl)
+onBeforeUnmount(() => {
+  revokeObjectUrl()
+  clearPdfPreview()
+})
 </script>
 
 <template>
@@ -64,12 +148,21 @@ onBeforeUnmount(revokeObjectUrl)
         :alt="preview.title || preview.fileName"
       />
 
-      <iframe
-        v-else-if="preview.previewKind === 'pdf' && objectUrl"
-        class="preview-native-frame"
-        :src="`${objectUrl}#toolbar=1&navpanes=0&view=FitH`"
-        :title="preview.title || preview.fileName"
-      />
+      <div
+        v-else-if="preview.previewKind === 'pdf'"
+        class="preview-pdf"
+      >
+        <div class="pdf-toolbar">
+          <span>PDF 只读预览</span>
+          <span v-if="pdfPageCount">{{ pdfPageCount }} 页</span>
+        </div>
+        <div ref="pdfContainerRef" class="pdf-page-list" />
+        <a-empty
+          v-if="pdfRenderError"
+          :description="pdfRenderError"
+          class="preview-empty"
+        />
+      </div>
 
       <MdPreview
         v-else-if="preview.previewKind === 'text' && isMarkdown"
@@ -83,7 +176,7 @@ onBeforeUnmount(revokeObjectUrl)
       </pre>
 
       <div
-        v-else-if="preview.previewKind === 'html' || preview.previewKind === 'pdf'"
+        v-else-if="preview.previewKind === 'html'"
         class="preview-html"
         v-html="preview.html || ''"
       />
@@ -132,21 +225,67 @@ onBeforeUnmount(revokeObjectUrl)
   object-fit: contain;
 }
 
-.preview-native-frame {
-  width: 100%;
-  height: 100%;
-  min-height: 560px;
-  border: 1px solid var(--color-border-2);
-  background: #fff;
-}
-
 .preview-text,
 .markdown-preview,
-.preview-html {
+.preview-html,
+.preview-pdf {
   width: min(1240px, 100%);
   min-height: 100%;
   margin: 0 auto;
   background: transparent;
+}
+
+.preview-pdf {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pdf-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border: 1px solid #d9dfe8;
+  background: rgba(255, 255, 255, 0.96);
+  color: #4e5969;
+  font-size: 13px;
+}
+
+.pdf-page-list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding-bottom: 20px;
+}
+
+.preview-pdf :deep(.pdf-page-shell) {
+  position: relative;
+  max-width: 100%;
+  padding: 16px;
+  border: 1px solid #d9dfe8;
+  background: #fff;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.12);
+  overflow: auto;
+}
+
+.preview-pdf :deep(.pdf-page-label) {
+  position: absolute;
+  right: 16px;
+  top: 10px;
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #86909c;
+  font-size: 12px;
+}
+
+.preview-pdf :deep(.pdf-page-canvas) {
+  display: block;
+  max-width: 100%;
+  height: auto !important;
 }
 
 .markdown-preview {
