@@ -6,10 +6,10 @@ import { archiveTemplateApi } from '@/api/archive-template'
 import { fileApi } from '@/api/file'
 import { projectApi } from '@/api/project'
 import { reviewApi } from '@/api/review'
-import AttachmentPreviewModal from '@/components/AttachmentPreviewModal/index.vue'
 import FileUploader from '@/components/FileUploader/index.vue'
 import { arcoConfirm } from '@/utils/arco-dialog'
 import { downloadBlob } from '@/utils/blob'
+import { openPreviewRedirect } from '@/utils/preview-link'
 import { localizeProjectStage } from '@/utils/project-localization'
 import { useLocaleStore } from '@/store/locale'
 import type {
@@ -26,10 +26,6 @@ import ProjectRecordsPanel from './components/ProjectRecordsPanel.vue'
 import ReviewDialog from '../review/components/ReviewDialog.vue'
 
 type ArchiveFile = NonNullable<ArchiveItem['files']>[number]
-type PreviewTarget = {
-  id: string
-  originalName: string
-}
 
 interface UploadPoint extends ArchiveItem {
   parentName?: string
@@ -55,8 +51,6 @@ const showItemDetail = ref(false)
 const showProjectDetail = ref(false)
 const currentItem = ref<ArchiveItem | null>(null)
 const loadingItem = ref(false)
-const previewVisible = ref(false)
-const previewTarget = ref<PreviewTarget | null>(null)
 const pendingReviews = ref<PendingReview[]>([])
 const loadingReviews = ref(false)
 const reviewDialogVisible = ref(false)
@@ -219,19 +213,11 @@ async function handleUploadSuccess(): Promise<void> {
 }
 
 function openFilePreview(file: ArchiveFile): void {
-  previewTarget.value = {
-    id: file.id,
-    originalName: file.originalName,
-  }
-  previewVisible.value = true
+  openPreviewRedirect('file', file.id, { title: file.originalName })
 }
 
 function openReviewPreview(row: PendingReview): void {
-  previewTarget.value = {
-    id: row.fileId,
-    originalName: row.file.fileName,
-  }
-  previewVisible.value = true
+  openPreviewRedirect('file', row.fileId, { title: row.file.fileName })
 }
 
 function openReviewDialog(row: PendingReview): void {
@@ -665,13 +651,6 @@ watch(activeArchiveView, (view) => {
         </div>
       </a-spin>
     </a-dialog>
-
-    <AttachmentPreviewModal
-      v-model:visible="previewVisible"
-      source="file"
-      :attachment-id="previewTarget?.id"
-      :title="previewTarget?.originalName || '档案文件预览'"
-    />
 
     <ReviewDialog
       v-model:visible="reviewDialogVisible"
