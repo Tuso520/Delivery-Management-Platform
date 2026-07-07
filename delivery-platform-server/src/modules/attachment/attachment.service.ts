@@ -276,9 +276,16 @@ export class AttachmentService {
       fileExt,
       mimeType: attachment.mimeType,
     };
+    const isImage =
+      attachment.mimeType.startsWith('image/') ||
+      ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExt);
 
     let preview: AttachmentPreviewResult;
-    if (
+    if (isImage && attachment.fileSize <= BigInt(MAX_SERVER_PREVIEW_BYTES)) {
+      const stream = await this.storage.getObject(attachment.storagePath);
+      const buffer = await this.streamToBuffer(stream);
+      preview = await buildAttachmentPreview({ ...base, buffer });
+    } else if (
       fileExt === 'pdf' &&
       attachment.fileSize <= BigInt(MAX_SERVER_PREVIEW_BYTES)
     ) {
@@ -387,14 +394,14 @@ export class AttachmentService {
     const safeContentUrl = escapeAttribute(contentUrl);
     const body =
       preview.previewKind === 'image'
-        ? `<img class="preview-image" src="${safeContentUrl}" alt="${title}" />`
+        ? preview.html || `<img class="preview-image" src="${safeContentUrl}" alt="${title}" />`
         : preview.previewKind === 'pdf'
           ? `<main class="pdf-reader">
+              <section class="pdf-text-panel pdf-text-primary">
+                ${preview.html || `<section class="preview-empty"><h2>PDF 预览</h2><p>当前浏览器未返回可见文本层，请下载原文件查看。</p></section>`}
+              </section>
               <section class="pdf-native-panel">
                 <iframe class="preview-frame" src="${safeContentUrl}#toolbar=1&navpanes=0&view=FitH" title="${title}"></iframe>
-              </section>
-              <section class="pdf-text-panel">
-                ${preview.html || `<section class="preview-empty"><h2>PDF 预览</h2><p>当前浏览器未返回可见文本层，请下载原文件查看。</p></section>`}
               </section>
             </main>`
           : preview.previewKind === 'html'
@@ -471,7 +478,7 @@ export class AttachmentService {
     }
     .preview-frame {
       width: 100%;
-      height: calc(100vh - 92px);
+      height: 100%;
       border: 1px solid #e5e6eb;
       background: #fff;
     }
@@ -487,13 +494,15 @@ export class AttachmentService {
       background: #fff;
     }
     .pdf-native-panel {
-      height: calc(100vh - 92px);
-      min-height: 620px;
+      height: 520px;
+      min-height: 420px;
     }
     .pdf-text-panel {
-      max-height: 360px;
       overflow: auto;
       padding: 18px;
+    }
+    .pdf-text-primary {
+      min-height: calc(100vh - 92px);
     }
     .pdf-page-fallback {
       min-height: 100%;

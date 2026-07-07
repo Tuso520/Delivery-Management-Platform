@@ -531,7 +531,15 @@ export class FileService {
       fileExt,
       mimeType: file.mimeType,
     };
+    const isImage =
+      file.mimeType.startsWith('image/') ||
+      ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExt);
 
+    if (isImage && file.fileSize <= BigInt(MAX_SERVER_PREVIEW_BYTES)) {
+      const stream = await this.fileStorage.getObject(file.storagePath);
+      const buffer = await this.streamToBuffer(stream);
+      return buildAttachmentPreview({ ...base, buffer });
+    }
     if (fileExt === 'pdf' && file.fileSize <= BigInt(MAX_SERVER_PREVIEW_BYTES)) {
       const stream = await this.fileStorage.getObject(file.storagePath);
       const buffer = await this.streamToBuffer(stream);
@@ -630,14 +638,14 @@ export class FileService {
     const safeContentUrl = escapeHtml(contentUrl);
     const body =
       preview.previewKind === 'image'
-        ? `<img class="preview-image" src="${safeContentUrl}" alt="${title}" />`
+        ? preview.html || `<img class="preview-image" src="${safeContentUrl}" alt="${title}" />`
         : preview.previewKind === 'pdf'
           ? `<main class="pdf-reader">
+              <section class="pdf-text-panel pdf-text-primary">
+                ${preview.html || '<section class="preview-empty"><h2>PDF 预览</h2><p>当前浏览器未返回可见文本层，请下载原文件查看。</p></section>'}
+              </section>
               <section class="pdf-native-panel">
                 <iframe class="preview-frame" src="${safeContentUrl}#toolbar=1&navpanes=0&view=FitH" title="${title}"></iframe>
-              </section>
-              <section class="pdf-text-panel">
-                ${preview.html || '<section class="preview-empty"><h2>PDF 预览</h2><p>当前浏览器未返回可见文本层，请下载原文件查看。</p></section>'}
               </section>
             </main>`
           : preview.previewKind === 'html'
@@ -666,8 +674,9 @@ export class FileService {
     .preview-image { display: block; max-width: 100%; max-height: calc(100vh - 92px); margin: 0 auto; object-fit: contain; background: #fff; border: 1px solid #e5e6eb; }
     .preview-frame { width: 100%; height: 100%; border: 0; background: #fff; }
     .pdf-reader { display: grid; gap: 12px; min-height: calc(100vh - 92px); }
-    .pdf-native-panel { height: calc(100vh - 92px); min-height: 620px; border: 1px solid #d9dfe8; background: #fff; }
-    .pdf-text-panel { max-height: 360px; overflow: auto; padding: 18px; border: 1px solid #d9dfe8; background: #fff; }
+    .pdf-native-panel { height: 520px; min-height: 420px; border: 1px solid #d9dfe8; background: #fff; }
+    .pdf-text-panel { overflow: auto; padding: 18px; border: 1px solid #d9dfe8; background: #fff; }
+    .pdf-text-primary { min-height: calc(100vh - 92px); }
     .pdf-page-fallback, .word-page { border: 1px solid #d9dfe8; background: #fff; }
     .pdf-page-fallback { min-height: 100%; padding: 26px 30px; }
     .pdf-page-label, .word-page-meta { margin-bottom: 18px; color: #86909c; font-size: 12px; }

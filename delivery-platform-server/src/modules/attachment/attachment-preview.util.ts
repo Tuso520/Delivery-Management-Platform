@@ -72,7 +72,16 @@ export async function buildAttachmentPreview(
   };
 
   if (imageExtensions.has(fileExt) || input.mimeType.startsWith('image/')) {
-    return { ...base, previewKind: 'image', viewer: 'image' };
+    const mimeType = input.mimeType || `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`;
+    return {
+      ...base,
+      mimeType,
+      previewKind: 'image',
+      viewer: 'image',
+      html: input.buffer
+        ? `<img class="preview-image" src="data:${escapeHtml(mimeType)};base64,${input.buffer.toString('base64')}" alt="${escapeHtml(input.fileName)}" />`
+        : undefined,
+    };
   }
   if (pdfExtensions.has(fileExt) || input.mimeType === 'application/pdf') {
     return {
