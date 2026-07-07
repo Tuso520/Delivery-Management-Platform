@@ -75,7 +75,12 @@ export async function buildAttachmentPreview(
     return { ...base, previewKind: 'image', viewer: 'image' };
   }
   if (pdfExtensions.has(fileExt) || input.mimeType === 'application/pdf') {
-    return { ...base, previewKind: 'pdf', viewer: 'pdf' };
+    return {
+      ...base,
+      previewKind: 'pdf',
+      viewer: 'pdf',
+      html: input.buffer ? renderPdfFallback(input.buffer, input.fileName) : undefined,
+    };
   }
 
   if (!input.buffer) {
@@ -151,11 +156,26 @@ async function renderDocx(buffer: Buffer, fileName: string): Promise<string> {
     return renderMessage(fileName, '文档没有可提取的文本内容。');
   }
 
+  const title = paragraphs[0] || fileName;
+  const documentBodyHtml = paragraphs
+    .map((paragraph, index) =>
+      index === 0
+        ? `<h1>${escapeHtml(paragraph)}</h1>`
+        : `<p>${escapeHtml(paragraph)}</p>`,
+    )
+    .join('\n');
+
   return wrapPreviewHtml(
     fileName,
-    paragraphs
-      .map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`)
-      .join('\n'),
+    `
+      <section class="word-page">
+        <div class="word-page-meta">Word 只读预览</div>
+        <article class="word-body">
+          ${documentBodyHtml || `<h1>${escapeHtml(title)}</h1>`}
+        </article>
+      </section>
+    `,
+    'office-word',
   );
 }
 
@@ -279,12 +299,20 @@ function renderLegacyOffice(
     viewer,
     html: wrapPreviewHtml(
       base.fileName,
-      readableText
-        .split(/\r?\n/u)
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .map((line) => `<p>${escapeHtml(line)}</p>`)
-        .join('\n'),
+      `
+        <section class="word-page">
+          <div class="word-page-meta">Office 只读预览</div>
+          <article class="word-body">
+            ${readableText
+              .split(/\r?\n/u)
+              .map((line) => line.trim())
+              .filter(Boolean)
+              .map((line) => `<p>${escapeHtml(line)}</p>`)
+              .join('\n')}
+          </article>
+        </section>
+      `,
+      viewer === 'spreadsheet' ? 'office-excel' : 'office-word',
     ),
   };
 }
@@ -425,9 +453,52 @@ function containsBinaryControlChars(value: string): boolean {
   return (controlChars?.length ?? 0) > 8;
 }
 
-function wrapPreviewHtml(title: string, body: string): string {
+function renderPdfFallback(buffer: Buffer, fileName: string): string {
+  const text = extractSimplePdfText(buffer);
+  const body = text.length
+    ? text.map((line) => `<p>${escapeHtml(line)}</p>`).join('\n')
+    : renderMessageBody('当前浏览器如果未显示 PDF 原文，请使用右上角下载查看；该文件未能提取到可读文本层。');
+
+  return wrapPreviewHtml(
+    fileName,
+    `
+      <section class="pdf-page-fallback">
+        <div class="pdf-page-label">PDF 文本层备用预览</div>
+        ${body}
+      </section>
+    `,
+    'office-pdf',
+  );
+}
+
+function extractSimplePdfText(buffer: Buffer): string[] {
+  const source = buffer.toString('latin1');
+  const texts: string[] = [];
+  const textOperator = /\((?:\\.|[^\\()])*\)\s*Tj/gu;
+  let match: RegExpExecArray | null;
+  while ((match = textOperator.exec(source))) {
+    const raw = match[0].replace(/\)\s*Tj$/u, '').slice(1);
+    const decoded = decodePdfLiteral(raw).trim();
+    if (decoded) texts.push(decoded);
+  }
+  return texts
+    .map((line) => line.replace(/\s+/gu, ' ').trim())
+    .filter(Boolean);
+}
+
+function decodePdfLiteral(value: string): string {
+  return value
+    .replace(/\\n/gu, '\n')
+    .replace(/\\r/gu, '\r')
+    .replace(/\\t/gu, '\t')
+    .replace(/\\\(/gu, '(')
+    .replace(/\\\)/gu, ')')
+    .replace(/\\\\/gu, '\\');
+}
+
+function wrapPreviewHtml(title: string, body: string, className = ''): string {
   return `
-    <article class="attachment-preview">
+    <article class="attachment-preview ${escapeHtml(className)}">
       <header>
         <h2>${escapeHtml(title)}</h2>
       </header>

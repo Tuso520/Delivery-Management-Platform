@@ -276,7 +276,14 @@ export class AttachmentService {
     };
 
     let preview: AttachmentPreviewResult;
-    if (canPreviewWithoutServer(fileExt, attachment.mimeType)) {
+    if (
+      fileExt === 'pdf' &&
+      attachment.fileSize <= BigInt(MAX_SERVER_PREVIEW_BYTES)
+    ) {
+      const stream = await this.storage.getObject(attachment.storagePath);
+      const buffer = await this.streamToBuffer(stream);
+      preview = await buildAttachmentPreview({ ...base, buffer });
+    } else if (canPreviewWithoutServer(fileExt, attachment.mimeType)) {
       preview = await buildAttachmentPreview(base);
     } else if (!needsServerPreview(fileExt)) {
       preview = await buildAttachmentPreview(base);
@@ -380,7 +387,16 @@ export class AttachmentService {
       preview.previewKind === 'image'
         ? `<img class="preview-image" src="${safeContentUrl}" alt="${title}" />`
         : preview.previewKind === 'pdf'
-          ? `<iframe class="preview-frame" src="${safeContentUrl}#toolbar=1&navpanes=0" title="${title}"></iframe>`
+          ? `<main class="pdf-reader">
+              <section class="pdf-native-panel">
+                <object class="preview-frame" data="${safeContentUrl}#toolbar=1&navpanes=0" type="application/pdf" title="${title}">
+                  <iframe class="preview-frame" src="${safeContentUrl}#toolbar=1&navpanes=0" title="${title}"></iframe>
+                </object>
+              </section>
+              <section class="pdf-text-panel">
+                ${preview.html || `<section class="preview-empty"><h2>PDF 预览</h2><p>当前浏览器未返回可见文本层，请下载原文件查看。</p></section>`}
+              </section>
+            </main>`
           : preview.previewKind === 'html'
             ? `<main class="preview-document">${preview.html || ''}</main>`
             : preview.previewKind === 'text'
@@ -459,17 +475,139 @@ export class AttachmentService {
       border: 1px solid #e5e6eb;
       background: #fff;
     }
+    .pdf-reader {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+      gap: 14px;
+      min-height: calc(100vh - 92px);
+    }
+    .pdf-native-panel,
+    .pdf-text-panel {
+      min-width: 0;
+      border: 1px solid #d9dfe8;
+      background: #fff;
+    }
+    .pdf-text-panel {
+      overflow: auto;
+      padding: 18px;
+    }
+    .pdf-page-fallback {
+      min-height: 100%;
+      padding: 26px 30px;
+      border: 1px solid #e5e6eb;
+      background: linear-gradient(#fff, #fff) padding-box, linear-gradient(135deg, #e5e6eb, #f7f8fa) border-box;
+    }
+    .pdf-page-label,
+    .word-page-meta {
+      margin-bottom: 18px;
+      color: #86909c;
+      font-size: 12px;
+      letter-spacing: 0;
+    }
     .preview-document,
     .preview-text,
     .preview-empty {
-      width: min(1120px, 100%);
+      width: min(1240px, 100%);
       min-height: calc(100vh - 92px);
       margin: 0 auto;
-      padding: 24px 28px;
-      border: 1px solid #e5e6eb;
+      padding: 0;
+      border: 0;
+      background: transparent;
+    }
+    .preview-document .attachment-preview {
+      max-width: none;
+      min-height: calc(100vh - 92px);
+    }
+    .office-word {
+      display: flex;
+      justify-content: center;
+      padding: 18px 0 32px;
+    }
+    .word-page {
+      width: min(900px, 100%);
+      min-height: 1120px;
+      padding: 72px 82px;
+      border: 1px solid #d9dfe8;
+      background: #fff;
+      box-shadow: 0 16px 42px rgba(15, 23, 42, 0.12);
+    }
+    .word-body h1 {
+      margin: 0 0 28px;
+      color: #1d2129;
+      font-size: 26px;
+      font-weight: 700;
+      line-height: 1.35;
+      text-align: center;
+    }
+    .word-body p {
+      margin: 0 0 12px;
+      color: #1d2129;
+      font-size: 15px;
+      line-height: 1.9;
+      text-indent: 2em;
+      white-space: pre-wrap;
+    }
+    .office-excel {
+      min-height: calc(100vh - 92px);
+      border: 1px solid #d9dfe8;
+      background: #f7f9fc;
+    }
+    .excel-workbook,
+    .office-excel .attachment-preview {
+      min-height: calc(100vh - 92px);
+    }
+    .office-excel > header {
+      display: none;
+    }
+    .preview-sheet {
+      margin: 0;
+      padding: 0 0 38px;
+      border: 0;
       background: #fff;
     }
-    .preview-document .attachment-preview { max-width: none; }
+    .preview-sheet h3 {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      margin: 0;
+      padding: 10px 14px;
+      border-bottom: 1px solid #d9dfe8;
+      background: #f2f5f9;
+      color: #1d2129;
+      font-size: 13px;
+      font-weight: 650;
+    }
+    .preview-sheet::after {
+      content: "Sheet";
+      display: inline-flex;
+      margin: 10px 0 0 14px;
+      padding: 5px 16px;
+      border: 1px solid #c9d6ea;
+      border-bottom: 2px solid #165dff;
+      background: #fff;
+      color: #165dff;
+      font-size: 12px;
+    }
+    .preview-table-wrap {
+      width: 100%;
+      overflow: auto;
+      background:
+        linear-gradient(#f7f9fc, #f7f9fc) 0 0 / 100% 34px no-repeat,
+        #fff;
+    }
+    .office-presentation {
+      display: grid;
+      gap: 16px;
+    }
+    .preview-slide {
+      aspect-ratio: 16 / 9;
+      max-width: 960px;
+      margin: 0 auto 18px;
+      padding: 48px 56px;
+      border: 1px solid #d9dfe8;
+      background: #fff;
+      box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12);
+    }
     .preview-document h2,
     .preview-document h3 {
       margin: 0 0 14px;
@@ -487,24 +625,29 @@ export class AttachmentService {
       border-collapse: collapse;
       table-layout: auto;
       font-size: 13px;
+      background: #fff;
     }
     .preview-document td,
     .preview-document th {
-      min-width: 96px;
-      padding: 8px 10px;
-      border: 1px solid #e5e6eb;
+      min-width: 112px;
+      padding: 7px 9px;
+      border: 1px solid #d9dfe8;
       vertical-align: top;
       word-break: break-word;
     }
-    .preview-table-wrap { width: 100%; overflow-x: auto; }
-    .preview-slide,
-    .preview-sheet {
-      margin: 0 0 16px;
-      padding: 16px;
-      border: 1px solid #e5e6eb;
-      background: #fbfcff;
+    .preview-document tr:first-child td,
+    .preview-document tr:first-child th {
+      position: sticky;
+      top: 34px;
+      z-index: 1;
+      background: #edf3ff;
+      color: #1d2129;
+      font-weight: 650;
     }
     .preview-text {
+      padding: 24px 28px;
+      border: 1px solid #e5e6eb;
+      background: #fff;
       overflow: auto;
       color: #1d2129;
       line-height: 1.65;
@@ -514,8 +657,15 @@ export class AttachmentService {
     .preview-empty {
       display: grid;
       place-content: center;
+      padding: 24px 28px;
+      border: 1px solid #e5e6eb;
+      background: #fff;
       text-align: center;
       color: #4e5969;
+    }
+    @media (max-width: 960px) {
+      .pdf-reader { grid-template-columns: 1fr; }
+      .word-page { min-height: auto; padding: 40px 28px; }
     }
   </style>
 </head>
