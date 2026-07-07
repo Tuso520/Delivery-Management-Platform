@@ -24,6 +24,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
+import { memoryStorage } from 'multer';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Permissions } from '../../common/decorators/permissions.decorator';
@@ -72,6 +73,7 @@ export class AttachmentController {
   @Permissions('attachment:upload')
   @UseInterceptors(
     FilesInterceptor('files', 10, {
+      storage: memoryStorage(),
       limits: { fileSize: 100 * 1024 * 1024 },
       fileFilter: (_request, file, callback) => {
         const extension = file.originalname.split('.').pop()?.toLowerCase() ?? '';

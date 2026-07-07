@@ -23,6 +23,7 @@ import {
   ApiResponse,
   ApiConsumes,
 } from '@nestjs/swagger';
+import { memoryStorage } from 'multer';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Permissions } from '../../common/decorators/permissions.decorator';
@@ -203,6 +204,7 @@ export class KnowledgeController {
   @HttpCode(HttpStatus.OK)
   @UseInterceptors(
     FilesInterceptor('files', 1, {
+      storage: memoryStorage(),
       limits: { fileSize: 100 * 1024 * 1024 },
       fileFilter: (_request, file, callback) => {
         const extension = file.originalname.split('.').pop()?.toLowerCase() ?? '';

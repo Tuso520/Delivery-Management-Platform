@@ -27,6 +27,7 @@ import {
 } from '@nestjs/swagger';
 import type { Response } from 'express';
 import type { Request } from 'express';
+import { memoryStorage } from 'multer';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Permissions } from '../../common/decorators/permissions.decorator';
@@ -52,6 +53,7 @@ export class FileController {
   @Post('upload')
   @Permissions('file:upload')
   @UseInterceptors(FileInterceptor('file', {
+    storage: memoryStorage(),
     limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
     fileFilter: (_req, file, cb) => {
       const allowedTypes = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png', 'gif', 'zip', 'rar', 'dwg'];
