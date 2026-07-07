@@ -188,21 +188,6 @@ async function handleUploadSuccess(): Promise<void> {
   await reloadCurrentItem()
 }
 
-async function handleMarkNotApplicable(itemId: string): Promise<void> {
-  if (!selectedProjectId.value) return
-  await arcoConfirm('确定标记此项“不适用”？', '确认', { type: 'warning' })
-  await archiveApi.markNotApplicable(selectedProjectId.value, itemId)
-  Message.success('标记成功')
-  await fetchArchive()
-}
-
-async function handleUpdateStatus(itemId: string, status: string): Promise<void> {
-  if (!selectedProjectId.value) return
-  await archiveApi.updateItem(selectedProjectId.value, itemId, { status })
-  Message.success('状态更新成功')
-  await fetchArchive()
-}
-
 async function openFilePreview(file: ArchiveFile): Promise<void> {
   let previewWindow: Window | null = window.open('about:blank', '_blank')
   if (previewWindow) {
@@ -400,31 +385,11 @@ onMounted(fetchProjects)
                   {{ row.reviewUser?.realName || row.responsibleUser?.realName || '-' }}
                 </template>
               </a-table-column>
-              <a-table-column label="操作" :width="190" fixed="right">
+              <a-table-column label="操作" :width="110" align="center" fixed="right">
                 <template #default="{ row }">
-                  <a-space size="mini" :wrap="false">
-                    <a-button type="text" size="mini" @click="viewItemDetail(row.id)">
-                      查看/上传
-                    </a-button>
-                    <a-button
-                      v-if="row.status !== 'NotApplicable' && row.status !== 'Approved'"
-                      type="text"
-                      status="warning"
-                      size="mini"
-                      @click="handleMarkNotApplicable(row.id)"
-                    >
-                      不适用
-                    </a-button>
-                    <a-button
-                      v-if="row.status === 'Uploaded'"
-                      type="text"
-                      status="success"
-                      size="mini"
-                      @click="handleUpdateStatus(row.id, 'Approved')"
-                    >
-                      通过
-                    </a-button>
-                  </a-space>
+                  <a-button type="text" size="mini" @click="viewItemDetail(row.id)">
+                    查看/上传
+                  </a-button>
                 </template>
               </a-table-column>
             </a-table>
