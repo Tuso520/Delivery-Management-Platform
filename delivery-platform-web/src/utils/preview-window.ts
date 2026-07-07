@@ -1,6 +1,4 @@
-export function openPreviewUrl(url: string): void {
+export function openPreviewUrl(url: string): boolean {
   const previewWindow = window.open(url, '_blank', 'noopener,noreferrer')
-  if (!previewWindow) {
-    window.location.href = url
-  }
+  return Boolean(previewWindow)
 }

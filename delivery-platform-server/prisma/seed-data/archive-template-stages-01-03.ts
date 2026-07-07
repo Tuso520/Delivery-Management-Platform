@@ -329,4 +329,10 @@ const s03L2s: Level2Def[] = [
 // ── Stage 04_construction: 施工调试 ────────────────────────────
 
 export const earlyLevel1Defs: Level1Def[] = [...s01L1s, ...s02L1s, ...s03L1s];
-export const earlyLevel2Defs: Level2Def[] = [...s01L2s, ...s02L2s, ...s03L2s];
+const legacyMiscItemNos = new Set([1001, 1002, 1003, 1004, 1005]);
+
+export const earlyLevel2Defs: Level2Def[] = [
+  ...s01L2s.filter((item) => !legacyMiscItemNos.has(item.itemNo)),
+  ...s02L2s,
+  ...s03L2s,
+];

@@ -58,6 +58,7 @@ export class UpsertDictionaryItemDto {
   @IsOptional()
   @IsString()
   status?: string;
+
 }
 
 export class CreateDepartmentDto {
@@ -194,6 +195,11 @@ export class QueryPlatformDto extends PaginationDto {
   @IsOptional()
   @IsString()
   status?: string;
+
+  @ApiPropertyOptional({ description: '业务类型，多个值用英文逗号分隔' })
+  @IsOptional()
+  @IsString()
+  businessType?: string;
 }
 
 export class UpsertSkillDto {

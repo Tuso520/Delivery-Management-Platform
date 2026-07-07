@@ -523,6 +523,10 @@ export async function seedProjects(prisma: PrismaClient) {
           templateIdToArchiveId.set(templateItem.id, created.id);
           totalArchiveItems++;
         } else {
+          await prisma.projectArchiveItem.update({
+            where: { id: existing.id },
+            data: archiveItemData,
+          });
           templateIdToArchiveId.set(templateItem.id, existing.id);
         }
       }

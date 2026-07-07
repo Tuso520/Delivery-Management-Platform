@@ -351,6 +351,66 @@ const s06L1s: Level1Def[] = [
   },
 ];
 
+// ── Stage 07_misc: 其他杂项 ───────────────────────────────────
+const stage07 = '07_misc';
 
-export const lateLevel1Defs: Level1Def[] = [...s04L1s, ...s05L1s, ...s06L1s];
-export const lateLevel2Defs: Level2Def[] = [...s04L2s, ...s05L2s];
+const s07L1s: Level1Def[] = [
+  {
+    stageCode: stage07,
+    itemNo: 38,
+    level: 1,
+    name: '其他杂项',
+    usageDescription: '收纳不归属于售前、设计、采购、施工、验收、复盘阶段的过程性文件。',
+  },
+];
+
+const s07L2s: Level2Def[] = [
+  {
+    stageCode: stage07,
+    parentItemNo: 38,
+    itemNo: 1001,
+    level: 2,
+    name: '实施记录',
+    secondName: '实施记录',
+    usageDescription: '上传项目实施过程的现场照片、视频、阶段记录和关键事件说明。',
+  },
+  {
+    stageCode: stage07,
+    parentItemNo: 38,
+    itemNo: 1002,
+    level: 2,
+    name: '验收记录',
+    secondName: '验收记录',
+    usageDescription: '上传验收过程的现场照片、视频、验收沟通记录和补充说明。',
+  },
+  {
+    stageCode: stage07,
+    parentItemNo: 38,
+    itemNo: 1003,
+    level: 2,
+    name: '临时租用',
+    secondName: '临时租用',
+    usageDescription: '上传临时租车、租房、设备租赁的合同、收据、审批记录和结算凭证。',
+  },
+  {
+    stageCode: stage07,
+    parentItemNo: 38,
+    itemNo: 1004,
+    level: 2,
+    name: '海外签证',
+    secondName: '海外签证',
+    usageDescription: '上传项目相关人员商务签、工作签、邀请函、出入境材料和审批记录。',
+  },
+  {
+    stageCode: stage07,
+    parentItemNo: 38,
+    itemNo: 1005,
+    level: 2,
+    name: '其他杂项',
+    secondName: '其他杂项',
+    usageDescription: '上传无法归类到标准流程节点的补充文件，并在备注中说明用途。',
+  },
+];
+
+export const lateLevel1Defs: Level1Def[] = [...s04L1s, ...s05L1s, ...s06L1s, ...s07L1s];
+export const lateLevel2Defs: Level2Def[] = [...s04L2s, ...s05L2s, ...s07L2s];

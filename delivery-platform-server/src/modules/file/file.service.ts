@@ -641,11 +641,12 @@ export class FileService {
         ? preview.html || `<img class="preview-image" src="${safeContentUrl}" alt="${title}" />`
         : preview.previewKind === 'pdf'
           ? `<main class="pdf-reader">
-              <section class="pdf-text-panel pdf-text-primary">
-                ${preview.html || '<section class="preview-empty"><h2>PDF 预览</h2><p>当前浏览器未返回可见文本层，请下载原文件查看。</p></section>'}
-              </section>
               <section class="pdf-native-panel">
-                <iframe class="preview-frame" src="${safeContentUrl}#toolbar=1&navpanes=0&view=FitH" title="${title}"></iframe>
+                <object class="preview-frame" data="${safeContentUrl}#toolbar=1&navpanes=0&view=FitH" type="application/pdf">
+                  <div class="pdf-text-panel pdf-text-primary">
+                    ${preview.html || '<section class="preview-empty"><h2>PDF 预览</h2><p>当前浏览器未返回可见文本层，请下载原文件查看。</p></section>'}
+                  </div>
+                </object>
               </section>
             </main>`
           : preview.previewKind === 'html'
@@ -674,7 +675,7 @@ export class FileService {
     .preview-image { display: block; max-width: 100%; max-height: calc(100vh - 92px); margin: 0 auto; object-fit: contain; background: #fff; border: 1px solid #e5e6eb; }
     .preview-frame { width: 100%; height: 100%; border: 0; background: #fff; }
     .pdf-reader { display: grid; gap: 12px; min-height: calc(100vh - 92px); }
-    .pdf-native-panel { height: 520px; min-height: 420px; border: 1px solid #d9dfe8; background: #fff; }
+    .pdf-native-panel { min-height: calc(100vh - 92px); border: 1px solid #d9dfe8; background: #fff; }
     .pdf-text-panel { overflow: auto; padding: 18px; border: 1px solid #d9dfe8; background: #fff; }
     .pdf-text-primary { min-height: calc(100vh - 92px); }
     .pdf-page-fallback, .word-page { border: 1px solid #d9dfe8; background: #fff; }
@@ -689,9 +690,9 @@ export class FileService {
     .office-excel > header { display: none; }
     .preview-sheet { margin: 0; padding: 0 0 38px; background: #fff; }
     .preview-sheet h3 { position: sticky; top: 0; z-index: 1; margin: 0; padding: 10px 14px; border-bottom: 1px solid #d9dfe8; background: #f2f5f9; font-size: 13px; font-weight: 650; }
-    .preview-table-wrap { width: 100%; overflow: auto; background: #fff; }
-    .preview-document table { width: 100%; border-collapse: collapse; table-layout: auto; font-size: 13px; background: #fff; }
-    .preview-document td, .preview-document th { min-width: 112px; padding: 7px 9px; border: 1px solid #d9dfe8; vertical-align: top; word-break: break-word; }
+    .preview-table-wrap { width: 100%; max-height: 70vh; overflow: auto; resize: both; padding: 10px; background: #fff; }
+    .preview-document table { width: max-content; min-width: 100%; border-collapse: collapse; table-layout: auto; font-size: 13px; background: #fff; }
+    .preview-document td, .preview-document th { min-width: 112px; max-width: 360px; height: 34px; padding: 7px 9px; border: 1px solid #d9dfe8; vertical-align: top; overflow: auto; resize: both; word-break: break-word; }
     .preview-document tr:first-child td, .preview-document tr:first-child th { position: sticky; top: 34px; z-index: 1; background: #edf3ff; font-weight: 650; }
     .office-presentation { display: grid; gap: 16px; }
     .preview-slide { aspect-ratio: 16 / 9; max-width: 960px; margin: 0 auto 18px; padding: 48px 56px; border: 1px solid #d9dfe8; background: #fff; box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12); }

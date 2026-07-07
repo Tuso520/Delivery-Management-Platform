@@ -507,10 +507,7 @@ function decodePdfLiteral(value: string): string {
 
 function wrapPreviewHtml(title: string, body: string, className = ''): string {
   return `
-    <article class="attachment-preview ${escapeHtml(className)}">
-      <header>
-        <h2>${escapeHtml(title)}</h2>
-      </header>
+    <article class="attachment-preview ${escapeHtml(className)}" aria-label="${escapeHtml(title)}">
       ${body}
     </article>
   `;

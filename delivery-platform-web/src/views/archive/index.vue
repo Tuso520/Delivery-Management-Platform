@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { archiveApi } from '@/api/archive'
 import { archiveTemplateApi } from '@/api/archive-template'
@@ -30,7 +29,6 @@ interface UploadPoint extends ArchiveItem {
   guideText: string
 }
 
-const router = useRouter()
 const localeStore = useLocaleStore()
 
 const projectList = ref<Project[]>([])
@@ -47,6 +45,7 @@ const generatingArchive = ref(false)
 const activeStage = ref('')
 const activeArchiveView = ref<'directory' | 'records'>('directory')
 const showItemDetail = ref(false)
+const showProjectDetail = ref(false)
 const currentItem = ref<ArchiveItem | null>(null)
 const loadingItem = ref(false)
 
@@ -192,7 +191,10 @@ async function handleUploadSuccess(): Promise<void> {
 async function openFilePreview(file: ArchiveFile): Promise<void> {
   try {
     const { url } = await fileApi.createPreviewLink(file.id)
-    openPreviewUrl(url)
+    const opened = openPreviewUrl(url)
+    if (!opened) {
+      Message.warning('浏览器阻止了新窗口，请允许弹窗后重试')
+    }
   } catch {
     Message.error('预览链接生成失败')
   }
@@ -240,10 +242,8 @@ function formatDate(value?: string): string {
   return date.toLocaleString('zh-CN', { hour12: false })
 }
 
-function navigateToProject(): void {
-  if (selectedProjectId.value) {
-    router.push(`/project/detail/${selectedProjectId.value}`)
-  }
+function openProjectDetail(): void {
+  showProjectDetail.value = true
 }
 
 onMounted(fetchProjects)
@@ -270,6 +270,12 @@ onMounted(fetchProjects)
               :value="item.id"
             />
           </a-select>
+          <a-tag v-if="selectedProject?.projectCode" size="small" class="project-code-tag">
+            {{ selectedProject.projectCode }}
+          </a-tag>
+          <a-button size="mini" type="text" :disabled="!selectedProjectId" @click="openProjectDetail">
+            详情
+          </a-button>
         </div>
 
         <div class="archive-actions">
@@ -281,25 +287,9 @@ onMounted(fetchProjects)
               { label: '上传记录', value: 'records' },
             ]"
           />
-          <a-button size="small" :disabled="!selectedProjectId" @click="navigateToProject">
-            项目详情
-          </a-button>
           <a-button size="small" type="primary" :disabled="!selectedProjectId" @click="openGenerateDialog">
             生成目录
           </a-button>
-        </div>
-      </div>
-
-      <div v-if="selectedProjectId" class="archive-summary">
-        <div>
-          <strong>{{ selectedProject?.projectName || selectedProjectName }}</strong>
-          <span>{{ selectedProject?.projectCode || '-' }}</span>
-        </div>
-        <div class="summary-metrics">
-          <span>总项 {{ statistics?.totalItems || 0 }}</span>
-          <span>已完成 {{ statistics?.completedItems || 0 }}</span>
-          <span>必填 {{ statistics?.requiredItems || 0 }}</span>
-          <span>完成率 {{ statistics?.completionRate || 0 }}%</span>
         </div>
       </div>
 
@@ -312,22 +302,30 @@ onMounted(fetchProjects)
       <template v-else-if="selectedProjectId">
         <a-spin :loading="loadingArchive" class="archive-spin">
           <template v-if="archiveTree?.stages?.length">
-            <a-tabs v-model="activeStage" type="card" class="stage-tabs">
-              <a-tab-pane
-                v-for="stage in archiveTree.stages"
-                :key="stage.stageCode"
-                :name="stage.stageCode"
-              >
-                <template #title>
-                  <span class="stage-tab-label">
-                    {{ localizeProjectStage(stage.stageCode, localeStore.currentLocale) }}
-                    <a-tag v-if="getStageStats(stage.stageCode)" size="small" class="stage-count">
-                      {{ getStageStats(stage.stageCode)?.completedItems || 0 }}/{{ getStageStats(stage.stageCode)?.totalItems || 0 }}
-                    </a-tag>
-                  </span>
-                </template>
-              </a-tab-pane>
-            </a-tabs>
+            <div class="stage-strip">
+              <a-tabs v-model="activeStage" type="card" class="stage-tabs">
+                <a-tab-pane
+                  v-for="stage in archiveTree.stages"
+                  :key="stage.stageCode"
+                  :name="stage.stageCode"
+                >
+                  <template #title>
+                    <span class="stage-tab-label">
+                      {{ localizeProjectStage(stage.stageCode, localeStore.currentLocale) }}
+                      <a-tag v-if="getStageStats(stage.stageCode)" size="small" class="stage-count">
+                        {{ getStageStats(stage.stageCode)?.completedItems || 0 }}/{{ getStageStats(stage.stageCode)?.totalItems || 0 }}
+                      </a-tag>
+                    </span>
+                  </template>
+                </a-tab-pane>
+              </a-tabs>
+              <div class="summary-metrics">
+                <span>总项 <strong>{{ statistics?.totalItems || 0 }}</strong></span>
+                <span>已完成 <strong>{{ statistics?.completedItems || 0 }}</strong></span>
+                <span>必填 <strong>{{ statistics?.requiredItems || 0 }}</strong></span>
+                <span>完成率 <strong>{{ statistics?.completionRate || 0 }}%</strong></span>
+              </div>
+            </div>
 
             <div class="stage-title-row">
               <h3>{{ activeStageName }}</h3>
@@ -421,6 +419,49 @@ onMounted(fetchProjects)
         </a-button>
       </template>
     </a-dialog>
+
+    <a-modal
+      v-model:visible="showProjectDetail"
+      title="项目详情"
+      :width="680"
+      :footer="false"
+    >
+      <a-descriptions
+        v-if="selectedProject"
+        :column="2"
+        bordered
+        size="small"
+        class="project-detail-descriptions"
+      >
+        <a-descriptions-item label="项目名称">
+          {{ selectedProject.projectName }}
+        </a-descriptions-item>
+        <a-descriptions-item label="项目编号">
+          {{ selectedProject.projectCode }}
+        </a-descriptions-item>
+        <a-descriptions-item label="客户">
+          {{ selectedProject.customerName || '-' }}
+        </a-descriptions-item>
+        <a-descriptions-item label="国家/城市">
+          {{ selectedProject.countryCode || '-' }} / {{ selectedProject.city || '-' }}
+        </a-descriptions-item>
+        <a-descriptions-item label="项目类型">
+          {{ selectedProject.projectType || '-' }}
+        </a-descriptions-item>
+        <a-descriptions-item label="项目状态">
+          {{ selectedProject.projectStatus || '-' }}
+        </a-descriptions-item>
+        <a-descriptions-item label="当前阶段">
+          {{ selectedProject.currentStage || '-' }}
+        </a-descriptions-item>
+        <a-descriptions-item label="风险等级">
+          {{ selectedProject.riskLevel || '-' }}
+        </a-descriptions-item>
+        <a-descriptions-item label="计划周期" :span="2">
+          {{ selectedProject.startDate || '-' }} 至 {{ selectedProject.plannedEndDate || '-' }}
+        </a-descriptions-item>
+      </a-descriptions>
+    </a-modal>
 
     <a-dialog
       v-model="showItemDetail"

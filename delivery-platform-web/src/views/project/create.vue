@@ -53,12 +53,12 @@ const localizedRiskOptions = computed(() =>
 )
 const formData = reactive({
   projectName: '',
-  countryCode: '',
+  countryCode: 'CN',
   city: '',
   customerName: '',
   projectType: '',
-  contractCurrency: '',
-  baseCurrency: '',
+  contractCurrency: 'CNY',
+  baseCurrency: 'CNY',
   contractAmount: undefined as number | undefined,
   projectLanguage: '',
   projectManagerId: '' as string,
@@ -177,8 +177,6 @@ const handleSubmit = async () => {
       projectManagerId: formData.projectManagerId || undefined,
       electricLeaderId: formData.electricLeaderId || undefined,
       softwareLeaderId: formData.softwareLeaderId || undefined,
-      purchaseOwnerId: formData.purchaseOwnerId || undefined,
-      financeOwnerId: formData.financeOwnerId || undefined,
       currentStage: formData.currentStage,
       riskLevel: formData.riskLevel,
       projectStatus: formData.projectStatus,
@@ -211,6 +209,9 @@ const handleCancel = () => {
 onMounted(async () => {
   await loadOptions()
   await loadProject()
+  if (!isEdit.value) {
+    generateProjectCode(formData.countryCode)
+  }
 })
 </script>
 <template>
@@ -226,7 +227,7 @@ onMounted(async () => {
         :model="formData"
         :rules="rules"
         label-width="130px"
-        style="max-width: 800px"
+        class="project-form"
       >
         <a-divider content-position="left">
           基本信息
@@ -236,7 +237,7 @@ onMounted(async () => {
             v-model="formData.projectName"
             :maxlength="200"
             show-word-limit
-            placeholder="请输入项目名称"
+            placeholder="建议：国家-城市-客户-项目简称-项目类型，如中国-上海-某客户-冷站节能"
           />
         </a-form-item>
         <a-row :gutter="20">
@@ -363,7 +364,8 @@ onMounted(async () => {
           />
         </a-form-item>
         <a-divider content-position="left">
-          项目阶段与风险        </a-divider>
+          项目阶段与风险
+        </a-divider>
         <a-row :gutter="20">
           <a-col :span="12">
             <a-form-item label="当前阶段">
@@ -440,7 +442,8 @@ onMounted(async () => {
           </a-col>
         </a-row>
         <a-divider content-position="left">
-          项目负责人        </a-divider>
+          项目负责人
+        </a-divider>
         <a-row :gutter="20">
           <a-col :span="12">
             <a-form-item label="项目经理">
@@ -498,41 +501,7 @@ onMounted(async () => {
               </a-select>
             </a-form-item>
           </a-col>
-          <a-col :span="12">
-            <a-form-item label="采购负责人">
-              <a-select
-                v-model="formData.purchaseOwnerId"
-                filterable
-                placeholder="请选择"
-                clearable
-                style="width: 100%"
-              >
-                <a-option
-                  v-for="item in userOptions"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </a-select>
-            </a-form-item>
-          </a-col>
         </a-row>
-        <a-form-item label="财务负责人">
-          <a-select
-            v-model="formData.financeOwnerId"
-            filterable
-            placeholder="请选择"
-            clearable
-            style="width: 100%"
-          >
-            <a-option
-              v-for="item in userOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </a-select>
-        </a-form-item>
         <a-form-item>
           <a-button type="primary" :loading="loading" @click="handleSubmit">
             {{ isEdit ? '保存' : '创建' }}
@@ -548,6 +517,21 @@ onMounted(async () => {
 <style scoped lang="scss">
 .create-project-page {
   min-width: 0;
+
+  :deep(.arco-card-body) {
+    padding: 16px;
+  }
+
+  .project-form {
+    max-width: 1180px;
+  }
+
+  .project-form :deep(.arco-input),
+  .project-form :deep(.arco-input-number-input),
+  .project-form :deep(.arco-select-view-value) {
+    text-align: left;
+  }
+
   .card-header {
     display: flex;
     align-items: center;

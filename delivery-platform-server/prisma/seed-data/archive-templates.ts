@@ -85,7 +85,11 @@ export async function seedArchiveTemplates(prisma: PrismaClient) {
     });
 
     const item = existing
-      ? existing
+      ? await prisma.archiveTemplateItem.update({
+          where: { id: existing.id },
+          data,
+          select: { id: true },
+        })
       : await prisma.archiveTemplateItem.create({
           data: {
             templateId: template.id,
@@ -124,6 +128,10 @@ export async function seedArchiveTemplates(prisma: PrismaClient) {
     });
 
     if (existing) {
+      await prisma.archiveTemplateItem.update({
+        where: { id: existing.id },
+        data,
+      });
       return;
     }
 
@@ -143,6 +151,22 @@ export async function seedArchiveTemplates(prisma: PrismaClient) {
   for (const def of allL1s) {
     const id = await syncLevel1(def);
     l1IdMap.set(`${def.stageCode}:${def.itemNo}`, id);
+  }
+
+  const miscParentId = l1IdMap.get('07_misc:38');
+  if (miscParentId) {
+    await prisma.archiveTemplateItem.updateMany({
+      where: {
+        templateId: template.id,
+        stageCode: '01_sale',
+        level: 2,
+        itemNo: { in: [1001, 1002, 1003, 1004, 1005] },
+      },
+      data: {
+        stageCode: '07_misc',
+        parentId: miscParentId,
+      },
+    });
   }
 
   // ── Execute: create all level-2 items ────────────────────────────

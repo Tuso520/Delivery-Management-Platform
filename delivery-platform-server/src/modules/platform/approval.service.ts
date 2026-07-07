@@ -126,10 +126,15 @@ export class ApprovalService {
   }
 
   async findTasks(query: QueryPlatformDto, userId: string) {
-    const { page = 1, pageSize = 20, status } = query;
+    const { page = 1, pageSize = 20, status, businessType } = query;
     const elevated = await this.isElevated(userId);
+    const businessTypes = businessType
+      ?.split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
     const where: Prisma.ApprovalTaskWhereInput = {
       ...(status && { status }),
+      ...(businessTypes?.length && { businessType: { in: businessTypes } }),
       ...(!elevated && {
         OR: [{ applicantId: userId }, { approverId: userId }],
       }),

@@ -9,11 +9,11 @@ import 'md-editor-v3/lib/style.css'
 import { arcoConfirm } from '@/utils/arco-dialog'
 import { templateApi } from '@/api/template'
 import { attachmentApi } from '@/api/attachment'
+import AttachmentPreviewModal from '@/components/AttachmentPreviewModal/index.vue'
 import type { DocumentTemplate, QueryTemplateDto } from '@/types/template'
 import type { PaginatedData } from '@/types/api'
 import type { TagType } from '@/types/ui'
 import { downloadBlob } from '@/utils/blob'
-import { openPreviewUrl } from '@/utils/preview-window'
 
 interface TemplateStage {
   code: string
@@ -32,6 +32,8 @@ const loading = ref(false)
 const templateList = ref<DocumentTemplate[]>([])
 const activeStageCode = ref('')
 const templateStreamRef = ref<HTMLElement>()
+const previewVisible = ref(false)
+const previewTarget = ref<DocumentTemplate>()
 const createVisible = ref(false)
 const createSubmitting = ref(false)
 const createMode = ref<'markdown' | 'upload'>('markdown')
@@ -93,9 +95,8 @@ const totalTemplateCount = computed(() =>
 
 function columnsFor(stageName: string): TableColumnData[] {
   return [
-    { title: stageName, dataIndex: 'name', slotName: 'name', minWidth: 420 },
-    { title: '编号', dataIndex: 'templateNo', slotName: 'templateNo', width: 190 },
-    { title: '分类', dataIndex: 'category', width: 96 },
+    { title: stageName, dataIndex: 'name', slotName: 'name', minWidth: 520 },
+    { title: '分类', dataIndex: 'category', slotName: 'category', width: 96 },
     { title: '格式', dataIndex: 'fileFormat', slotName: 'format', width: 74 },
     { title: '状态', dataIndex: 'status', slotName: 'status', width: 90 },
     { title: '发布时间', dataIndex: 'publishedAt', slotName: 'publishedAt', width: 136 },
@@ -198,18 +199,14 @@ function incrementTemplateHeat(templateId: string, key: 'previewCount' | 'downlo
   }
 }
 
-async function openTemplatePreview(row: DocumentTemplate): Promise<void> {
-  try {
-    if (!row.attachmentId) {
-      Message.warning('该模板暂无可预览文件')
-      return
-    }
-    const { url } = await attachmentApi.createPreviewLink(row.attachmentId)
-    openPreviewUrl(url)
-    incrementTemplateHeat(row.id, 'previewCount')
-  } catch {
-    Message.error('预览链接生成失败')
+function openTemplatePreview(row: DocumentTemplate): void {
+  if (!row.attachmentId) {
+    Message.warning('该模板暂无可预览文件')
+    return
   }
+  previewTarget.value = row
+  previewVisible.value = true
+  incrementTemplateHeat(row.id, 'previewCount')
 }
 
 function resetCreateForm(): void {
@@ -226,6 +223,10 @@ function resetCreateForm(): void {
 
 function selectCreateFiles(event: Event): void {
   createFiles.value = Array.from((event.target as HTMLInputElement).files ?? [])
+  const firstFile = createFiles.value[0]
+  if (firstFile && !createForm.value.name.trim()) {
+    createForm.value.name = firstFile.name
+  }
 }
 
 function safeFileName(value: string): string {
@@ -323,6 +324,10 @@ function statusLabel(status: string): string {
   return statusOptions.find((option) => option.value === status)?.label || status
 }
 
+function categoryLabel(category: string): string {
+  return templateCategoryOptions.find((option) => option.value === category)?.label || category
+}
+
 function formatDate(value?: string | null): string {
   if (!value) return '-'
   const date = new Date(value)
@@ -408,8 +413,8 @@ onMounted(fetchList)
                   <span>{{ section.stage.description }}</span>
                 </div>
               </template>
-              <template #templateNo="{ record }">
-                <code>{{ record.templateNo }}</code>
+              <template #category="{ record }">
+                {{ categoryLabel(record.category) }}
               </template>
               <template #format="{ record }">
                 <a-tag size="small">{{ (record.fileFormat || '-').toUpperCase() }}</a-tag>
@@ -461,6 +466,12 @@ onMounted(fetchList)
         </div>
       </a-spin>
     </main>
+
+    <AttachmentPreviewModal
+      v-model:visible="previewVisible"
+      :attachment-id="previewTarget?.attachmentId || undefined"
+      :title="previewTarget?.name || '模板预览'"
+    />
 
     <a-modal
       v-model:visible="createVisible"

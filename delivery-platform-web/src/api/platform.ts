@@ -19,6 +19,7 @@ interface QueryParams {
   pageSize?: number
   keyword?: string
   status?: string
+  businessType?: string
 }
 
 export const dictionaryApi = {

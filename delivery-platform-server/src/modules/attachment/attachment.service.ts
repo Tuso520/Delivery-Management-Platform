@@ -397,11 +397,12 @@ export class AttachmentService {
         ? preview.html || `<img class="preview-image" src="${safeContentUrl}" alt="${title}" />`
         : preview.previewKind === 'pdf'
           ? `<main class="pdf-reader">
-              <section class="pdf-text-panel pdf-text-primary">
-                ${preview.html || `<section class="preview-empty"><h2>PDF 预览</h2><p>当前浏览器未返回可见文本层，请下载原文件查看。</p></section>`}
-              </section>
               <section class="pdf-native-panel">
-                <iframe class="preview-frame" src="${safeContentUrl}#toolbar=1&navpanes=0&view=FitH" title="${title}"></iframe>
+                <object class="preview-frame" data="${safeContentUrl}#toolbar=1&navpanes=0&view=FitH" type="application/pdf">
+                  <div class="pdf-text-panel pdf-text-primary">
+                    ${preview.html || `<section class="preview-empty"><h2>PDF 预览</h2><p>当前浏览器未返回可见文本层，请下载原文件查看。</p></section>`}
+                  </div>
+                </object>
               </section>
             </main>`
           : preview.previewKind === 'html'
@@ -494,8 +495,7 @@ export class AttachmentService {
       background: #fff;
     }
     .pdf-native-panel {
-      height: 520px;
-      min-height: 420px;
+      min-height: calc(100vh - 92px);
     }
     .pdf-text-panel {
       overflow: auto;
@@ -603,7 +603,10 @@ export class AttachmentService {
     }
     .preview-table-wrap {
       width: 100%;
+      max-height: 70vh;
       overflow: auto;
+      resize: both;
+      padding: 10px;
       background:
         linear-gradient(#f7f9fc, #f7f9fc) 0 0 / 100% 34px no-repeat,
         #fff;
@@ -634,7 +637,8 @@ export class AttachmentService {
       white-space: pre-wrap;
     }
     .preview-document table {
-      width: 100%;
+      width: max-content;
+      min-width: 100%;
       border-collapse: collapse;
       table-layout: auto;
       font-size: 13px;
@@ -643,9 +647,13 @@ export class AttachmentService {
     .preview-document td,
     .preview-document th {
       min-width: 112px;
+      max-width: 360px;
+      height: 34px;
       padding: 7px 9px;
       border: 1px solid #d9dfe8;
       vertical-align: top;
+      overflow: auto;
+      resize: both;
       word-break: break-word;
     }
     .preview-document tr:first-child td,

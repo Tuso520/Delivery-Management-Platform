@@ -32,6 +32,7 @@ const labels = {
     '04_construction': ['施工与安装', 'Construction & Installation'],
     '05_acceptance': ['调试与验收', 'Commissioning & Acceptance'],
     '06_review': ['收尾与复盘', 'Closing & Review'],
+    '07_misc': ['其他杂项', 'Miscellaneous'],
   },
 } as const
 

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import type { TableColumnData } from '@arco-design/web-vue'
 import { IconDownload, IconEye } from '@arco-design/web-vue/es/icon'
@@ -8,14 +7,19 @@ import { MdEditor } from 'md-editor-v3'
 import 'md-editor-v3/lib/style.css'
 import { attachmentApi } from '@/api/attachment'
 import { knowledgeApi } from '@/api/knowledge'
+import { approvalApi } from '@/api/platform'
+import AttachmentPreviewModal from '@/components/AttachmentPreviewModal/index.vue'
+import AttachmentPreviewPane from '@/components/AttachmentPreviewPane/index.vue'
 import type {
   KnowledgeArticle,
   KnowledgeAttachment,
   KnowledgeCategory,
+  KnowledgeFileRevisionDiff,
   QueryKnowledgeArticleDto,
 } from '@/types/knowledge'
+import type { ApprovalTask } from '@/types/platform'
 import { downloadBlob } from '@/utils/blob'
-import { openPreviewUrl } from '@/utils/preview-window'
+import { arcoPrompt } from '@/utils/arco-dialog'
 
 interface KnowledgeFileRow extends KnowledgeAttachment {
   articleId: string
@@ -31,17 +35,25 @@ interface CategoryIndexItem {
   totalFileCount: number
 }
 
-const router = useRouter()
 const loading = ref(false)
 const categories = ref<KnowledgeCategory[]>([])
 const articles = ref<KnowledgeArticle[]>([])
 const activeCategoryId = ref('')
 const fileStreamRef = ref<HTMLElement>()
+const previewVisible = ref(false)
+const previewTarget = ref<KnowledgeFileRow | KnowledgeAttachment>()
 
 const revisionVisible = ref(false)
 const revisionSubmitting = ref(false)
 const revisionTarget = ref<KnowledgeFileRow>()
 const replacementFiles = ref<File[]>([])
+
+const approvalVisible = ref(false)
+const approvalLoading = ref(false)
+const approvalTasks = ref<ApprovalTask[]>([])
+const diffVisible = ref(false)
+const diffLoading = ref(false)
+const currentDiff = ref<KnowledgeFileRevisionDiff>()
 
 const createVisible = ref(false)
 const createSubmitting = ref(false)
@@ -52,6 +64,8 @@ const createForm = ref({
   title: '',
   markdownContent: '',
   remark: '',
+  replaceExisting: false,
+  replaceAttachmentId: '',
 })
 
 function fileColumnsFor(categoryName: string): TableColumnData[] {
@@ -63,6 +77,16 @@ function fileColumnsFor(categoryName: string): TableColumnData[] {
     { title: '操作', slotName: 'actions', width: 224, fixed: 'right' },
   ]
 }
+
+const approvalColumns: TableColumnData[] = [
+  { title: '审批事项', dataIndex: 'businessTitle', minWidth: 260 },
+  { title: '类型', dataIndex: 'businessType', slotName: 'businessType', width: 126 },
+  { title: '申请人', slotName: 'applicant', width: 96 },
+  { title: '审批人', slotName: 'approver', width: 96 },
+  { title: '状态', dataIndex: 'status', slotName: 'status', width: 92 },
+  { title: '创建时间', dataIndex: 'createdAt', slotName: 'createdAt', width: 150 },
+  { title: '操作', slotName: 'actions', width: 190, fixed: 'right' },
+]
 
 const rootCategories = computed(() => categories.value.filter((category) => !category.parentId))
 
@@ -110,6 +134,13 @@ const activeSection = computed(() =>
 const totalFileCount = computed(() =>
   categorySections.value.reduce((total, section) => total + section.files.length, 0),
 )
+
+const replaceTargetOptions = computed(() => {
+  const selectedRootId = createForm.value.categoryId || activeCategoryId.value
+  return categorySections.value
+    .filter((section) => !selectedRootId || section.category.id === selectedRootId)
+    .flatMap((section) => section.files)
+})
 
 function articleTopic(article: KnowledgeArticle, rootName: string): string {
   const prefix = `${rootName} - `
@@ -198,14 +229,10 @@ function updateActiveCategoryByScroll(): void {
   activeCategoryId.value = currentId
 }
 
-async function openAttachmentPreview(file: KnowledgeFileRow | KnowledgeAttachment): Promise<void> {
-  try {
-    const { url } = await attachmentApi.createPreviewLink(file.id)
-    openPreviewUrl(url)
-    incrementFileHeat(file.id, 'previewCount')
-  } catch {
-    Message.error('预览链接生成失败')
-  }
+function openAttachmentPreview(file: KnowledgeFileRow | KnowledgeAttachment): void {
+  previewTarget.value = file
+  previewVisible.value = true
+  incrementFileHeat(file.id, 'previewCount')
 }
 
 function resetCreateForm(): void {
@@ -216,6 +243,8 @@ function resetCreateForm(): void {
     title: '',
     markdownContent: '',
     remark: '',
+    replaceExisting: false,
+    replaceAttachmentId: '',
   }
 }
 
@@ -226,6 +255,10 @@ function openCreateKnowledge(): void {
 
 function selectCreateFiles(event: Event): void {
   createFiles.value = Array.from((event.target as HTMLInputElement).files ?? [])
+  const firstFile = createFiles.value[0]
+  if (firstFile && !createForm.value.title.trim()) {
+    createForm.value.title = firstFile.name
+  }
 }
 
 function safeFileName(value: string): string {
@@ -242,7 +275,7 @@ function markdownFile(title: string, content: string): File {
 async function submitCreateKnowledge(): Promise<void> {
   const categoryId = createForm.value.categoryId
   const title = createForm.value.title.trim()
-  if (!categoryId || !title) {
+  if (!categoryId || (!title && !createForm.value.replaceExisting)) {
     Message.warning('请填写分类和标题')
     return
   }
@@ -253,6 +286,33 @@ async function submitCreateKnowledge(): Promise<void> {
 
   createSubmitting.value = true
   try {
+    const uploadFiles =
+      createMode.value === 'markdown'
+        ? [markdownFile(title || '知识库更新文件', createForm.value.markdownContent)]
+        : createFiles.value
+
+    if (createForm.value.replaceExisting) {
+      const target = replaceTargetOptions.value.find(
+        (file) => file.id === createForm.value.replaceAttachmentId,
+      )
+      if (!target) {
+        Message.warning('请选择需要替换的在线文件')
+        return
+      }
+      if (uploadFiles.length !== 1) {
+        Message.warning('替换已有文件时一次只能提交一个新文件')
+        return
+      }
+      const data = new FormData()
+      data.append('files', uploadFiles[0])
+      await knowledgeApi.submitFileRevision(target.articleId, target.id, data)
+      Message.success('文件替换申请已提交审批')
+      createVisible.value = false
+      await fetchArticles()
+      await fetchApprovalTasks()
+      return
+    }
+
     const article = await knowledgeApi.createArticle({
       categoryId,
       title,
@@ -260,10 +320,6 @@ async function submitCreateKnowledge(): Promise<void> {
       markdownContent: createForm.value.markdownContent || `# ${title}\n`,
       sourceStatus: 'Ready',
     })
-    const uploadFiles =
-      createMode.value === 'markdown'
-        ? [markdownFile(title, createForm.value.markdownContent)]
-        : createFiles.value
     const data = new FormData()
     uploadFiles.forEach((file) => data.append('files', file))
     data.append('ownerType', 'KnowledgeArticle')
@@ -283,6 +339,97 @@ async function submitCreateKnowledge(): Promise<void> {
     await fetchArticles()
   } finally {
     createSubmitting.value = false
+  }
+}
+
+function approvalBusinessLabel(type: string): string {
+  const map: Record<string, string> = {
+    knowledge: '知识发布',
+    'knowledge-file-update': '文件更新',
+  }
+  return map[type] || type
+}
+
+function approvalStatusLabel(status: string): string {
+  const map: Record<string, string> = {
+    Pending: '待审批',
+    Approved: '已通过',
+    Rejected: '已驳回',
+    Cancelled: '已取消',
+  }
+  return map[status] || status
+}
+
+function approvalStatusColor(status: string): string {
+  const map: Record<string, string> = {
+    Pending: 'orange',
+    Approved: 'green',
+    Rejected: 'red',
+    Cancelled: 'gray',
+  }
+  return map[status] || 'blue'
+}
+
+async function fetchApprovalTasks(): Promise<void> {
+  approvalLoading.value = true
+  try {
+    const page = await approvalApi.getTasks({
+      page: 1,
+      pageSize: 100,
+      businessType: 'knowledge,knowledge-file-update',
+    })
+    approvalTasks.value = page.list.filter((task) =>
+      ['knowledge', 'knowledge-file-update'].includes(task.businessType),
+    )
+  } finally {
+    approvalLoading.value = false
+  }
+}
+
+async function openApprovalTasks(): Promise<void> {
+  approvalVisible.value = true
+  await fetchApprovalTasks()
+}
+
+async function decideApproval(task: ApprovalTask, decision: 'Approved' | 'Rejected'): Promise<void> {
+  try {
+    const result = await arcoPrompt(
+      decision === 'Approved' ? '可填写审批意见' : '请填写驳回原因',
+      decision === 'Approved' ? '审批通过' : '驳回审批',
+      {
+        inputType: 'textarea',
+        inputValidator: (value) =>
+          decision === 'Rejected' && !value.trim() ? '驳回时必须填写原因' : true,
+      },
+    )
+    await approvalApi.decide(task.id, {
+      decision,
+      comment: result.value.trim() || undefined,
+    })
+    Message.success(decision === 'Approved' ? '审批已通过' : '审批已驳回')
+    await Promise.all([fetchApprovalTasks(), fetchArticles()])
+    if (currentDiff.value?.incoming.id === task.businessId) {
+      diffVisible.value = false
+      currentDiff.value = undefined
+    }
+  } catch {
+    // 用户取消审批。
+  }
+}
+
+async function openRevisionDiff(task: ApprovalTask): Promise<void> {
+  if (task.businessType !== 'knowledge-file-update') {
+    Message.info('当前审批事项没有文件差异对比')
+    return
+  }
+
+  diffVisible.value = true
+  diffLoading.value = true
+  currentDiff.value = undefined
+  try {
+    currentDiff.value = await knowledgeApi.getFileRevisionDiff(task.businessId)
+  } finally {
+    diffLoading.value = false
   }
 }
 
@@ -339,10 +486,6 @@ function deleteAttachment(file: KnowledgeFileRow): void {
   })
 }
 
-function goApprovalTasks(): void {
-  router.push('/operations/approval?tab=tasks')
-}
-
 onMounted(async () => {
   await Promise.all([fetchCategories(), fetchArticles()])
   await nextTick()
@@ -357,7 +500,6 @@ onMounted(async () => {
         <div>
           <h2>知识分类</h2>
         </div>
-        <a-button size="small" type="text" @click="fetchArticles">刷新</a-button>
       </div>
 
       <div class="category-list">
@@ -382,7 +524,7 @@ onMounted(async () => {
           <span>{{ activeSection?.totalFileCount || 0 }} 个文件</span>
         </div>
         <a-space size="mini">
-          <a-button size="small" @click="goApprovalTasks">更新审批</a-button>
+          <a-button size="small" @click="openApprovalTasks">更新审批</a-button>
           <a-button size="small" type="primary" @click="openCreateKnowledge">
             新增资料
           </a-button>
@@ -469,6 +611,12 @@ onMounted(async () => {
       </a-spin>
     </main>
 
+    <AttachmentPreviewModal
+      v-model:visible="previewVisible"
+      :attachment-id="previewTarget?.id"
+      :title="previewTarget?.originalName || '在线预览'"
+    />
+
     <a-modal
       v-model:visible="createVisible"
       title="新增知识资料"
@@ -507,6 +655,29 @@ onMounted(async () => {
               placeholder="用于列表展示的简短说明"
               :auto-size="{ minRows: 2, maxRows: 3 }"
             />
+          </a-form-item>
+
+          <a-form-item label="是否替换已有在线文件">
+            <a-switch v-model="createForm.replaceExisting">
+              <template #checked>替换</template>
+              <template #unchecked>新增</template>
+            </a-switch>
+          </a-form-item>
+
+          <a-form-item v-if="createForm.replaceExisting" label="选择替换目标" required>
+            <a-select
+              v-model="createForm.replaceAttachmentId"
+              placeholder="请选择需要替换的在线文件"
+              allow-search
+            >
+              <a-option
+                v-for="file in replaceTargetOptions"
+                :key="file.id"
+                :value="file.id"
+              >
+                {{ file.categoryName }} / {{ file.originalName }}
+              </a-option>
+            </a-select>
           </a-form-item>
         </a-form>
 
@@ -567,6 +738,101 @@ onMounted(async () => {
           待提交：{{ replacementFiles[0].name }} / {{ formatFileSize(replacementFiles[0].size) }}
         </p>
       </div>
+    </a-modal>
+
+    <a-modal
+      v-model:visible="approvalVisible"
+      title="知识库审批任务"
+      :width="1120"
+      :footer="false"
+    >
+      <a-table
+        :loading="approvalLoading"
+        :columns="approvalColumns"
+        :data="approvalTasks"
+        :pagination="false"
+        row-key="id"
+        class="approval-table"
+      >
+        <template #businessType="{ record }">
+          <a-tag size="small">{{ approvalBusinessLabel(record.businessType) }}</a-tag>
+        </template>
+        <template #applicant="{ record }">
+          {{ record.applicant?.realName || '-' }}
+        </template>
+        <template #approver="{ record }">
+          {{ record.approver?.realName || '-' }}
+        </template>
+        <template #status="{ record }">
+          <a-tag :color="approvalStatusColor(record.status)" size="small">
+            {{ approvalStatusLabel(record.status) }}
+          </a-tag>
+        </template>
+        <template #createdAt="{ record }">
+          {{ formatDate(record.createdAt) }}
+        </template>
+        <template #actions="{ record }">
+          <a-space size="mini" :wrap="false" class="approval-actions">
+            <a-button
+              v-if="record.businessType === 'knowledge-file-update'"
+              type="text"
+              size="mini"
+              @click="openRevisionDiff(record)"
+            >
+              差异
+            </a-button>
+            <template v-if="record.status === 'Pending'">
+              <a-button type="text" size="mini" @click="decideApproval(record, 'Approved')">
+                通过
+              </a-button>
+              <a-button
+                type="text"
+                status="danger"
+                size="mini"
+                @click="decideApproval(record, 'Rejected')"
+              >
+                驳回
+              </a-button>
+            </template>
+          </a-space>
+        </template>
+      </a-table>
+    </a-modal>
+
+    <a-modal
+      v-model:visible="diffVisible"
+      title="文件差异对比"
+      :width="'94vw'"
+      :footer="false"
+      class="diff-modal"
+    >
+      <a-spin :loading="diffLoading">
+        <div v-if="currentDiff" class="diff-layout">
+          <section>
+            <header>
+              <strong>当前线上文件</strong>
+              <span>{{ currentDiff.original.originalName }}</span>
+            </header>
+            <AttachmentPreviewPane
+              :attachment-id="currentDiff.original.id"
+              height="64vh"
+              compact
+            />
+          </section>
+          <section>
+            <header>
+              <strong>待审批新文件</strong>
+              <span>{{ currentDiff.incoming.originalName }}</span>
+            </header>
+            <AttachmentPreviewPane
+              :attachment-id="currentDiff.incoming.id"
+              height="64vh"
+              compact
+            />
+          </section>
+        </div>
+        <a-empty v-else-if="!diffLoading" description="暂无可对比内容" />
+      </a-spin>
     </a-modal>
 
   </section>
@@ -884,6 +1150,58 @@ onMounted(async () => {
   }
 }
 
+.approval-table :deep(.arco-table-th),
+.approval-table :deep(.arco-table-cell) {
+  padding: 7px 8px;
+  font-size: 12px;
+  line-height: 1.42;
+}
+
+.approval-actions {
+  white-space: nowrap;
+}
+
+.diff-modal :deep(.arco-modal-body) {
+  padding-top: 10px;
+}
+
+.diff-layout {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+
+  section {
+    min-width: 0;
+    border: 1px solid var(--color-border-2);
+    background: var(--color-bg-2);
+  }
+
+  header {
+    min-height: 42px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--color-border-2);
+  }
+
+  strong {
+    flex: 0 0 auto;
+    color: var(--color-text-1);
+    font-size: 13px;
+  }
+
+  span {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--color-text-2);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
 @media (max-width: 980px) {
   .knowledge-page {
     grid-template-columns: 1fr;
@@ -902,6 +1220,10 @@ onMounted(async () => {
 
   .file-toolbar {
     align-items: flex-start;
+  }
+
+  .diff-layout {
+    grid-template-columns: 1fr;
   }
 }
 </style>
