@@ -60,6 +60,7 @@ export async function seedDemoCoverage(prisma: PrismaClient): Promise<void> {
 
   await seedProjectProcessAndPayments(prisma, admin.id, projects);
   await seedProjectFilesAndReviews(prisma, storage, samples, admin.id, users, projects);
+  await normalizeArchiveFileRemarks(prisma);
   await seedApprovalAndNotificationCoverage(prisma, admin.id, users, projects);
   await seedNotificationInboxCoverage(prisma, users, projects);
   await seedBusinessListCoverage(prisma, admin.id, users, projects);
@@ -965,7 +966,12 @@ async function seedKnowledgeRemarksAndHeat(prisma: PrismaClient, adminId: string
 
   for (const [index, attachment] of attachments.entries()) {
     const remark = buildAttachmentRemark(attachment.originalName, attachment.fileExt);
-    if (!attachment.remark || attachment.remark.length < 12 || attachment.remark.includes('样例文件')) {
+    if (
+      !attachment.remark ||
+      attachment.remark.length < 12 ||
+      attachment.remark.includes('样例文件') ||
+      hasCorruptText(attachment.remark)
+    ) {
       await prisma.attachment.update({
         where: { id: attachment.id },
         data: { remark },
@@ -974,6 +980,45 @@ async function seedKnowledgeRemarksAndHeat(prisma: PrismaClient, adminId: string
     await topUpOperationLogs(prisma, adminId, 'attachment', attachment.id, 'preview', 2 + (index % 8), 'attachment');
     await topUpOperationLogs(prisma, adminId, 'attachment', attachment.id, 'download', 1 + (index % 5), 'attachment');
   }
+}
+
+async function normalizeArchiveFileRemarks(prisma: PrismaClient): Promise<void> {
+  const files = await prisma.file.findMany({
+    where: {
+      deletedAt: null,
+      archiveItemId: { not: null },
+    },
+    select: {
+      id: true,
+      originalName: true,
+      remark: true,
+      project: { select: { projectCode: true } },
+      archiveItem: {
+        select: {
+          name: true,
+          secondName: true,
+          stageCode: true,
+        },
+      },
+    },
+    take: 500,
+  });
+
+  for (const file of files) {
+    if (!hasCorruptText(file.remark)) continue;
+    const stageName = projectStageName(file.archiveItem?.stageCode ?? 'other');
+    const itemName = file.archiveItem?.secondName || file.archiveItem?.name || '项目档案';
+    await prisma.file.update({
+      where: { id: file.id },
+      data: {
+        remark: `示例档案：${file.project.projectCode} / ${stageName} / ${itemName}。上传人员应补充正式版本、签字扫描件或现场记录，审批通过后用于项目档案查阅。`,
+      },
+    });
+  }
+}
+
+function hasCorruptText(value?: string | null): boolean {
+  return Boolean(value && (value.includes('????') || value.includes('�')));
 }
 
 async function seedKnowledgeFileUpdateApprovalCoverage(
