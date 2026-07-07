@@ -341,7 +341,7 @@ onMounted(fetchProjects)
                 :key="stage.stageCode"
                 :name="stage.stageCode"
               >
-                <template #label>
+                <template #title>
                   <span class="stage-tab-label">
                     {{ localizeProjectStage(stage.stageCode, localeStore.currentLocale) }}
                     <a-tag v-if="getStageStats(stage.stageCode)" size="small" class="stage-count">
