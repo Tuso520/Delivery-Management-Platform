@@ -729,20 +729,24 @@ export class FileService {
     .pdf-page-fallback { min-height: 100%; padding: 26px 30px; }
     .pdf-page-label, .word-page-meta { margin-bottom: 18px; color: #86909c; font-size: 12px; }
     .preview-document, .preview-text, .preview-empty { width: min(1240px, 100%); min-height: calc(100vh - 92px); margin: 0 auto; }
+    .attachment-preview > header { display: none; }
     .office-word { display: flex; justify-content: center; padding: 18px 0 32px; }
     .word-page { width: min(900px, 100%); min-height: 1120px; padding: 72px 82px; box-shadow: 0 16px 42px rgba(15, 23, 42, 0.12); }
     .word-body h1 { margin: 0 0 28px; font-size: 26px; font-weight: 700; line-height: 1.35; text-align: center; }
     .word-body p { margin: 0 0 12px; font-size: 15px; line-height: 1.9; text-indent: 2em; white-space: pre-wrap; }
     .office-excel { min-height: calc(100vh - 92px); border: 1px solid #d9dfe8; background: #f7f9fc; }
     .office-excel > header { display: none; }
+    .excel-workbook { display: grid; gap: 18px; }
     .preview-sheet { margin: 0; padding: 0 0 38px; background: #fff; }
     .preview-sheet h3 { position: sticky; top: 0; z-index: 1; margin: 0; padding: 10px 14px; border-bottom: 1px solid #d9dfe8; background: #f2f5f9; font-size: 13px; font-weight: 650; }
     .preview-table-wrap { width: 100%; max-height: 70vh; overflow: auto; resize: both; padding: 10px; background: #fff; }
     .preview-document table { width: max-content; min-width: 100%; border-collapse: collapse; table-layout: auto; font-size: 13px; background: #fff; }
     .preview-document td, .preview-document th { min-width: 112px; max-width: 360px; height: 34px; padding: 7px 9px; border: 1px solid #d9dfe8; vertical-align: top; overflow: auto; resize: both; word-break: break-word; }
     .preview-document tr:first-child td, .preview-document tr:first-child th { position: sticky; top: 34px; z-index: 1; background: #edf3ff; font-weight: 650; }
-    .office-presentation { display: grid; gap: 16px; }
-    .preview-slide { aspect-ratio: 16 / 9; max-width: 960px; margin: 0 auto 18px; padding: 48px 56px; border: 1px solid #d9dfe8; background: #fff; box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12); }
+    .office-presentation { display: grid; gap: 18px; justify-items: center; }
+    .preview-slide { display: flex; flex-direction: column; justify-content: center; aspect-ratio: 16 / 9; width: min(960px, 100%); margin: 0 auto 18px; padding: 56px 64px; border: 1px solid #d9dfe8; background: #fff; box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12); }
+    .preview-slide h3 { margin: 0 0 22px; font-size: 30px; line-height: 1.3; text-align: center; }
+    .preview-slide p { margin: 0 0 12px; font-size: 18px; line-height: 1.65; color: #4e5969; }
     .preview-document h2, .preview-document h3 { margin: 0 0 14px; line-height: 1.35; }
     .preview-document p { margin: 0 0 10px; color: #4e5969; line-height: 1.75; white-space: pre-wrap; }
     .preview-text { padding: 24px 28px; border: 1px solid #e5e6eb; background: #fff; overflow: auto; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
