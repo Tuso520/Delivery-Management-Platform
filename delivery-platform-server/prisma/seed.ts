@@ -11,7 +11,6 @@ import { seedWorkflows } from './seed-data/workflow';
 import { seedKnowledge } from './seed-data/knowledge';
 import { seedProjects } from './seed-data/projects';
 import { seedPlatformData } from './seed-data/platform';
-import { seedDemoCoverage } from './seed-data/demo-coverage';
 
 const prisma = new PrismaClient();
 
@@ -62,11 +61,8 @@ async function main() {
   console.log('[11/12] 创建示例项目...');
   await seedProjects(prisma);
 
-  console.log('[12/13] 创建扩展平台数据...');
+  console.log('[12/12] 创建扩展平台数据...');
   await seedPlatformData(prisma);
-
-  console.log('[13/13] 补齐演示列表与档案测试数据...');
-  await seedDemoCoverage(prisma);
 
   console.log('\n✅ 种子数据填充完成');
 }
