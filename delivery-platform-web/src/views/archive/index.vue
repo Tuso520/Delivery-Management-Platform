@@ -65,6 +65,11 @@ const previewFileId = ref('')
 const previewTitle = ref('在线预览')
 
 const defaultAllowedTypes = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'jpg', 'jpeg', 'png']
+const archiveViewOptions = [
+  { label: '档案目录', value: 'directory' },
+  { label: '上传记录', value: 'records' },
+  { label: '待审核', value: 'reviews' },
+] as const
 
 const selectedProjectName = computed(() =>
   projectList.value.find((project) => project.id === selectedProjectId.value)?.projectName || '',
@@ -339,15 +344,19 @@ watch(activeArchiveView, (view) => {
         </div>
 
         <div class="archive-actions">
-          <a-segmented
-            v-model="activeArchiveView"
-            size="small"
-            :options="[
-              { label: '档案目录', value: 'directory' },
-              { label: '上传记录', value: 'records' },
-              { label: '待审核', value: 'reviews' },
-            ]"
-          />
+          <div class="archive-view-switch" role="tablist" aria-label="项目档案视图切换">
+            <a-button
+              v-for="option in archiveViewOptions"
+              :key="option.value"
+              size="small"
+              :type="activeArchiveView === option.value ? 'primary' : 'secondary'"
+              :aria-selected="activeArchiveView === option.value"
+              role="tab"
+              @click="activeArchiveView = option.value"
+            >
+              {{ option.label }}
+            </a-button>
+          </div>
           <a-button size="small" type="primary" :disabled="!selectedProjectId" @click="openGenerateDialog">
             生成目录
           </a-button>
