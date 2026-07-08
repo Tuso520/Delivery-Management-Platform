@@ -243,12 +243,17 @@
 }
 
 .item-detail {
+  width: 100%;
   display: grid;
   gap: 14px;
 }
 
 .detail-guide {
+  width: 100%;
+  display: flex;
   align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
   padding: 12px;
   border: 1px solid var(--color-border-2);
   background: var(--color-fill-1);
@@ -279,8 +284,13 @@
 }
 
 .files-block {
+  width: 100%;
   display: grid;
   gap: 8px;
+}
+
+.item-detail :deep(.file-uploader) {
+  width: 100%;
 }
 
 .files-heading {

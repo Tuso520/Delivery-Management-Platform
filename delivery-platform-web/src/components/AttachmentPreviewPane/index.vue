@@ -640,18 +640,73 @@ watch(() => props.source, loadPreview)
 
 .preview-html :deep(.office-presentation) {
   display: grid;
-  gap: 16px;
+  gap: 18px;
+  padding: 12px 0 32px;
+  background: #eef2f7;
 }
 
 .preview-html :deep(.preview-slide) {
+  position: relative;
   width: min(960px, calc(100% - 32px));
   aspect-ratio: 16 / 9;
   margin: 0 auto 18px;
-  padding: 48px 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 58px 72px;
   border: 1px solid #d9dfe8;
   background: #fff;
   box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12);
-  overflow: auto;
+  overflow: hidden;
+}
+
+.preview-html :deep(.slide-page-no) {
+  position: absolute;
+  right: 22px;
+  bottom: 16px;
+  color: #86909c;
+  font-size: 12px;
+}
+
+.preview-html :deep(.slide-content) {
+  width: 100%;
+  max-width: 760px;
+}
+
+.preview-html :deep(.preview-slide h3) {
+  margin: 0 0 26px;
+  color: #1d2129;
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.28;
+  text-align: center;
+}
+
+.preview-html :deep(.slide-list) {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.preview-html :deep(.slide-list li) {
+  position: relative;
+  padding-left: 22px;
+  color: #4e5969;
+  font-size: 18px;
+  line-height: 1.62;
+}
+
+.preview-html :deep(.slide-list li::before) {
+  position: absolute;
+  top: 0.72em;
+  left: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgb(var(--primary-6));
+  content: '';
 }
 
 .preview-empty {

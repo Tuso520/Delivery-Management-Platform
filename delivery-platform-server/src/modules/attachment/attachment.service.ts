@@ -609,16 +609,66 @@ export class AttachmentService {
     }
     .office-presentation {
       display: grid;
-      gap: 16px;
+      gap: 18px;
+      padding: 12px 0 32px;
+      background: #eef2f7;
     }
     .preview-slide {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       aspect-ratio: 16 / 9;
-      max-width: 960px;
+      width: min(960px, calc(100% - 32px));
       margin: 0 auto 18px;
-      padding: 48px 56px;
+      padding: 58px 72px;
       border: 1px solid #d9dfe8;
       background: #fff;
       box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12);
+      overflow: hidden;
+    }
+    .slide-page-no {
+      position: absolute;
+      right: 22px;
+      bottom: 16px;
+      color: #86909c;
+      font-size: 12px;
+    }
+    .slide-content {
+      width: 100%;
+      max-width: 760px;
+    }
+    .preview-slide h3 {
+      margin: 0 0 26px;
+      color: #1d2129;
+      font-size: 30px;
+      font-weight: 700;
+      line-height: 1.28;
+      text-align: center;
+    }
+    .slide-list {
+      display: grid;
+      gap: 14px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .slide-list li {
+      position: relative;
+      padding-left: 22px;
+      color: #4e5969;
+      font-size: 18px;
+      line-height: 1.62;
+    }
+    .slide-list li::before {
+      position: absolute;
+      top: 0.72em;
+      left: 0;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #165dff;
+      content: '';
     }
     .preview-document h2,
     .preview-document h3 {

@@ -201,7 +201,8 @@ async function renderPptx(buffer: Buffer, fileName: string): Promise<string> {
   }
 
   const slides: string[] = [];
-  for (const slideName of slideNames.slice(0, 30)) {
+  const visibleSlideNames = slideNames.slice(0, 30);
+  for (const [slideIndex, slideName] of visibleSlideNames.entries()) {
     const slideXml = await readZipText(zip, slideName);
     if (!slideXml) continue;
     const parsed = xmlParser.parse(slideXml) as unknown;
@@ -214,8 +215,15 @@ async function renderPptx(buffer: Buffer, fileName: string): Promise<string> {
     const body = lines.slice(1);
     slides.push(`
       <section class="preview-slide">
-        <h3>${escapeHtml(title)}</h3>
-        ${body.map((line) => `<p>${escapeHtml(line)}</p>`).join('\n')}
+        <div class="slide-page-no">${slideIndex + 1} / ${visibleSlideNames.length}</div>
+        <div class="slide-content">
+          <h3>${escapeHtml(title)}</h3>
+          ${
+            body.length
+              ? `<ul class="slide-list">${body.map((line) => `<li>${escapeHtml(line)}</li>`).join('\n')}</ul>`
+              : ''
+          }
+        </div>
       </section>
     `);
   }

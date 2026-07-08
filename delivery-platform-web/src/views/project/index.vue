@@ -173,7 +173,7 @@ onMounted(fetchProjects)
         row-key="id"
         border
         stripe
-        :scroll="{ x: 1700 }"
+        :scroll="{ x: 1760 }"
         class="project-table"
       >
         <a-table-column prop="projectName" label="项目名称" :width="250" show-overflow-tooltip />
@@ -202,7 +202,7 @@ onMounted(fetchProjects)
             </a-tag>
           </template>
         </a-table-column>
-        <a-table-column prop="currentStage" label="当前阶段" :width="128">
+        <a-table-column prop="currentStage" label="当前阶段" :width="160">
           <template #default="{ row }">
             {{ localizeProjectStage(row.currentStage || '', localeStore.currentLocale) }}
           </template>

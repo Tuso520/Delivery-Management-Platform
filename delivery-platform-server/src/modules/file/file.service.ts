@@ -740,9 +740,14 @@ export class FileService {
     .preview-document td, .preview-document th { min-width: 112px; max-width: 360px; height: 34px; padding: 7px 9px; border: 1px solid #d9dfe8; vertical-align: top; overflow: auto; resize: both; word-break: break-word; }
     .preview-document tr:first-child td, .preview-document tr:first-child th { position: sticky; top: 34px; z-index: 1; background: #edf3ff; font-weight: 650; }
     .office-presentation { display: grid; gap: 18px; justify-items: center; }
-    .preview-slide { display: flex; flex-direction: column; justify-content: center; aspect-ratio: 16 / 9; width: min(960px, 100%); margin: 0 auto 18px; padding: 56px 64px; border: 1px solid #d9dfe8; background: #fff; box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12); }
-    .preview-slide h3 { margin: 0 0 22px; font-size: 30px; line-height: 1.3; text-align: center; }
-    .preview-slide p { margin: 0 0 12px; font-size: 18px; line-height: 1.65; color: #4e5969; }
+    .office-presentation { display: grid; gap: 18px; padding: 12px 0 32px; background: #eef2f7; }
+    .preview-slide { position: relative; display: flex; align-items: center; justify-content: center; aspect-ratio: 16 / 9; width: min(960px, calc(100% - 32px)); margin: 0 auto 18px; padding: 58px 72px; border: 1px solid #d9dfe8; background: #fff; box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12); overflow: hidden; }
+    .slide-page-no { position: absolute; right: 22px; bottom: 16px; color: #86909c; font-size: 12px; }
+    .slide-content { width: 100%; max-width: 760px; }
+    .preview-slide h3 { margin: 0 0 26px; color: #1d2129; font-size: 30px; font-weight: 700; line-height: 1.28; text-align: center; }
+    .slide-list { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+    .slide-list li { position: relative; padding-left: 22px; color: #4e5969; font-size: 18px; line-height: 1.62; }
+    .slide-list li::before { position: absolute; top: 0.72em; left: 0; width: 7px; height: 7px; border-radius: 50%; background: #165dff; content: ''; }
     .preview-document h2, .preview-document h3 { margin: 0 0 14px; line-height: 1.35; }
     .preview-document p { margin: 0 0 10px; color: #4e5969; line-height: 1.75; white-space: pre-wrap; }
     .preview-text { padding: 24px 28px; border: 1px solid #e5e6eb; background: #fff; overflow: auto; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }

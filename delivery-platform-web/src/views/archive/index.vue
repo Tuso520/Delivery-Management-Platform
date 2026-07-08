@@ -469,9 +469,9 @@ watch(activeArchiveView, (view) => {
               stripe
               class="archive-table"
               empty-text="当前阶段暂无档案项"
-              :scroll="{ y: '100%', x: 1080 }"
+              :scroll="{ y: '100%', x: 1200 }"
             >
-              <a-table-column label="档案项" :min-width="260">
+              <a-table-column label="档案项" :width="280">
                 <template #default="{ row }">
                   <div class="archive-name-cell">
                     <strong>{{ row.secondName || row.name }}</strong>
@@ -479,7 +479,7 @@ watch(activeArchiveView, (view) => {
                   </div>
                 </template>
               </a-table-column>
-              <a-table-column label="上传指导" :min-width="360" show-overflow-tooltip>
+              <a-table-column label="上传指导" :width="420" show-overflow-tooltip>
                 <template #default="{ row }">{{ row.guideText }}</template>
               </a-table-column>
               <a-table-column label="文件" :width="72" align="center">

@@ -6,7 +6,6 @@ import type { TableColumnData } from '@arco-design/web-vue'
 import { IconDownload, IconEye } from '@arco-design/web-vue/es/icon'
 import { MdEditor } from 'md-editor-v3'
 import 'md-editor-v3/lib/style.css'
-import AttachmentPreviewModal from '@/components/AttachmentPreviewModal/index.vue'
 import { arcoConfirm } from '@/utils/arco-dialog'
 import { templateApi } from '@/api/template'
 import { attachmentApi } from '@/api/attachment'
@@ -16,6 +15,7 @@ import type { PaginatedData } from '@/types/api'
 import type { ApprovalTask } from '@/types/platform'
 import type { TagType } from '@/types/ui'
 import { downloadBlob } from '@/utils/blob'
+import { openPreviewRedirect } from '@/utils/preview-link'
 
 interface TemplateStage {
   code: string
@@ -38,9 +38,6 @@ const createVisible = ref(false)
 const createSubmitting = ref(false)
 const createMode = ref<'markdown' | 'upload'>('markdown')
 const createFiles = ref<File[]>([])
-const previewVisible = ref(false)
-const previewAttachmentId = ref('')
-const previewTitle = ref('在线预览')
 const approvalVisible = ref(false)
 const approvalLoading = ref(false)
 const approvalTasks = ref<ApprovalTask[]>([])
@@ -287,9 +284,7 @@ function openTemplatePreview(row: DocumentTemplate): void {
     Message.warning('该模板暂无可预览文件')
     return
   }
-  previewAttachmentId.value = row.attachmentId as string
-  previewTitle.value = row.name
-  previewVisible.value = true
+  openPreviewRedirect('attachment', row.attachmentId as string, { title: row.name || '在线预览' })
   incrementTemplateHeat(row.id, 'previewCount')
 }
 
@@ -697,12 +692,6 @@ onMounted(fetchList)
       </a-table>
     </a-modal>
 
-    <AttachmentPreviewModal
-      v-model:visible="previewVisible"
-      source="attachment"
-      :attachment-id="previewAttachmentId"
-      :title="previewTitle"
-    />
   </section>
 </template>
 
