@@ -34,9 +34,10 @@ export function openPreviewRedirect(
   options: OpenSignedPreviewOptions = {},
 ): void {
   const targetUrl = getPreviewRedirectUrl(source, id, options)
-  const opened = window.open(targetUrl, '_blank', 'noopener,noreferrer')
+  const opened = window.open(targetUrl, '_blank')
   if (!opened) {
-    Message.warning('浏览器阻止了新窗口，请允许弹窗后重试')
+    Message.warning('浏览器拦截了新窗口，已在当前窗口打开预览')
+    window.location.assign(targetUrl)
   }
   options.onOpened?.()
 }
@@ -63,9 +64,10 @@ export async function openSignedPreview(
     if (previewWindow) {
       previewWindow.location.replace(url)
     } else {
-      const opened = window.open(url, '_blank', 'noopener,noreferrer')
+      const opened = window.open(url, '_blank')
       if (!opened) {
-        Message.warning('浏览器阻止了新窗口，请允许弹窗后重试')
+        Message.warning('浏览器拦截了新窗口，已在当前窗口打开预览')
+        window.location.assign(url)
       }
     }
     options.onOpened?.()
