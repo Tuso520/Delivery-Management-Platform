@@ -327,28 +327,111 @@ function renderLegacyOffice(
         ? 'spreadsheet'
         : 'document';
 
+  const htmlBody =
+    viewer === 'presentation'
+      ? renderLegacyPresentationBody(readableText, base.fileName)
+      : viewer === 'spreadsheet'
+        ? renderLegacySpreadsheetBody(readableText)
+        : renderLegacyDocumentBody(readableText);
+  const wrapperClass =
+    viewer === 'presentation'
+      ? 'office-presentation'
+      : viewer === 'spreadsheet'
+        ? 'office-excel'
+        : 'office-word';
+
   return {
     ...base,
     previewKind: 'html',
     viewer,
-    html: wrapPreviewHtml(
-      base.fileName,
-      `
-        <section class="word-page">
-          <div class="word-page-meta">Office 只读预览</div>
-          <article class="word-body">
-            ${readableText
-              .split(/\r?\n/u)
-              .map((line) => line.trim())
-              .filter(Boolean)
-              .map((line) => `<p>${escapeHtml(line)}</p>`)
-              .join('\n')}
-          </article>
-        </section>
-      `,
-      viewer === 'spreadsheet' ? 'office-excel' : 'office-word',
-    ),
+    html: wrapPreviewHtml(base.fileName, htmlBody, wrapperClass),
   };
+}
+
+function renderLegacyDocumentBody(readableText: string): string {
+  return `
+    <section class="word-page">
+      <div class="word-page-meta">Office 只读预览</div>
+      <article class="word-body">
+        ${splitReadableLines(readableText)
+          .map((line) => `<p>${escapeHtml(line)}</p>`)
+          .join('\n')}
+      </article>
+    </section>
+  `;
+}
+
+function renderLegacySpreadsheetBody(readableText: string): string {
+  const rows = splitReadableLines(readableText).map((line) =>
+    line.split(/\t|,/u).map((cell) => cell.trim()).filter(Boolean),
+  );
+  const visibleRows = rows.filter((row) => row.length);
+  const columnCount = Math.min(Math.max(...visibleRows.map((row) => row.length), 1), 24);
+
+  return `
+    <section class="preview-sheet">
+      <h3>旧版 Excel 只读预览</h3>
+      <div class="preview-table-block">
+        <div class="preview-table-wrap">
+          <table>
+            <tbody>
+              ${visibleRows
+                .map((row) => `
+                  <tr>
+                    ${Array.from({ length: columnCount }, (_, index) =>
+                      `<td>${escapeHtml(row[index] ?? '')}</td>`,
+                    ).join('')}
+                  </tr>
+                `)
+                .join('\n')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderLegacyPresentationBody(readableText: string, fileName: string): string {
+  const lines = splitReadableLines(readableText);
+  const bodyLines = isLikelyDuplicateFileTitle(lines[0] ?? '', fileName)
+    ? lines.slice(1)
+    : lines;
+  const chunks = chunkLines(bodyLines.length ? bodyLines : lines, 5).slice(0, 30);
+
+  return chunks
+    .map((chunk, index) => {
+      const [title = fileName, ...body] = chunk;
+      return `
+        <section class="preview-slide">
+          <div class="slide-page-no">${index + 1} / ${chunks.length}</div>
+          <div class="slide-content">
+            <h3>${escapeHtml(title)}</h3>
+            ${
+              body.length
+                ? `<ul class="slide-list">${body.map((line) => `<li>${escapeHtml(line)}</li>`).join('\n')}</ul>`
+                : ''
+            }
+          </div>
+        </section>
+      `;
+    })
+    .join('\n');
+}
+
+function splitReadableLines(value: string): string[] {
+  return value
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function chunkLines(lines: string[], size: number): string[][] {
+  const chunks: string[][] = [];
+  for (let index = 0; index < lines.length; index += size) {
+    chunks.push(lines.slice(index, index + size));
+  }
+  return chunks.length ? chunks : [[]];
 }
 
 async function readSharedStrings(zip: JSZip): Promise<string[]> {
