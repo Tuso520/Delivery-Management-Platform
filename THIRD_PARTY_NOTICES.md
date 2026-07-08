@@ -1,6 +1,6 @@
 # 第三方开源组件声明
 
-本文列出项目直接引用的主要开源组件。许可证信息按当前 `package.json` 依赖和常见包元数据整理，正式公开发布前应再执行一次自动化许可证扫描。
+本文列出项目直接引用的主要开源组件。许可证信息按当前 `package.json` 依赖和常见包元数据整理，直接依赖版本明细见 [docs/open-source-dependencies.md](docs/open-source-dependencies.md)。正式公开发布前应再执行一次自动化许可证扫描。
 
 ## 前端运行依赖
 

@@ -67,12 +67,13 @@ powershell -ExecutionPolicy Bypass -File .\scripts\local-docker.ps1 up -Build
 - [测试验收](docs/testing.md)
 - [安全说明](docs/security.md)
 - [开源依赖说明](docs/open-source.md)
+- [直接依赖许可证清单](docs/open-source-dependencies.md)
 - [开源准备清单](docs/open-source-readiness.md)
 - [版本记录](docs/release.md)
 
 ## 开源与第三方组件
 
-本项目引用了 Vue、Arco Design Vue、NestJS、Prisma、PDF.js、MinIO SDK 等开源组件。主要直接依赖和许可证说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 和 [docs/open-source.md](docs/open-source.md)。
+本项目引用了 Vue、Arco Design Vue、NestJS、Prisma、PDF.js、MinIO SDK 等开源组件。主要直接依赖和许可证说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)、[docs/open-source.md](docs/open-source.md) 和 [docs/open-source-dependencies.md](docs/open-source-dependencies.md)。
 
 项目正式公开前，需要由项目负责人确认最终开源许可证，并复核示例数据、服务器地址、客户信息、截图和密钥是否已经清理。
 

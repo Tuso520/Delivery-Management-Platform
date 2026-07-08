@@ -1,4 +1,4 @@
-name: test
+name: 质量检查
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
 
 jobs:
   quality:
+    name: 前后端质量检查
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,29 +18,29 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 10.34.4
-      - name: Backend install
+      - name: 安装后端依赖
         working-directory: delivery-platform-server
         run: pnpm install --frozen-lockfile
-      - name: Backend type-check
+      - name: 后端类型检查
         working-directory: delivery-platform-server
         run: pnpm prisma:generate && pnpm type-check
-      - name: Backend tests
+      - name: 后端测试
         working-directory: delivery-platform-server
         run: pnpm test -- --runInBand
-      - name: Backend build
+      - name: 后端构建
         working-directory: delivery-platform-server
         run: pnpm build
-      - name: Frontend install
+      - name: 安装前端依赖
         working-directory: delivery-platform-web
         run: pnpm install --frozen-lockfile
-      - name: Frontend type-check
+      - name: 前端类型检查
         working-directory: delivery-platform-web
         run: pnpm type-check
-      - name: Frontend tests
+      - name: 前端测试
         working-directory: delivery-platform-web
         run: pnpm test
-      - name: Frontend build
+      - name: 前端构建
         working-directory: delivery-platform-web
         run: pnpm build
-      - name: Compose config
+      - name: Docker Compose 配置检查
         run: docker compose --env-file .env.local.example -f docker-compose.test.yml config -q

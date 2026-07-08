@@ -12,6 +12,7 @@
 - [测试验收](testing.md)
 - [安全说明](security.md)
 - [开源依赖说明](open-source.md)
+- [直接依赖许可证清单](open-source-dependencies.md)
 - [开源准备清单](open-source-readiness.md)
 - [版本记录](release.md)
 
