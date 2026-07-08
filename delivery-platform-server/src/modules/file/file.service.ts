@@ -688,7 +688,7 @@ export class FileService {
         ? preview.html || `<img class="preview-image" src="${safeContentUrl}" alt="${title}" />`
         : preview.previewKind === 'pdf'
           ? `<main class="pdf-reader">
-              <div id="pdf-js-status" class="pdf-js-status">正在加载 PDF 页面...</div>
+              <div id="pdf-js-status" class="pdf-js-status">PDF 原文预览，支持滚动、缩放和下载。</div>
               <div id="pdf-js-pages" class="pdf-js-pages"></div>
               <object class="pdf-native-main pdf-native-fallback" data="${safeContentUrl}" type="application/pdf" aria-label="${title}">
                 ${preview.html || '<section class="preview-empty"><h2>PDF 预览</h2><p>当前文件未提取到可读文本层，请下载后查看原文件。</p></section>'}
