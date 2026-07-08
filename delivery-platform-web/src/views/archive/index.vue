@@ -469,7 +469,7 @@ watch(activeArchiveView, (view) => {
               stripe
               class="archive-table"
               empty-text="当前阶段暂无档案项"
-              :scroll="{ y: '100%', x: 1040 }"
+              :scroll="{ y: '100%' }"
             >
               <a-table-column label="档案项" :width="220">
                 <template #default="{ row }">
@@ -500,7 +500,7 @@ watch(activeArchiveView, (view) => {
                   {{ row.reviewUser?.realName || row.responsibleUser?.realName || '-' }}
                 </template>
               </a-table-column>
-              <a-table-column label="操作" :width="104" align="center" fixed="right">
+              <a-table-column label="操作" :width="104" align="center">
                 <template #default="{ row }">
                   <a-button type="text" size="mini" @click="viewItemDetail(row.id)">
                     查看/上传
