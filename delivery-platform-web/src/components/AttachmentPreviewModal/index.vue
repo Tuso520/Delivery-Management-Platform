@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import AttachmentPreviewPane from '@/components/AttachmentPreviewPane/index.vue'
+import { computed, defineAsyncComponent } from 'vue'
+
+const AttachmentPreviewPane = defineAsyncComponent(() =>
+  import('@/components/AttachmentPreviewPane/index.vue'),
+)
 
 const props = withDefaults(defineProps<{
   visible: boolean

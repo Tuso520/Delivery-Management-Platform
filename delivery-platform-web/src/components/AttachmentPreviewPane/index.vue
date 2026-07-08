@@ -1,19 +1,44 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
-import { MdPreview } from 'md-editor-v3'
-import 'md-editor-v3/lib/style.css'
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
-import PhotoSwipe from 'photoswipe'
-import 'photoswipe/style.css'
-import Viewer from 'viewerjs'
-import 'viewerjs/dist/viewer.css'
+import type Viewer from 'viewerjs'
 import { attachmentApi } from '@/api/attachment'
 import type { AttachmentPreview } from '@/api/attachment'
 import { fileApi } from '@/api/file'
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = `${pdfWorkerUrl}?v=pdfjs-canvas-20260708-mjs`
+const MdPreview = defineAsyncComponent(() =>
+  Promise.all([
+    import('md-editor-v3'),
+    import('md-editor-v3/lib/style.css'),
+  ]).then(([module]) => module.MdPreview),
+)
+
+type PdfJsModule = typeof import('pdfjs-dist/legacy/build/pdf.mjs')
+type ViewerConstructor = typeof import('viewerjs')['default']
+
+let pdfjsLibPromise: Promise<PdfJsModule> | null = null
+let viewerConstructorPromise: Promise<ViewerConstructor> | null = null
+
+async function loadPdfjs(): Promise<PdfJsModule> {
+  if (!pdfjsLibPromise) {
+    pdfjsLibPromise = import('pdfjs-dist/legacy/build/pdf.mjs').then((module) => {
+      module.GlobalWorkerOptions.workerSrc = `${pdfWorkerUrl}?v=pdfjs-canvas-20260708-mjs`
+      return module
+    })
+  }
+  return pdfjsLibPromise
+}
+
+async function loadViewerConstructor(): Promise<ViewerConstructor> {
+  if (!viewerConstructorPromise) {
+    viewerConstructorPromise = Promise.all([
+      import('viewerjs'),
+      import('viewerjs/dist/viewer.css'),
+    ]).then(([module]) => module.default)
+  }
+  return viewerConstructorPromise
+}
 
 type PreviewSource = 'attachment' | 'file'
 
@@ -103,6 +128,8 @@ async function renderPdf(blob: Blob, fallbackHtml = ''): Promise<void> {
 
   container.innerHTML = ''
   try {
+    const pdfjsLib = await loadPdfjs()
+    if (token !== pdfRenderToken) return
     const data = new Uint8Array(await blob.arrayBuffer())
     const loadingTask = pdfjsLib.getDocument({
       data,
@@ -305,7 +332,9 @@ async function enhanceImagePreview(): Promise<void> {
   destroyImageViewer()
   await nextTick()
   if (!imageViewerRef.value) return
-  imageViewer = new Viewer(imageViewerRef.value, {
+  const ViewerConstructor = await loadViewerConstructor()
+  if (!imageViewerRef.value) return
+  imageViewer = new ViewerConstructor(imageViewerRef.value, {
     inline: false,
     navbar: false,
     title: false,
@@ -328,20 +357,28 @@ function handleImageLoad(event: Event): void {
 
 function openPhotoSwipe(): void {
   if (!objectUrl.value) return
-  const gallery = new PhotoSwipe({
-    dataSource: [
-      {
-        src: objectUrl.value,
-        width: imageDimensions.value.width,
-        height: imageDimensions.value.height,
-        alt: preview.value?.title || preview.value?.fileName,
-      },
-    ],
-    index: 0,
-    bgOpacity: 0.92,
-    showHideAnimationType: 'zoom',
+  Promise.all([
+    import('photoswipe'),
+    import('photoswipe/style.css'),
+  ]).then(([module]) => {
+    if (!objectUrl.value) return
+    const gallery = new module.default({
+      dataSource: [
+        {
+          src: objectUrl.value,
+          width: imageDimensions.value.width,
+          height: imageDimensions.value.height,
+          alt: preview.value?.title || preview.value?.fileName,
+        },
+      ],
+      index: 0,
+      bgOpacity: 0.92,
+      showHideAnimationType: 'zoom',
+    })
+    gallery.init()
+  }).catch(() => {
+    Message.error('图片全屏预览加载失败')
   })
-  gallery.init()
 }
 
 function openViewerZoom(): void {

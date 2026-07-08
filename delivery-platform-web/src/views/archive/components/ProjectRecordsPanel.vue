@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import dayjs from 'dayjs'
 import { Message } from '@arco-design/web-vue'
 import type { FileItem } from '@arco-design/web-vue'
@@ -13,7 +13,10 @@ import {
   type ProjectProcessRecord,
 } from '@/types/process-record'
 import { downloadBlob } from '@/utils/blob'
-import AttachmentPreviewModal from '@/components/AttachmentPreviewModal/index.vue'
+
+const AttachmentPreviewModal = defineAsyncComponent(() =>
+  import('@/components/AttachmentPreviewModal/index.vue'),
+)
 
 const props = defineProps<{
   projectId: string
@@ -313,6 +316,7 @@ onMounted(fetchRecords)
     </a-modal>
 
     <AttachmentPreviewModal
+      v-if="previewVisible"
       v-model:visible="previewVisible"
       source="attachment"
       :attachment-id="previewAttachmentId"

@@ -1,15 +1,26 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import type { TableColumnData } from '@arco-design/web-vue'
-import { MdEditor, MdPreview } from 'md-editor-v3'
-import 'md-editor-v3/lib/style.css'
 import { attachmentApi } from '@/api/attachment'
 import type { Attachment, AttachmentPreview } from '@/api/attachment'
 import { knowledgeApi } from '@/api/knowledge'
 import type { KnowledgeArticle, KnowledgeCategory } from '@/types/knowledge'
 import { downloadBlob } from '@/utils/blob'
+
+const MdEditor = defineAsyncComponent(() =>
+  Promise.all([
+    import('md-editor-v3'),
+    import('md-editor-v3/lib/style.css'),
+  ]).then(([module]) => module.MdEditor),
+)
+const MdPreview = defineAsyncComponent(() =>
+  Promise.all([
+    import('md-editor-v3'),
+    import('md-editor-v3/lib/style.css'),
+  ]).then(([module]) => module.MdPreview),
+)
 
 type PreviewState = AttachmentPreview & { objectUrl?: string }
 

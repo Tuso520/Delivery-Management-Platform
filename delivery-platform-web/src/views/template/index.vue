@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import type { TableColumnData } from '@arco-design/web-vue'
 import { IconDownload, IconEye } from '@arco-design/web-vue/es/icon'
-import { MdEditor } from 'md-editor-v3'
-import 'md-editor-v3/lib/style.css'
 import { arcoConfirm } from '@/utils/arco-dialog'
 import { templateApi } from '@/api/template'
 import { attachmentApi } from '@/api/attachment'
@@ -16,6 +14,13 @@ import type { ApprovalTask } from '@/types/platform'
 import type { TagType } from '@/types/ui'
 import { downloadBlob } from '@/utils/blob'
 import { getPreviewRedirectUrl } from '@/utils/preview-link'
+
+const MdEditor = defineAsyncComponent(() =>
+  Promise.all([
+    import('md-editor-v3'),
+    import('md-editor-v3/lib/style.css'),
+  ]).then(([module]) => module.MdEditor),
+)
 
 interface TemplateStage {
   code: string
@@ -648,7 +653,7 @@ onMounted(fetchList)
         </div>
 
         <MdEditor
-          v-if="createMode === 'markdown'"
+          v-if="createVisible && createMode === 'markdown'"
           v-model="createForm.markdownContent"
           language="zh-CN"
           class="quick-md-editor"

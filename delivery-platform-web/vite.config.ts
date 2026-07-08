@@ -45,7 +45,55 @@ export default defineConfig({
   css: {
     preprocessorOptions: {
       scss: {
+        api: 'modern-compiler',
         additionalData: `@use "@/styles/variables.scss" as *;\n`,
+      },
+    },
+  },
+  build: {
+    modulePreload: {
+      resolveDependencies(_filename, deps, context) {
+        if (context.hostType !== 'html') return deps
+        return deps.filter(
+          (dep) =>
+            !dep.includes('vendor-markdown') &&
+            !dep.includes('vendor-pdf') &&
+            !dep.includes('vendor-preview') &&
+            !dep.includes('pdf.worker'),
+        )
+      },
+    },
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('vite/preload-helper')) return 'runtime'
+          if (!id.includes('node_modules')) return undefined
+          if (id.includes('@arco-design/web-vue')) return 'vendor-arco'
+          if (
+            id.includes('vue') ||
+            id.includes('pinia') ||
+            id.includes('@vueuse')
+          ) {
+            return 'vendor-vue'
+          }
+          if (
+            id.includes('md-editor-v3') ||
+            id.includes('codemirror') ||
+            id.includes('highlight.js') ||
+            id.includes('markdown-it') ||
+            id.includes('medium-zoom') ||
+            id.includes('screenfull') ||
+            id.includes('xss') ||
+            id.includes('cropperjs') ||
+            id.includes('prettier')
+          ) {
+            return 'vendor-markdown'
+          }
+          if (id.includes('pdfjs-dist')) return 'vendor-pdf'
+          if (id.includes('photoswipe') || id.includes('viewerjs')) return 'vendor-preview'
+          if (id.includes('axios') || id.includes('dayjs')) return 'vendor-utils'
+          return undefined
+        },
       },
     },
   },

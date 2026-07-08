@@ -18,7 +18,10 @@ describe('deployment seed safety', () => {
         }),
       );
     const prisma = {
-      project: { upsert: projectUpsert },
+      project: {
+        upsert: projectUpsert,
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       user: {
         findUnique: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),

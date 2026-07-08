@@ -1,15 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, ref } from 'vue'
 import { Message, Modal } from '@arco-design/web-vue'
 import type { TableColumnData } from '@arco-design/web-vue'
 import { IconDownload, IconEye } from '@arco-design/web-vue/es/icon'
-import { MdEditor } from 'md-editor-v3'
-import 'md-editor-v3/lib/style.css'
 import { attachmentApi } from '@/api/attachment'
 import { knowledgeApi } from '@/api/knowledge'
 import { approvalApi } from '@/api/platform'
-import AttachmentPreviewModal from '@/components/AttachmentPreviewModal/index.vue'
-import AttachmentPreviewPane from '@/components/AttachmentPreviewPane/index.vue'
 import type {
   KnowledgeArticle,
   KnowledgeAttachment,
@@ -20,6 +16,19 @@ import type {
 import type { ApprovalTask } from '@/types/platform'
 import { downloadBlob } from '@/utils/blob'
 import { arcoPrompt } from '@/utils/arco-dialog'
+
+const MdEditor = defineAsyncComponent(() =>
+  Promise.all([
+    import('md-editor-v3'),
+    import('md-editor-v3/lib/style.css'),
+  ]).then(([module]) => module.MdEditor),
+)
+const AttachmentPreviewModal = defineAsyncComponent(() =>
+  import('@/components/AttachmentPreviewModal/index.vue'),
+)
+const AttachmentPreviewPane = defineAsyncComponent(() =>
+  import('@/components/AttachmentPreviewPane/index.vue'),
+)
 
 interface KnowledgeFileRow extends KnowledgeAttachment {
   articleId: string
@@ -698,7 +707,7 @@ onMounted(async () => {
         </div>
 
         <MdEditor
-          v-if="createMode === 'markdown'"
+          v-if="createVisible && createMode === 'markdown'"
           v-model="createForm.markdownContent"
           language="zh-CN"
           class="quick-md-editor"
@@ -850,6 +859,7 @@ onMounted(async () => {
     </a-modal>
 
     <AttachmentPreviewModal
+      v-if="previewVisible"
       v-model:visible="previewVisible"
       source="attachment"
       :attachment-id="previewAttachmentId"

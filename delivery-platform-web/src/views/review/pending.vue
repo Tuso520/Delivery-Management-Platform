@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { defineAsyncComponent, ref, onMounted } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { reviewApi } from '@/api/review'
-import AttachmentPreviewModal from '@/components/AttachmentPreviewModal/index.vue'
 import type { PendingReview } from '@/types/file'
 import ReviewDialog from './components/ReviewDialog.vue'
+
+const AttachmentPreviewModal = defineAsyncComponent(() =>
+  import('@/components/AttachmentPreviewModal/index.vue'),
+)
 
 const loading = ref(false)
 const reviewList = ref<PendingReview[]>([])
@@ -131,6 +134,7 @@ onMounted(fetchPendingReviews)
     />
 
     <AttachmentPreviewModal
+      v-if="previewVisible"
       v-model:visible="previewVisible"
       source="file"
       :attachment-id="previewTarget?.fileId"

@@ -155,16 +155,6 @@ export class DashboardService {
       draftProjects: 0n,
       totalContractAmount: 0,
     };
-    const byStatusRaw = await this.prisma.project.groupBy({
-      by: ['projectStatus'],
-      where: projectWhere,
-      _count: { id: true },
-    });
-    const byStageRaw = await this.prisma.project.groupBy({
-      by: ['currentStage'],
-      where: projectWhere,
-      _count: { id: true },
-    });
     const archiveItemWhere: Prisma.ProjectArchiveItemWhereInput = {
       status: 'Reviewing',
       ...(isGlobalViewer
@@ -173,27 +163,69 @@ export class DashboardService {
           ? { projectId: { in: projectIds } }
           : { projectId: { in: [] } }),
     };
-    const pendingReviews = await this.prisma.projectArchiveItem.count({
-      where: archiveItemWhere,
-    });
     const archiveStatsScope: Prisma.ProjectArchiveItemWhereInput = isGlobalViewer
       ? {}
       : projectIds && projectIds.length > 0
         ? { projectId: { in: projectIds } }
         : { projectId: { in: [] } };
-    const archiveStats = await this.prisma.projectArchiveItem.groupBy({
-      by: ['projectId'],
-      where: archiveStatsScope,
-      _count: { id: true },
-    });
-    const completedArchiveStats = await this.prisma.projectArchiveItem.groupBy({
-      by: ['projectId'],
-      where: {
-        ...archiveStatsScope,
-        status: { in: ['Approved', 'Archived'] },
-      },
-      _count: { id: true },
-    });
+    const paymentWhere: Prisma.ProjectPaymentWhereInput = {
+      deletedAt: null,
+      project: projectWhere,
+    };
+    const [
+      byStatusRaw,
+      byStageRaw,
+      pendingReviews,
+      archiveStats,
+      completedArchiveStats,
+      paymentAggregate,
+      overduePaymentAggregate,
+      overduePaymentCount,
+    ] = await Promise.all([
+      this.prisma.project.groupBy({
+        by: ['projectStatus'],
+        where: projectWhere,
+        _count: { id: true },
+      }),
+      this.prisma.project.groupBy({
+        by: ['currentStage'],
+        where: projectWhere,
+        _count: { id: true },
+      }),
+      this.prisma.projectArchiveItem.count({
+        where: archiveItemWhere,
+      }),
+      this.prisma.projectArchiveItem.groupBy({
+        by: ['projectId'],
+        where: archiveStatsScope,
+        _count: { id: true },
+      }),
+      this.prisma.projectArchiveItem.groupBy({
+        by: ['projectId'],
+        where: {
+          ...archiveStatsScope,
+          status: { in: ['Approved', 'Archived'] },
+        },
+        _count: { id: true },
+      }),
+      this.prisma.projectPayment.aggregate({
+        where: paymentWhere,
+        _sum: {
+          convertedAmount: true,
+          receivedConvertedAmount: true,
+        },
+      }),
+      this.prisma.projectPayment.aggregate({
+        where: {
+          ...paymentWhere,
+          status: 'Overdue',
+        },
+        _sum: { convertedAmount: true, receivedConvertedAmount: true },
+      }),
+      this.prisma.projectPayment.count({
+        where: { ...paymentWhere, status: 'Overdue' },
+      }),
+    ]);
     const completedMap = new Map(
       completedArchiveStats.map((s) => [s.projectId, s._count.id]),
     );
@@ -209,30 +241,6 @@ export class DashboardService {
       status: s.projectStatus,
       count: s._count.id,
     }));
-    const paymentWhere: Prisma.ProjectPaymentWhereInput = {
-      deletedAt: null,
-      project: projectWhere,
-    };
-    const [paymentAggregate, overduePaymentAggregate, overduePaymentCount] =
-      await Promise.all([
-        this.prisma.projectPayment.aggregate({
-          where: paymentWhere,
-          _sum: {
-            convertedAmount: true,
-            receivedConvertedAmount: true,
-          },
-        }),
-        this.prisma.projectPayment.aggregate({
-          where: {
-            ...paymentWhere,
-            status: 'Overdue',
-          },
-          _sum: { convertedAmount: true, receivedConvertedAmount: true },
-        }),
-        this.prisma.projectPayment.count({
-          where: { ...paymentWhere, status: 'Overdue' },
-        }),
-      ]);
     const totalPlannedPaymentAmount =
       paymentAggregate._sum.convertedAmount?.toNumber() ?? 0;
     const totalReceivedAmount =
