@@ -12,10 +12,12 @@
 | `dayjs` | `1.11.21` | 运行依赖 | MIT |
 | `md-editor-v3` | `6.5.3` | 运行依赖 | MIT |
 | `pdfjs-dist` | `4.10.38` | 运行依赖 | Apache-2.0 |
+| `photoswipe` | `5.4.4` | 运行依赖 | MIT |
 | `pinia` | `2.1.7` | 运行依赖 | MIT |
 | `vue` | `3.5.38` | 运行依赖 | MIT |
 | `vue-i18n` | `9.14.5` | 运行依赖 | MIT |
 | `vue-router` | `4.3.3` | 运行依赖 | MIT |
+| `viewerjs` | `1.11.7` | 运行依赖 | MIT |
 | `@pinia/testing` | `0.1.7` | 开发依赖 | MIT |
 | `@types/node` | `20.19.43` | 开发依赖 | MIT |
 | `@typescript-eslint/eslint-plugin` | `7.18.0` | 开发依赖 | MIT |

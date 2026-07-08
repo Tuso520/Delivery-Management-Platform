@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsDateString,
@@ -401,6 +402,52 @@ export class UpsertIntegrationDto {
   @IsOptional()
   @IsString()
   description?: string;
+}
+
+export class QueryExternalContactsDto {
+  @ApiPropertyOptional({ enum: ['Pending', 'Approved', 'Rejected'] })
+  @IsOptional()
+  @IsIn(['Pending', 'Approved', 'Rejected'])
+  status?: string;
+}
+
+export class ApproveExternalContactDto {
+  @ApiProperty({ description: '审批后授予的平台角色，可选择多个岗位角色' })
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsString({ each: true })
+  roleIds!: string[];
+
+  @ApiPropertyOptional({ description: '审批时可调整归属部门' })
+  @IsOptional()
+  @IsString()
+  departmentId?: string;
+
+  @ApiPropertyOptional({ description: '审批时可调整岗位名称，支持多个岗位' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  positions?: string[];
+
+  @ApiPropertyOptional({ description: '审批时可调整平台用户名' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  username?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  comment?: string;
+}
+
+export class RejectExternalContactDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  comment?: string;
 }
 
 export class CreateBackupDto {

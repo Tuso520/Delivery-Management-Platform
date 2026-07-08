@@ -24,7 +24,9 @@
     "dayjs": "1.11.21",
     "md-editor-v3": "6.5.3",
     "pdfjs-dist": "^4.10.38",
+    "photoswipe": "^5.4.4",
     "pinia": "2.1.7",
+    "viewerjs": "^1.11.7",
     "vue": "3.5.38",
     "vue-i18n": "9.14.5",
     "vue-router": "4.3.3"

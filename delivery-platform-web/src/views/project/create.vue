@@ -55,6 +55,19 @@ const localizedRiskOptions = computed(() =>
     label: localizeProjectRisk(value, localeStore.currentLocale),
   })),
 )
+const selectedCountryName = computed(() => {
+  const country = countryOptions.value.find((item) => item.value === formData.countryCode)?.label
+  return country?.replace(/\s*\(.+\)$/, '') || '中国'
+})
+const selectedProjectTypeName = computed(() =>
+  projectTypeOptions.value.find((item) => item.value === formData.projectType)?.label || '项目类型',
+)
+const projectNameSuggestion = computed(() => {
+  const city = formData.city.trim() || '城市'
+  const customer = formData.customerName.trim() || '客户简称'
+  const projectType = selectedProjectTypeName.value
+  return `${selectedCountryName.value}-${city}-${customer}-${formData.projectName.trim() || '项目简称'}-${projectType}`
+})
 
 const formData = reactive({
   projectName: '',
@@ -93,10 +106,13 @@ function generateProjectCode(countryCode: string) {
   const now = new Date()
   const year = now.getFullYear()
   const seq = String(Math.floor(Math.random() * 900) + 100)
-  suggestedCode.value = `${countryCode}-客户简称-${year}-${seq}`
+  const customer = formData.customerName.trim() || '客户简称'
+  const city = formData.city.trim() || '城市'
+  suggestedCode.value = `${countryCode}-${city}-${customer}-${year}-${seq}`
 }
 
 watch(() => formData.countryCode, generateProjectCode, { immediate: true })
+watch([() => formData.city, () => formData.customerName], () => generateProjectCode(formData.countryCode))
 
 async function loadOptions() {
   optionLoading.value = true
@@ -255,6 +271,7 @@ onMounted(async () => {
               show-word-limit
               placeholder="建议：国家-城市-客户简称-项目简称-项目类型，例如：中国-上海-某客户-冷站节能"
             />
+            <p class="field-hint">命名建议：{{ projectNameSuggestion }}</p>
           </a-form-item>
           <a-row :gutter="14">
             <a-col :span="8">
@@ -285,7 +302,7 @@ onMounted(async () => {
             </a-col>
           </a-row>
           <a-row :gutter="14">
-            <a-col :span="8">
+            <a-col :span="7">
               <a-form-item label="项目类型">
                 <a-select v-model="formData.projectType" filterable allow-clear placeholder="请选择">
                   <a-option
@@ -297,7 +314,7 @@ onMounted(async () => {
                 </a-select>
               </a-form-item>
             </a-col>
-            <a-col :span="8">
+            <a-col :span="7">
               <a-form-item label="项目语言">
                 <a-select v-model="formData.projectLanguage" filterable allow-clear placeholder="请选择">
                   <a-option
@@ -309,7 +326,7 @@ onMounted(async () => {
                 </a-select>
               </a-form-item>
             </a-col>
-            <a-col :span="8">
+            <a-col :span="10">
               <a-form-item label="项目编号参考">
                 <a-input v-model="suggestedCode" disabled />
               </a-form-item>
@@ -379,7 +396,7 @@ onMounted(async () => {
             </a-col>
           </a-row>
           <a-row :gutter="14">
-            <a-col :span="8">
+            <a-col :span="12">
               <a-form-item label="开始日期">
                 <a-date-picker
                   v-model="formData.startDate"
@@ -389,7 +406,7 @@ onMounted(async () => {
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="8">
+            <a-col :span="12">
               <a-form-item label="计划结束日期">
                 <a-date-picker
                   v-model="formData.plannedEndDate"
@@ -511,7 +528,7 @@ onMounted(async () => {
 }
 
 .project-form {
-  max-width: 1280px;
+  max-width: none;
 }
 
 .project-form :deep(.arco-form-item) {
@@ -535,6 +552,14 @@ onMounted(async () => {
   color: var(--color-text-1);
   font-size: 13px;
   font-weight: 650;
+}
+
+.field-hint {
+  margin: 5px 0 0;
+  color: var(--color-text-3);
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-word;
 }
 
 .form-actions {

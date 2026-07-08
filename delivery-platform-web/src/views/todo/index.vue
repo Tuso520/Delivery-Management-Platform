@@ -1,18 +1,18 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
-import { arcoConfirm, arcoPrompt } from '@/utils/arco-dialog'
+import { arcoPrompt } from '@/utils/arco-dialog'
 import { approvalApi } from '@/api/platform'
 import { notificationApi } from '@/api/notification'
 import type { ApprovalTask } from '@/types/platform'
 import type { NotificationItem } from '@/types/system'
-import { getApprovalBusinessLabel, getApprovalBusinessRoute } from '@/utils/approval'
+import { getApprovalBusinessLabel } from '@/utils/approval'
 
-const router = useRouter()
 const loading = ref(false)
 const tasks = ref<ApprovalTask[]>([])
 const notifications = ref<NotificationItem[]>([])
+const businessVisible = ref(false)
+const selectedTask = ref<ApprovalTask | null>(null)
 
 async function fetchData(): Promise<void> {
   loading.value = true
@@ -53,7 +53,8 @@ async function decide(task: ApprovalTask, decision: 'Approved' | 'Rejected'): Pr
 }
 
 function openBusiness(task: ApprovalTask): void {
-  router.push(getApprovalBusinessRoute(task.businessType, task.businessId))
+  selectedTask.value = task
+  businessVisible.value = true
 }
 
 async function readNotification(item: NotificationItem): Promise<void> {
@@ -147,6 +148,50 @@ onMounted(fetchData)
       </a-table>
       <a-empty v-if="!notifications.length" description="暂无未读通知" />
     </section>
+
+    <a-modal
+      v-model:visible="businessVisible"
+      title="审批事项详情"
+      :width="720"
+      :footer="false"
+    >
+      <a-descriptions
+        v-if="selectedTask"
+        :column="2"
+        bordered
+        size="small"
+        class="approval-business-detail"
+      >
+        <a-descriptions-item label="审批事项" :span="2">
+          {{ selectedTask.businessTitle || selectedTask.template.templateName }}
+        </a-descriptions-item>
+        <a-descriptions-item label="业务类型">
+          {{ getApprovalBusinessLabel(selectedTask.businessType) }}
+        </a-descriptions-item>
+        <a-descriptions-item label="业务编号">
+          {{ selectedTask.businessId }}
+        </a-descriptions-item>
+        <a-descriptions-item label="申请人">
+          {{ selectedTask.applicant.realName }}
+        </a-descriptions-item>
+        <a-descriptions-item label="当前步骤">
+          第 {{ selectedTask.currentStep }} 步
+        </a-descriptions-item>
+        <a-descriptions-item label="审批模板" :span="2">
+          {{ selectedTask.template.templateName }}
+        </a-descriptions-item>
+      </a-descriptions>
+      <a-timeline v-if="selectedTask" class="approval-history modal-history">
+        <a-timeline-item
+          v-for="action in selectedTask.actions"
+          :key="action.id"
+          :timestamp="action.createdAt"
+        >
+          第 {{ action.stepOrder }} 步 · {{ action.actor.realName }} · {{ action.action }}
+          <span v-if="action.comment">：{{ action.comment }}</span>
+        </a-timeline-item>
+      </a-timeline>
+    </a-modal>
   </div>
 </template>
 
@@ -170,4 +215,6 @@ onMounted(fetchData)
   p { margin: 5px 0 0; color: var(--app-text-muted); font-size: 13px; }
 }
 .approval-history { padding: 8px 24px 0; }
+.modal-history { padding: 16px 8px 0; }
+.approval-business-detail { border-radius: 0; }
 </style>

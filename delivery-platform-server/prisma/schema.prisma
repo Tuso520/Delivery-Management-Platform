@@ -61,6 +61,8 @@ model User {
   approvalReviews           ApprovalTask[]            @relation("ApprovalTaskApprover")
   approvalActions           ApprovalAction[]
   backupRecords             BackupRecord[]
+  externalContactReviews    ExternalContactCandidate[] @relation("ExternalContactReviewer")
+  approvedExternalContacts  ExternalContactCandidate[] @relation("ExternalContactApprovedUser")
 
   department Department? @relation(fields: [departmentId], references: [id])
 
@@ -951,7 +953,48 @@ model IntegrationConfig {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
+  contactCandidates ExternalContactCandidate[]
+
   @@map("integration_configs")
+}
+
+enum ExternalContactStatus {
+  Pending
+  Approved
+  Rejected
+}
+
+model ExternalContactCandidate {
+  id                  String                @id @default(uuid())
+  integrationConfigId String                @map("integration_config_id") @db.VarChar(36)
+  provider            String                @db.VarChar(50)
+  externalUserId      String                @map("external_user_id") @db.VarChar(100)
+  realName            String                @map("real_name") @db.VarChar(100)
+  phone               String?               @db.VarChar(30)
+  email               String?               @db.VarChar(100)
+  gender              String?               @db.VarChar(20)
+  avatarUrl           String?               @map("avatar_url") @db.VarChar(500)
+  departmentName      String?               @map("department_name") @db.VarChar(200)
+  positionNames       Json                  @map("position_names")
+  rawPayload          Json                  @map("raw_payload")
+  status              ExternalContactStatus @default(Pending)
+  reviewedBy          String?               @map("reviewed_by") @db.VarChar(36)
+  reviewedAt          DateTime?             @map("reviewed_at")
+  approvedUserId      String?               @map("approved_user_id") @db.VarChar(36)
+  comment             String?               @db.VarChar(500)
+  createdAt           DateTime              @default(now()) @map("created_at")
+  updatedAt           DateTime              @updatedAt @map("updated_at")
+
+  integrationConfig IntegrationConfig @relation(fields: [integrationConfigId], references: [id], onDelete: Cascade)
+  reviewer          User?             @relation("ExternalContactReviewer", fields: [reviewedBy], references: [id])
+  approvedUser      User?             @relation("ExternalContactApprovedUser", fields: [approvedUserId], references: [id])
+
+  @@unique([integrationConfigId, externalUserId])
+  @@index([provider, status])
+  @@index([status, createdAt])
+  @@index([reviewedBy])
+  @@index([approvedUserId])
+  @@map("external_contact_candidates")
 }
 
 model ApiKey {

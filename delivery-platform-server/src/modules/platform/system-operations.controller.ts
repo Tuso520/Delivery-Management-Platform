@@ -21,8 +21,11 @@ import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import type { JwtPayload } from '../auth/strategies/jwt.strategy';
 
 import {
+  ApproveExternalContactDto,
   CreateBackupDto,
+  QueryExternalContactsDto,
   QueryPlatformDto,
+  RejectExternalContactDto,
   UpsertIntegrationDto,
 } from './dto/platform.dto';
 import { SystemOperationsService } from './system-operations.service';
@@ -118,6 +121,60 @@ export class SystemOperationsController {
     return this.systemOperationsService.toggleIntegration(
       id,
       enabled === 'true',
+      user.sub,
+    );
+  }
+
+  @Post('integrations/:id/sync-users')
+  @Permissions('integration:manage')
+  @ApiOperation({ summary: '从飞书或企业微信同步人员到待审批列表' })
+  syncExternalContacts(
+    @Param('id') id: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.systemOperationsService.syncExternalContacts(id, user.sub);
+  }
+
+  @Get('integrations/:id/contact-candidates')
+  @Permissions('integration:manage')
+  @ApiOperation({ summary: '查询飞书或企业微信人员接入待审批列表' })
+  findExternalContacts(
+    @Param('id') id: string,
+    @Query() query: QueryExternalContactsDto,
+  ) {
+    return this.systemOperationsService.findExternalContacts(id, query);
+  }
+
+  @Post('integrations/:id/contact-candidates/:candidateId/approve')
+  @Permissions('integration:manage')
+  @ApiOperation({ summary: '审批通过外部人员并创建或更新平台账号' })
+  approveExternalContact(
+    @Param('id') id: string,
+    @Param('candidateId') candidateId: string,
+    @Body() dto: ApproveExternalContactDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.systemOperationsService.approveExternalContact(
+      id,
+      candidateId,
+      dto,
+      user.sub,
+    );
+  }
+
+  @Post('integrations/:id/contact-candidates/:candidateId/reject')
+  @Permissions('integration:manage')
+  @ApiOperation({ summary: '驳回外部人员接入申请' })
+  rejectExternalContact(
+    @Param('id') id: string,
+    @Param('candidateId') candidateId: string,
+    @Body() dto: RejectExternalContactDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.systemOperationsService.rejectExternalContact(
+      id,
+      candidateId,
+      dto,
       user.sub,
     );
   }

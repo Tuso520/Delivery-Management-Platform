@@ -123,40 +123,151 @@
   flex-direction: column;
 }
 
-.stage-strip {
+.archive-library {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 176px minmax(0, 1fr);
+  gap: 6px;
+  overflow: hidden;
+}
+
+.archive-sidebar,
+.archive-list-panel {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  border: 1px solid var(--color-border-2);
+  background: #fff;
+  overflow: hidden;
+}
+
+.archive-sidebar {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+}
+
+.archive-sidebar-header {
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 2px;
+
+  h3 {
+    margin: 0;
+    overflow: hidden;
+    color: var(--color-text-1);
+    font-size: 14px;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  span {
+    flex: 0 0 auto;
+    color: rgb(var(--primary-6));
+    font-size: 12px;
+    font-weight: 650;
+  }
+}
+
+.archive-stage-list {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.archive-stage-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text-2);
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+
+  span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  em {
+    min-width: 36px;
+    color: var(--color-text-3);
+    font-size: 11px;
+    font-style: normal;
+    text-align: right;
+  }
+
+  &.active,
+  &:hover {
+    border-color: rgb(var(--primary-5));
+    background: rgb(var(--primary-1));
+    color: rgb(var(--primary-6));
+  }
+}
+
+.archive-list-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.archive-list-toolbar {
   flex: 0 0 auto;
-  min-height: 44px;
+  min-height: 52px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 4px 0 6px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--color-border-2);
 }
 
-.stage-tabs {
-  flex: 1 1 auto;
+.toolbar-title {
   min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+
+  strong {
+    overflow: hidden;
+    color: var(--color-text-1);
+    font-size: 14px;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  span {
+    color: var(--color-text-3);
+    font-size: 12px;
+  }
 }
 
-.stage-tabs :deep(.arco-tabs-nav) {
-  margin-bottom: 0;
+.archive-stream {
+  flex: 1;
+  min-height: 0;
+  padding: 8px;
+  overflow-y: auto;
+  overflow-x: auto;
 }
 
-.stage-tabs :deep(.arco-tabs-nav-tab) {
-  gap: 4px;
-}
-
-.stage-tab-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-}
-
-.stage-count {
-  border-radius: 0;
-  color: var(--color-text-3);
+.archive-section {
+  margin-bottom: 10px;
+  scroll-margin-top: 8px;
 }
 
 .stage-title-row {
@@ -178,8 +289,6 @@
 }
 
 .archive-table {
-  flex: 1;
-  min-height: 0;
   border-radius: 0;
   overflow: hidden;
 }
@@ -191,14 +300,19 @@
   flex-direction: column;
 }
 
-.archive-table :deep(.arco-table-container),
-.archive-table :deep(.arco-scrollbar),
-.archive-table :deep(.arco-scrollbar-container) {
+.archive-review-panel .archive-table {
+  flex: 1;
+  min-height: 0;
+}
+
+.archive-review-panel .archive-table :deep(.arco-table-container),
+.archive-review-panel .archive-table :deep(.arco-scrollbar),
+.archive-review-panel .archive-table :deep(.arco-scrollbar-container) {
   height: 100%;
 }
 
-.archive-table :deep(.arco-table-body),
-.archive-table :deep(.arco-table-content-scroll-y) {
+.archive-review-panel .archive-table :deep(.arco-table-body),
+.archive-review-panel .archive-table :deep(.arco-table-content-scroll-y) {
   min-height: 0;
 }
 
@@ -338,6 +452,11 @@
   }
 }
 
+.muted-text {
+  color: var(--color-text-3);
+  font-size: 12px;
+}
+
 .detail-empty {
   padding: 18px 0;
   border: 1px dashed var(--color-border-2);
@@ -346,10 +465,18 @@
 
 @media (max-width: 900px) {
   .archive-topbar,
-  .stage-strip,
+  .archive-list-toolbar,
   .detail-guide {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .archive-library {
+    grid-template-columns: 1fr;
+  }
+
+  .archive-sidebar {
+    max-height: 180px;
   }
 
   .project-selector {

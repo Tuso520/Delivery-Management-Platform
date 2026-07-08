@@ -111,7 +111,7 @@ const children: RouteRecordRaw[] = [
   { path: 'tools', name: 'Tools', component: () => import('@/views/tools/index.vue'), meta: { title: '工具中心', permissions: ['tools:view'] } },
   { path: 'okr', name: 'Okr', component: () => import('@/views/okr/index.vue'), meta: { title: 'OKR目标', permissions: ['okr:view'] } },
   { path: 'okr/edit', name: 'OkrEdit', component: () => import('@/views/okr/edit.vue'), meta: { title: '编辑目标', hidden: true, permissions: ['okr:create'] } },
-  { path: 'performance/monthly', name: 'MonthlyPerformance', component: () => import('@/views/okr/scoring.vue'), meta: { title: '月度绩效', permissions: ['okr:score'] } },
+  { path: 'okr/scoring', name: 'OkrScoring', component: () => import('@/views/okr/scoring.vue'), meta: { title: '目标评分', hidden: true, permissions: ['okr:score'] } },
   { path: 'skills', name: 'Skills', component: () => import('@/views/workforce/skills.vue'), meta: { title: '技能评估', permissions: ['skill:view'] } },
   { path: 'training', name: 'Training', component: () => import('@/views/workforce/training.vue'), meta: { title: '培训记录', permissions: ['training:view'] } },
   { path: 'global/country', name: 'Country', component: () => import('@/views/country/index.vue'), meta: { title: '国家配置', permissions: ['country:view'] } },
@@ -126,6 +126,7 @@ const children: RouteRecordRaw[] = [
   { path: 'operations/config', name: 'SystemConfig', component: () => import('@/views/system/config.vue'), meta: { title: '系统参数', permissions: ['system:manage_config'] } },
   { path: 'operations/storage', name: 'Storage', component: () => import('@/views/system/storage.vue'), meta: { title: '存储备份', permissions: ['system:view_storage', 'system:manage_backup'] } },
   { path: 'operations/integrations', name: 'Integrations', component: () => import('@/views/system/integrations.vue'), meta: { title: '接口集成', permissions: ['integration:manage'] } },
+  { path: 'system/integrations', redirect: '/operations/integrations', meta: { hidden: true } },
 ]
 
 export const routes: RouteRecordRaw[] = [

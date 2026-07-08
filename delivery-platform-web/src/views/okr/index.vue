@@ -67,7 +67,7 @@ const handleEdit = (obj: OkrObjective) => {
 }
 
 const handleScoring = (obj: OkrObjective) => {
-  router.push(`/performance/monthly?id=${obj.id}`)
+  router.push(`/okr/scoring?id=${obj.id}`)
 }
 
 const handleView = (obj: OkrObjective) => {

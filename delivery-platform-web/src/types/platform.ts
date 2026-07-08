@@ -174,4 +174,28 @@ export interface IntegrationConfig {
   updatedAt: string
 }
 
+export interface ExternalContactCandidate {
+  id: string
+  integrationConfigId: string
+  provider: string
+  externalUserId: string
+  realName: string
+  phone?: string | null
+  email?: string | null
+  gender?: string | null
+  avatarUrl?: string | null
+  departmentName?: string | null
+  positionNames: string[]
+  rawPayload: Record<string, unknown>
+  status: 'Pending' | 'Approved' | 'Rejected'
+  reviewedBy?: string | null
+  reviewedAt?: string | null
+  approvedUserId?: string | null
+  comment?: string | null
+  createdAt: string
+  updatedAt: string
+  reviewer?: { id: string; realName: string; username: string } | null
+  approvedUser?: { id: string; realName: string; username: string } | null
+}
+
 export type PlatformPage<T> = PaginatedData<T>

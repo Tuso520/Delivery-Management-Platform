@@ -5,6 +5,10 @@ import { MdPreview } from 'md-editor-v3'
 import 'md-editor-v3/lib/style.css'
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
+import PhotoSwipe from 'photoswipe'
+import 'photoswipe/style.css'
+import Viewer from 'viewerjs'
+import 'viewerjs/dist/viewer.css'
 import { attachmentApi } from '@/api/attachment'
 import type { AttachmentPreview } from '@/api/attachment'
 import { fileApi } from '@/api/file'
@@ -29,14 +33,24 @@ const preview = ref<AttachmentPreview>()
 const objectUrl = ref('')
 const pdfContainerRef = ref<HTMLElement>()
 const htmlContainerRef = ref<HTMLElement>()
+const imageViewerRef = ref<HTMLElement>()
 const pdfPageCount = ref(0)
 const pdfRenderError = ref('')
 const pdfFallbackHtml = ref('')
+const imageDimensions = ref({ width: 1600, height: 1000 })
 let pdfRenderToken = 0
 let htmlCleanup: Array<() => void> = []
+let imageViewer: Viewer | null = null
 
 const isMarkdown = computed(() => (preview.value?.fileExt || '').toLowerCase() === 'md')
 const paneStyle = computed(() => ({ '--preview-pane-height': props.height }))
+const officeViewerLabel = computed(() => {
+  const viewer = preview.value?.viewer
+  if (viewer === 'document') return 'ONLYOFFICE Docs Community / Word 只读预览'
+  if (viewer === 'spreadsheet') return 'ONLYOFFICE Docs Community / Excel 只读预览'
+  if (viewer === 'presentation') return 'ONLYOFFICE Docs Community / PPT 只读预览'
+  return ''
+})
 
 function revokeObjectUrl(): void {
   if (objectUrl.value) {
@@ -58,6 +72,11 @@ function clearPdfPreview(): void {
 function clearHtmlEnhancements(): void {
   htmlCleanup.forEach((cleanup) => cleanup())
   htmlCleanup = []
+}
+
+function destroyImageViewer(): void {
+  imageViewer?.destroy()
+  imageViewer = null
 }
 
 async function loadPreviewMeta(id: string): Promise<AttachmentPreview> {
@@ -282,10 +301,58 @@ async function enhanceHtmlPreview(): Promise<void> {
   container.querySelectorAll<HTMLTableElement>('table').forEach(enableTableResize)
 }
 
+async function enhanceImagePreview(): Promise<void> {
+  destroyImageViewer()
+  await nextTick()
+  if (!imageViewerRef.value) return
+  imageViewer = new Viewer(imageViewerRef.value, {
+    inline: false,
+    navbar: false,
+    title: false,
+    toolbar: true,
+    movable: true,
+    zoomable: true,
+    scalable: true,
+    transition: true,
+    fullscreen: true,
+  })
+}
+
+function handleImageLoad(event: Event): void {
+  const image = event.target as HTMLImageElement
+  imageDimensions.value = {
+    width: image.naturalWidth || 1600,
+    height: image.naturalHeight || 1000,
+  }
+}
+
+function openPhotoSwipe(): void {
+  if (!objectUrl.value) return
+  const gallery = new PhotoSwipe({
+    dataSource: [
+      {
+        src: objectUrl.value,
+        width: imageDimensions.value.width,
+        height: imageDimensions.value.height,
+        alt: preview.value?.title || preview.value?.fileName,
+      },
+    ],
+    index: 0,
+    bgOpacity: 0.92,
+    showHideAnimationType: 'zoom',
+  })
+  gallery.init()
+}
+
+function openViewerZoom(): void {
+  imageViewer?.show()
+}
+
 async function loadPreview(): Promise<void> {
   revokeObjectUrl()
   clearPdfPreview()
   clearHtmlEnhancements()
+  destroyImageViewer()
   preview.value = undefined
   if (!props.attachmentId) return
 
@@ -297,6 +364,7 @@ async function loadPreview(): Promise<void> {
     if (nextPreview.previewKind === 'image') {
       const blob = await loadPreviewBlob(props.attachmentId)
       objectUrl.value = URL.createObjectURL(blob)
+      await enhanceImagePreview()
     } else if (nextPreview.previewKind === 'pdf') {
       const blob = await loadPreviewBlob(props.attachmentId)
       await renderPdf(blob, nextPreview.html || '')
@@ -315,6 +383,7 @@ onBeforeUnmount(() => {
   revokeObjectUrl()
   clearPdfPreview()
   clearHtmlEnhancements()
+  destroyImageViewer()
 })
 
 watch(() => props.source, loadPreview)
@@ -323,12 +392,26 @@ watch(() => props.source, loadPreview)
 <template>
   <a-spin :loading="loading" class="attachment-preview-pane" :style="paneStyle">
     <div v-if="preview" class="preview-surface" :class="{ compact: props.compact }">
-      <img
+      <div
         v-if="preview.previewKind === 'image' && objectUrl"
-        class="preview-image"
-        :src="objectUrl"
-        :alt="preview.title || preview.fileName"
-      />
+        class="preview-image-shell"
+      >
+        <div class="image-toolbar">
+          <span>Viewer.js / PhotoSwipe 图片预览</span>
+          <div>
+            <a-button size="mini" @click="openViewerZoom">缩放查看</a-button>
+            <a-button size="mini" type="primary" @click="openPhotoSwipe">全屏查看</a-button>
+          </div>
+        </div>
+        <div ref="imageViewerRef" class="image-viewer-stage">
+          <img
+            class="preview-image"
+            :src="objectUrl"
+            :alt="preview.title || preview.fileName"
+            @load="handleImageLoad"
+          />
+        </div>
+      </div>
 
       <div
         v-else-if="preview.previewKind === 'pdf'"
@@ -366,8 +449,13 @@ watch(() => props.source, loadPreview)
         v-else-if="preview.previewKind === 'html'"
         ref="htmlContainerRef"
         class="preview-html"
-        v-html="preview.html || ''"
-      />
+      >
+        <div v-if="officeViewerLabel" class="office-toolbar">
+          <span>{{ officeViewerLabel }}</span>
+          <em>已预留 ONLYOFFICE Docs Community 接入，当前使用服务端只读解析保证本地可预览。</em>
+        </div>
+        <div v-html="preview.html || ''" />
+      </div>
 
       <a-empty
         v-else
@@ -404,16 +492,6 @@ watch(() => props.source, loadPreview)
   }
 }
 
-.preview-image {
-  display: block;
-  max-width: 100%;
-  max-height: 100%;
-  margin: 0 auto;
-  border: 1px solid var(--color-border-2);
-  background: #fff;
-  object-fit: contain;
-}
-
 .preview-text,
 .markdown-preview,
 .preview-html,
@@ -422,6 +500,72 @@ watch(() => props.source, loadPreview)
   min-height: 100%;
   margin: 0 auto;
   background: transparent;
+}
+
+.preview-image-shell {
+  width: min(1240px, 100%);
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 auto;
+}
+
+.image-toolbar,
+.office-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid #d9dfe8;
+  background: rgba(255, 255, 255, 0.96);
+  color: #4e5969;
+  font-size: 12px;
+}
+
+.image-toolbar > div {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.office-toolbar {
+  position: sticky;
+  margin-bottom: 12px;
+
+  span {
+    color: var(--color-text-1);
+    font-weight: 650;
+  }
+
+  em {
+    color: var(--color-text-3);
+    font-style: normal;
+  }
+}
+
+.image-viewer-stage {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  border: 1px solid #d9dfe8;
+  background: #fff;
+  overflow: auto;
+}
+
+.preview-image {
+  display: block;
+  max-width: 100%;
+  max-height: calc(var(--preview-pane-height) - 86px);
+  margin: 0 auto;
+  border: 0;
+  background: #fff;
+  object-fit: contain;
 }
 
 .preview-pdf {

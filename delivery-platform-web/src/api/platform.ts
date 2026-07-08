@@ -5,6 +5,7 @@ import type {
   BackupRecord,
   DepartmentNode,
   DictionaryCategory,
+  ExternalContactCandidate,
   IntegrationConfig,
   PlatformPage,
   ProjectRetrospective,
@@ -102,4 +103,27 @@ export const systemOperationsApi = {
     request.patch<IntegrationConfig>(`/system-operations/integrations/${id}`, data),
   toggleIntegration: (id: string, enabled: boolean) =>
     request.patch<IntegrationConfig>(`/system-operations/integrations/${id}/enabled/${enabled}`),
+  syncExternalContacts: (id: string) =>
+    request.post<{ provider: string; total: number; created: number; refreshed: number }>(
+      `/system-operations/integrations/${id}/sync-users`,
+    ),
+  getExternalContacts: (id: string, status?: string) =>
+    request.get<ExternalContactCandidate[]>(
+      `/system-operations/integrations/${id}/contact-candidates`,
+      { params: { status } },
+    ),
+  approveExternalContact: (
+    id: string,
+    candidateId: string,
+    data: { roleIds: string[]; departmentId?: string; positions?: string[]; username?: string; comment?: string },
+  ) =>
+    request.post<ExternalContactCandidate>(
+      `/system-operations/integrations/${id}/contact-candidates/${candidateId}/approve`,
+      data,
+    ),
+  rejectExternalContact: (id: string, candidateId: string, data: { comment?: string }) =>
+    request.post<ExternalContactCandidate>(
+      `/system-operations/integrations/${id}/contact-candidates/${candidateId}/reject`,
+      data,
+    ),
 }

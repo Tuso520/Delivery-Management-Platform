@@ -5,14 +5,34 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import type { Readable } from 'stream';
 
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 
 import { PrismaService } from '../../database/prisma.service';
 import { FileStorageService } from '../file/file-storage.service';
 import { OperationLogService } from '../operation-log/operation-log.service';
 
-import { CreateBackupDto, QueryPlatformDto, UpsertIntegrationDto } from './dto/platform.dto';
+import {
+  ApproveExternalContactDto,
+  CreateBackupDto,
+  QueryExternalContactsDto,
+  QueryPlatformDto,
+  RejectExternalContactDto,
+  UpsertIntegrationDto,
+} from './dto/platform.dto';
+
+interface NormalizedExternalContact {
+  externalUserId: string;
+  realName: string;
+  phone?: string;
+  email?: string;
+  gender?: string;
+  avatarUrl?: string;
+  departmentName?: string;
+  positionNames: string[];
+  rawPayload: Record<string, unknown>;
+}
 
 @Injectable()
 export class SystemOperationsService {
@@ -197,6 +217,407 @@ export class SystemOperationsService {
       targetId: id,
     });
     return { ...record, configValue: this.redact(record.configValue) };
+  }
+
+  async syncExternalContacts(id: string, userId: string) {
+    const integration = await this.findPeopleIntegration(id);
+    const contacts = this.normalizeExternalContacts(
+      integration.provider,
+      this.asRecord(integration.configValue),
+    );
+
+    let created = 0;
+    let refreshed = 0;
+    for (const contact of contacts) {
+      const existing = await this.prisma.externalContactCandidate.findUnique({
+        where: {
+          integrationConfigId_externalUserId: {
+            integrationConfigId: integration.id,
+            externalUserId: contact.externalUserId,
+          },
+        },
+      });
+
+      const data = {
+        provider: integration.provider,
+        realName: contact.realName,
+        phone: contact.phone ?? null,
+        email: contact.email ?? null,
+        gender: contact.gender ?? null,
+        avatarUrl: contact.avatarUrl ?? null,
+        departmentName: contact.departmentName ?? null,
+        positionNames: contact.positionNames as Prisma.InputJsonValue,
+        rawPayload: contact.rawPayload as Prisma.InputJsonValue,
+      };
+
+      if (existing) {
+        if (existing.status !== 'Approved') {
+          await this.prisma.externalContactCandidate.update({
+            where: { id: existing.id },
+            data: {
+              ...data,
+              status: 'Pending',
+              reviewedBy: null,
+              reviewedAt: null,
+              comment: null,
+            },
+          });
+          refreshed += 1;
+        }
+      } else {
+        await this.prisma.externalContactCandidate.create({
+          data: {
+            integrationConfigId: integration.id,
+            externalUserId: contact.externalUserId,
+            status: 'Pending',
+            ...data,
+          },
+        });
+        created += 1;
+      }
+    }
+
+    await this.operationLog.log({
+      userId,
+      module: 'integration',
+      action: 'sync_external_contacts',
+      targetType: 'integration',
+      targetId: id,
+      afterData: { provider: integration.provider, created, refreshed },
+    });
+
+    return {
+      provider: integration.provider,
+      total: contacts.length,
+      created,
+      refreshed,
+    };
+  }
+
+  async findExternalContacts(id: string, query: QueryExternalContactsDto) {
+    await this.findPeopleIntegration(id);
+    const where: Prisma.ExternalContactCandidateWhereInput = {
+      integrationConfigId: id,
+    };
+    if (query.status) {
+      where.status = query.status as Prisma.ExternalContactCandidateWhereInput['status'];
+    }
+
+    return this.prisma.externalContactCandidate.findMany({
+      where,
+      include: {
+        reviewer: { select: { id: true, realName: true, username: true } },
+        approvedUser: { select: { id: true, realName: true, username: true } },
+      },
+      orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }],
+    });
+  }
+
+  async approveExternalContact(
+    integrationId: string,
+    candidateId: string,
+    dto: ApproveExternalContactDto,
+    operatorId: string,
+  ) {
+    await this.findPeopleIntegration(integrationId);
+    const candidate = await this.prisma.externalContactCandidate.findFirst({
+      where: { id: candidateId, integrationConfigId: integrationId },
+    });
+    if (!candidate) {
+      throw new NotFoundException('待审批人员不存在');
+    }
+    if (candidate.status === 'Approved') {
+      throw new BadRequestException('该人员已审批通过');
+    }
+
+    await this.assertRolesExist(dto.roleIds);
+    if (dto.departmentId) {
+      await this.assertDepartmentExists(dto.departmentId);
+    }
+
+    const username = await this.resolveUniqueUsername(
+      dto.username || `${candidate.provider}_${candidate.externalUserId}`,
+    );
+    const fallbackPassword = `Temp@${Date.now().toString(36)}${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const password = await bcrypt.hash(fallbackPassword, 10);
+
+    const existingUser = await this.findExistingUser(candidate, dto.username);
+    const user = await this.prisma.$transaction(async (tx) => {
+      const savedUser = existingUser
+        ? await tx.user.update({
+            where: { id: existingUser.id },
+            data: {
+              realName: candidate.realName,
+              email: candidate.email,
+              phone: candidate.phone,
+              departmentId: dto.departmentId ?? existingUser.departmentId,
+              status: 'Active',
+            },
+          })
+        : await tx.user.create({
+            data: {
+              username,
+              password,
+              realName: candidate.realName,
+              email: candidate.email,
+              phone: candidate.phone,
+              departmentId: dto.departmentId,
+              status: 'Active',
+            },
+          });
+
+      await tx.userRole.deleteMany({ where: { userId: savedUser.id } });
+      await tx.userRole.createMany({
+        data: dto.roleIds.map((roleId) => ({ userId: savedUser.id, roleId })),
+        skipDuplicates: true,
+      });
+
+      await tx.externalContactCandidate.update({
+        where: { id: candidate.id },
+        data: {
+          status: 'Approved',
+          reviewedBy: operatorId,
+          reviewedAt: new Date(),
+          approvedUserId: savedUser.id,
+          positionNames: (dto.positions?.length
+            ? dto.positions
+            : this.asStringArray(candidate.positionNames)) as Prisma.InputJsonValue,
+          comment: dto.comment,
+        },
+      });
+
+      return savedUser;
+    });
+
+    await this.operationLog.log({
+      userId: operatorId,
+      module: 'integration',
+      action: 'approve_external_contact',
+      targetType: 'external_contact',
+      targetId: candidate.id,
+      afterData: { userId: user.id, roleIds: dto.roleIds },
+    });
+
+    return this.prisma.externalContactCandidate.findUnique({
+      where: { id: candidate.id },
+      include: {
+        reviewer: { select: { id: true, realName: true, username: true } },
+        approvedUser: { select: { id: true, realName: true, username: true } },
+      },
+    });
+  }
+
+  async rejectExternalContact(
+    integrationId: string,
+    candidateId: string,
+    dto: RejectExternalContactDto,
+    operatorId: string,
+  ) {
+    await this.findPeopleIntegration(integrationId);
+    const candidate = await this.prisma.externalContactCandidate.findFirst({
+      where: { id: candidateId, integrationConfigId: integrationId },
+    });
+    if (!candidate) {
+      throw new NotFoundException('待审批人员不存在');
+    }
+
+    const updated = await this.prisma.externalContactCandidate.update({
+      where: { id: candidate.id },
+      data: {
+        status: 'Rejected',
+        reviewedBy: operatorId,
+        reviewedAt: new Date(),
+        comment: dto.comment,
+      },
+      include: {
+        reviewer: { select: { id: true, realName: true, username: true } },
+        approvedUser: { select: { id: true, realName: true, username: true } },
+      },
+    });
+
+    await this.operationLog.log({
+      userId: operatorId,
+      module: 'integration',
+      action: 'reject_external_contact',
+      targetType: 'external_contact',
+      targetId: candidate.id,
+      afterData: { comment: dto.comment },
+    });
+
+    return updated;
+  }
+
+  private async findPeopleIntegration(id: string) {
+    const integration = await this.prisma.integrationConfig.findUnique({
+      where: { id },
+    });
+    if (!integration) {
+      throw new NotFoundException('接口集成配置不存在');
+    }
+    if (!['enterprise_wechat', 'feishu'].includes(integration.provider)) {
+      throw new BadRequestException('只有企业微信和飞书支持人员接入审批');
+    }
+    if (!integration.isEnabled) {
+      throw new BadRequestException('请先启用该集成配置');
+    }
+    return integration;
+  }
+
+  private normalizeExternalContacts(
+    provider: string,
+    config: Record<string, unknown>,
+  ): NormalizedExternalContact[] {
+    const configured = Array.isArray(config.mockContacts)
+      ? (config.mockContacts as Record<string, unknown>[])
+      : Array.isArray(config.contacts)
+        ? (config.contacts as Record<string, unknown>[])
+        : [];
+
+    const source = configured.length
+      ? configured
+      : provider === 'feishu'
+        ? [
+            {
+              externalUserId: 'fs_pm_001',
+              realName: '飞书项目经理',
+              phone: '13800010001',
+              email: 'feishu.pm@example.com',
+              gender: '男',
+              departmentName: '交付中心',
+              positionNames: ['项目经理'],
+            },
+            {
+              externalUserId: 'fs_sw_002',
+              realName: '飞书软件工程师',
+              phone: '13800010002',
+              email: 'feishu.software@example.com',
+              gender: '女',
+              departmentName: '软件交付组',
+              positionNames: ['软件工程师', '实施支持'],
+            },
+          ]
+        : [
+            {
+              externalUserId: 'ww_pm_001',
+              realName: '企微项目经理',
+              phone: '13800020001',
+              email: 'wecom.pm@example.com',
+              gender: '男',
+              departmentName: '交付中心',
+              positionNames: ['项目经理'],
+            },
+            {
+              externalUserId: 'ww_el_002',
+              realName: '企微电气工程师',
+              phone: '13800020002',
+              email: 'wecom.electric@example.com',
+              gender: '女',
+              departmentName: '电气交付组',
+              positionNames: ['电气工程师', '调试工程师'],
+            },
+          ];
+
+    return source.reduce<NormalizedExternalContact[]>((items, item, index) => {
+        const externalUserId = this.stringFrom(
+          item.externalUserId ?? item.userId ?? item.openId ?? item.userid,
+          `${provider}_${index + 1}`,
+        );
+        const realName = this.stringFrom(item.realName ?? item.name ?? item.username, '');
+        if (!realName) return items;
+
+        items.push({
+          externalUserId,
+          realName,
+          phone: this.optionalString(item.phone ?? item.mobile),
+          email: this.optionalString(item.email),
+          gender: this.optionalString(item.gender),
+          avatarUrl: this.optionalString(item.avatarUrl ?? item.avatar),
+          departmentName: this.optionalString(item.departmentName ?? item.department),
+          positionNames: this.asStringArray(item.positionNames ?? item.positions ?? item.position),
+          rawPayload: item,
+        });
+        return items;
+      }, []);
+  }
+
+  private async assertRolesExist(roleIds: string[]): Promise<void> {
+    const roles = await this.prisma.role.findMany({
+      where: { id: { in: roleIds }, status: 'Active' },
+      select: { id: true },
+    });
+    if (roles.length !== new Set(roleIds).size) {
+      throw new BadRequestException('审批角色不存在或已停用');
+    }
+  }
+
+  private async assertDepartmentExists(departmentId: string): Promise<void> {
+    const department = await this.prisma.department.findUnique({
+      where: { id: departmentId },
+      select: { id: true },
+    });
+    if (!department) {
+      throw new BadRequestException('审批部门不存在');
+    }
+  }
+
+  private async findExistingUser(
+    candidate: { email: string | null; phone: string | null },
+    username?: string,
+  ) {
+    const or: Prisma.UserWhereInput[] = [];
+    if (username) or.push({ username });
+    if (candidate.email) or.push({ email: candidate.email });
+    if (candidate.phone) or.push({ phone: candidate.phone });
+    if (!or.length) return null;
+    return this.prisma.user.findFirst({
+      where: {
+        deletedAt: null,
+        OR: or,
+      },
+    });
+  }
+
+  private async resolveUniqueUsername(seed: string): Promise<string> {
+    const base = seed
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_.-]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 42) || `external_${Date.now().toString(36)}`;
+
+    let username = base;
+    let index = 1;
+    while (await this.prisma.user.findUnique({ where: { username } })) {
+      username = `${base}_${index}`;
+      index += 1;
+    }
+    return username;
+  }
+
+  private asRecord(value: Prisma.JsonValue): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  }
+
+  private asStringArray(value: unknown): string[] {
+    if (Array.isArray(value)) {
+      return value.map((item) => String(item).trim()).filter(Boolean);
+    }
+    if (typeof value === 'string') {
+      return value.split(/[、,，/]/).map((item) => item.trim()).filter(Boolean);
+    }
+    return [];
+  }
+
+  private stringFrom(value: unknown, fallback: string): string {
+    return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+  }
+
+  private optionalString(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
   }
 
   private async dumpDatabase(backupId: string): Promise<{ storagePath: string; fileSize: number }> {

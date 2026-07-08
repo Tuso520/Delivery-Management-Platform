@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { archiveApi } from '@/api/archive'
 import { archiveTemplateApi } from '@/api/archive-template'
 import { fileApi } from '@/api/file'
 import { projectApi } from '@/api/project'
 import { reviewApi } from '@/api/review'
-import AttachmentPreviewModal from '@/components/AttachmentPreviewModal/index.vue'
 import FileUploader from '@/components/FileUploader/index.vue'
 import { arcoConfirm } from '@/utils/arco-dialog'
 import { downloadBlob } from '@/utils/blob'
+import { openSignedPreview } from '@/utils/preview-link'
 import {
   localizeProjectRisk,
   localizeProjectStage,
@@ -36,6 +36,14 @@ interface UploadPoint extends ArchiveItem {
   guideText: string
 }
 
+interface ArchiveSection {
+  stageCode: string
+  stageName: string
+  items: UploadPoint[]
+  totalItems: number
+  completedItems: number
+}
+
 const localeStore = useLocaleStore()
 
 const projectList = ref<Project[]>([])
@@ -60,9 +68,7 @@ const loadingReviews = ref(false)
 const reviewDialogVisible = ref(false)
 const selectedReviewFileId = ref('')
 const selectedReviewFileName = ref('')
-const previewVisible = ref(false)
-const previewFileId = ref('')
-const previewTitle = ref('在线预览')
+const archiveStreamRef = ref<HTMLElement>()
 
 const defaultAllowedTypes = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'jpg', 'jpeg', 'png']
 const archiveViewOptions = [
@@ -79,15 +85,24 @@ const selectedProject = computed(() =>
   projectList.value.find((project) => project.id === selectedProjectId.value),
 )
 
-const activeStageName = computed(() =>
-  activeStage.value ? localizeProjectStage(activeStage.value, localeStore.currentLocale) : '项目档案',
+const archiveSections = computed<ArchiveSection[]>(() =>
+  (archiveTree.value?.stages || []).map((stage) => {
+    const stats = getStageStats(stage.stageCode)
+    const items = flattenUploadPoints(stage.items || [])
+    return {
+      stageCode: stage.stageCode,
+      stageName: localizeProjectStage(stage.stageCode, localeStore.currentLocale),
+      items,
+      totalItems: stats?.totalItems ?? items.length,
+      completedItems: stats?.completedItems ?? items.filter((item) => item.status === 'Completed').length,
+    }
+  }),
 )
 
-const currentStageItems = computed<UploadPoint[]>(() => {
-  if (!archiveTree.value?.stages) return []
-  const stage = archiveTree.value.stages.find((item) => item.stageCode === activeStage.value)
-  return flattenUploadPoints(stage?.items || [])
-})
+const activeArchiveSection = computed(() =>
+  archiveSections.value.find((section) => section.stageCode === activeStage.value)
+  || archiveSections.value[0],
+)
 
 const currentProjectReviews = computed(() =>
   pendingReviews.value.filter((review) => review.file.project?.id === selectedProjectId.value),
@@ -171,6 +186,33 @@ function handleProjectChange(): void {
   Promise.all([fetchArchive(), fetchPendingReviews()])
 }
 
+async function scrollToArchiveStage(stageCode: string): Promise<void> {
+  activeStage.value = stageCode
+  await nextTick()
+  const container = archiveStreamRef.value
+  const target = document.getElementById(`archive-stage-${stageCode}`)
+  if (container && target) {
+    container.scrollTo({ top: target.offsetTop, behavior: 'smooth' })
+  }
+}
+
+function updateActiveArchiveStageByScroll(): void {
+  const container = archiveStreamRef.value
+  if (!container || !archiveSections.value.length) return
+  const containerTop = container.getBoundingClientRect().top
+  let currentCode = archiveSections.value[0].stageCode
+  for (const section of archiveSections.value) {
+    const element = document.getElementById(`archive-stage-${section.stageCode}`)
+    if (!element) continue
+    if (element.getBoundingClientRect().top - containerTop <= 56) {
+      currentCode = section.stageCode
+    } else {
+      break
+    }
+  }
+  activeStage.value = currentCode
+}
+
 async function fetchPendingReviews(): Promise<void> {
   loadingReviews.value = true
   try {
@@ -228,16 +270,18 @@ async function handleUploadSuccess(): Promise<void> {
   await fetchPendingReviews()
 }
 
-function openFilePreview(file: ArchiveFile): void {
-  previewFileId.value = file.id
-  previewTitle.value = file.originalName
-  previewVisible.value = true
+async function openFilePreview(file: ArchiveFile): Promise<void> {
+  await openSignedPreview(
+    () => fileApi.createPreviewLink(file.id),
+    { title: file.originalName },
+  )
 }
 
-function openReviewPreview(row: PendingReview): void {
-  previewFileId.value = row.fileId
-  previewTitle.value = row.file.fileName
-  previewVisible.value = true
+async function openReviewPreview(row: PendingReview): Promise<void> {
+  await openSignedPreview(
+    () => fileApi.createPreviewLink(row.fileId),
+    { title: row.file.fileName },
+  )
 }
 
 function openReviewDialog(row: PendingReview): void {
@@ -432,82 +476,115 @@ watch(activeArchiveView, (view) => {
       <template v-else-if="selectedProjectId">
         <a-spin :loading="loadingArchive" class="archive-spin">
           <template v-if="archiveTree?.stages?.length">
-            <div class="stage-strip">
-              <a-tabs v-model="activeStage" type="card" class="stage-tabs">
-                <a-tab-pane
-                  v-for="stage in archiveTree.stages"
-                  :key="stage.stageCode"
-                  :name="stage.stageCode"
-                >
-                  <template #title>
-                    <span class="stage-tab-label">
-                      {{ localizeProjectStage(stage.stageCode, localeStore.currentLocale) }}
-                      <a-tag v-if="getStageStats(stage.stageCode)" size="small" class="stage-count">
-                        {{ getStageStats(stage.stageCode)?.completedItems || 0 }}/{{ getStageStats(stage.stageCode)?.totalItems || 0 }}
-                      </a-tag>
-                    </span>
-                  </template>
-                </a-tab-pane>
-              </a-tabs>
-              <div class="summary-metrics">
-                <span>总项 <strong>{{ statistics?.totalItems || 0 }}</strong></span>
-                <span>已完成 <strong>{{ statistics?.completedItems || 0 }}</strong></span>
-                <span>必填 <strong>{{ statistics?.requiredItems || 0 }}</strong></span>
-                <span>完成率 <strong>{{ statistics?.completionRate || 0 }}%</strong></span>
-              </div>
-            </div>
+            <div class="archive-library">
+              <aside class="archive-sidebar">
+                <div class="archive-sidebar-header">
+                  <h3>{{ activeArchiveSection?.stageName || '项目档案' }}</h3>
+                  <span>{{ statistics?.completionRate || 0 }}%</span>
+                </div>
+                <div class="archive-stage-list">
+                  <button
+                    v-for="section in archiveSections"
+                    :key="section.stageCode"
+                    class="archive-stage-item"
+                    :class="{ active: section.stageCode === activeStage }"
+                    type="button"
+                    @click="scrollToArchiveStage(section.stageCode)"
+                  >
+                    <span>{{ section.stageName }}</span>
+                    <em>{{ section.completedItems }}/{{ section.totalItems }}</em>
+                  </button>
+                </div>
+              </aside>
 
-            <div class="stage-title-row">
-              <h3>{{ activeStageName }}</h3>
-              <span>每个一级流程下方给出上传指导；文件上传后进入审批，通过后才能作为当前可查阅版本。</span>
-            </div>
-
-            <a-table
-              :data="currentStageItems"
-              row-key="id"
-              border
-              stripe
-              class="archive-table"
-              empty-text="当前阶段暂无档案项"
-              :scroll="{ y: '100%' }"
-            >
-              <a-table-column label="档案项" :width="220">
-                <template #default="{ row }">
-                  <div class="archive-name-cell">
-                    <strong>{{ row.secondName || row.name }}</strong>
-                    <span v-if="row.parentName">{{ row.parentName }}</span>
+              <main class="archive-list-panel">
+                <div class="archive-list-toolbar">
+                  <div class="toolbar-title">
+                    <strong>{{ activeArchiveSection?.stageName || '项目档案' }}</strong>
+                    <span>文件上传后进入审批，通过后作为当前可查阅版本。</span>
                   </div>
-                </template>
-              </a-table-column>
-              <a-table-column label="上传指导" :width="360" show-overflow-tooltip>
-                <template #default="{ row }">{{ row.guideText }}</template>
-              </a-table-column>
-              <a-table-column label="文件" :width="60" align="center">
-                <template #default="{ row }">{{ row.files?.length || 0 }}</template>
-              </a-table-column>
-              <a-table-column label="状态" :width="86">
-                <template #default="{ row }">
-                  <a-tag :type="getStatusTag(row.status).type" size="small">
-                    {{ getStatusTag(row.status).label }}
-                  </a-tag>
-                </template>
-              </a-table-column>
-              <a-table-column label="负责人" :width="86">
-                <template #default="{ row }">{{ row.responsibleUser?.realName || '-' }}</template>
-              </a-table-column>
-              <a-table-column label="审核人" :width="86">
-                <template #default="{ row }">
-                  {{ row.reviewUser?.realName || row.responsibleUser?.realName || '-' }}
-                </template>
-              </a-table-column>
-              <a-table-column label="操作" :width="104" align="center">
-                <template #default="{ row }">
-                  <a-button type="text" size="mini" @click="viewItemDetail(row.id)">
-                    查看/上传
-                  </a-button>
-                </template>
-              </a-table-column>
-            </a-table>
+                  <div class="summary-metrics">
+                    <span>总项 <strong>{{ statistics?.totalItems || 0 }}</strong></span>
+                    <span>已完成 <strong>{{ statistics?.completedItems || 0 }}</strong></span>
+                    <span>必填 <strong>{{ statistics?.requiredItems || 0 }}</strong></span>
+                  </div>
+                </div>
+
+                <div
+                  ref="archiveStreamRef"
+                  class="archive-stream"
+                  @scroll.passive="updateActiveArchiveStageByScroll"
+                >
+                  <section
+                    v-for="section in archiveSections"
+                    :id="`archive-stage-${section.stageCode}`"
+                    :key="section.stageCode"
+                    class="archive-section"
+                  >
+                    <a-table
+                      :data="section.items"
+                      row-key="id"
+                      border
+                      stripe
+                      class="archive-table"
+                      empty-text="当前阶段暂无档案项"
+                      :pagination="false"
+                      :scroll="{ x: 1260 }"
+                    >
+                      <a-table-column :label="section.stageName" :width="200">
+                        <template #default="{ row }">
+                          <div class="archive-name-cell">
+                            <strong>{{ row.secondName || row.name }}</strong>
+                            <span v-if="row.parentName">{{ row.parentName }}</span>
+                          </div>
+                        </template>
+                      </a-table-column>
+                      <a-table-column label="上传指导" :width="350" show-overflow-tooltip>
+                        <template #default="{ row }">{{ row.guideText }}</template>
+                      </a-table-column>
+                      <a-table-column label="当前文件" :width="280">
+                        <template #default="{ row }">
+                          <button
+                            v-if="row.files?.length"
+                            class="file-link"
+                            type="button"
+                            @click="openFilePreview(row.files[0])"
+                          >
+                            {{ row.files[0].originalName }}
+                          </button>
+                          <span v-else class="muted-text">待上传</span>
+                        </template>
+                      </a-table-column>
+                      <a-table-column label="数量" :width="60" align="center">
+                        <template #default="{ row }">{{ row.files?.length || 0 }}</template>
+                      </a-table-column>
+                      <a-table-column label="状态" :width="86">
+                        <template #default="{ row }">
+                          <a-tag :type="getStatusTag(row.status).type" size="small">
+                            {{ getStatusTag(row.status).label }}
+                          </a-tag>
+                        </template>
+                      </a-table-column>
+                      <a-table-column label="负责人" :width="96">
+                        <template #default="{ row }">{{ row.responsibleUser?.realName || '-' }}</template>
+                      </a-table-column>
+                      <a-table-column label="审核人" :width="96">
+                        <template #default="{ row }">
+                          {{ row.reviewUser?.realName || row.responsibleUser?.realName || '-' }}
+                        </template>
+                      </a-table-column>
+                      <a-table-column label="操作" :width="120" align="center" fixed="right">
+                        <template #default="{ row }">
+                          <a-button type="text" size="mini" @click="viewItemDetail(row.id)">
+                            查看/上传
+                          </a-button>
+                        </template>
+                      </a-table-column>
+                    </a-table>
+                  </section>
+                </div>
+              </main>
+            </div>
           </template>
           <a-empty v-else description="暂无档案目录，请先生成目录" class="archive-empty" />
         </a-spin>
@@ -668,13 +745,6 @@ watch(activeArchiveView, (view) => {
       :file-id="selectedReviewFileId"
       :file-name="selectedReviewFileName"
       @review-complete="handleReviewComplete"
-    />
-
-    <AttachmentPreviewModal
-      v-model:visible="previewVisible"
-      source="file"
-      :attachment-id="previewFileId"
-      :title="previewTitle"
     />
   </div>
 </template>

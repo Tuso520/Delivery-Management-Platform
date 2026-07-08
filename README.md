@@ -49,7 +49,7 @@ node scripts/local-test-server.mjs
 
 - 平台地址：`http://127.0.0.1:18080`
 - 管理员账号：`admin`
-- 管理员密码：`Admin@123456`
+- 管理员密码：`Admin@123`
 
 本地 Docker 测试：
 

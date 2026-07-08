@@ -16,6 +16,8 @@
 | vue-i18n | 国际化 | MIT |
 | md-editor-v3 | Markdown 编辑与预览 | MIT |
 | PDF.js / pdfjs-dist | PDF 在线预览 | Apache-2.0 |
+| Viewer.js | 图片缩放、旋转和查看器 | MIT |
+| PhotoSwipe | 图片全屏画廊预览 | MIT |
 
 ## 后端运行依赖
 
