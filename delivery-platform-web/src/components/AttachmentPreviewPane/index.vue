@@ -9,7 +9,7 @@ import { attachmentApi } from '@/api/attachment'
 import type { AttachmentPreview } from '@/api/attachment'
 import { fileApi } from '@/api/file'
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = `${pdfWorkerUrl}?v=pdfjs-canvas-20260708`
+pdfjsLib.GlobalWorkerOptions.workerSrc = `${pdfWorkerUrl}?v=pdfjs-canvas-20260708-mjs`
 
 type PreviewSource = 'attachment' | 'file'
 
@@ -129,7 +129,9 @@ async function renderPdf(blob: Blob, fallbackHtml = ''): Promise<void> {
   } catch (error) {
     if (token === pdfRenderToken) {
       console.error('PDF preview render failed', error)
-      pdfFallbackHtml.value = fallbackHtml
+      // Keep PDF preview inside the controlled PDF.js canvas path. Browser object/embed
+      // fallback can show blocked-content chrome in some environments.
+      pdfFallbackHtml.value = ''
       pdfRenderError.value = 'PDF 内容渲染失败，请下载后查看原文件。'
     }
   }

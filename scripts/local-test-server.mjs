@@ -267,6 +267,116 @@ articles = knowledgeFixture.articles;
 attachments = knowledgeFixture.attachments;
 let approvalTasks = [];
 
+const localUsers = [
+  adminUser,
+  projectManagerUser,
+  { id: 'user-sales-li', username: 'sales_li', realName: '李销售', email: 'sales.li@delivery-platform.local' },
+  { id: 'user-elec-chen', username: 'elec_chen', realName: '陈电气', email: 'elec.chen@delivery-platform.local' },
+  { id: 'user-sw-zhao', username: 'sw_zhao', realName: '赵软件', email: 'sw.zhao@delivery-platform.local' },
+];
+
+const archiveStageDefinitions = [
+  { stageCode: '01_presale', stageName: '售前与合同' },
+  { stageCode: '02_design', stageName: '深化方案' },
+  { stageCode: '03_procurement', stageName: '采购与生产' },
+  { stageCode: '04_construction', stageName: '施工与调试' },
+  { stageCode: '05_acceptance', stageName: '验收与移交' },
+  { stageCode: '06_review', stageName: '收尾与复盘' },
+  { stageCode: '07_misc', stageName: '其他杂项' },
+];
+
+const archiveUploadGuides = {
+  '01_presale': [
+    ['合同与中标文件', '上传合同、补充协议、中标通知书和商务确认记录，便于后续验收与回款核对。'],
+    ['项目启动资料', '上传启动会纪要、项目章程、范围边界说明和客户联系人清单。'],
+    ['需求确认材料', '上传需求调研表、客户确认邮件、需求冻结记录和变更风险说明。'],
+    ['项目成员任命', '上传项目经理、软件、电气、采购、财务等岗位任命与职责分工。'],
+    ['交付计划基线', '上传总进度计划、里程碑清单、资源计划和关键路径说明。'],
+    ['风险初评记录', '上传合同风险、技术风险、现场风险和客户配合风险初评表。'],
+    ['客户资料接入', '上传客户现场网络、设备、组织、沟通窗口和资料接收规则。'],
+    ['回款节点计划', '上传合同回款节点、开票要求、验收触发条件和责任人说明。'],
+    ['合规与保密要求', '上传客户保密协议、资料权限要求、跨境数据限制和审批记录。'],
+    ['启动阶段审批', '上传启动阶段内部审批、领导确认和阶段门放行材料。'],
+  ],
+  '02_design': [
+    ['深化设计输入', '上传客户图纸、设备参数、软件接口、点表和现场边界条件。'],
+    ['方案评审记录', '上传方案评审会议纪要、评审问题清单、整改闭环和客户确认。'],
+    ['电气设计文件', '上传控制柜图纸、原理图、接线图、IO 分配和电源设计说明。'],
+    ['软件设计文件', '上传架构说明、部署拓扑、接口清单、账号权限和数据点配置。'],
+    ['设备选型清单', '上传主要设备选型、品牌型号、技术参数和替代方案审批。'],
+    ['材料清单与 BOM', '上传 BOM、备件清单、线缆清册、辅材清单和版本说明。'],
+    ['图纸会审记录', '上传内部会审、客户会审、供应商会审和问题关闭记录。'],
+    ['设计变更记录', '上传变更申请、影响分析、成本工期评估和审批结果。'],
+    ['设计输出基线', '上传已冻结的设计输出包，标明版本、适用范围和发布日期。'],
+    ['设计阶段放行', '上传设计阶段门评审表、放行审批和遗留问题清单。'],
+  ],
+  '03_procurement': [
+    ['采购计划', '上传采购计划、交期要求、供应商责任人和风险物料预警。'],
+    ['供应商报价', '上传供应商报价、比价表、技术澄清和商务谈判记录。'],
+    ['采购合同', '上传采购合同、订单、交付条款、质保要求和付款节点。'],
+    ['生产进度记录', '上传生产排程、过程照片、质检记录和延期风险说明。'],
+    ['出厂验收资料', '上传 FAT 记录、测试报告、整改记录和出厂放行单。'],
+    ['包装与发运清单', '上传装箱单、包装照片、运输计划、保险和物流单号。'],
+    ['进出口资料', '上传发票、箱单、报关资料、原产地证明和清关要求。'],
+    ['到货验收记录', '上传到货照片、数量核对、破损记录和客户签收凭证。'],
+    ['采购变更审批', '上传替代物料、供应商变更、费用变更和审批记录。'],
+    ['采购阶段放行', '上传采购阶段门评审、遗留问题和下一阶段交接清单。'],
+  ],
+  '04_construction': [
+    ['进场准备', '上传进场申请、人员资质、安全培训、工具设备和施工计划。'],
+    ['现场交底记录', '上传技术交底、安全交底、客户协调会议纪要和签到表。'],
+    ['安装过程记录', '上传安装照片、隐蔽工程记录、设备定位和线缆敷设记录。'],
+    ['安全文明施工', '上传安全晨会、风险告知、整改通知和安全检查记录。'],
+    ['施工质量检查', '上传质量检查表、问题整改单、复验记录和客户确认。'],
+    ['现场变更签证', '上传现场签证、工程量确认、费用影响和客户签字材料。'],
+    ['软件部署记录', '上传服务器配置、软件版本、部署日志和回滚方案。'],
+    ['联调准备清单', '上传联调条件确认、网络开通、账号权限和测试用例。'],
+    ['现场问题清单', '上传问题台账、责任人、解决期限和关闭证据。'],
+    ['施工阶段放行', '上传施工阶段验收、调试准入和阶段门审批材料。'],
+  ],
+  '05_acceptance': [
+    ['单机调试记录', '上传单机调试表、参数记录、问题处理和复测结论。'],
+    ['系统联调记录', '上传系统联调报告、接口测试、性能测试和异常记录。'],
+    ['客户培训资料', '上传培训课件、签到表、考核记录和客户反馈。'],
+    ['试运行记录', '上传试运行日志、值班记录、报警处理和稳定性说明。'],
+    ['验收测试报告', '上传 SAT、UAT、功能验收、性能验收和客户签字报告。'],
+    ['移交资料清单', '上传最终图纸、软件包、账号清单、操作手册和维护资料。'],
+    ['问题关闭记录', '上传验收遗留问题、责任人、关闭证据和客户确认。'],
+    ['验收会议纪要', '上传验收会纪要、参会人员、结论和后续安排。'],
+    ['回款触发材料', '上传验收证明、开票申请、回款节点证明和财务交接。'],
+    ['验收阶段放行', '上传验收阶段门审批、移交确认和结项条件检查。'],
+  ],
+  '06_review': [
+    ['项目复盘报告', '上传进度、成本、质量、客户满意度和风险复盘报告。'],
+    ['经验教训清单', '上传成功经验、失败教训、可复用模板和改进建议。'],
+    ['成本结算资料', '上传成本归集、供应商结算、差旅费用和预算偏差分析。'],
+    ['合同收尾文件', '上传合同关闭、质保条款、尾款计划和法律风险确认。'],
+    ['质保移交资料', '上传质保联系人、备件清单、维护周期和服务响应机制。'],
+    ['客户满意度', '上传客户评价、满意度调查、投诉处理和改进措施。'],
+    ['内部绩效材料', '上传项目团队绩效、贡献记录、奖惩建议和审批。'],
+    ['资料归档确认', '上传档案完整性检查、缺失说明、涉密资料处理记录。'],
+    ['改进事项跟踪', '上传改进任务、责任人、完成期限和跟踪状态。'],
+    ['项目关闭审批', '上传项目关闭申请、领导审批和系统归档确认。'],
+  ],
+  '07_misc': [
+    ['客户临时资料', '上传客户临时要求、说明材料和有效期备注。'],
+    ['第三方检测资料', '上传第三方检测报告、证书、校准记录和整改证明。'],
+    ['特殊工具软件', '上传临时工具、授权文件、使用说明和安全确认。'],
+    ['现场影像素材', '上传照片、视频、铭牌、整改前后对比和拍摄清单。'],
+    ['跨文化沟通记录', '上传海外沟通纪要、翻译确认、文化差异处理记录。'],
+    ['物流异常记录', '上传清关异常、运输延误、破损处理和索赔资料。'],
+    ['供应商往来资料', '上传供应商澄清、邮件、会议纪要和承诺文件。'],
+    ['客户管理资料', '上传客户组织关系、关键联系人、沟通偏好和注意事项。'],
+    ['临时审批材料', '上传不属于固定流程但需要留痕的临时审批。'],
+    ['其他归档说明', '上传无法归入前述目录的资料，并在备注中说明原因。'],
+  ],
+};
+
+const localProjects = buildLocalProjects();
+let archiveItems = buildLocalArchiveItems(localProjects);
+let projectFiles = buildLocalProjectFiles(localProjects, archiveItems);
+let fileReviews = buildLocalFileReviews(projectFiles, archiveItems, localProjects);
+
 const dictionaries = {
   project_type: {
     id: 'dict-project-type',
@@ -602,6 +712,442 @@ function applyApprovalDecision(task, decision, comment) {
   }
 }
 
+function findLocalUser(id) {
+  return localUsers.find((user) => user.id === id) || adminUser;
+}
+
+function makeProjectMember(projectId, user, role, index) {
+  return {
+    id: `member-${projectId}-${role.toLowerCase()}`,
+    projectId,
+    userId: user.id,
+    projectRole: role,
+    permissionLevel: role === 'PROJECT_MANAGER' ? 'admin' : 'write',
+    dataScope: 'project',
+    createdAt: now(),
+    updatedAt: now(),
+    user: {
+      id: user.id,
+      username: user.username,
+      realName: user.realName,
+      email: user.email,
+    },
+    sortOrder: index,
+  };
+}
+
+function buildLocalProjects() {
+  const seed = [
+    ['project-1', 'CN-SH-ACME-EMS-SW-2026', '上海 ACME 能源管理平台交付', 'CN', '上海', '上海示例客户', 'software', 'Active', 'Medium', '02_design', 1680000, 'CNY', 1],
+    ['project-2', 'VN-HCM-FACTORY-ELEC-2026', '越南胡志明工厂电气调试', 'VN', '胡志明', '越南示例客户', 'electrical', 'Delayed', 'High', '04_construction', 260000, 'USD', 7.2],
+    ['project-3', 'TH-BKK-HVAC-SW-2026', '泰国曼谷空调节能系统交付', 'TH', '曼谷', '泰国工业园客户', 'software', 'Active', 'Low', '03_procurement', 185000, 'USD', 7.2],
+    ['project-4', 'MY-KUL-DATA-ELEC-2026', '马来西亚数据中心配电改造', 'MY', '吉隆坡', '马来西亚数据中心', 'electrical', 'Active', 'Medium', '02_design', 940000, 'CNY', 1],
+    ['project-5', 'ID-JKT-WATER-SW-2026', '印尼雅加达水务平台升级', 'ID', '雅加达', '印尼水务集团', 'software', 'Active', 'Medium', '05_acceptance', 212000, 'USD', 7.2],
+    ['project-6', 'AE-DXB-LOGI-ELEC-2026', '迪拜物流园电气监控项目', 'AE', '迪拜', '迪拜物流园客户', 'electrical', 'Suspended', 'High', '03_procurement', 430000, 'USD', 7.2],
+    ['project-7', 'CN-SZ-BATTERY-SW-2026', '深圳电池工厂软件部署', 'CN', '深圳', '深圳新能源客户', 'software', 'Active', 'Low', '04_construction', 1280000, 'CNY', 1],
+    ['project-8', 'SA-RYD-STEEL-ELEC-2026', '沙特利雅得钢厂电气联调', 'SA', '利雅得', '沙特钢铁客户', 'electrical', 'Active', 'Critical', '05_acceptance', 510000, 'USD', 7.2],
+    ['project-9', 'BR-SP-CEMENT-SW-2026', '巴西圣保罗水泥线节能平台', 'BR', '圣保罗', '巴西水泥客户', 'software', 'Draft', 'Medium', '01_presale', 320000, 'USD', 7.2],
+    ['project-10', 'CN-BJ-PHARM-ELEC-2026', '北京制药厂电气改造项目', 'CN', '北京', '北京制药客户', 'electrical', 'Accepted', 'Low', '06_review', 1560000, 'CNY', 1],
+  ];
+
+  const sales = findLocalUser('user-sales-li');
+  const pm = projectManagerUser;
+  const elec = findLocalUser('user-elec-chen');
+  const sw = findLocalUser('user-sw-zhao');
+
+  return seed.map((row, index) => {
+    const [
+      id,
+      projectCode,
+      projectName,
+      countryCode,
+      city,
+      customerName,
+      projectType,
+      projectStatus,
+      riskLevel,
+      currentStage,
+      contractAmount,
+      contractCurrency,
+      exchangeRate,
+    ] = row;
+    const baseAmount = Number(contractAmount) * Number(exchangeRate);
+    const members = [
+      makeProjectMember(id, sales, 'SALES_OWNER', 1),
+      makeProjectMember(id, pm, 'PROJECT_MANAGER', 2),
+      makeProjectMember(id, elec, 'ELEC_LEADER', 3),
+      makeProjectMember(id, sw, 'SOFTWARE_LEADER', 4),
+    ];
+
+    return {
+      id,
+      projectCode,
+      projectName,
+      countryCode,
+      city,
+      customerName,
+      projectType,
+      contractCurrency,
+      baseCurrency: 'CNY',
+      currencyCode: contractCurrency,
+      contractAmount: Number(contractAmount),
+      exchangeRate: Number(exchangeRate),
+      convertedAmount: Math.round(baseAmount),
+      baseCurrencyAmount: Math.round(baseAmount),
+      exchangeRateDate: '2026-07-08',
+      exchangeRateSource: 'local-test',
+      projectLanguage: 'zh-CN',
+      salesOwnerId: sales.id,
+      projectManagerId: pm.id,
+      electricLeaderId: elec.id,
+      softwareLeaderId: sw.id,
+      currentStage,
+      projectStatus,
+      riskLevel,
+      startDate: `2026-0${(index % 6) + 1}-01`,
+      plannedStartDate: `2026-0${(index % 6) + 1}-01`,
+      plannedEndDate: `2026-${String((index % 6) + 6).padStart(2, '0')}-28`,
+      createdBy: adminUser.id,
+      createdAt: now(),
+      updatedAt: now(),
+      projectManager: { id: pm.id, realName: pm.realName },
+      members,
+    };
+  });
+}
+
+function buildLocalArchiveItems(projects) {
+  return projects.flatMap((project) =>
+    archiveStageDefinitions.flatMap((stage, stageIndex) =>
+      archiveUploadGuides[stage.stageCode].map(([name, usageDescription], itemIndex) => {
+        const serial = stageIndex * 100 + itemIndex + 1;
+        return {
+          id: `archive-${project.id}-${stage.stageCode}-${String(itemIndex + 1).padStart(2, '0')}`,
+          projectId: project.id,
+          templateItemId: `tpl-${stage.stageCode}-${String(itemIndex + 1).padStart(2, '0')}`,
+          parentId: null,
+          stageCode: stage.stageCode,
+          itemNo: serial,
+          level: 1,
+          name,
+          secondName: name,
+          usageDescription,
+          isRequired: itemIndex < 7,
+          isStar: itemIndex % 4 === 0,
+          isSensitive: /合同|账号|保密|客户/.test(name),
+          needReview: true,
+          allowedFileTypes: 'pdf,doc,docx,xls,xlsx,ppt,pptx,jpg,jpeg,png,md',
+          responsibleUserId: project.projectManagerId,
+          reviewUserId: adminUser.id,
+          status: 'PendingUpload',
+          dueDate: project.plannedEndDate,
+          completedAt: null,
+          sortOrder: serial,
+          createdAt: now(),
+          updatedAt: now(),
+        };
+      }),
+    ),
+  );
+}
+
+function buildLocalProjectFiles(projects, items) {
+  const extensions = ['docx', 'xlsx', 'pdf', 'pptx', 'png', 'docx', 'xlsx', 'pdf', 'docx', 'xlsx', 'pptx', 'pdf'];
+  const files = [];
+  projects.forEach((project) => {
+    const projectItems = items.filter((item) => item.projectId === project.id).slice(0, 12);
+    projectItems.forEach((item, index) => {
+      const ext = extensions[index % extensions.length];
+      const status = index % 5 === 0 ? 'Reviewing' : 'Approved';
+      item.status = status;
+      item.completedAt = status === 'Approved' ? now() : null;
+      files.push({
+        id: `file-${project.id}-${String(index + 1).padStart(2, '0')}`,
+        projectId: project.id,
+        archiveItemId: item.id,
+        fileName: `${item.name}.${ext}`,
+        originalName: `${item.name}.${ext}`,
+        fileExt: ext,
+        fileSize: 24000 + index * 3072,
+        mimeType: mimeTypeFor(`${item.name}.${ext}`),
+        storagePath: null,
+        versionNo: 'V1.0',
+        isCurrent: status === 'Approved',
+        fileStatus: status,
+        uploadUserId: project.projectManagerId,
+        uploadTime: now(),
+        remark: item.usageDescription,
+        createdAt: now(),
+        updatedAt: now(),
+      });
+    });
+  });
+  return files;
+}
+
+function buildLocalFileReviews(files, items, projects) {
+  return files
+    .filter((file) => file.fileStatus === 'Reviewing')
+    .map((file, index) => {
+      const item = items.find((entry) => entry.id === file.archiveItemId);
+      const project = projects.find((entry) => entry.id === file.projectId);
+      return {
+        id: `review-${file.id}`,
+        fileId: file.id,
+        archiveItemId: file.archiveItemId,
+        reviewUserId: adminUser.id,
+        reviewStatus: 'Pending',
+        reviewComment: null,
+        reviewTime: null,
+        createdAt: now(),
+        updatedAt: now(),
+        reviewer: { id: adminUser.id, realName: adminUser.realName },
+        file: {
+          id: file.id,
+          fileName: file.originalName,
+          versionNo: file.versionNo,
+          project: project
+            ? { id: project.id, projectName: project.projectName, projectCode: project.projectCode }
+            : null,
+        },
+        archiveItem: {
+          id: item?.id || file.archiveItemId,
+          name: item?.secondName || item?.name || '档案项',
+        },
+        sortOrder: index,
+      };
+    });
+}
+
+function attachArchiveRelations(item) {
+  const responsibleUser = findLocalUser(item.responsibleUserId);
+  const reviewUser = findLocalUser(item.reviewUserId || adminUser.id);
+  return {
+    ...item,
+    responsibleUser: { id: responsibleUser.id, realName: responsibleUser.realName, username: responsibleUser.username },
+    reviewUser: { id: reviewUser.id, realName: reviewUser.realName, username: reviewUser.username },
+    files: projectFiles
+      .filter((file) => file.archiveItemId === item.id && !file.deletedAt)
+      .sort((a, b) => String(b.uploadTime).localeCompare(String(a.uploadTime)))
+      .map(fileResponse),
+    children: [],
+  };
+}
+
+function archiveTreeForProject(projectId) {
+  return {
+    projectId,
+    stages: archiveStageDefinitions.map((stage) => ({
+      stageCode: stage.stageCode,
+      items: archiveItems
+        .filter((item) => item.projectId === projectId && item.stageCode === stage.stageCode && !item.deletedAt)
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map(attachArchiveRelations),
+    })),
+  };
+}
+
+function archiveStatisticsForProject(projectId) {
+  const items = archiveItems.filter((item) => item.projectId === projectId && !item.deletedAt);
+  const totalItems = items.length;
+  const completedItems = items.filter((item) => ['Approved', 'Archived'].includes(item.status)).length;
+  const requiredItems = items.filter((item) => item.isRequired).length;
+  const starItems = items.filter((item) => item.isStar).length;
+  return {
+    totalItems,
+    completedItems,
+    requiredItems,
+    starItems,
+    completionRate: totalItems ? Math.round((completedItems / totalItems) * 100) : 0,
+    stages: archiveStageDefinitions.map((stage) => {
+      const stageItems = items.filter((item) => item.stageCode === stage.stageCode);
+      const stageCompleted = stageItems.filter((item) => ['Approved', 'Archived'].includes(item.status)).length;
+      return {
+        stageCode: stage.stageCode,
+        stageName: stage.stageName,
+        totalItems: stageItems.length,
+        completedItems: stageCompleted,
+        completionRate: stageItems.length ? Math.round((stageCompleted / stageItems.length) * 100) : 0,
+      };
+    }),
+  };
+}
+
+function fileResponse(file) {
+  const uploadUser = findLocalUser(file.uploadUserId || adminUser.id);
+  return {
+    ...file,
+    uploadUser: {
+      id: uploadUser.id,
+      realName: uploadUser.realName,
+    },
+  };
+}
+
+function reviewResponse(review) {
+  const file = projectFiles.find((entry) => entry.id === review.fileId);
+  const item = archiveItems.find((entry) => entry.id === review.archiveItemId);
+  const project = localProjects.find((entry) => entry.id === file?.projectId);
+  return {
+    ...review,
+    reviewer: { id: adminUser.id, realName: adminUser.realName },
+    file: {
+      id: file?.id || review.fileId,
+      fileName: file?.originalName || review.file?.fileName || '待审核文件',
+      versionNo: file?.versionNo || 'V1.0',
+      project: project
+        ? { id: project.id, projectName: project.projectName, projectCode: project.projectCode }
+        : null,
+    },
+    archiveItem: {
+      id: item?.id || review.archiveItemId,
+      name: item?.secondName || item?.name || '档案项',
+    },
+  };
+}
+
+function createProjectFile({ projectId, archiveItemId, originalName, fileSize, mimeType, storagePath, remark }) {
+  const ext = fileExt(originalName);
+  const file = {
+    id: `file-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    projectId,
+    archiveItemId,
+    fileName: originalName,
+    originalName,
+    fileExt: ext,
+    fileSize,
+    mimeType: mimeType || mimeTypeFor(originalName),
+    storagePath: storagePath || null,
+    versionNo: 'V1.0',
+    isCurrent: false,
+    fileStatus: 'Reviewing',
+    uploadUserId: activeUser.id,
+    uploadTime: now(),
+    remark: remark || '新上传文件，等待审核后成为当前版本。',
+    createdAt: now(),
+    updatedAt: now(),
+  };
+  projectFiles = [file, ...projectFiles];
+
+  const item = archiveItems.find((entry) => entry.id === archiveItemId);
+  if (item) {
+    item.status = 'Reviewing';
+    item.updatedAt = now();
+  }
+
+  const project = localProjects.find((entry) => entry.id === projectId);
+  fileReviews = [
+    {
+      id: `review-${file.id}`,
+      fileId: file.id,
+      archiveItemId,
+      reviewUserId: adminUser.id,
+      reviewStatus: 'Pending',
+      reviewComment: null,
+      reviewTime: null,
+      createdAt: now(),
+      updatedAt: now(),
+      reviewer: { id: adminUser.id, realName: adminUser.realName },
+      file: {
+        id: file.id,
+        fileName: file.originalName,
+        versionNo: file.versionNo,
+        project: project
+          ? { id: project.id, projectName: project.projectName, projectCode: project.projectCode }
+          : null,
+      },
+      archiveItem: {
+        id: item?.id || archiveItemId,
+        name: item?.secondName || item?.name || '档案项',
+      },
+    },
+    ...fileReviews,
+  ];
+
+  return file;
+}
+
+function decideProjectFile(fileId, decision, comment) {
+  const file = projectFiles.find((entry) => entry.id === fileId && !entry.deletedAt);
+  if (!file) return null;
+  const review = fileReviews.find((entry) => entry.fileId === fileId && entry.reviewStatus === 'Pending');
+  if (review) {
+    review.reviewStatus = decision;
+    review.reviewComment = comment || '';
+    review.reviewTime = now();
+    review.updatedAt = now();
+  }
+
+  const item = archiveItems.find((entry) => entry.id === file.archiveItemId);
+  if (decision === 'Approved') {
+    projectFiles.forEach((entry) => {
+      if (entry.archiveItemId === file.archiveItemId && entry.id !== file.id) {
+        entry.isCurrent = false;
+      }
+    });
+    file.fileStatus = 'Approved';
+    file.isCurrent = true;
+    file.updatedAt = now();
+    if (item) {
+      item.status = 'Approved';
+      item.completedAt = now();
+      item.updatedAt = now();
+    }
+  } else {
+    file.fileStatus = 'Rejected';
+    file.isCurrent = false;
+    file.updatedAt = now();
+    if (item) {
+      const hasApproved = projectFiles.some((entry) =>
+        entry.archiveItemId === item.id
+        && entry.fileStatus === 'Approved'
+        && !entry.deletedAt
+      );
+      item.status = hasApproved ? 'Approved' : 'Rejected';
+      item.updatedAt = now();
+    }
+  }
+  return file;
+}
+
+function filePreview(file) {
+  if (!file) return null;
+  if (file.fileExt === 'pdf') {
+    return {
+      fileName: file.originalName,
+      fileExt: file.fileExt,
+      mimeType: file.mimeType,
+      previewKind: 'pdf',
+      viewer: 'pdf',
+      title: file.originalName,
+    };
+  }
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(file.fileExt)) {
+    return {
+      fileName: file.originalName,
+      fileExt: file.fileExt,
+      mimeType: file.mimeType,
+      previewKind: 'image',
+      viewer: 'image',
+      title: file.originalName,
+    };
+  }
+  const viewer = file.fileExt.includes('xls')
+    ? 'spreadsheet'
+    : file.fileExt.includes('ppt')
+      ? 'presentation'
+      : 'document';
+  return {
+    fileName: file.originalName,
+    fileExt: file.fileExt,
+    mimeType: file.mimeType,
+    previewKind: 'html',
+    viewer,
+    title: file.originalName,
+    html: buildOfficePreview(file),
+  };
+}
+
 function buildKnowledgeMarkdown(module, content) {
   return [
     `# ${module.name} / ${content.title}`,
@@ -840,59 +1386,97 @@ function attachmentPreview(id) {
 function buildOfficePreview(item) {
   if (item.fileExt.includes('xls')) {
     return [
-      '<article class="attachment-preview">',
-      '<h2>知识库 XLSX 预览样例</h2>',
+      '<article class="attachment-preview office-excel">',
+      '<div class="excel-workbook">',
       '<section class="preview-sheet"><h3>交付检查表</h3>',
+      '<div class="preview-table-block"><div class="preview-table-caption">表 1</div>',
       '<div class="preview-table-wrap"><table>',
-      '<tr><td>专业</td><td>检查项</td><td>状态</td></tr>',
-      '<tr><td>软件</td><td>部署包校验</td><td>通过</td></tr>',
-      '<tr><td>电气</td><td>回路编号核对</td><td>通过</td></tr>',
-      '</table></div></section></article>',
+      '<tr><th>专业</th><th>检查项</th><th>责任人</th><th>状态</th><th>备注</th></tr>',
+      '<tr><td>软件</td><td>部署包版本校验</td><td>软件工程师</td><td>通过</td><td>与项目台账版本一致</td></tr>',
+      '<tr><td>电气</td><td>控制柜回路编号核对</td><td>电气工程师</td><td>通过</td><td>按交付清单复核</td></tr>',
+      '<tr><td>项目</td><td>客户验收资料归档</td><td>项目经理</td><td>待审批</td><td>上传后进入审批流</td></tr>',
+      '</table></div></div></section>',
+      '<section class="preview-sheet"><h3>风险跟踪</h3>',
+      '<div class="preview-table-block"><div class="preview-table-wrap"><table>',
+      '<tr><th>风险项</th><th>等级</th><th>处理措施</th><th>计划完成</th></tr>',
+      '<tr><td>现场网络未开通</td><td>中</td><td>提前协调客户 IT</td><td>2026-07-15</td></tr>',
+      '<tr><td>设备资料缺页</td><td>低</td><td>供应商补传并复核</td><td>2026-07-18</td></tr>',
+      '</table></div></div></section>',
+      '</div></article>',
     ].join('');
   }
 
   if (item.fileExt.includes('ppt')) {
     return [
-      '<article class="attachment-preview">',
-      '<h2>知识库 PPT 预览样例</h2>',
-      '<section class="preview-slide"><h3>第 1 页：交付目标</h3><p>统一知识沉淀、附件归档和在线查阅流程。</p></section>',
-      '<section class="preview-slide"><h3>第 2 页：专业适配</h3><p>电气、软件、运维按阶段维护不同类型的知识条目。</p></section>',
+      '<article class="attachment-preview office-presentation">',
+      '<section class="preview-slide"><span class="slide-page-no">1 / 3</span><div class="slide-content"><h3>交付目标</h3><ul class="slide-list"><li>统一知识沉淀、附件归档和在线查阅流程</li><li>按岗位一级目录维护资料，减少重复分类</li><li>更新内容进入审批并保留差异对比</li></ul></div></section>',
+      '<section class="preview-slide"><span class="slide-page-no">2 / 3</span><div class="slide-content"><h3>专业适配</h3><ul class="slide-list"><li>项目经理关注进度、验收和客户沟通资料</li><li>电气工程师关注点表、图纸和设备配置资料</li><li>软件工程师关注部署、配置和远程交付资料</li></ul></div></section>',
+      '<section class="preview-slide"><span class="slide-page-no">3 / 3</span><div class="slide-content"><h3>审批要求</h3><p>新增或替换资料后，由对应权限人员审批，审批完成后成为当前可查阅版本。</p></div></section>',
       '</article>',
     ].join('');
   }
 
   return [
-    '<article class="attachment-preview">',
-    '<h2>知识库 DOC 预览样例</h2>',
-    '<p>用途：验证旧版 doc 文件上传后可在线查阅。</p>',
-    '<h3>岗位归档要求</h3>',
-    '<p>上传资料按一级岗位分类归档，文件名称后可标注岗位职责、流程或模板属性。</p>',
+    '<article class="attachment-preview office-word">',
+    '<section class="word-page">',
+    `<div class="word-page-meta">${item.originalName}</div>`,
+    '<div class="word-body">',
+    '<h1>项目交付资料在线预览样例</h1>',
+    '<p>本文档用于验证 Word 类资料上传后，可在平台内以接近 Office/WPS 的纸张样式进行在线查阅。页面仅提供阅读能力，不提供在线编辑。</p>',
+    '<h2>一、岗位归档要求</h2>',
+    '<p>资料按照一级岗位目录归档，例如项目经理、电气工程师、软件工程师、运维管理等。二级说明通过文件简介和备注承载，不再进入左侧分类树。</p>',
+    '<h2>二、审批与版本</h2>',
+    '<p>当岗位职责、流程或模板文件需要更新时，提交人上传新版本，审批人查看新旧差异后确认。审批通过后，平台展示最新版本，旧版本作为历史记录保留。</p>',
+    '<h2>三、查看要求</h2>',
+    '<p>用户点击文件标题后直接打开在线预览，预览窗口应完整显示 Word、Excel、PPT、PDF 和图片内容，并记录预览热度与下载热度。</p>',
+    '</div></section>',
     '</article>',
   ].join('');
 }
 
-function samplePdf() {
-  return Buffer.from([
-    '%PDF-1.4',
-    '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj',
-    '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj',
-    '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 300 160] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj',
-    '4 0 obj << /Length 62 >> stream',
-    'BT /F1 14 Tf 40 100 Td (Knowledge PDF Preview Sample) Tj ET',
-    'endstream endobj',
-    '5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj',
-    'xref 0 6',
-    '0000000000 65535 f ',
-    '0000000009 00000 n ',
-    '0000000058 00000 n ',
-    '0000000115 00000 n ',
-    '0000000241 00000 n ',
-    '0000000353 00000 n ',
-    'trailer << /Root 1 0 R /Size 6 >>',
-    'startxref',
-    '423',
-    '%%EOF',
-  ].join('\n'), 'utf8');
+function samplePdf(item = {}) {
+  const safeName = (item.originalName || 'knowledge-preview.pdf').replace(/[^\x20-\x7e]/gu, ' ');
+  const stream = [
+    'BT',
+    '/F1 20 Tf',
+    '72 720 Td',
+    `(${escapePdfText(safeName)}) Tj`,
+    '/F1 12 Tf',
+    '0 -34 Td',
+    '(Delivery Management Platform PDF online preview verification.) Tj',
+    '0 -22 Td',
+    '(This page is generated by the local test server with valid xref offsets.) Tj',
+    '0 -22 Td',
+    '(Expected result: PDF.js renders this page inside the preview modal.) Tj',
+    'ET',
+  ].join('\n');
+
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`,
+  ];
+
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(pdf));
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = Buffer.byteLength(pdf);
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  pdf += offsets
+    .slice(1)
+    .map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`)
+    .join('');
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(pdf, 'utf8');
+}
+
+function escapePdfText(text) {
+  return text.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
 }
 
 function samplePng() {
@@ -1404,7 +1988,7 @@ async function handleApi(req, res, url) {
       return;
     }
     if (item.fileExt === 'pdf') {
-      sendRaw(res, samplePdf(), 'application/pdf');
+      sendRaw(res, samplePdf(item), 'application/pdf');
       return;
     }
     if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(item.fileExt)) {
@@ -1477,17 +2061,161 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === 'GET' && path === '/projects') {
-    const projects = [
-      { id: 'project-1', projectCode: 'CN-SW-2026-001', projectName: '软件交付样板项目', customerName: '上海示例客户', countryCode: 'CN', projectType: 'software', contractAmount: 1680000, currencyCode: 'CNY', exchangeRate: 1, baseCurrencyAmount: 1680000, currentStage: 'delivery', projectStatus: 'Active', riskLevel: 'Medium', plannedStartDate: '2026-07-01', plannedEndDate: '2026-09-30', projectManager: { id: 'user-admin', realName: '系统管理员' }, softwareLead: { id: 'user-admin', realName: '系统管理员' }, electricalLead: null, procurementLead: null, financeLead: null, createdAt: now(), updatedAt: now() },
-      { id: 'project-2', projectCode: 'VN-EL-2026-001', projectName: '电气调试样板项目', customerName: '越南示例客户', countryCode: 'VN', projectType: 'electrical', contractAmount: 260000, currencyCode: 'USD', exchangeRate: 7.2, baseCurrencyAmount: 1872000, currentStage: 'commissioning', projectStatus: 'Delayed', riskLevel: 'High', plannedStartDate: '2026-06-01', plannedEndDate: '2026-08-15', projectManager: { id: 'user-admin', realName: '系统管理员' }, softwareLead: null, electricalLead: { id: 'user-admin', realName: '系统管理员' }, procurementLead: null, financeLead: null, createdAt: now(), updatedAt: now() },
-    ];
-    sendJson(res, envelope(page(projects, url.searchParams.get('page'), url.searchParams.get('pageSize'))));
+    const keyword = (url.searchParams.get('keyword') || '').trim().toLowerCase();
+    const list = localProjects
+      .filter((project) => !project.deletedAt)
+      .filter((project) => !keyword
+        || project.projectName.toLowerCase().includes(keyword)
+        || project.projectCode.toLowerCase().includes(keyword)
+        || String(project.customerName || '').toLowerCase().includes(keyword));
+    sendJson(res, envelope(page(list, url.searchParams.get('page'), url.searchParams.get('pageSize'))));
+    return;
+  }
+
+  if (req.method === 'POST' && path === '/projects') {
+    const body = await readJson(req);
+    const id = `project-${Date.now()}`;
+    const project = {
+      id,
+      projectCode: body.projectCode || `${body.countryCode || 'CN'}-${Date.now().toString().slice(-6)}`,
+      projectName: body.projectName || '新建交付项目',
+      countryCode: body.countryCode || 'CN',
+      city: body.city || '',
+      customerName: body.customerName || '',
+      projectType: body.projectType || 'software',
+      contractCurrency: body.contractCurrency || 'CNY',
+      baseCurrency: body.baseCurrency || 'CNY',
+      currencyCode: body.contractCurrency || 'CNY',
+      contractAmount: Number(body.contractAmount || 0),
+      exchangeRate: 1,
+      convertedAmount: Number(body.contractAmount || 0),
+      baseCurrencyAmount: Number(body.contractAmount || 0),
+      projectLanguage: body.projectLanguage || 'zh-CN',
+      salesOwnerId: body.salesOwnerId || 'user-sales-li',
+      projectManagerId: body.projectManagerId || projectManagerUser.id,
+      electricLeaderId: body.electricLeaderId || 'user-elec-chen',
+      softwareLeaderId: body.softwareLeaderId || 'user-sw-zhao',
+      currentStage: body.currentStage || '01_presale',
+      projectStatus: 'Active',
+      riskLevel: body.riskLevel || 'Medium',
+      startDate: body.startDate || now().slice(0, 10),
+      plannedStartDate: body.startDate || now().slice(0, 10),
+      plannedEndDate: body.plannedEndDate || '2026-12-31',
+      createdBy: activeUser.id,
+      createdAt: now(),
+      updatedAt: now(),
+      projectManager: { id: projectManagerUser.id, realName: projectManagerUser.realName },
+      members: [
+        makeProjectMember(id, findLocalUser('user-sales-li'), 'SALES_OWNER', 1),
+        makeProjectMember(id, projectManagerUser, 'PROJECT_MANAGER', 2),
+        makeProjectMember(id, findLocalUser('user-elec-chen'), 'ELEC_LEADER', 3),
+        makeProjectMember(id, findLocalUser('user-sw-zhao'), 'SOFTWARE_LEADER', 4),
+      ],
+    };
+    localProjects.unshift(project);
+    const newItems = buildLocalArchiveItems([project]);
+    archiveItems = [...newItems, ...archiveItems];
+    sendJson(res, envelope(project), 201);
     return;
   }
 
   const projectDetailMatch = path.match(/^\/projects\/([^/]+)$/);
   if (req.method === 'GET' && projectDetailMatch) {
-    sendJson(res, envelope({ id: projectDetailMatch[1], projectCode: 'CN-SW-2026-001', projectName: '软件交付样板项目', customerName: '上海示例客户', countryCode: 'CN', projectType: 'software', contractAmount: 1680000, currencyCode: 'CNY', exchangeRate: 1, baseCurrencyAmount: 1680000, currentStage: 'delivery', projectStatus: 'Active', riskLevel: 'Medium', plannedStartDate: '2026-07-01', plannedEndDate: '2026-09-30', projectManager: { id: 'user-admin', realName: '系统管理员' }, members: [] }));
+    const project = localProjects.find((item) => item.id === projectDetailMatch[1] && !item.deletedAt);
+    sendJson(res, envelope(project ?? null), project ? 200 : 404);
+    return;
+  }
+
+  const projectUpdateMatch = path.match(/^\/projects\/([^/]+)$/);
+  if (req.method === 'PUT' && projectUpdateMatch) {
+    const project = localProjects.find((item) => item.id === projectUpdateMatch[1] && !item.deletedAt);
+    if (!project) {
+      sendJson(res, envelope(null, '项目不存在', 404), 404);
+      return;
+    }
+    Object.assign(project, await readJson(req), { updatedAt: now() });
+    sendJson(res, envelope(project));
+    return;
+  }
+
+  const projectDeleteMatch = path.match(/^\/projects\/([^/]+)$/);
+  if (req.method === 'DELETE' && projectDeleteMatch) {
+    const project = localProjects.find((item) => item.id === projectDeleteMatch[1] && !item.deletedAt);
+    if (project) project.deletedAt = now();
+    sendJson(res, envelope(null));
+    return;
+  }
+
+  const archiveTreeMatch = path.match(/^\/projects\/([^/]+)\/archives$/);
+  if (req.method === 'GET' && archiveTreeMatch) {
+    const project = localProjects.find((item) => item.id === archiveTreeMatch[1] && !item.deletedAt);
+    if (!project) {
+      sendJson(res, envelope(null, '项目不存在', 404), 404);
+      return;
+    }
+    sendJson(res, envelope(archiveTreeForProject(project.id)));
+    return;
+  }
+
+  const archiveGenerateMatch = path.match(/^\/projects\/([^/]+)\/archives\/generate$/);
+  if (req.method === 'POST' && archiveGenerateMatch) {
+    const project = localProjects.find((item) => item.id === archiveGenerateMatch[1] && !item.deletedAt);
+    if (!project) {
+      sendJson(res, envelope(null, '项目不存在', 404), 404);
+      return;
+    }
+    const existing = archiveItems.some((item) => item.projectId === project.id && !item.deletedAt);
+    if (!existing) {
+      archiveItems = [...buildLocalArchiveItems([project]), ...archiveItems];
+    }
+    sendJson(res, envelope({ message: '档案目录生成成功', totalItems: 70, templateName: '标准交付档案模板' }));
+    return;
+  }
+
+  const archiveStatsMatch = path.match(/^\/projects\/([^/]+)\/archives\/statistics$/);
+  if (req.method === 'GET' && archiveStatsMatch) {
+    sendJson(res, envelope(archiveStatisticsForProject(archiveStatsMatch[1])));
+    return;
+  }
+
+  const archiveItemMatch = path.match(/^\/projects\/([^/]+)\/archives\/([^/]+)$/);
+  if (req.method === 'GET' && archiveItemMatch) {
+    const item = archiveItems.find((entry) =>
+      entry.projectId === archiveItemMatch[1]
+      && entry.id === archiveItemMatch[2]
+      && !entry.deletedAt
+    );
+    sendJson(res, envelope(item ? attachArchiveRelations(item) : null), item ? 200 : 404);
+    return;
+  }
+
+  if (req.method === 'PUT' && archiveItemMatch) {
+    const item = archiveItems.find((entry) =>
+      entry.projectId === archiveItemMatch[1]
+      && entry.id === archiveItemMatch[2]
+      && !entry.deletedAt
+    );
+    if (!item) {
+      sendJson(res, envelope(null, '档案项不存在', 404), 404);
+      return;
+    }
+    Object.assign(item, await readJson(req), { updatedAt: now() });
+    sendJson(res, envelope(attachArchiveRelations(item)));
+    return;
+  }
+
+  const archiveNotApplicableMatch = path.match(/^\/projects\/([^/]+)\/archives\/([^/]+)\/mark-not-applicable$/);
+  if (req.method === 'POST' && archiveNotApplicableMatch) {
+    const item = archiveItems.find((entry) =>
+      entry.projectId === archiveNotApplicableMatch[1]
+      && entry.id === archiveNotApplicableMatch[2]
+      && !entry.deletedAt
+    );
+    if (item) {
+      item.status = 'NotApplicable';
+      item.updatedAt = now();
+    }
+    sendJson(res, envelope(item ? attachArchiveRelations(item) : null), item ? 200 : 404);
     return;
   }
 
@@ -1537,9 +2265,32 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === 'GET' && path === '/archive-templates') {
-    sendJson(res, envelope([
-      { id: 'archive-template-1', templateCode: 'AR-SW-001', templateName: '软件交付档案模板', countryCode: 'CN', projectType: 'software', languageCode: 'zh-CN', version: 'V1.0', status: 'Active', description: '本地测试档案模板', _count: { items: 3 }, createdAt: now(), updatedAt: now() },
-    ]));
+    const templates = [
+      ['archive-template-standard', 'AR-STD-001', '标准交付档案模板', null, '适用于软件、电气、海外和国内项目的通用档案目录。'],
+      ['archive-template-software', 'AR-SW-001', '软件交付档案模板', 'software', '强调部署、配置、接口、账号和上线记录。'],
+      ['archive-template-electrical', 'AR-EL-001', '电气工程档案模板', 'electrical', '强调图纸、设备、施工、调试和验收记录。'],
+      ['archive-template-oversea', 'AR-OS-001', '海外项目档案模板', null, '补充跨文化沟通、清关、物流和外币回款资料。'],
+      ['archive-template-china', 'AR-CN-001', '国内项目档案模板', null, '适用于国内客户现场交付与资料归档。'],
+      ['archive-template-hse', 'AR-HSE-001', '安全文明施工档案模板', null, '聚焦安全晨会、交底、整改和事故处理记录。'],
+      ['archive-template-procurement', 'AR-PUR-001', '采购物流档案模板', null, '聚焦供应商、采购、生产、发运和到货验收。'],
+      ['archive-template-acceptance', 'AR-ACC-001', '验收移交档案模板', null, '聚焦验收测试、培训、移交和回款触发材料。'],
+      ['archive-template-review', 'AR-RVW-001', '复盘收尾档案模板', null, '聚焦复盘、成本结算、质保移交和项目关闭。'],
+      ['archive-template-light', 'AR-LITE-001', '轻量项目档案模板', null, '适用于小型改造或短周期交付项目。'],
+    ].map(([id, templateCode, templateName, projectType, description]) => ({
+      id,
+      templateCode,
+      templateName,
+      countryCode: projectType ? 'CN' : null,
+      projectType,
+      languageCode: 'zh-CN',
+      version: 'V1.0',
+      status: 'Active',
+      description,
+      _count: { items: 70 },
+      createdAt: now(),
+      updatedAt: now(),
+    }));
+    sendJson(res, envelope(templates));
     return;
   }
 
@@ -1584,6 +2335,138 @@ async function handleApi(req, res, url) {
       { id: 'approval-report', templateCode: 'REPORT_REVIEW', templateName: '工作报告审核', businessType: 'report', countryCode: 'CN', isEnabled: true, steps: [{ id: 'step-1', stepOrder: 1, stepName: '主管审核', approverType: 'role', approverValue: 'PROJECT_MANAGER' }] },
       { id: 'approval-knowledge-file', templateCode: 'KNOWLEDGE_FILE_UPDATE', templateName: '知识库文件更新审批', businessType: 'knowledge-file-update', countryCode: '', isEnabled: true, steps: [{ id: 'step-knowledge-file-1', stepOrder: 1, stepName: '管理员审核', approverType: 'user', approverValue: 'user-admin' }] },
     ], url.searchParams.get('page'), url.searchParams.get('pageSize'))));
+    return;
+  }
+
+  if (req.method === 'GET' && path === '/reviews/pending') {
+    sendJson(res, envelope(
+      fileReviews
+        .filter((review) => review.reviewStatus === 'Pending')
+        .map(reviewResponse),
+    ));
+    return;
+  }
+
+  const archiveFilesMatch = path.match(/^\/archive-items\/([^/]+)\/files$/);
+  if (req.method === 'GET' && archiveFilesMatch) {
+    sendJson(res, envelope(
+      projectFiles
+        .filter((file) => file.archiveItemId === archiveFilesMatch[1] && !file.deletedAt)
+        .map(fileResponse),
+    ));
+    return;
+  }
+
+  if (req.method === 'POST' && path === '/files/upload') {
+    const body = await readBody(req);
+    const parts = parseMultipart(body, req.headers['content-type']);
+    const fields = {};
+    let filePart = null;
+    parts.forEach((part) => {
+      if (part.filename) {
+        filePart = part;
+      } else {
+        fields[part.name] = part.data.toString('utf8');
+      }
+    });
+    if (!filePart || !fields.projectId) {
+      sendJson(res, envelope(null, '缺少上传文件或项目 ID', 400), 400);
+      return;
+    }
+    const name = safeFileName(filePart.filename || `项目档案文件-${Date.now()}.dat`);
+    const targetDir = join(localStorageRoot, 'files', fields.projectId, fields.archiveItemId || 'general');
+    await mkdir(targetDir, { recursive: true });
+    const storagePath = join(targetDir, `${Date.now()}-${name}`);
+    await writeFile(storagePath, filePart.data);
+    const file = createProjectFile({
+      projectId: fields.projectId,
+      archiveItemId: fields.archiveItemId || null,
+      originalName: name,
+      fileSize: filePart.data.length,
+      mimeType: filePart.contentType || mimeTypeFor(name),
+      storagePath,
+      remark: fields.remark || '项目档案上传，等待审核。',
+    });
+    sendJson(res, envelope(fileResponse(file)), 201);
+    return;
+  }
+
+  const filePreviewMatch = path.match(/^\/files\/([^/]+)\/preview$/);
+  if (req.method === 'GET' && filePreviewMatch) {
+    const file = projectFiles.find((entry) => entry.id === filePreviewMatch[1] && !entry.deletedAt);
+    const preview = filePreview(file);
+    sendJson(res, envelope(preview ?? null), preview ? 200 : 404);
+    return;
+  }
+
+  const fileDownloadMatch = path.match(/^\/files\/([^/]+)\/download$/);
+  if (req.method === 'GET' && fileDownloadMatch) {
+    const file = projectFiles.find((entry) => entry.id === fileDownloadMatch[1] && !entry.deletedAt);
+    if (!file) {
+      sendJson(res, envelope(null, '文件不存在', 404), 404);
+      return;
+    }
+    if (file.storagePath && existsSync(file.storagePath)) {
+      sendRaw(res, await readFile(file.storagePath), file.mimeType);
+      return;
+    }
+    if (file.fileExt === 'pdf') {
+      sendRaw(res, samplePdf(file), 'application/pdf');
+      return;
+    }
+    if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(file.fileExt)) {
+      sendRaw(res, samplePng(), file.mimeType || 'image/png');
+      return;
+    }
+    sendRaw(res, Buffer.from(`Local project archive file content for ${file.originalName}`, 'utf8'), file.mimeType || 'text/plain; charset=utf-8');
+    return;
+  }
+
+  const fileReviewsMatch = path.match(/^\/files\/([^/]+)\/reviews$/);
+  if (req.method === 'GET' && fileReviewsMatch) {
+    sendJson(res, envelope(
+      fileReviews
+        .filter((review) => review.fileId === fileReviewsMatch[1])
+        .map(reviewResponse),
+    ));
+    return;
+  }
+
+  const fileApproveMatch = path.match(/^\/files\/([^/]+)\/review\/approve$/);
+  if (req.method === 'POST' && fileApproveMatch) {
+    const body = await readJson(req);
+    const file = decideProjectFile(fileApproveMatch[1], 'Approved', body.comment || '');
+    sendJson(res, envelope(file ? fileResponse(file) : null), file ? 200 : 404);
+    return;
+  }
+
+  const fileRejectMatch = path.match(/^\/files\/([^/]+)\/review\/reject$/);
+  if (req.method === 'POST' && fileRejectMatch) {
+    const body = await readJson(req);
+    const file = decideProjectFile(fileRejectMatch[1], 'Rejected', body.comment || '');
+    sendJson(res, envelope(file ? fileResponse(file) : null), file ? 200 : 404);
+    return;
+  }
+
+  const fileDetailMatch = path.match(/^\/files\/([^/]+)$/);
+  if (req.method === 'GET' && fileDetailMatch) {
+    const file = projectFiles.find((entry) => entry.id === fileDetailMatch[1] && !entry.deletedAt);
+    sendJson(res, envelope(file ? fileResponse(file) : null), file ? 200 : 404);
+    return;
+  }
+
+  if (req.method === 'DELETE' && fileDetailMatch) {
+    const file = projectFiles.find((entry) => entry.id === fileDetailMatch[1] && !entry.deletedAt);
+    if (file) {
+      file.deletedAt = now();
+      const item = archiveItems.find((entry) => entry.id === file.archiveItemId);
+      if (item) {
+        const hasFiles = projectFiles.some((entry) => entry.archiveItemId === item.id && !entry.deletedAt && entry.id !== file.id);
+        item.status = hasFiles ? item.status : 'PendingUpload';
+        item.updatedAt = now();
+      }
+    }
+    sendJson(res, envelope(null));
     return;
   }
 
@@ -1742,6 +2625,7 @@ async function handleApi(req, res, url) {
 const mimeTypes = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',

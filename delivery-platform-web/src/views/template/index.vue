@@ -10,12 +10,12 @@ import { arcoConfirm } from '@/utils/arco-dialog'
 import { templateApi } from '@/api/template'
 import { attachmentApi } from '@/api/attachment'
 import { approvalApi } from '@/api/platform'
+import AttachmentPreviewModal from '@/components/AttachmentPreviewModal/index.vue'
 import type { DocumentTemplate, QueryTemplateDto } from '@/types/template'
 import type { PaginatedData } from '@/types/api'
 import type { ApprovalTask } from '@/types/platform'
 import type { TagType } from '@/types/ui'
 import { downloadBlob } from '@/utils/blob'
-import { getPreviewRedirectUrl } from '@/utils/preview-link'
 
 interface TemplateStage {
   code: string
@@ -41,6 +41,9 @@ const createFiles = ref<File[]>([])
 const approvalVisible = ref(false)
 const approvalLoading = ref(false)
 const approvalTasks = ref<ApprovalTask[]>([])
+const previewVisible = ref(false)
+const previewAttachmentId = ref('')
+const previewTitle = ref('在线预览')
 const createForm = ref({
   name: '',
   stageCode: '',
@@ -279,15 +282,19 @@ function isHotTemplate(template: DocumentTemplate): boolean {
   return (template.previewCount || 0) + (template.downloadCount || 0) >= HOT_TEMPLATE_THRESHOLD
 }
 
-function getTemplatePreviewUrl(row: DocumentTemplate): string {
-  if (!row.attachmentId) {
-    return '#'
-  }
-  return getPreviewRedirectUrl('attachment', row.attachmentId as string, { title: row.name || '在线预览' })
-}
-
 function showMissingTemplateFile(): void {
   Message.warning('该模板暂无可预览文件')
+}
+
+function openTemplatePreview(row: DocumentTemplate): void {
+  if (!row.attachmentId) {
+    showMissingTemplateFile()
+    return
+  }
+  previewAttachmentId.value = row.attachmentId as string
+  previewTitle.value = row.name || '在线预览'
+  previewVisible.value = true
+  incrementTemplateHeat(row.id, 'previewCount')
 }
 
 function resetCreateForm(): void {
@@ -480,15 +487,14 @@ onMounted(fetchList)
               <template #name="{ record }">
                 <div class="template-name-cell">
                   <div class="template-title-line">
-                    <a
+                    <button
                       v-if="record.attachmentId"
                       class="template-title-button"
-                      :href="getTemplatePreviewUrl(record)"
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      type="button"
+                      @click="openTemplatePreview(record)"
                     >
                       {{ record.name }}
-                    </a>
+                    </button>
                     <button
                       v-else
                       class="template-title-button"
@@ -703,6 +709,13 @@ onMounted(fetchList)
         </a-table-column>
       </a-table>
     </a-modal>
+
+    <AttachmentPreviewModal
+      v-model:visible="previewVisible"
+      source="attachment"
+      :attachment-id="previewAttachmentId"
+      :title="previewTitle"
+    />
 
   </section>
 </template>

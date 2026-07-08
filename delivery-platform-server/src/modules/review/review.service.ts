@@ -319,13 +319,24 @@ export class ReviewService {
         },
       });
 
-      // Update file status
+      if (file.archiveItemId) {
+        await tx.file.updateMany({
+          where: {
+            projectId: file.projectId,
+            archiveItemId: file.archiveItemId,
+            isCurrent: true,
+            deletedAt: null,
+            id: { not: fileId },
+          },
+          data: { isCurrent: false },
+        });
+      }
+
       await tx.file.update({
         where: { id: fileId },
-        data: { fileStatus: 'Approved' },
+        data: { fileStatus: 'Approved', isCurrent: true },
       });
 
-      // Update archive item status
       if (file.archiveItemId) {
         await tx.projectArchiveItem.update({
           where: { id: file.archiveItemId },
@@ -382,17 +393,28 @@ export class ReviewService {
         },
       });
 
-      // Update file status
       await tx.file.update({
         where: { id: fileId },
-        data: { fileStatus: 'Rejected' },
+        data: { fileStatus: 'Rejected', isCurrent: false },
       });
 
-      // Update archive item status
       if (file.archiveItemId) {
+        const previousCurrent = await tx.file.findFirst({
+          where: {
+            projectId: file.projectId,
+            archiveItemId: file.archiveItemId,
+            isCurrent: true,
+            deletedAt: null,
+          },
+          select: { fileStatus: true },
+          orderBy: { createdAt: 'desc' },
+        });
         await tx.projectArchiveItem.update({
           where: { id: file.archiveItemId },
-          data: { status: 'Rejected', completedAt: null },
+          data: {
+            status: previousCurrent?.fileStatus === 'Approved' ? 'Approved' : 'Rejected',
+            completedAt: previousCurrent?.fileStatus === 'Approved' ? undefined : null,
+          },
         });
       }
     });

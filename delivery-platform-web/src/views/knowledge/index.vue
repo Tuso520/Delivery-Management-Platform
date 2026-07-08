@@ -8,6 +8,7 @@ import 'md-editor-v3/lib/style.css'
 import { attachmentApi } from '@/api/attachment'
 import { knowledgeApi } from '@/api/knowledge'
 import { approvalApi } from '@/api/platform'
+import AttachmentPreviewModal from '@/components/AttachmentPreviewModal/index.vue'
 import AttachmentPreviewPane from '@/components/AttachmentPreviewPane/index.vue'
 import type {
   KnowledgeArticle,
@@ -19,7 +20,6 @@ import type {
 import type { ApprovalTask } from '@/types/platform'
 import { downloadBlob } from '@/utils/blob'
 import { arcoPrompt } from '@/utils/arco-dialog'
-import { getPreviewRedirectUrl } from '@/utils/preview-link'
 
 interface KnowledgeFileRow extends KnowledgeAttachment {
   articleId: string
@@ -51,6 +51,9 @@ const approvalTasks = ref<ApprovalTask[]>([])
 const diffVisible = ref(false)
 const diffLoading = ref(false)
 const currentDiff = ref<KnowledgeFileRevisionDiff>()
+const previewVisible = ref(false)
+const previewAttachmentId = ref('')
+const previewTitle = ref('在线预览')
 
 const createVisible = ref(false)
 const createSubmitting = ref(false)
@@ -238,10 +241,6 @@ function updateActiveCategoryByScroll(): void {
   activeCategoryId.value = currentId
 }
 
-function getAttachmentPreviewUrl(file: KnowledgeFileRow | KnowledgeAttachment): string {
-  return getPreviewRedirectUrl('attachment', file.id, { title: file.originalName || '在线预览' })
-}
-
 function resetCreateForm(): void {
   createMode.value = 'markdown'
   createFiles.value = []
@@ -253,6 +252,13 @@ function resetCreateForm(): void {
     replaceExisting: false,
     replaceAttachmentId: '',
   }
+}
+
+function openAttachmentPreview(file: KnowledgeFileRow | KnowledgeAttachment): void {
+  previewAttachmentId.value = file.id
+  previewTitle.value = file.originalName || '在线预览'
+  previewVisible.value = true
+  incrementFileHeat(file.id, 'previewCount')
 }
 
 function openCreateKnowledge(): void {
@@ -558,14 +564,13 @@ onMounted(async () => {
               <template #file="{ record }">
                 <div class="file-name-cell">
                   <div class="file-title-line">
-                    <a
+                    <button
                       class="file-title-button"
-                      :href="getAttachmentPreviewUrl(record)"
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      type="button"
+                      @click="openAttachmentPreview(record)"
                     >
                       {{ record.originalName }}
-                    </a>
+                    </button>
                     <span class="file-heat" title="在线预览热度">
                       <IconEye />
                       {{ record.previewCount || 0 }}
@@ -776,29 +781,34 @@ onMounted(async () => {
           {{ formatDate(record.createdAt) }}
         </template>
         <template #actions="{ record }">
-          <a-space size="mini" :wrap="false" class="approval-actions">
-            <a-button
-              v-if="record.businessType === 'knowledge-file-update'"
-              type="text"
-              size="mini"
-              @click="openRevisionDiff(record)"
-            >
-              差异
-            </a-button>
-            <template v-if="record.status === 'Pending'">
-              <a-button type="text" size="mini" @click="decideApproval(record, 'Approved')">
-                通过
-              </a-button>
-              <a-button
-                type="text"
-                status="danger"
-                size="mini"
+          <a-dropdown
+            v-if="record.businessType === 'knowledge-file-update' || record.status === 'Pending'"
+            trigger="click"
+          >
+            <a-button size="mini" type="text">操作</a-button>
+            <template #content>
+              <a-doption
+                v-if="record.businessType === 'knowledge-file-update'"
+                @click="openRevisionDiff(record)"
+              >
+                差异对比
+              </a-doption>
+              <a-doption
+                v-if="record.status === 'Pending'"
+                @click="decideApproval(record, 'Approved')"
+              >
+                审批通过
+              </a-doption>
+              <a-doption
+                v-if="record.status === 'Pending'"
+                class="danger-option"
                 @click="decideApproval(record, 'Rejected')"
               >
-                驳回
-              </a-button>
+                驳回申请
+              </a-doption>
             </template>
-          </a-space>
+          </a-dropdown>
+          <span v-else class="muted-text">已处理</span>
         </template>
       </a-table>
     </a-modal>
@@ -838,6 +848,13 @@ onMounted(async () => {
         <a-empty v-else-if="!diffLoading" description="暂无可对比内容" />
       </a-spin>
     </a-modal>
+
+    <AttachmentPreviewModal
+      v-model:visible="previewVisible"
+      source="attachment"
+      :attachment-id="previewAttachmentId"
+      :title="previewTitle"
+    />
 
   </section>
 </template>
@@ -1190,6 +1207,15 @@ onMounted(async () => {
 
 .approval-actions {
   white-space: nowrap;
+}
+
+.muted-text {
+  color: var(--color-text-3);
+  font-size: 12px;
+}
+
+:global(.danger-option) {
+  color: rgb(var(--danger-6));
 }
 
 .diff-modal :deep(.arco-modal-body) {

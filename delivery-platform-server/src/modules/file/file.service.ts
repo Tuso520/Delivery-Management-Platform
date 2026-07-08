@@ -131,8 +131,9 @@ export class FileService {
       const shouldCreateReview = Boolean(archiveItemId && reviewUserId);
       const initialFileStatus = shouldCreateReview ? 'Reviewing' : 'Uploaded';
 
-      // If linked to archive item, deprecate previous current versions first
-      if (archiveItemId) {
+      // Only files that do not require review become current immediately.
+      // Reviewing files must not replace the visible approved/current version until approval.
+      if (archiveItemId && !shouldCreateReview) {
         await tx.file.updateMany({
           where: {
             projectId,
@@ -157,7 +158,7 @@ export class FileService {
           storageBucket: this.fileStorage.getBucketName(),
           storagePath,
           versionNo,
-          isCurrent: true,
+          isCurrent: !shouldCreateReview,
           fileStatus: initialFileStatus,
           uploadUserId: userId,
           remark: remark || null,
@@ -186,11 +187,32 @@ export class FileService {
         },
       });
 
-      // Update archive item status to Uploaded
       if (archiveItemId) {
+        const previousCurrent = shouldCreateReview
+          ? await tx.file.findFirst({
+              where: {
+                projectId,
+                archiveItemId,
+                isCurrent: true,
+                deletedAt: null,
+              },
+              select: { fileStatus: true },
+              orderBy: { createdAt: 'desc' },
+            })
+          : null;
         await tx.projectArchiveItem.update({
           where: { id: archiveItemId },
-          data: { status: initialFileStatus, completedAt: null },
+          data: {
+            status: shouldCreateReview
+              ? previousCurrent
+                ? this.fileStatusToArchiveStatus(previousCurrent.fileStatus)
+                : 'Reviewing'
+              : initialFileStatus,
+            completedAt:
+              shouldCreateReview && previousCurrent?.fileStatus === 'Approved'
+                ? undefined
+                : null,
+          },
         });
       }
 

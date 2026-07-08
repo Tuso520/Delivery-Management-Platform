@@ -146,7 +146,13 @@ export class ProjectArchiveService {
           select: { id: true, realName: true, username: true },
         },
         files: {
-          where: { isCurrent: true, deletedAt: null },
+          where: {
+            deletedAt: null,
+            OR: [
+              { isCurrent: true },
+              { fileStatus: { in: ['Reviewing', 'Rejected'] } },
+            ],
+          },
           select: {
             id: true,
             fileName: true,
@@ -227,7 +233,13 @@ export class ProjectArchiveService {
           select: { id: true, realName: true, username: true },
         },
         files: {
-          where: { isCurrent: true, deletedAt: null },
+          where: {
+            deletedAt: null,
+            OR: [
+              { isCurrent: true },
+              { fileStatus: { in: ['Reviewing', 'Rejected'] } },
+            ],
+          },
           select: {
             id: true,
             fileName: true,
