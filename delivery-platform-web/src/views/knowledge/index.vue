@@ -242,10 +242,6 @@ function getAttachmentPreviewUrl(file: KnowledgeFileRow | KnowledgeAttachment): 
   return getPreviewRedirectUrl('attachment', file.id, { title: file.originalName || '在线预览' })
 }
 
-function markAttachmentPreview(file: KnowledgeFileRow | KnowledgeAttachment): void {
-  incrementFileHeat(file.id, 'previewCount')
-}
-
 function resetCreateForm(): void {
   createMode.value = 'markdown'
   createFiles.value = []
@@ -567,7 +563,6 @@ onMounted(async () => {
                       :href="getAttachmentPreviewUrl(record)"
                       target="_blank"
                       rel="noopener noreferrer"
-                      @click="markAttachmentPreview(record)"
                     >
                       {{ record.originalName }}
                     </a>

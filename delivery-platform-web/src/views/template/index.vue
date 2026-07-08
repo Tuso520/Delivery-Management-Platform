@@ -286,13 +286,8 @@ function getTemplatePreviewUrl(row: DocumentTemplate): string {
   return getPreviewRedirectUrl('attachment', row.attachmentId as string, { title: row.name || '在线预览' })
 }
 
-function markTemplatePreview(row: DocumentTemplate, event?: MouseEvent): void {
-  if (!row.attachmentId) {
-    event?.preventDefault()
-    Message.warning('该模板暂无可预览文件')
-    return
-  }
-  incrementTemplateHeat(row.id, 'previewCount')
+function showMissingTemplateFile(): void {
+  Message.warning('该模板暂无可预览文件')
 }
 
 function resetCreateForm(): void {
@@ -486,14 +481,22 @@ onMounted(fetchList)
                 <div class="template-name-cell">
                   <div class="template-title-line">
                     <a
+                      v-if="record.attachmentId"
                       class="template-title-button"
                       :href="getTemplatePreviewUrl(record)"
                       target="_blank"
                       rel="noopener noreferrer"
-                      @click="markTemplatePreview(record, $event)"
                     >
                       {{ record.name }}
                     </a>
+                    <button
+                      v-else
+                      class="template-title-button"
+                      type="button"
+                      @click="showMissingTemplateFile"
+                    >
+                      {{ record.name }}
+                    </button>
                     <span class="template-heat" title="在线预览热度">
                       <IconEye />
                       {{ record.previewCount || 0 }}
