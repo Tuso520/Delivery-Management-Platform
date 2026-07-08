@@ -173,36 +173,36 @@ onMounted(fetchProjects)
         row-key="id"
         border
         stripe
-        :scroll="{ x: 1760 }"
+        :scroll="{ x: 1660 }"
         class="project-table"
       >
-        <a-table-column prop="projectName" label="项目名称" :width="250" show-overflow-tooltip />
-        <a-table-column prop="projectCode" label="项目编号" :width="150" show-overflow-tooltip />
-        <a-table-column prop="countryCode" label="国家" :width="90">
+        <a-table-column prop="projectName" label="项目名称" :width="230" show-overflow-tooltip />
+        <a-table-column prop="projectCode" label="项目编号" :width="130" show-overflow-tooltip />
+        <a-table-column prop="countryCode" label="国家" :width="78">
           <template #default="{ row }">
             {{ getCountryLabel(row.countryCode) }}
           </template>
         </a-table-column>
-        <a-table-column prop="projectType" label="项目类型" :width="118">
+        <a-table-column prop="projectType" label="项目类型" :width="96">
           <template #default="{ row }">
             {{ getTypeLabel(row.projectType) }}
           </template>
         </a-table-column>
-        <a-table-column prop="projectStatus" label="状态" :width="96" align="center">
+        <a-table-column prop="projectStatus" label="状态" :width="82" align="center">
           <template #default="{ row }">
             <a-tag :type="getStatusType(row.projectStatus)" size="small">
               {{ localizeProjectStatus(row.projectStatus, localeStore.currentLocale) }}
             </a-tag>
           </template>
         </a-table-column>
-        <a-table-column prop="riskLevel" label="风险" :width="90" align="center">
+        <a-table-column prop="riskLevel" label="风险" :width="64" align="center">
           <template #default="{ row }">
             <a-tag :type="getRiskType(row.riskLevel)" size="small">
               {{ localizeProjectRisk(row.riskLevel, localeStore.currentLocale) }}
             </a-tag>
           </template>
         </a-table-column>
-        <a-table-column prop="currentStage" label="当前阶段" :width="160">
+        <a-table-column prop="currentStage" label="当前阶段" :width="130">
           <template #default="{ row }">
             {{ localizeProjectStage(row.currentStage || '', localeStore.currentLocale) }}
           </template>
@@ -232,7 +232,7 @@ onMounted(fetchProjects)
         <a-table-column label="软件负责人" :width="112">
           <template #default="{ row }">{{ getMemberName(row, 'SOFTWARE_LEADER') }}</template>
         </a-table-column>
-        <a-table-column label="操作" :width="178" fixed="right" align="center">
+        <a-table-column label="操作" :width="156" fixed="right" align="center">
           <template #default="{ row }">
             <a-space size="mini" :wrap="false">
               <a-button type="text" size="mini" @click="handleView(row)">查看</a-button>
