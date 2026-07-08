@@ -15,7 +15,7 @@ import type { PaginatedData } from '@/types/api'
 import type { ApprovalTask } from '@/types/platform'
 import type { TagType } from '@/types/ui'
 import { downloadBlob } from '@/utils/blob'
-import { openPreviewRedirect } from '@/utils/preview-link'
+import { getPreviewRedirectUrl } from '@/utils/preview-link'
 
 interface TemplateStage {
   code: string
@@ -292,15 +292,22 @@ function displayTemplateFileName(row: DocumentTemplate): string {
   return `${sourceName}.${format}`
 }
 
-function openTemplatePreview(row: DocumentTemplate): void {
+function getTemplatePreviewUrl(row: DocumentTemplate): string {
   if (!row.attachmentId) {
+    return '#'
+  }
+  return getPreviewRedirectUrl('attachment', row.attachmentId, {
+    title: displayTemplateFileName(row),
+  })
+}
+
+function handleTemplateTitleClick(row: DocumentTemplate, event?: MouseEvent): void {
+  if (!row.attachmentId) {
+    event?.preventDefault()
     showMissingTemplateFile()
     return
   }
-  openPreviewRedirect('attachment', row.attachmentId, {
-    title: displayTemplateFileName(row),
-    onOpened: () => incrementTemplateHeat(row.id, 'previewCount'),
-  })
+  incrementTemplateHeat(row.id, 'previewCount')
 }
 
 function resetCreateForm(): void {
@@ -493,14 +500,16 @@ onMounted(fetchList)
               <template #name="{ record }">
                 <div class="template-name-cell">
                   <div class="template-title-line">
-                    <button
+                    <a
                       v-if="record.attachmentId"
                       class="template-title-button"
-                      type="button"
-                      @click="openTemplatePreview(record)"
+                      :href="getTemplatePreviewUrl(record)"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      @click="handleTemplateTitleClick(record, $event)"
                     >
                       {{ displayTemplateFileName(record) }}
-                    </button>
+                    </a>
                     <button
                       v-else
                       class="template-title-button"

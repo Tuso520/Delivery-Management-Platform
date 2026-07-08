@@ -433,6 +433,7 @@
 }
 
 .file-link {
+  display: inline-block;
   max-width: 100%;
   padding: 0;
   border: 0;
@@ -443,6 +444,7 @@
   font: inherit;
   font-weight: 650;
   text-align: left;
+  text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
 
@@ -450,6 +452,12 @@
     color: rgb(var(--primary-5));
     text-decoration: underline;
   }
+}
+
+.archive-preview-action {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
 }
 
 .muted-text {

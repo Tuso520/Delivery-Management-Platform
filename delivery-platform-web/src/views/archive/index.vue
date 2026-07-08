@@ -9,7 +9,7 @@ import { reviewApi } from '@/api/review'
 import FileUploader from '@/components/FileUploader/index.vue'
 import { arcoConfirm } from '@/utils/arco-dialog'
 import { downloadBlob } from '@/utils/blob'
-import { openPreviewRedirect } from '@/utils/preview-link'
+import { getPreviewRedirectUrl } from '@/utils/preview-link'
 import {
   localizeProjectRisk,
   localizeProjectStage,
@@ -270,12 +270,12 @@ async function handleUploadSuccess(): Promise<void> {
   await fetchPendingReviews()
 }
 
-function openFilePreview(file: ArchiveFile): void {
-  openPreviewRedirect('file', file.id, { title: file.originalName })
+function getFilePreviewUrl(file: ArchiveFile): string {
+  return getPreviewRedirectUrl('file', file.id, { title: file.originalName })
 }
 
-function openReviewPreview(row: PendingReview): void {
-  openPreviewRedirect('file', row.fileId, { title: row.file.fileName })
+function getReviewPreviewUrl(row: PendingReview): string {
+  return getPreviewRedirectUrl('file', row.fileId, { title: row.file.fileName })
 }
 
 function openReviewDialog(row: PendingReview): void {
@@ -434,9 +434,14 @@ watch(activeArchiveView, (view) => {
         >
           <a-table-column label="文件名称" :min-width="260">
             <template #default="{ row }">
-              <button class="file-link" type="button" @click="openReviewPreview(row)">
+              <a
+                class="file-link"
+                :href="getReviewPreviewUrl(row)"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 {{ row.file.fileName }}
-              </button>
+              </a>
             </template>
           </a-table-column>
           <a-table-column label="档案项" :min-width="180" show-overflow-tooltip>
@@ -459,7 +464,14 @@ watch(activeArchiveView, (view) => {
           <a-table-column label="操作" :width="124" fixed="right">
             <template #default="{ row }">
               <a-space size="mini" :wrap="false">
-                <a-button type="text" size="mini" @click="openReviewPreview(row)">预览</a-button>
+                <a
+                  class="arco-btn arco-btn-text arco-btn-size-mini archive-preview-action"
+                  :href="getReviewPreviewUrl(row)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  预览
+                </a>
                 <a-button type="primary" size="mini" @click="openReviewDialog(row)">审核</a-button>
               </a-space>
             </template>
@@ -538,14 +550,15 @@ watch(activeArchiveView, (view) => {
                       </a-table-column>
                       <a-table-column label="当前文件" :width="280">
                         <template #default="{ row }">
-                          <button
+                          <a
                             v-if="row.files?.length"
                             class="file-link"
-                            type="button"
-                            @click="openFilePreview(row.files[0])"
+                            :href="getFilePreviewUrl(row.files[0])"
+                            target="_blank"
+                            rel="noopener noreferrer"
                           >
                             {{ row.files[0].originalName }}
-                          </button>
+                          </a>
                           <span v-else class="muted-text">待上传</span>
                         </template>
                       </a-table-column>
@@ -696,9 +709,14 @@ watch(activeArchiveView, (view) => {
             >
               <a-table-column label="文件名称" :min-width="260">
                 <template #default="{ row }">
-                  <button class="file-link" type="button" @click="openFilePreview(row)">
+                  <a
+                    class="file-link"
+                    :href="getFilePreviewUrl(row)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
                     {{ row.originalName }}
-                  </button>
+                  </a>
                 </template>
               </a-table-column>
               <a-table-column prop="fileExt" label="格式" :width="70" />
