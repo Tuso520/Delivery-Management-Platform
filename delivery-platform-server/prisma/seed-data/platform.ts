@@ -187,7 +187,8 @@ export async function seedPlatformData(prisma: PrismaClient): Promise<void> {
   }
   await cleanupRemovedCredentialFeature(prisma);
   await seedDictionaries(prisma);
-  const departmentId = await seedDepartments(prisma, admin.id);
+  await seedDepartments(prisma, admin.id);
+  const departmentId = await seedCleanDepartments(prisma, admin.id);
   if (!admin.departmentId) {
     await prisma.user.update({
       where: { id: admin.id },
@@ -195,6 +196,7 @@ export async function seedPlatformData(prisma: PrismaClient): Promise<void> {
     });
   }
   await seedApprovalTemplates(prisma);
+  await seedCleanApprovalTemplates(prisma);
   await seedSkillsAndTraining(prisma, admin.id);
   await seedProjectOperations(prisma, admin.id);
   await seedRetrospectives(prisma, admin.id);
@@ -243,7 +245,119 @@ async function cleanupRemovedCredentialFeature(prisma: PrismaClient): Promise<vo
   }
 }
 async function seedDictionaries(prisma: PrismaClient): Promise<void> {
-  for (const [categoryIndex, definition] of dictionaries.entries()) {
+  void dictionaries;
+  const normalizedDictionaries: DictionarySeed[] = [
+    {
+      code: 'project_stage',
+      name: '项目阶段',
+      items: [
+        { value: '01_sale', label: '售前与合同' },
+        { value: '02_design', label: '深化方案' },
+        { value: '03_procurement', label: '采购与生产' },
+        { value: '04_construction', label: '施工与调试' },
+        { value: '05_acceptance', label: '验收与移交' },
+        { value: '06_review', label: '收尾与复盘' },
+        { value: '07_misc', label: '其他杂项' },
+      ],
+    },
+    {
+      code: 'archive_stage',
+      name: '档案阶段',
+      items: [
+        { value: '01_sale', label: '售前与合同' },
+        { value: '02_design', label: '深化方案' },
+        { value: '03_procurement', label: '采购与生产' },
+        { value: '04_construction', label: '施工与调试' },
+        { value: '05_acceptance', label: '验收与移交' },
+        { value: '06_review', label: '收尾与复盘' },
+        { value: '07_misc', label: '其他杂项' },
+      ],
+    },
+    {
+      code: 'project_type',
+      name: '项目类型',
+      items: [
+        { value: '冷站节能', label: '冷站节能' },
+        { value: '空压节能', label: '空压节能' },
+        { value: 'FMCS', label: 'FMCS' },
+        { value: 'ESL', label: 'ESL' },
+        { value: '电气工程', label: '电气工程' },
+        { value: '软件工程', label: '软件工程' },
+        { value: '集成项目', label: '集成项目' },
+        { value: '运维服务', label: '运维服务' },
+        { value: '其他', label: '其他' },
+      ],
+    },
+    {
+      code: 'template_category',
+      name: '文档模板分类',
+      items: [
+        { value: 'Contract', label: '合同模板' },
+        { value: 'Report', label: '报告模板' },
+        { value: 'Checklist', label: '检查模板' },
+        { value: 'Form', label: '表单模板' },
+        { value: 'Letter', label: '函件模板' },
+        { value: 'Other', label: '其他' },
+      ],
+    },
+    {
+      code: 'file_format',
+      name: '模板文件格式',
+      items: [
+        { value: 'docx', label: 'Word 文档' },
+        { value: 'xlsx', label: 'Excel 表格' },
+        { value: 'pptx', label: 'PowerPoint 演示文稿' },
+        { value: 'pdf', label: 'PDF 文档' },
+        { value: 'md', label: 'Markdown 文档' },
+      ],
+    },
+    {
+      code: 'archive_file_type',
+      name: '档案允许文件类型',
+      items: [
+        { value: 'pdf', label: 'PDF' },
+        { value: 'doc', label: 'Word 97-2003' },
+        { value: 'docx', label: 'Word' },
+        { value: 'xls', label: 'Excel 97-2003' },
+        { value: 'xlsx', label: 'Excel' },
+        { value: 'ppt', label: 'PowerPoint 97-2003' },
+        { value: 'pptx', label: 'PowerPoint' },
+        { value: 'jpg', label: 'JPG 图片' },
+        { value: 'jpeg', label: 'JPEG 图片' },
+        { value: 'png', label: 'PNG 图片' },
+        { value: 'zip', label: 'ZIP 压缩包' },
+      ],
+    },
+    {
+      code: 'notification_event',
+      name: '通知事件',
+      items: [
+        { value: 'approval_pending', label: '审批待处理' },
+        { value: 'approval_approved', label: '审批通过' },
+        { value: 'approval_rejected', label: '审批驳回' },
+        { value: 'checklist_rejected', label: '检查记录驳回' },
+      ],
+    },
+    {
+      code: 'notification_channel',
+      name: '通知渠道',
+      items: [{ value: 'in_app', label: '站内通知' }],
+    },
+    {
+      code: 'retrospective_category',
+      name: '复盘问题分类',
+      items: [
+        { value: 'Document', label: '文档与协同' },
+        { value: 'Schedule', label: '进度管理' },
+        { value: 'Quality', label: '质量问题' },
+        { value: 'Technical', label: '技术方案' },
+        { value: 'Culture', label: '跨文化沟通' },
+        { value: 'Safety', label: '安全管理' },
+      ],
+    },
+  ];
+
+  for (const [categoryIndex, definition] of normalizedDictionaries.entries()) {
     const category = await prisma.dictionaryCategory.upsert({
       where: { categoryCode: definition.code },
       create: {
@@ -251,7 +365,11 @@ async function seedDictionaries(prisma: PrismaClient): Promise<void> {
         categoryName: definition.name,
         sortOrder: (categoryIndex + 1) * 10,
       },
-      update: {},
+      update: {
+        categoryName: definition.name,
+        sortOrder: (categoryIndex + 1) * 10,
+        status: 'Active',
+      },
       select: { id: true },
     });
     for (const [itemIndex, item] of definition.items.entries()) {
@@ -268,7 +386,11 @@ async function seedDictionaries(prisma: PrismaClient): Promise<void> {
           itemLabel: item.label,
           sortOrder: (itemIndex + 1) * 10,
         },
-        update: {},
+        update: {
+          itemLabel: item.label,
+          sortOrder: (itemIndex + 1) * 10,
+          status: 'Active',
+        },
       });
     }
   }
@@ -310,6 +432,7 @@ async function seedApprovalTemplates(prisma: PrismaClient): Promise<void> {
     ['REPORT_REVIEW', '工作报告审核', 'report'],
     ['KNOWLEDGE_PUBLISH', '知识发布审核', 'knowledge'],
     ['KNOWLEDGE_FILE_UPDATE', '知识库文件更新审批', 'knowledge-file-update'],
+    ['TEMPLATE_PUBLISH', '文档模板发布审批', 'template'],
     ['CHECKLIST_REVIEW', '检查记录审核', 'checklist'],
     ['PERFORMANCE_SCORE', '绩效评分确认', 'performance'],
   ] as const;
@@ -346,6 +469,93 @@ async function seedApprovalTemplates(prisma: PrismaClient): Promise<void> {
     }
   }
 }
+
+async function seedCleanDepartments(prisma: PrismaClient, managerId: string): Promise<string> {
+  const root = await prisma.department.upsert({
+    where: { departmentCode: 'DELIVERY_CENTER' },
+    create: {
+      departmentCode: 'DELIVERY_CENTER',
+      departmentName: '交付中心',
+      managerId,
+      sortOrder: 10,
+    },
+    update: {
+      departmentName: '交付中心',
+      managerId,
+      status: 'Active',
+      sortOrder: 10,
+    },
+    select: { id: true },
+  });
+
+  const departments = [
+    ['PROJECT_TEAM', '项目管理组'],
+    ['ELECTRIC_TEAM', '电气交付组'],
+    ['SOFTWARE_TEAM', '软件交付组'],
+    ['STANDARD_TEAM', '标准化与质量组'],
+  ] as const;
+
+  for (const [departmentCode, departmentName] of departments) {
+    await prisma.department.upsert({
+      where: { departmentCode },
+      create: {
+        departmentCode,
+        departmentName,
+        parentId: root.id,
+        sortOrder: 20,
+      },
+      update: {
+        departmentName,
+        parentId: root.id,
+        status: 'Active',
+      },
+    });
+  }
+
+  return root.id;
+}
+
+async function seedCleanApprovalTemplates(prisma: PrismaClient): Promise<void> {
+  const templates = [
+    ['REPORT_REVIEW', '工作报告审核', 'report'],
+    ['KNOWLEDGE_PUBLISH', '知识发布审核', 'knowledge'],
+    ['KNOWLEDGE_FILE_UPDATE', '知识库文件更新审批', 'knowledge-file-update'],
+    ['TEMPLATE_PUBLISH', '文档模板发布审批', 'template'],
+    ['CHECKLIST_REVIEW', '检查记录审核', 'checklist'],
+    ['PERFORMANCE_SCORE', '绩效评分确认', 'performance'],
+  ] as const;
+
+  for (const [templateCode, templateName, businessType] of templates) {
+    const template = await prisma.approvalTemplate.upsert({
+      where: { templateCode },
+      create: { templateCode, templateName, businessType, isEnabled: true },
+      update: { templateName, businessType, isEnabled: true },
+      select: { id: true },
+    });
+
+    await prisma.approvalStep.upsert({
+      where: {
+        templateId_stepOrder: {
+          templateId: template.id,
+          stepOrder: 1,
+        },
+      },
+      create: {
+        templateId: template.id,
+        stepOrder: 1,
+        stepName: '负责人审核',
+        approverType: 'role',
+        approverValue: 'DELIVERY_MANAGER',
+      },
+      update: {
+        stepName: '负责人审核',
+        approverType: 'role',
+        approverValue: 'DELIVERY_MANAGER',
+      },
+    });
+  }
+}
+
 async function seedSkillsAndTraining(prisma: PrismaClient, adminId: string): Promise<void> {
   const skillGroups: Record<string, string[]> = {
     Project: [

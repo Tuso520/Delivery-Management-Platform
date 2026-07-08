@@ -7,6 +7,7 @@ import { Prisma } from '@prisma/client';
 
 import type { PaginatedResult } from '../../common/dto/pagination.dto';
 import { PrismaService } from '../../database/prisma.service';
+import { ApprovalService } from '../platform/approval.service';
 
 import { CreateTemplateVersionDto } from './dto/create-template-version.dto';
 import { CreateTemplateDto } from './dto/create-template.dto';
@@ -38,7 +39,10 @@ interface TemplateListItem {
 
 @Injectable()
 export class TemplateService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly approvalService: ApprovalService,
+  ) {}
 
   private async generateTemplateNo(category: string, language: string): Promise<string> {
     const count = await this.prisma.documentTemplate.count({
@@ -215,7 +219,7 @@ export class TemplateService {
     return template;
   }
 
-  async create(dto: CreateTemplateDto) {
+  async create(dto: CreateTemplateDto, authorId?: string) {
     const templateNo = await this.generateTemplateNo(
       dto.category,
       dto.language || 'zh-CN',
@@ -233,6 +237,7 @@ export class TemplateService {
         language: dto.language || 'zh-CN',
         fileFormat: dto.fileFormat,
         storagePath: dto.storagePath,
+        authorId,
       },
     });
 
@@ -328,7 +333,7 @@ export class TemplateService {
     return version;
   }
 
-  async publish(templateId: string) {
+  async publish(templateId: string, userId: string) {
     const template = await this.prisma.documentTemplate.findUnique({
       where: { id: templateId },
     });
@@ -341,15 +346,18 @@ export class TemplateService {
       throw new BadRequestException('模板已发布');
     }
 
-    const updated = await this.prisma.documentTemplate.update({
-      where: { id: templateId },
-      data: {
-        status: 'Published',
-        publishedAt: new Date(),
-      },
+    if (template.status === 'Reviewing') {
+      throw new BadRequestException('模板已提交审批，请等待处理');
+    }
+
+    await this.approvalService.startBusinessApproval({
+      businessType: 'template',
+      businessId: templateId,
+      businessTitle: `文档模板发布：${template.name}`,
+      applicantId: userId,
     });
 
-    return updated;
+    return this.prisma.documentTemplate.findUnique({ where: { id: templateId } });
   }
 
   async getDownloadInfo(templateId: string) {

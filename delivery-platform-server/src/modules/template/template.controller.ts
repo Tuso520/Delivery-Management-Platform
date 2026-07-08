@@ -20,8 +20,10 @@ import {
 } from '@nestjs/swagger';
 
 import { Permissions } from '../../common/decorators/permissions.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import type { JwtPayload } from '../auth/strategies/jwt.strategy';
 
 import { CreateTemplateVersionDto } from './dto/create-template-version.dto';
 import { CreateTemplateDto } from './dto/create-template.dto';
@@ -50,8 +52,11 @@ export class TemplateController {
   @ApiOperation({ summary: '创建模板' })
   @ApiBody({ type: CreateTemplateDto })
   @ApiResponse({ status: 201, description: '创建成功' })
-  async create(@Body() dto: CreateTemplateDto) {
-    return this.templateService.create(dto);
+  async create(
+    @Body() dto: CreateTemplateDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.templateService.create(dto, user.sub);
   }
 
   @Get(':id')
@@ -104,8 +109,11 @@ export class TemplateController {
   @ApiResponse({ status: 200, description: '发布成功' })
   @ApiResponse({ status: 400, description: '模板已发布' })
   @ApiResponse({ status: 404, description: '模板不存在' })
-  async publish(@Param('id') id: string) {
-    return this.templateService.publish(id);
+  async publish(
+    @Param('id') id: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.templateService.publish(id, user.sub);
   }
 
   @Get(':id/download')

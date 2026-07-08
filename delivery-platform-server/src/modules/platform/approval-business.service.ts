@@ -18,6 +18,11 @@ export class ApprovalBusinessService {
         where: { id: businessId },
         data: { status: 'Reviewing' },
       });
+    } else if (businessType === 'template') {
+      await tx.documentTemplate.update({
+        where: { id: businessId },
+        data: { status: 'Reviewing' },
+      });
     } else if (businessType === 'checklist') {
       await tx.projectChecklistItem.update({
         where: { id: businessId },
@@ -65,6 +70,13 @@ export class ApprovalBusinessService {
         now,
         comment,
       );
+    } else if (businessType === 'template') {
+      await tx.documentTemplate.update({
+        where: { id: businessId },
+        data: approved
+          ? { status: 'Published', reviewerId, publishedAt: now }
+          : { status: 'Draft', reviewerId },
+      });
     } else if (businessType === 'checklist') {
       await tx.projectChecklistItem.update({
         where: { id: businessId },

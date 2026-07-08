@@ -1,21 +1,21 @@
 import type { Level1Def, Level2Def } from './archive-templates';
 
 const stage01 = '01_sale';
+const stage02 = '02_design';
+const stage03 = '03_procurement';
 
 const s01L1s: Level1Def[] = [
-  // item 1
-  { stageCode: stage01, itemNo: 1, level: 1, name: '项目资料' },
-  // item 2
+  { stageCode: stage01, itemNo: 1, level: 1, name: '项目立项资料', responsibleRole: 'PROJECT_MANAGER' },
   {
     stageCode: stage01,
     itemNo: 2,
     level: 1,
-    name: '售前方案及节能计算表格',
+    name: '售前方案与节能测算',
     isStar: true,
     needReview: true,
     responsibleRole: 'PROJECT_MANAGER',
+    reviewRole: 'DELIVERY_MANAGER',
   },
-  // item 3
   {
     stageCode: stage01,
     itemNo: 3,
@@ -25,39 +25,36 @@ const s01L1s: Level1Def[] = [
     isStar: true,
     responsibleRole: 'PROJECT_MANAGER',
   },
-  // item 4
   {
     stageCode: stage01,
     itemNo: 4,
     level: 1,
     name: '项目报价清单',
     isSensitive: true,
-    usageDescription: '对甲方的报价清单',
+    usageDescription: '上传对客户的报价清单、报价依据、版本说明以及内部审批记录。',
   },
-  // item 5
   {
     stageCode: stage01,
     itemNo: 5,
     level: 1,
-    name: '项目招标相关文件（如有）',
+    name: '招投标相关文件',
+    usageDescription: '上传招标文件、答疑文件、投标澄清、评标沟通记录等资料。',
   },
-  // item 6
   {
     stageCode: stage01,
     itemNo: 6,
     level: 1,
-    name: '投标文件或提交的方案',
+    name: '投标文件或提交方案',
     isStar: true,
   },
-  // item 7
   {
     stageCode: stage01,
     itemNo: 7,
     level: 1,
     name: '中标通知书',
     isStar: true,
+    allowedFileTypes: 'pdf,jpg,jpeg,png',
   },
-  // item 8
   {
     stageCode: stage01,
     itemNo: 8,
@@ -73,68 +70,67 @@ const s01L1s: Level1Def[] = [
 ];
 
 const s01L2s: Level2Def[] = [
-  // Children of item 1
   {
     stageCode: stage01,
     parentItemNo: 1,
     itemNo: 1001,
     level: 2,
-    name: '实施记录',
-    secondName: '实施记录',
-    usageDescription: '实施过程的现场照片、视频等',
+    name: '商机评估表',
+    secondName: '商机评估表',
+    usageDescription: '上传商机来源、客户诉求、收益判断、风险判断和是否立项的评估记录。',
   },
   {
     stageCode: stage01,
     parentItemNo: 1,
     itemNo: 1002,
     level: 2,
-    name: '验收记录',
-    secondName: '验收记录',
-    usageDescription: '验收过程的现场照片、视频等',
+    name: '客户需求记录',
+    secondName: '客户需求记录',
+    usageDescription: '上传客户访谈纪要、需求清单、现场调研记录、图片或视频说明。',
   },
   {
     stageCode: stage01,
     parentItemNo: 1,
     itemNo: 1003,
     level: 2,
-    name: '临时租用',
-    secondName: '临时租用',
-    usageDescription: '临时租车、租房、设备的合同收据等',
+    name: '项目启动会纪要',
+    secondName: '项目启动会纪要',
+    usageDescription: '上传启动会签到、会议纪要、任务分工和关键里程碑确认材料。',
   },
   {
     stageCode: stage01,
     parentItemNo: 1,
     itemNo: 1004,
     level: 2,
-    name: '海外签证',
-    secondName: '海外签证',
-    usageDescription: '涉及该项目的内外部人员的商务签，工作签等文件',
+    name: '商务沟通记录',
+    secondName: '商务沟通记录',
+    usageDescription: '上传合同条款、付款节点、范围边界、客户确认等商务沟通记录。',
   },
   {
     stageCode: stage01,
     parentItemNo: 1,
     itemNo: 1005,
     level: 2,
-    name: '其他杂项',
-    secondName: '其他杂项',
+    name: '售前风险清单',
+    secondName: '售前风险清单',
+    usageDescription: '上传售前阶段识别的技术、商务、交付和安全风险清单。',
   },
-  // Children of item 2
   {
     stageCode: stage01,
     parentItemNo: 2,
     itemNo: 2001,
     level: 2,
-    name: '售前方案',
-    secondName: '售前方案',
+    name: '售前技术方案',
+    secondName: '售前技术方案',
   },
   {
     stageCode: stage01,
     parentItemNo: 2,
     itemNo: 2002,
     level: 2,
-    name: '节能计算书',
-    secondName: '节能计算书',
-    usageDescription: '节能计算书以及计算中涉及的运行报表、历史数据、台账数据等',
+    name: '节能测算表',
+    secondName: '节能测算表',
+    usageDescription: '上传节能测算书、测算依据、历史数据、运行报表和边界条件说明。',
   },
   {
     stageCode: stage01,
@@ -143,9 +139,8 @@ const s01L2s: Level2Def[] = [
     level: 2,
     name: '调研资料',
     secondName: '调研资料',
-    usageDescription: '前期调研的照片记录、CAD图纸、调研记录表等',
+    usageDescription: '上传现场照片、CAD 图纸、设备铭牌、调研表和数据采集记录。',
   },
-  // Children of item 8
   {
     stageCode: stage01,
     parentItemNo: 8,
@@ -153,58 +148,49 @@ const s01L2s: Level2Def[] = [
     level: 2,
     name: '盖章扫描件',
     secondName: '盖章扫描件',
-    usageDescription: '项目合同PDF、无合同交付流程PDF、启动会会议纪要和会议录屏',
+    usageDescription: '上传项目合同 PDF、补充协议、无合同交付流程审批和启动会确认记录。',
   },
 ];
 
-// ── Stage 02_design: 深化方案 ───────────────────────────────────
-const stage02 = '02_design';
-
 const s02L1s: Level1Def[] = [
-  // item 9
   {
     stageCode: stage02,
     itemNo: 9,
     level: 1,
     name: '项目实施计划表',
-    usageDescription: '进度计划表',
+    usageDescription: '上传进度计划、资源计划、关键节点、客户配合条件和风险缓解计划。',
   },
-  // item 10
   {
     stageCode: stage02,
     itemNo: 10,
     level: 1,
     name: '施工方案（深化版）',
-    usageDescription: '设计院图纸、甲方图纸、施工图、施工方案、策划书、施工指导文件',
+    usageDescription: '上传设计院图纸、甲方图纸、施工图、施工方案、策划书和施工指导文件。',
   },
-  // item 11
   {
     stageCode: stage02,
     itemNo: 11,
     level: 1,
     name: '系统设计（深化版）',
     isStar: true,
-    usageDescription: '系统原理图（PID图）、网络拓扑图、I/O点表',
+    usageDescription: '上传系统原理图、PID 图、网络拓扑、I/O 点表和接口边界说明。',
   },
-  // item 12
   {
     stageCode: stage02,
     itemNo: 12,
     level: 1,
     name: '硬件设计（深化版）',
     isStar: true,
-    usageDescription: '柜体图纸、柜内原理图、电缆清册表、接线表',
+    usageDescription: '上传柜体图纸、柜内原理图、电缆清册、接线表和材料清单。',
   },
-  // item 13
   {
     stageCode: stage02,
     itemNo: 13,
     level: 1,
     name: '软件设计（深化版）',
     isStar: true,
-    usageDescription: '软件功能清单、软件设备需求单',
+    usageDescription: '上传软件功能清单、画面清单、点表、接口清单和版本说明。',
   },
-  // item 14
   {
     stageCode: stage02,
     itemNo: 14,
@@ -214,79 +200,36 @@ const s02L1s: Level1Def[] = [
     isSensitive: true,
     needReview: true,
     responsibleRole: 'PROJECT_MANAGER',
-    usageDescription: '项目总预算、柜体清单、主材清单、施工清单等',
+    reviewRole: 'DELIVERY_MANAGER',
+    usageDescription: '上传项目总预算、柜体清单、主材清单、施工清单、分包预算和版本说明。',
   },
-  // item 15
   {
     stageCode: stage02,
     itemNo: 15,
     level: 1,
     name: '深化方案评审记录表',
     needReview: true,
-    usageDescription: '评审会议纪要、会议录屏、评审流程记录PDF',
+    reviewRole: 'DELIVERY_MANAGER',
+    usageDescription: '上传评审会议纪要、评审问题清单、整改关闭记录和审批 PDF。',
   },
 ];
 
 const s02L2s: Level2Def[] = [
-  {
-    stageCode: stage02,
-    parentItemNo: 10,
-    itemNo: 10001,
-    level: 2,
-    name: '深化版',
-    secondName: '深化版',
-    usageDescription: '设计院图纸、甲方图纸、施工图、施工方案、策划书、施工指导文件',
-  },
-  {
-    stageCode: stage02,
-    parentItemNo: 11,
-    itemNo: 11001,
-    level: 2,
-    name: '深化版',
-    secondName: '深化版',
-    usageDescription: '系统原理图（PID图）、网络拓扑图、I/O点表',
-  },
-  {
-    stageCode: stage02,
-    parentItemNo: 12,
-    itemNo: 12001,
-    level: 2,
-    name: '深化版',
-    secondName: '深化版',
-    usageDescription: '柜体图纸、柜内原理图、电缆清册表、接线表',
-  },
-  {
-    stageCode: stage02,
-    parentItemNo: 13,
-    itemNo: 13001,
-    level: 2,
-    name: '深化版',
-    secondName: '深化版',
-    usageDescription: '软件功能清单、软件设备需求单',
-  },
-  {
-    stageCode: stage02,
-    parentItemNo: 14,
-    itemNo: 14001,
-    level: 2,
-    name: '深化版',
-    secondName: '深化版',
-    usageDescription: '项目总预算、柜体清单、主材清单、施工清单等',
-  },
+  { stageCode: stage02, parentItemNo: 10, itemNo: 10001, level: 2, name: '深化版施工方案', secondName: '深化版施工方案' },
+  { stageCode: stage02, parentItemNo: 11, itemNo: 11001, level: 2, name: '系统设计资料', secondName: '系统设计资料' },
+  { stageCode: stage02, parentItemNo: 12, itemNo: 12001, level: 2, name: '硬件设计资料', secondName: '硬件设计资料' },
+  { stageCode: stage02, parentItemNo: 13, itemNo: 13001, level: 2, name: '软件设计资料', secondName: '软件设计资料' },
+  { stageCode: stage02, parentItemNo: 14, itemNo: 14001, level: 2, name: '深化成本预算', secondName: '深化成本预算' },
 ];
 
-// ── Stage 03_procurement: 采购与分包 ───────────────────────────
-const stage03 = '03_procurement';
-
 const s03L1s: Level1Def[] = [
-  // item 16
   {
     stageCode: stage03,
     itemNo: 16,
     level: 1,
-    name: '采购申请单',
+    name: '采购申请与设备清单',
+    usageDescription: '上传采购申请、设备选型、数量清单、到货计划和采购审批记录。',
   },
-  // item 17
   {
     stageCode: stage03,
     itemNo: 17,
@@ -296,6 +239,20 @@ const s03L1s: Level1Def[] = [
     needReview: true,
     reviewRole: 'PROJECT_MANAGER',
   },
+  {
+    stageCode: stage03,
+    itemNo: 18,
+    level: 1,
+    name: '供应商报价与比选',
+    usageDescription: '上传供应商报价、技术澄清、比价表、选型理由和审批记录。',
+  },
+  {
+    stageCode: stage03,
+    itemNo: 19,
+    level: 1,
+    name: '设备生产与出厂计划',
+    usageDescription: '上传生产进度、出厂检验计划、发货计划和设备资料交付清单。',
+  },
 ];
 
 const s03L2s: Level2Def[] = [
@@ -304,35 +261,29 @@ const s03L2s: Level2Def[] = [
     parentItemNo: 17,
     itemNo: 17001,
     level: 2,
-    name: '施工',
-    secondName: '施工',
-    usageDescription: '需要项目经理来确认付款节点的所有合同（包含施工、柜体、各类大型现场安装设备）、签证单等文件',
+    name: '施工分包',
+    secondName: '施工分包',
+    usageDescription: '上传施工分包合同、付款节点、签证单、结算依据和项目经理确认记录。',
   },
   {
     stageCode: stage03,
     parentItemNo: 17,
     itemNo: 17002,
     level: 2,
-    name: '柜体',
-    secondName: '柜体',
+    name: '柜体分包',
+    secondName: '柜体分包',
+    usageDescription: '上传柜体分包合同、图纸确认、出厂检验和交付清单。',
   },
   {
     stageCode: stage03,
     parentItemNo: 17,
     itemNo: 17003,
     level: 2,
-    name: '设备',
-    secondName: '设备',
+    name: '设备分包',
+    secondName: '设备分包',
+    usageDescription: '上传设备合同、技术协议、到货计划、验收记录和售后联系信息。',
   },
 ];
 
-// ── Stage 04_construction: 施工调试 ────────────────────────────
-
 export const earlyLevel1Defs: Level1Def[] = [...s01L1s, ...s02L1s, ...s03L1s];
-const legacyMiscItemNos = new Set([1001, 1002, 1003, 1004, 1005]);
-
-export const earlyLevel2Defs: Level2Def[] = [
-  ...s01L2s.filter((item) => !legacyMiscItemNos.has(item.itemNo)),
-  ...s02L2s,
-  ...s03L2s,
-];
+export const earlyLevel2Defs: Level2Def[] = [...s01L2s, ...s02L2s, ...s03L2s];

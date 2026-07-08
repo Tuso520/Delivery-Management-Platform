@@ -27,6 +27,8 @@ const acceptTypes = computed(() => {
     docx: '.docx',
     xls: '.xls',
     xlsx: '.xlsx',
+    ppt: '.ppt',
+    pptx: '.pptx',
     jpg: '.jpg',
     jpeg: '.jpeg',
     png: '.png',
@@ -43,12 +45,12 @@ function beforeUpload(rawFile: File): boolean {
   const ext = rawFile.name.split('.').pop()?.toLowerCase()
 
   if (props.allowedTypes?.length && (!ext || !props.allowedTypes.includes(ext))) {
-    Message.error(`不支持的文件类型，仅支持: ${props.allowedTypes.join(', ')}`)
+    Message.error(`不支持的文件类型，仅支持：${props.allowedTypes.join(', ')}`)
     return false
   }
 
   if (rawFile.size > maxFileSize.value) {
-    Message.error(`文件大小不能超过 ${maxFileSize.value / 1024 / 1024}MB`)
+    Message.error(`单个文件不能超过 ${maxFileSize.value / 1024 / 1024}MB`)
     return false
   }
 
@@ -74,7 +76,7 @@ async function handleUpload(options: { file: File }): Promise<void> {
       },
     )
 
-    Message.success('上传成功')
+    Message.success('上传成功，已进入审批或归档流程')
     emit('upload-success', result)
     uploadProgress.value = 0
   } catch (error) {
@@ -97,7 +99,7 @@ async function handleUpload(options: { file: File }): Promise<void> {
       drag
     >
       <div v-if="!uploading" class="upload-placeholder">
-        <a-icon class="upload-icon" :size="48">
+        <a-icon class="upload-icon" :size="42">
           <UploadFilled />
         </a-icon>
         <div class="upload-text">
@@ -114,7 +116,7 @@ async function handleUpload(options: { file: File }): Promise<void> {
         <a-progress
           type="circle"
           :percentage="uploadProgress"
-          :width="120"
+          :width="108"
           :stroke-width="8"
           color="#165dff"
         />
@@ -137,27 +139,28 @@ async function handleUpload(options: { file: File }): Promise<void> {
 
   :deep(.arco-upload-draggable) {
     width: 100%;
-    height: 180px;
+    height: 150px;
     display: flex;
     align-items: center;
     justify-content: center;
+    border-radius: 0;
   }
 }
 
 .upload-placeholder {
+  padding: 18px;
   text-align: center;
-  padding: 20px;
 }
 
 .upload-icon {
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   color: rgb(var(--primary-6));
 }
 
 .upload-text {
-  font-size: 14px;
+  margin-bottom: 7px;
   color: var(--color-text-2);
-  margin-bottom: 8px;
+  font-size: 14px;
 
   em {
     color: rgb(var(--primary-6));
@@ -166,19 +169,19 @@ async function handleUpload(options: { file: File }): Promise<void> {
 }
 
 .upload-hint {
-  font-size: 12px;
+  margin-top: 3px;
   color: var(--color-text-3);
-  margin-top: 4px;
+  font-size: 12px;
 }
 
 .upload-progress-wrapper {
+  padding: 18px;
   text-align: center;
-  padding: 20px;
 }
 
 .upload-progress-text {
-  margin-top: 12px;
-  font-size: 14px;
+  margin-top: 10px;
   color: var(--color-text-2);
+  font-size: 14px;
 }
 </style>

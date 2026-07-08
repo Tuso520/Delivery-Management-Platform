@@ -101,7 +101,9 @@ async function fetchProjects(): Promise<void> {
     projectList.value = data.list || []
     if (!selectedProjectId.value && projectList.value.length) {
       selectedProjectId.value = projectList.value[0].id
-      await fetchArchive()
+    }
+    if (selectedProjectId.value) {
+      await Promise.all([fetchArchive(), fetchPendingReviews()])
     }
   } catch {
     projectList.value = []
@@ -157,14 +159,16 @@ function flattenUploadPoints(items: ArchiveItem[], parentName?: string): UploadP
       ...item,
       parentName,
       guideText: item.usageDescription
-        || (parentName ? `请上传“${parentName}”下的“${name}”相关文件。` : `请上传“${name}”对应文件。`),
+        || (parentName
+          ? `请上传「${parentName} / ${name}」对应的最终版文件、过程记录或审批确认材料。`
+          : `请上传「${name}」对应的文件，并在备注中说明适用范围和版本。`),
     }]
   })
 }
 
 function handleProjectChange(): void {
   activeArchiveView.value = 'directory'
-  fetchArchive()
+  Promise.all([fetchArchive(), fetchPendingReviews()])
 }
 
 async function fetchPendingReviews(): Promise<void> {
@@ -219,7 +223,7 @@ async function reloadCurrentItem(): Promise<void> {
 }
 
 async function handleUploadSuccess(): Promise<void> {
-  Message.success('文件已上传，并自动进入审批流')
+  Message.success('文件已上传，系统已按目录规则进入审核流程')
   await reloadCurrentItem()
   await fetchPendingReviews()
 }
@@ -256,7 +260,7 @@ async function downloadFile(file: ArchiveFile): Promise<void> {
 }
 
 async function deleteFile(file: ArchiveFile): Promise<void> {
-  await arcoConfirm(`确定删除文件“${file.originalName}”？`, '确认删除', {
+  await arcoConfirm(`确定删除文件「${file.originalName}」？`, '确认删除', {
     type: 'warning',
     confirmButtonText: '删除',
     cancelButtonText: '取消',
@@ -276,6 +280,14 @@ function getStatusTag(status: string): { type: TagType; label: string } {
     type: (option?.type || 'info') as TagType,
     label: option?.label || status,
   }
+}
+
+function getAllowedTypes(item?: ArchiveItem | null): string[] {
+  const configured = item?.allowedFileTypes
+    ?.split(',')
+    .map((type) => type.trim().toLowerCase())
+    .filter(Boolean)
+  return configured?.length ? configured : defaultAllowedTypes
 }
 
 function formatFileSize(value?: number | string): string {
@@ -321,10 +333,9 @@ watch(activeArchiveView, (view) => {
           <span>项目</span>
           <a-select
             v-model="selectedProjectId"
-            v-loading="loadingProjects"
+            :loading="loadingProjects"
             placeholder="请选择项目"
             class="project-selector"
-            style="width: clamp(360px, 36vw, 620px)"
             filterable
             @change="handleProjectChange"
           >
@@ -350,7 +361,6 @@ watch(activeArchiveView, (view) => {
               :key="option.value"
               size="small"
               :type="activeArchiveView === option.value ? 'primary' : 'secondary'"
-              :aria-selected="activeArchiveView === option.value"
               role="tab"
               @click="activeArchiveView = option.value"
             >
@@ -384,7 +394,7 @@ watch(activeArchiveView, (view) => {
           empty-text="当前项目暂无待审核文件"
           :scroll="{ y: '100%', x: 980 }"
         >
-          <a-table-column label="文件名" :min-width="260">
+          <a-table-column label="文件名称" :min-width="260">
             <template #default="{ row }">
               <button class="file-link" type="button" @click="openReviewPreview(row)">
                 {{ row.file.fileName }}
@@ -392,24 +402,16 @@ watch(activeArchiveView, (view) => {
             </template>
           </a-table-column>
           <a-table-column label="档案项" :min-width="180" show-overflow-tooltip>
-            <template #default="{ row }">
-              {{ row.archiveItem.name }}
-            </template>
+            <template #default="{ row }">{{ row.archiveItem.name }}</template>
           </a-table-column>
           <a-table-column label="版本" :width="76" align="center">
-            <template #default="{ row }">
-              {{ row.file.versionNo }}
-            </template>
+            <template #default="{ row }">{{ row.file.versionNo }}</template>
           </a-table-column>
           <a-table-column label="审核人" :width="108">
-            <template #default="{ row }">
-              {{ row.reviewer.realName }}
-            </template>
+            <template #default="{ row }">{{ row.reviewer.realName }}</template>
           </a-table-column>
           <a-table-column label="提交时间" :width="152">
-            <template #default="{ row }">
-              {{ formatDate(row.createdAt) }}
-            </template>
+            <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
           </a-table-column>
           <a-table-column label="状态" :width="90" align="center">
             <template #default>
@@ -457,7 +459,7 @@ watch(activeArchiveView, (view) => {
 
             <div class="stage-title-row">
               <h3>{{ activeStageName }}</h3>
-              <span>点击“查看/上传”进入上传、预览、下载和审批状态核查。</span>
+              <span>每个一级流程下方给出上传指导；文件上传后进入审批，通过后才能作为当前可查阅版本。</span>
             </div>
 
             <a-table
@@ -478,14 +480,10 @@ watch(activeArchiveView, (view) => {
                 </template>
               </a-table-column>
               <a-table-column label="上传指导" :min-width="360" show-overflow-tooltip>
-                <template #default="{ row }">
-                  <span>{{ row.guideText }}</span>
-                </template>
+                <template #default="{ row }">{{ row.guideText }}</template>
               </a-table-column>
               <a-table-column label="文件" :width="72" align="center">
-                <template #default="{ row }">
-                  {{ row.files?.length || 0 }}
-                </template>
+                <template #default="{ row }">{{ row.files?.length || 0 }}</template>
               </a-table-column>
               <a-table-column label="状态" :width="100">
                 <template #default="{ row }">
@@ -495,16 +493,14 @@ watch(activeArchiveView, (view) => {
                 </template>
               </a-table-column>
               <a-table-column label="负责人" :width="110">
-                <template #default="{ row }">
-                  {{ row.responsibleUser?.realName || '-' }}
-                </template>
+                <template #default="{ row }">{{ row.responsibleUser?.realName || '-' }}</template>
               </a-table-column>
               <a-table-column label="审核人" :width="110">
                 <template #default="{ row }">
                   {{ row.reviewUser?.realName || row.responsibleUser?.realName || '-' }}
                 </template>
               </a-table-column>
-              <a-table-column label="操作" :width="110" align="center" fixed="right">
+              <a-table-column label="操作" :width="112" align="center" fixed="right">
                 <template #default="{ row }">
                   <a-button type="text" size="mini" @click="viewItemDetail(row.id)">
                     查看/上传
@@ -518,17 +514,17 @@ watch(activeArchiveView, (view) => {
       </template>
     </a-card>
 
-    <a-dialog
-      v-model="showGenerateDialog"
+    <a-modal
+      v-model:visible="showGenerateDialog"
       title="生成项目档案目录"
-      width="500px"
-      :close-on-click-modal="false"
+      :width="500"
+      :mask-closable="false"
     >
       <a-form :model="{}" label-width="92px">
         <a-form-item label="档案模板">
           <a-select
             v-model="selectedTemplateId"
-            v-loading="loadingTemplates"
+            :loading="loadingTemplates"
             placeholder="请选择档案模板"
             filterable
           >
@@ -547,7 +543,7 @@ watch(activeArchiveView, (view) => {
           生成
         </a-button>
       </template>
-    </a-dialog>
+    </a-modal>
 
     <a-modal
       v-model:visible="showProjectDetail"
@@ -562,21 +558,13 @@ watch(activeArchiveView, (view) => {
         size="small"
         class="project-detail-descriptions"
       >
-        <a-descriptions-item label="项目名称">
-          {{ selectedProject.projectName }}
-        </a-descriptions-item>
-        <a-descriptions-item label="项目编号">
-          {{ selectedProject.projectCode }}
-        </a-descriptions-item>
-        <a-descriptions-item label="客户">
-          {{ selectedProject.customerName || '-' }}
-        </a-descriptions-item>
+        <a-descriptions-item label="项目名称">{{ selectedProject.projectName }}</a-descriptions-item>
+        <a-descriptions-item label="项目编号">{{ selectedProject.projectCode }}</a-descriptions-item>
+        <a-descriptions-item label="客户">{{ selectedProject.customerName || '-' }}</a-descriptions-item>
         <a-descriptions-item label="国家/城市">
           {{ selectedProject.countryCode || '-' }} / {{ selectedProject.city || '-' }}
         </a-descriptions-item>
-        <a-descriptions-item label="项目类型">
-          {{ selectedProject.projectType || '-' }}
-        </a-descriptions-item>
+        <a-descriptions-item label="项目类型">{{ selectedProject.projectType || '-' }}</a-descriptions-item>
         <a-descriptions-item label="项目状态">
           {{ selectedProject.projectStatus ? localizeProjectStatus(selectedProject.projectStatus, localeStore.currentLocale) : '-' }}
         </a-descriptions-item>
@@ -592,11 +580,12 @@ watch(activeArchiveView, (view) => {
       </a-descriptions>
     </a-modal>
 
-    <a-dialog
-      v-model="showItemDetail"
+    <a-modal
+      v-model:visible="showItemDetail"
       :title="currentItem?.secondName || currentItem?.name || '档案项详情'"
-      width="920px"
-      :close-on-click-modal="false"
+      :width="920"
+      :mask-closable="false"
+      :footer="false"
     >
       <a-spin :loading="loadingItem">
         <div v-if="currentItem" class="item-detail">
@@ -617,7 +606,7 @@ watch(activeArchiveView, (view) => {
           <FileUploader
             :project-id="selectedProjectId"
             :archive-item-id="currentItem.id"
-            :allowed-types="defaultAllowedTypes"
+            :allowed-types="getAllowedTypes(currentItem)"
             @upload-success="handleUploadSuccess"
           />
 
@@ -634,7 +623,7 @@ watch(activeArchiveView, (view) => {
               stripe
               class="file-table"
             >
-              <a-table-column label="文件名" :min-width="260">
+              <a-table-column label="文件名称" :min-width="260">
                 <template #default="{ row }">
                   <button class="file-link" type="button" @click="openFilePreview(row)">
                     {{ row.originalName }}
@@ -643,9 +632,7 @@ watch(activeArchiveView, (view) => {
               </a-table-column>
               <a-table-column prop="fileExt" label="格式" :width="70" />
               <a-table-column label="大小" :width="90">
-                <template #default="{ row }">
-                  {{ formatFileSize(row.fileSize) }}
-                </template>
+                <template #default="{ row }">{{ formatFileSize(row.fileSize) }}</template>
               </a-table-column>
               <a-table-column prop="versionNo" label="版本" :width="76" />
               <a-table-column label="状态" :width="92">
@@ -656,14 +643,10 @@ watch(activeArchiveView, (view) => {
                 </template>
               </a-table-column>
               <a-table-column label="上传人" :width="100">
-                <template #default="{ row }">
-                  {{ row.uploadUser?.realName || '-' }}
-                </template>
+                <template #default="{ row }">{{ row.uploadUser?.realName || '-' }}</template>
               </a-table-column>
               <a-table-column label="上传时间" :width="150">
-                <template #default="{ row }">
-                  {{ formatDate(row.uploadTime) }}
-                </template>
+                <template #default="{ row }">{{ formatDate(row.uploadTime) }}</template>
               </a-table-column>
               <a-table-column label="操作" :width="132" fixed="right">
                 <template #default="{ row }">
@@ -678,7 +661,7 @@ watch(activeArchiveView, (view) => {
           </div>
         </div>
       </a-spin>
-    </a-dialog>
+    </a-modal>
 
     <ReviewDialog
       v-model:visible="reviewDialogVisible"

@@ -3,7 +3,7 @@ import { onMounted, ref, watch } from 'vue'
 import dayjs from 'dayjs'
 import { Message } from '@arco-design/web-vue'
 import type { FileItem } from '@arco-design/web-vue'
-import { arcoConfirm, arcoPrompt } from '@/utils/arco-dialog'
+import { arcoConfirm } from '@/utils/arco-dialog'
 import { attachmentApi } from '@/api/attachment'
 import type { Attachment } from '@/api/attachment'
 import { processRecordApi } from '@/api/process-record'
@@ -12,7 +12,8 @@ import {
   type ProcessRecordPayload,
   type ProjectProcessRecord,
 } from '@/types/process-record'
-import { downloadBlob, openBlob } from '@/utils/blob'
+import { downloadBlob } from '@/utils/blob'
+import AttachmentPreviewModal from '@/components/AttachmentPreviewModal/index.vue'
 
 const props = defineProps<{
   projectId: string
@@ -30,6 +31,9 @@ const editingId = ref('')
 const currentRecord = ref<ProjectProcessRecord>()
 const recordType = ref('')
 const keyword = ref('')
+const previewVisible = ref(false)
+const previewAttachmentId = ref('')
+const previewTitle = ref('在线预览')
 const form = ref<ProcessRecordPayload>(createEmptyForm())
 
 function createEmptyForm(): ProcessRecordPayload {
@@ -124,8 +128,10 @@ async function openFiles(record: ProjectProcessRecord): Promise<void> {
   attachments.value = page.list
 }
 
-async function previewFile(file: Attachment): Promise<void> {
-  openBlob(await attachmentApi.getContent(file.id))
+function previewFile(file: Attachment): void {
+  previewAttachmentId.value = file.id
+  previewTitle.value = file.originalName
+  previewVisible.value = true
 }
 
 async function downloadFile(file: Attachment): Promise<void> {
@@ -133,7 +139,7 @@ async function downloadFile(file: Attachment): Promise<void> {
 }
 
 async function removeRecord(record: ProjectProcessRecord): Promise<void> {
-  await arcoConfirm(`确认删除“${record.title}”？`, '删除记录', {
+  await arcoConfirm(`确认删除「${record.title}」？`, '删除记录', {
     type: 'warning',
   })
   await processRecordApi.delete(record.id)
@@ -141,10 +147,18 @@ async function removeRecord(record: ProjectProcessRecord): Promise<void> {
   await fetchRecords()
 }
 
-watch(() => props.projectId, fetchRecords)
-onMounted(fetchRecords)
+function recordTypeLabel(value: string): string {
+  return PROCESS_RECORD_TYPE_OPTIONS.find((item) => item.value === value)?.label || value
+}
 
-defineExpose({ openEditor })
+watch(
+  () => props.projectId,
+  () => {
+    form.value = createEmptyForm()
+    fetchRecords()
+  },
+)
+onMounted(fetchRecords)
 </script>
 
 <template>
@@ -153,7 +167,7 @@ defineExpose({ openEditor })
       <div class="records-filter">
         <a-select
           v-model="recordType"
-          clearable
+          allow-clear
           placeholder="全部记录类型"
           class="filter-control"
           @change="fetchRecords"
@@ -167,66 +181,56 @@ defineExpose({ openEditor })
         </a-select>
         <a-input
           v-model="keyword"
-          clearable
+          allow-clear
           placeholder="搜索标题或说明"
           class="filter-control filter-control-wide"
           @keyup.enter="fetchRecords"
         />
-        <a-button @click="fetchRecords">
-          查询
-        </a-button>
+        <a-button @click="fetchRecords">查询</a-button>
       </div>
       <a-button type="primary" @click="openEditor()">
-        <a-icon><Upload /></a-icon>
+        <template #icon><Upload /></template>
         上传记录
       </a-button>
     </div>
 
     <a-table
-      v-loading="loading"
+      :loading="loading"
       :data="records"
+      row-key="id"
       border
       stripe
+      class="records-table"
+      :scroll="{ y: '100%', x: 960 }"
     >
       <a-table-column prop="recordDate" label="记录日期" :width="120">
-        <template #default="{ row }">
-          {{ dayjs(row.recordDate).format('YYYY-MM-DD') }}
-        </template>
+        <template #default="{ row }">{{ dayjs(row.recordDate).format('YYYY-MM-DD') }}</template>
       </a-table-column>
-      <a-table-column prop="title" label="记录标题" :min-width="220" />
+      <a-table-column prop="title" label="记录标题" :min-width="220" show-overflow-tooltip />
       <a-table-column label="类型" :width="120">
-        <template #default="{ row }">
-          {{ PROCESS_RECORD_TYPE_OPTIONS.find((item) => item.value === row.recordType)?.label }}
-        </template>
+        <template #default="{ row }">{{ recordTypeLabel(row.recordType) }}</template>
       </a-table-column>
       <a-table-column prop="creator.realName" label="记录人" :width="120" />
-      <a-table-column
-        prop="description"
-        label="说明"
-        :min-width="260"
-        show-overflow-tooltip
-      />
+      <a-table-column prop="description" label="说明" :min-width="260" show-overflow-tooltip />
       <a-table-column label="操作" :width="190" fixed="right">
         <template #default="{ row }">
-          <a-button text type="primary" @click="openFiles(row)">
-            文件
-          </a-button>
-          <a-button text @click="openEditor(row)">
-            编辑
-          </a-button>
-          <a-button text status="danger" type="secondary" @click="removeRecord(row)">
-            删除
-          </a-button>
+          <a-space size="mini" :wrap="false">
+            <a-button type="text" size="mini" @click="openFiles(row)">文件</a-button>
+            <a-button type="text" size="mini" @click="openEditor(row)">编辑</a-button>
+            <a-button type="text" status="danger" size="mini" @click="removeRecord(row)">
+              删除
+            </a-button>
+          </a-space>
         </template>
       </a-table-column>
     </a-table>
     <a-empty v-if="records.length === 0 && !loading" description="暂无项目过程记录" />
 
-    <a-dialog
-      v-model="dialogVisible"
+    <a-modal
+      v-model:visible="dialogVisible"
       :title="editingId ? '编辑项目记录' : '上传项目记录'"
-      width="720px"
-      :close-on-click-modal="false"
+      :width="720"
+      :mask-closable="false"
     >
       <a-form :model="form" label-width="90px">
         <a-form-item label="项目">
@@ -247,25 +251,15 @@ defineExpose({ openEditor })
           </a-col>
           <a-col :span="12">
             <a-form-item label="记录日期">
-              <a-date-picker
-                v-model="form.recordDate"
-                type="date"
-                value-format="YYYY-MM-DD"
-              />
+              <a-date-picker v-model="form.recordDate" value-format="YYYY-MM-DD" />
             </a-form-item>
           </a-col>
         </a-row>
         <a-form-item label="记录标题" required>
-          <a-input v-model="form.title" :maxlength="200" show-word-limit />
+          <a-input v-model="form.title" :max-length="200" show-word-limit />
         </a-form-item>
         <a-form-item label="记录说明">
-          <a-textarea
-            v-model="form.description"
-
-            :rows="4"
-            :maxlength="2000"
-            show-word-limit
-          />
+          <a-textarea v-model="form.description" :rows="4" :max-length="2000" show-word-limit />
         </a-form-item>
         <a-form-item label="图片/文件">
           <a-upload
@@ -277,76 +271,106 @@ defineExpose({ openEditor })
             :on-change="handleFileChange"
           >
             <a-button>
-              <a-icon><Paperclip /></a-icon>
-              选择图片或文件            </a-button>
+              <template #icon><Paperclip /></template>
+              选择图片或文件
+            </a-button>
             <template #tip>
               <div class="upload-tip">
-                支持项目会议、进度、问题、交付文件及现场影像。              </div>
+                支持项目会议、进度、问题、交付文件以及现场影像。
+              </div>
             </template>
           </a-upload>
         </a-form-item>
       </a-form>
       <template #footer>
-        <a-button @click="dialogVisible = false">
-          取消
-        </a-button>
-        <a-button type="primary" @click="saveRecord">
-          保存记录
-        </a-button>
+        <a-button @click="dialogVisible = false">取消</a-button>
+        <a-button type="primary" @click="saveRecord">保存记录</a-button>
       </template>
-    </a-dialog>
+    </a-modal>
 
-    <a-dialog
-      v-model="filesVisible"
+    <a-modal
+      v-model:visible="filesVisible"
       :title="`${currentRecord?.title ?? ''} / 相关文件`"
-      width="760px"
+      :width="760"
+      :footer="false"
     >
-      <a-table :data="attachments" border>
-        <a-table-column prop="originalName" label="文件名" :min-width="320" />
+      <a-table :data="attachments" row-key="id" border>
+        <a-table-column prop="originalName" label="文件名称" :min-width="320" show-overflow-tooltip />
         <a-table-column prop="uploader.realName" label="上传人" :width="120" />
         <a-table-column prop="createdAt" label="上传时间" :width="180">
-          <template #default="{ row }">
-            {{ dayjs(row.createdAt).format('YYYY-MM-DD HH:mm') }}
-          </template>
+          <template #default="{ row }">{{ dayjs(row.createdAt).format('YYYY-MM-DD HH:mm') }}</template>
         </a-table-column>
         <a-table-column label="操作" :width="140">
           <template #default="{ row }">
-            <a-button text type="primary" @click="previewFile(row)">
-              预览
-            </a-button>
-            <a-button text @click="downloadFile(row)">
-              下载
-            </a-button>
+            <a-space size="mini" :wrap="false">
+              <a-button type="text" size="mini" @click="previewFile(row)">预览</a-button>
+              <a-button type="text" size="mini" @click="downloadFile(row)">下载</a-button>
+            </a-space>
           </template>
         </a-table-column>
       </a-table>
       <a-empty v-if="attachments.length === 0" description="暂无相关文件" />
-    </a-dialog>
+    </a-modal>
+
+    <AttachmentPreviewModal
+      v-model:visible="previewVisible"
+      source="attachment"
+      :attachment-id="previewAttachmentId"
+      :title="previewTitle"
+    />
   </section>
 </template>
 
 <style scoped lang="scss">
 .records-panel {
+  flex: 1;
   min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-top: 8px;
 }
 
 .records-toolbar {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: 12px;
+  margin-bottom: 8px;
 }
 
 .records-filter {
+  min-width: 0;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
+}
+
+.filter-control {
+  width: 160px;
+}
+
+.filter-control-wide {
+  width: 260px;
+}
+
+.records-table {
+  flex: 1;
+  min-height: 0;
+  border-radius: 0;
+}
+
+.records-table :deep(.arco-table-th),
+.records-table :deep(.arco-table-cell) {
+  padding: 7px 8px;
+  font-size: 12px;
+  line-height: 1.42;
 }
 
 .upload-tip {
-  color: var(--app-text-muted);
+  color: var(--color-text-3);
   font-size: 12px;
 }
 
@@ -354,6 +378,11 @@ defineExpose({ openEditor })
   .records-toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .filter-control,
+  .filter-control-wide {
+    width: 100%;
   }
 }
 </style>

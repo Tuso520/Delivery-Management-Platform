@@ -135,13 +135,14 @@ export const PROJECT_TYPE_OPTIONS = [
 ]
 
 export const COUNTRY_OPTIONS = [
+  { value: 'CN', label: '中国' },
   { value: 'VN', label: '越南' },
   { value: 'TH', label: '泰国' },
   { value: 'MY', label: '马来西亚' },
-  { value: 'ID', label: '印尼' },
+  { value: 'ID', label: '印度尼西亚' },
   { value: 'SG', label: '新加坡' },
   { value: 'OM', label: '阿曼' },
-  { value: 'CN', label: '中国' },
+  { value: 'AE', label: '阿联酋' },
 ]
 
 export const CURRENCY_OPTIONS = [
@@ -159,21 +160,20 @@ export const CURRENCY_OPTIONS = [
 export const LANGUAGE_OPTIONS = [
   { value: 'zh-CN', label: '简体中文' },
   { value: 'en-US', label: 'English' },
-  { value: 'vi-VN', label: 'Tieng Viet' },
-  { value: 'th-TH', label: '泰语' },
-  { value: 'ms-MY', label: '马来语' },
-  { value: 'id-ID', label: '印尼语' },
+  { value: 'vi-VN', label: 'Tiếng Việt' },
+  { value: 'th-TH', label: 'ไทย' },
+  { value: 'ms-MY', label: 'Bahasa Melayu' },
+  { value: 'id-ID', label: 'Bahasa Indonesia' },
 ]
 
 export const STAGE_OPTIONS = [
-  { value: 'Initiation', label: '项目启动' },
-  { value: 'Design', label: '深化设计' },
-  { value: 'Procurement', label: '采购与生产' },
-  { value: 'Construction', label: '施工与安装' },
-  { value: 'Commissioning', label: '调试阶段' },
-  { value: 'Acceptance', label: '验收阶段' },
-  { value: 'Closing', label: '收尾阶段' },
-  { value: 'Review', label: '阶段评审' },
+  { value: '01_sale', label: '售前与合同' },
+  { value: '02_design', label: '深化方案' },
+  { value: '03_procurement', label: '采购与生产' },
+  { value: '04_construction', label: '施工与调试' },
+  { value: '05_acceptance', label: '验收与移交' },
+  { value: '06_review', label: '收尾与复盘' },
+  { value: '07_misc', label: '其他杂项' },
 ]
 
 export const PROJECT_ROLE_OPTIONS = [

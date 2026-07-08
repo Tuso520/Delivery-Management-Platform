@@ -244,6 +244,116 @@ export async function seedProjects(prisma: PrismaClient) {
     console.log(`  Project "${data.projectCode}" ready (id=${project.id})`);
   }
 
+  const cleanProjectUpdates: Record<string, Prisma.ProjectUpdateManyMutationInput> = {
+    'VN-LG-2026-001': {
+      projectName: '越南海防 LG 冷站节能项目',
+      city: '海防',
+      customerName: 'LG Electronics Vietnam',
+      projectType: '冷站节能',
+      projectLanguage: 'zh-CN',
+      projectStatus: 'Active',
+      riskLevel: 'Medium',
+      currentStage: '04_construction',
+    },
+    'TH-PTT-2026-001': {
+      projectName: '泰国罗勇 PTT 空压节能项目',
+      city: '罗勇',
+      customerName: 'PTT Public Company Limited',
+      projectType: '空压节能',
+      projectLanguage: 'zh-CN',
+      projectStatus: 'Active',
+      riskLevel: 'Low',
+      currentStage: '02_design',
+    },
+    'SG-ESA-2026-001': {
+      projectName: '新加坡 Engie ESL 能源服务项目',
+      city: 'Singapore',
+      customerName: 'Engie Services Asia',
+      projectType: 'ESL',
+      projectLanguage: 'en-US',
+      projectStatus: 'Draft',
+      riskLevel: 'Low',
+      currentStage: '01_sale',
+    },
+    'ID-FMCS-2026-001': {
+      projectName: '印尼雅加达 FMCS 平台项目',
+      city: '雅加达',
+      customerName: 'PT FMCS Indonesia',
+      projectType: 'FMCS',
+      projectLanguage: 'en-US',
+      projectStatus: 'Active',
+      riskLevel: 'High',
+      currentStage: '05_acceptance',
+    },
+    'MY-CL-2026-001': {
+      projectName: '马来西亚吉隆坡冷站节能项目',
+      city: '吉隆坡',
+      customerName: 'Cooling Logistics Sdn Bhd',
+      projectType: '冷站节能',
+      projectLanguage: 'en-US',
+      projectStatus: 'Suspended',
+      riskLevel: 'High',
+      currentStage: '04_construction',
+    },
+    'OM-JA-2026-001': {
+      projectName: '阿曼马斯喀特空压节能项目',
+      city: '马斯喀特',
+      customerName: 'JA Engineering LLC',
+      projectType: '空压节能',
+      projectLanguage: 'en-US',
+      projectStatus: 'Active',
+      riskLevel: 'Medium',
+      currentStage: '03_procurement',
+    },
+    'AE-AB-2026-001': {
+      projectName: '阿联酋阿布扎比 FMCS 项目',
+      city: '阿布扎比',
+      customerName: 'Abu Dhabi FMCS LLC',
+      projectType: 'FMCS',
+      projectLanguage: 'en-US',
+      projectStatus: 'Accepted',
+      riskLevel: 'Low',
+      currentStage: '06_review',
+    },
+    'TH-SC-2026-002': {
+      projectName: '泰国曼谷 SCG ESL 扩建项目',
+      city: '曼谷',
+      customerName: 'SCG Cement Co Ltd',
+      projectType: 'ESL',
+      projectLanguage: 'th-TH',
+      projectStatus: 'Draft',
+      riskLevel: 'Medium',
+      currentStage: '01_sale',
+    },
+    'VN-HN-2026-002': {
+      projectName: '越南河内冷站节能改造项目',
+      city: '河内',
+      customerName: 'Hanoi Cooling Solutions JSC',
+      projectType: '冷站节能',
+      projectLanguage: 'vi-VN',
+      projectStatus: 'Delayed',
+      riskLevel: 'Critical',
+      currentStage: '04_construction',
+    },
+    'ID-JK-2026-002': {
+      projectName: '印尼雅加达冷站节能运维项目',
+      city: '雅加达',
+      customerName: 'Jakarta Chiller Services',
+      projectType: '冷站节能',
+      projectLanguage: 'en-US',
+      projectStatus: 'Archived',
+      riskLevel: 'Low',
+      currentStage: '06_review',
+    },
+  };
+
+  for (const [projectCode, data] of Object.entries(cleanProjectUpdates)) {
+    await prisma.project.updateMany({
+      where: { projectCode },
+      data,
+    });
+  }
+
   const legacyProjectNames: Record<string, string> = {
     'VN-LG-2026-001': '越南LG冷站节能项目',
     'TH-PTT-2026-001': '泰国PTT空压节能项目',

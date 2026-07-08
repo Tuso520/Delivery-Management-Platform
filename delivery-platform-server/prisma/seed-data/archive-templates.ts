@@ -2,10 +2,6 @@ import { PrismaClient } from '@prisma/client';
 import { earlyLevel1Defs, earlyLevel2Defs } from './archive-template-stages-01-03';
 import { lateLevel1Defs, lateLevel2Defs } from './archive-template-stages-04-06';
 
-/**
- * Type for the bare level-1 item fields before creation.
- * After creation we store the returned id in a map.
- */
 export interface Level1Def {
   stageCode: string;
   itemNo: number;
@@ -22,7 +18,7 @@ export interface Level1Def {
 
 export interface Level2Def {
   stageCode: string;
-  parentItemNo: number; // references parent itemNo within the same stage
+  parentItemNo: number;
   itemNo: number;
   level: 2;
   name: string;
@@ -30,15 +26,15 @@ export interface Level2Def {
   usageDescription?: string;
 }
 
-const DEFAULT_FILE_TYPES = 'pdf,doc,docx,xls,xlsx,jpg,jpeg,png,dwg,cad,zip,rar';
+const DEFAULT_FILE_TYPES = 'pdf,doc,docx,xls,xlsx,ppt,pptx,jpg,jpeg,png,dwg,cad,zip,rar';
 
 const archiveStageLabels: Record<string, string> = {
-  '01_sale': '售前与合同阶段',
-  '02_design': '深化方案阶段',
-  '03_procurement': '采购与生产阶段',
-  '04_construction': '施工与调试阶段',
-  '05_acceptance': '验收与移交阶段',
-  '06_review': '复盘与归档阶段',
+  '01_sale': '售前与合同',
+  '02_design': '深化方案',
+  '03_procurement': '采购与生产',
+  '04_construction': '施工与调试',
+  '05_acceptance': '验收与移交',
+  '06_review': '收尾与复盘',
   '07_misc': '其他杂项',
 };
 
@@ -48,33 +44,38 @@ function buildUploadGuide(def: Level1Def | Level2Def): string {
 
   const subject = 'secondName' in def ? def.secondName || def.name : def.name;
   const stageLabel = archiveStageLabels[def.stageCode] ?? '项目交付阶段';
-  return `请上传${stageLabel}“${subject}”相关的最终版文件、过程记录、审批或签字确认材料；如该项暂不适用，请上传说明文件或在备注中说明原因。`;
+  return `请上传「${stageLabel} / ${subject}」相关的最终版文件、过程记录、审批确认或签字材料；如该项暂不适用，请上传说明文件或在备注中说明原因。`;
 }
 
 export async function seedArchiveTemplates(prisma: PrismaClient) {
   console.log('Seeding archive templates...');
 
-  // ── Create the template ──────────────────────────────────────────
   const template = await prisma.archiveTemplate.upsert({
     where: { templateCode: 'DC-ARCH-DEFAULT' },
     create: {
       templateCode: 'DC-ARCH-DEFAULT',
-      templateName: '标准档案模板',
+      templateName: '标准项目档案模板',
       projectType: null,
       countryCode: null,
       languageCode: 'zh-CN',
       version: 'V1.0',
       status: 'Active',
-      description: '适用于所有项目类型和国家的标准档案目录模板',
+      description: '适用于交付项目的标准档案目录，按售前、设计、采购、施工、验收、复盘和其他杂项组织。',
     },
-    update: {},
+    update: {
+      templateName: '标准项目档案模板',
+      projectType: null,
+      countryCode: null,
+      languageCode: 'zh-CN',
+      version: 'V1.0',
+      status: 'Active',
+      description: '适用于交付项目的标准档案目录，按售前、设计、采购、施工、验收、复盘和其他杂项组织。',
+    },
     select: { id: true },
   });
 
   console.log(`  Template "DC-ARCH-DEFAULT" ready (id=${template.id})`);
 
-  // Existing project archive items reference template items by id. Preserve
-  // existing definitions and only create missing defaults.
   async function syncLevel1(def: Level1Def): Promise<string> {
     const data = {
       parentId: null,
@@ -82,6 +83,7 @@ export async function seedArchiveTemplates(prisma: PrismaClient) {
       itemNo: def.itemNo,
       level: 1,
       name: def.name,
+      secondName: null,
       isRequired: true,
       isStar: def.isStar ?? false,
       isSensitive: def.isSensitive ?? false,
@@ -120,10 +122,7 @@ export async function seedArchiveTemplates(prisma: PrismaClient) {
     return item.id;
   }
 
-  async function syncLevel2(
-    def: Level2Def,
-    parentId: string,
-  ): Promise<void> {
+  async function syncLevel2(def: Level2Def, parentId: string): Promise<void> {
     const data = {
       parentId,
       stageCode: def.stageCode,
@@ -133,6 +132,11 @@ export async function seedArchiveTemplates(prisma: PrismaClient) {
       secondName: def.secondName,
       usageDescription: buildUploadGuide(def),
       isRequired: true,
+      isStar: false,
+      isSensitive: false,
+      needReview: false,
+      responsibleRole: null,
+      reviewRole: null,
       allowedFileTypes: DEFAULT_FILE_TYPES,
       sortOrder: def.itemNo,
     };
@@ -162,9 +166,7 @@ export async function seedArchiveTemplates(prisma: PrismaClient) {
     });
   }
 
-  // ── Execute: create all level-1 items, store ids in a map ────────
   const l1IdMap = new Map<string, string>();
-
   const allL1s: Level1Def[] = [...earlyLevel1Defs, ...lateLevel1Defs];
 
   for (const def of allL1s) {
@@ -172,41 +174,19 @@ export async function seedArchiveTemplates(prisma: PrismaClient) {
     l1IdMap.set(`${def.stageCode}:${def.itemNo}`, id);
   }
 
-  const miscParentId = l1IdMap.get('07_misc:38');
-  if (miscParentId) {
-    await prisma.archiveTemplateItem.updateMany({
-      where: {
-        templateId: template.id,
-        stageCode: '01_sale',
-        level: 2,
-        itemNo: { in: [1001, 1002, 1003, 1004, 1005] },
-      },
-      data: {
-        stageCode: '07_misc',
-        parentId: miscParentId,
-      },
-    });
-  }
-
-  // ── Execute: create all level-2 items ────────────────────────────
   const allL2s: Level2Def[] = [...earlyLevel2Defs, ...lateLevel2Defs];
-
   let l2Count = 0;
 
   for (const def of allL2s) {
     const parentId = l1IdMap.get(`${def.stageCode}:${def.parentItemNo}`);
     if (!parentId) {
-      console.warn(
-        `  WARNING: Parent not found for ${def.stageCode}:${def.parentItemNo} — skipping level-2 "${def.name}"`,
-      );
+      console.warn(`  WARNING: Parent not found for ${def.stageCode}:${def.parentItemNo}; skipping "${def.name}"`);
       continue;
     }
     await syncLevel2(def, parentId);
     l2Count++;
   }
 
-  console.log(
-    `  Ensured ${allL1s.length} level-1 items and ${l2Count} level-2 items`,
-  );
+  console.log(`  Ensured ${allL1s.length} level-1 items and ${l2Count} level-2 items`);
   console.log('Archive templates seeding complete.\n');
 }

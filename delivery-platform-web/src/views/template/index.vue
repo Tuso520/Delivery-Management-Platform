@@ -10,8 +10,10 @@ import AttachmentPreviewModal from '@/components/AttachmentPreviewModal/index.vu
 import { arcoConfirm } from '@/utils/arco-dialog'
 import { templateApi } from '@/api/template'
 import { attachmentApi } from '@/api/attachment'
+import { approvalApi } from '@/api/platform'
 import type { DocumentTemplate, QueryTemplateDto } from '@/types/template'
 import type { PaginatedData } from '@/types/api'
+import type { ApprovalTask } from '@/types/platform'
 import type { TagType } from '@/types/ui'
 import { downloadBlob } from '@/utils/blob'
 
@@ -39,6 +41,9 @@ const createFiles = ref<File[]>([])
 const previewVisible = ref(false)
 const previewAttachmentId = ref('')
 const previewTitle = ref('在线预览')
+const approvalVisible = ref(false)
+const approvalLoading = ref(false)
+const approvalTasks = ref<ApprovalTask[]>([])
 const createForm = ref({
   name: '',
   stageCode: '',
@@ -59,6 +64,7 @@ const stages: TemplateStage[] = [
 
 const statusOptions = [
   { value: 'Draft', label: '草稿' },
+  { value: 'Reviewing', label: '审核中' },
   { value: 'Published', label: '已发布' },
   { value: 'Deprecated', label: '已废弃' },
 ]
@@ -192,10 +198,71 @@ async function handleDelete(row: DocumentTemplate): Promise<void> {
 async function handlePublish(row: DocumentTemplate): Promise<void> {
   try {
     await templateApi.publish(row.id)
-    Message.success('发布成功')
+    Message.success('模板已提交发布审批')
     await fetchList()
   } catch {
     // error handled by request interceptor
+  }
+}
+
+function approvalStatusLabel(status: string): string {
+  const map: Record<string, string> = {
+    Pending: '待审批',
+    Approved: '已通过',
+    Rejected: '已驳回',
+    Cancelled: '已取消',
+  }
+  return map[status] || status
+}
+
+function approvalStatusColor(status: string): string {
+  const map: Record<string, string> = {
+    Pending: 'orange',
+    Approved: 'green',
+    Rejected: 'red',
+    Cancelled: 'gray',
+  }
+  return map[status] || 'blue'
+}
+
+async function fetchApprovalTasks(): Promise<void> {
+  approvalLoading.value = true
+  try {
+    const page = await approvalApi.getTasks({
+      page: 1,
+      pageSize: 100,
+      businessType: 'template',
+    })
+    approvalTasks.value = page.list
+  } finally {
+    approvalLoading.value = false
+  }
+}
+
+async function openApprovalTasks(): Promise<void> {
+  approvalVisible.value = true
+  await fetchApprovalTasks()
+}
+
+async function decideApprovalTask(task: ApprovalTask, decision: 'Approved' | 'Rejected'): Promise<void> {
+  try {
+    await arcoConfirm(
+      decision === 'Approved' ? '确认通过该模板发布审批？' : '确认驳回该模板发布审批？',
+      decision === 'Approved' ? '审批通过' : '驳回审批',
+      {
+        confirmButtonText: decision === 'Approved' ? '通过' : '驳回',
+        cancelButtonText: '取消',
+        type: decision === 'Approved' ? 'success' : 'warning',
+      },
+    )
+    await approvalApi.decide(task.id, {
+      decision,
+      comment: decision === 'Approved' ? '模板发布审批通过' : '模板发布审批驳回',
+    })
+    Message.success(decision === 'Approved' ? '审批已通过' : '审批已驳回')
+    await Promise.all([fetchApprovalTasks(), fetchList()])
+  } catch {
+    // user cancelled or interceptor handled the error
   }
 }
 
@@ -300,12 +367,14 @@ async function submitCreateTemplate(): Promise<void> {
       attachmentId: attachments[0]?.id,
       changeNotes: createForm.value.remark.trim() || '初始版本',
     })
+    let submittedForApproval = false
     try {
       await templateApi.publish(template.id)
+      submittedForApproval = true
     } catch {
       // Publishing permission is optional for this quick-create path.
     }
-    Message.success('模板已新增')
+    Message.success(submittedForApproval ? '模板已新增并提交发布审批' : '模板已新增为草稿')
     createVisible.value = false
     await fetchList()
   } finally {
@@ -331,6 +400,7 @@ async function handleDownload(row: DocumentTemplate): Promise<void> {
 function statusTagType(status: string): TagType {
   const map: Record<string, TagType> = {
     Draft: 'info',
+    Reviewing: 'warning',
     Published: 'success',
     Deprecated: 'danger',
   }
@@ -383,7 +453,10 @@ onMounted(fetchList)
           <strong>{{ activeSection?.stage.name || '文档模板' }}</strong>
           <span>{{ activeSection?.templates.length || 0 }} 个模板</span>
         </div>
-        <a-button size="small" type="primary" @click="handleCreate">新增模板</a-button>
+        <div class="template-toolbar-actions">
+          <a-button size="small" @click="openApprovalTasks">审批任务</a-button>
+          <a-button size="small" type="primary" @click="handleCreate">新增模板</a-button>
+        </div>
       </div>
 
       <a-spin :loading="loading" class="template-spin">
@@ -465,7 +538,7 @@ onMounted(fetchList)
                     size="mini"
                     @click="handlePublish(record)"
                   >
-                    发布
+                    提交审批
                   </a-button>
                   <a-button
                     type="text"
@@ -564,6 +637,64 @@ onMounted(fetchList)
           </em>
         </label>
       </div>
+    </a-modal>
+
+    <a-modal
+      v-model:visible="approvalVisible"
+      title="文档模板审批任务"
+      :width="980"
+      :footer="false"
+    >
+      <a-table
+        :loading="approvalLoading"
+        :data="approvalTasks"
+        :pagination="false"
+        row-key="id"
+        class="template-approval-table"
+        :bordered="{ cell: false }"
+        :scroll="{ x: 900 }"
+      >
+        <a-table-column label="审批事项" :min-width="260" show-overflow-tooltip>
+          <template #default="{ row }">
+            <strong>{{ row.businessTitle || row.template?.templateName || '文档模板发布审批' }}</strong>
+          </template>
+        </a-table-column>
+        <a-table-column label="状态" :width="92" align="center">
+          <template #default="{ row }">
+            <a-tag :color="approvalStatusColor(row.status)" size="small">
+              {{ approvalStatusLabel(row.status) }}
+            </a-tag>
+          </template>
+        </a-table-column>
+        <a-table-column label="申请人" :width="96">
+          <template #default="{ row }">
+            {{ row.applicant?.realName || '-' }}
+          </template>
+        </a-table-column>
+        <a-table-column label="审批人" :width="96">
+          <template #default="{ row }">
+            {{ row.approver?.realName || '-' }}
+          </template>
+        </a-table-column>
+        <a-table-column label="提交时间" :width="132">
+          <template #default="{ row }">
+            {{ formatDate(row.createdAt) }}
+          </template>
+        </a-table-column>
+        <a-table-column label="操作" :width="128" fixed="right">
+          <template #default="{ row }">
+            <a-space v-if="row.status === 'Pending'" size="mini" :wrap="false" class="template-approval-actions">
+              <a-button type="primary" size="mini" @click="decideApprovalTask(row, 'Approved')">
+                通过
+              </a-button>
+              <a-button status="danger" size="mini" @click="decideApprovalTask(row, 'Rejected')">
+                驳回
+              </a-button>
+            </a-space>
+            <span v-else class="muted-text">已处理</span>
+          </template>
+        </a-table-column>
+      </a-table>
     </a-modal>
 
     <AttachmentPreviewModal
@@ -681,6 +812,12 @@ onMounted(fetchList)
   padding: 10px 12px;
   border-bottom: 1px solid var(--color-border-2);
   background: #fff;
+}
+
+.template-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .toolbar-title {
@@ -834,6 +971,25 @@ onMounted(fetchList)
 .template-actions :deep(.arco-btn-size-mini) {
   padding: 0 4px;
   font-size: 11px;
+}
+
+.template-approval-table :deep(.arco-table-th),
+.template-approval-table :deep(.arco-table-cell) {
+  padding: 7px 8px;
+  font-size: 12px;
+}
+
+.template-approval-actions {
+  white-space: nowrap;
+}
+
+.template-approval-actions :deep(.arco-btn-size-mini) {
+  padding: 0 7px;
+}
+
+.muted-text {
+  color: var(--color-text-3);
+  font-size: 12px;
 }
 
 .template-empty {

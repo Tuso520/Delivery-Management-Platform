@@ -1,18 +1,18 @@
 <script setup lang="ts">
-import { computed, ref, reactive, onMounted, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
-import { projectApi } from '@/api/project'
 import { countryApi } from '@/api/country'
 import { currencyApi } from '@/api/currency'
-import { languageApi } from '@/api/language'
-import { userApi } from '@/api/user'
 import { dictionaryApi } from '@/api/platform'
+import { languageApi } from '@/api/language'
+import { projectApi } from '@/api/project'
+import { userApi } from '@/api/user'
 import type { Country } from '@/types/country'
 import type { Currency } from '@/types/currency'
 import type { Language } from '@/types/language'
-import type { UserListItem } from '@/types/user'
 import type { CreateProjectDto, UpdateProjectDto } from '@/types/project'
+import type { UserListItem } from '@/types/user'
 import { useLocaleStore } from '@/store/locale'
 import {
   localizeProjectRisk,
@@ -23,16 +23,20 @@ import {
 const route = useRoute()
 const router = useRouter()
 const localeStore = useLocaleStore()
+
 const projectId = computed(() => String(route.params.id || ''))
 const isEdit = computed(() => Boolean(projectId.value))
 const loading = ref(false)
+const optionLoading = ref(false)
 const formRef = ref()
+
 const countryOptions = ref<{ value: string; label: string }[]>([])
 const currencyOptions = ref<{ value: string; label: string }[]>([])
 const languageOptions = ref<{ value: string; label: string }[]>([])
 const userOptions = ref<{ value: string; label: string }[]>([])
 const projectTypeOptions = ref<{ value: string; label: string }[]>([])
 const stageOptions = ref<{ value: string; label: string }[]>([])
+
 const localizedStageOptions = computed(() =>
   stageOptions.value.map((item) => ({
     value: item.value,
@@ -51,6 +55,7 @@ const localizedRiskOptions = computed(() =>
     label: localizeProjectRisk(value, localeStore.currentLocale),
   })),
 )
+
 const formData = reactive({
   projectName: '',
   countryCode: 'CN',
@@ -60,24 +65,27 @@ const formData = reactive({
   contractCurrency: 'CNY',
   baseCurrency: 'CNY',
   contractAmount: undefined as number | undefined,
-  projectLanguage: '',
-  salesOwnerId: '' as string,
-  projectManagerId: '' as string,
-  electricLeaderId: '' as string,
-  softwareLeaderId: '' as string,
-  currentStage: 'Initiation',
+  projectLanguage: 'zh-CN',
+  salesOwnerId: '',
+  projectManagerId: '',
+  electricLeaderId: '',
+  softwareLeaderId: '',
+  currentStage: '01_sale',
   riskLevel: 'Low',
   projectStatus: 'Draft',
   startDate: '',
   plannedEndDate: '',
   actualEndDate: '',
 })
+
 const rules = {
   projectName: [{ required: true, message: '请输入项目名称', trigger: 'blur' }],
   countryCode: [{ required: true, message: '请选择国家', trigger: 'change' }],
 }
+
 const suggestedCode = ref('')
-const generateProjectCode = (countryCode: string) => {
+
+function generateProjectCode(countryCode: string) {
   if (!countryCode) {
     suggestedCode.value = ''
     return
@@ -85,52 +93,64 @@ const generateProjectCode = (countryCode: string) => {
   const now = new Date()
   const year = now.getFullYear()
   const seq = String(Math.floor(Math.random() * 900) + 100)
-  suggestedCode.value = `${countryCode}-XXX-${year}-${seq}`
+  suggestedCode.value = `${countryCode}-客户简称-${year}-${seq}`
 }
-watch(() => formData.countryCode, (val) => {
-  generateProjectCode(val)
-})
-const loadOptions = async () => {
+
+watch(() => formData.countryCode, generateProjectCode, { immediate: true })
+
+async function loadOptions() {
+  optionLoading.value = true
   try {
-    const [countriesRes, currenciesRes, languagesRes, usersRes, projectTypes, stages] = await Promise.all([
-      countryApi.getList({ pageSize: 100, status: 'Active' }),
-      currencyApi.getList(),
-      languageApi.getList(),
-      userApi.getList({ pageSize: 1000 }),
-      dictionaryApi.getByCode('project_type'),
-      dictionaryApi.getByCode('project_stage'),
-    ])
+    const [countriesRes, currenciesRes, languagesRes, usersRes, projectTypes, stages] =
+      await Promise.all([
+        countryApi.getList({ pageSize: 100, status: 'Active' }),
+        currencyApi.getList(),
+        languageApi.getList(),
+        userApi.getList({ pageSize: 1000 }),
+        dictionaryApi.getByCode('project_type'),
+        dictionaryApi.getByCode('project_stage'),
+      ])
+
     const countries = countriesRes as unknown as { list: Country[] }
-    countryOptions.value = countries.list.map(c => ({
-      value: c.countryCode,
-      label: `${c.nameZh} (${c.countryCode})`,
+    countryOptions.value = countries.list.map((country) => ({
+      value: country.countryCode,
+      label: `${country.nameZh} (${country.countryCode})`,
     }))
+
     const currencies = currenciesRes as Currency[]
-    currencyOptions.value = currencies.map(c => ({
-      value: c.currencyCode,
-      label: `${c.currencyName} (${c.currencySymbol || c.currencyCode})`,
+    currencyOptions.value = currencies.map((currency) => ({
+      value: currency.currencyCode,
+      label: `${currency.currencyName} (${currency.currencySymbol || currency.currencyCode})`,
     }))
+
     const languages = languagesRes as Language[]
-    languageOptions.value = languages.filter(l => l.status === 'Active').map(l => ({
-      value: l.languageCode,
-      label: l.languageName,
-    }))
+    languageOptions.value = languages
+      .filter((language) => language.status === 'Active')
+      .map((language) => ({
+        value: language.languageCode,
+        label: language.languageName,
+      }))
+
     const usersData = usersRes as unknown as { list: UserListItem[] }
-    userOptions.value = usersData.list.map(u => ({
-      value: u.id,
-      label: `${u.realName} (${u.username})`,
+    userOptions.value = usersData.list.map((user) => ({
+      value: user.id,
+      label: `${user.realName} (${user.username})`,
     }))
-    projectTypeOptions.value = projectTypes.items.map(item => ({
+
+    projectTypeOptions.value = projectTypes.items.map((item) => ({
       value: item.itemValue,
       label: item.itemLabel,
     }))
-    stageOptions.value = stages.items.map(item => ({
+    stageOptions.value = stages.items.map((item) => ({
       value: item.itemValue,
       label: item.itemLabel,
     }))
-  } catch { return }
+  } finally {
+    optionLoading.value = false
+  }
 }
-const loadProject = async () => {
+
+async function loadProject() {
   if (!projectId.value) return
   const project = await projectApi.getById(projectId.value)
   Object.assign(formData, {
@@ -139,15 +159,15 @@ const loadProject = async () => {
     city: project.city || '',
     customerName: project.customerName || '',
     projectType: project.projectType || '',
-    contractCurrency: project.contractCurrency || '',
-    baseCurrency: project.baseCurrency || '',
+    contractCurrency: project.contractCurrency || 'CNY',
+    baseCurrency: project.baseCurrency || 'CNY',
     contractAmount: project.contractAmount,
-    projectLanguage: project.projectLanguage || '',
+    projectLanguage: project.projectLanguage || 'zh-CN',
     salesOwnerId: project.salesOwnerId || '',
     projectManagerId: project.projectManagerId || '',
     electricLeaderId: project.electricLeaderId || '',
     softwareLeaderId: project.softwareLeaderId || '',
-    currentStage: project.currentStage || 'Initiation',
+    currentStage: project.currentStage || '01_sale',
     riskLevel: project.riskLevel,
     projectStatus: project.projectStatus,
     startDate: project.startDate?.slice(0, 10) || '',
@@ -156,10 +176,12 @@ const loadProject = async () => {
   })
   suggestedCode.value = project.projectCode
 }
-const handleSubmit = async () => {
+
+async function handleSubmit() {
   if (!formRef.value) return
-  const valid = await formRef.value.validate().catch(() => false)
-  if (!valid) return
+  const errors = await formRef.value.validate().catch((error: unknown) => error)
+  if (errors) return
+
   loading.value = true
   try {
     const payload: UpdateProjectDto = {
@@ -183,379 +205,349 @@ const handleSubmit = async () => {
       plannedEndDate: formData.plannedEndDate || undefined,
       actualEndDate: formData.actualEndDate || undefined,
     }
+
     if (isEdit.value) {
       await projectApi.update(projectId.value, payload)
     } else {
-      const createPayload = {
-        ...payload,
-      } as CreateProjectDto & {
-        projectStatus?: string
-        actualEndDate?: string
-      }
-      delete createPayload.projectStatus
-      delete createPayload.actualEndDate
+      const createPayload = { ...payload } as CreateProjectDto
+      delete (createPayload as Partial<UpdateProjectDto>).projectStatus
+      delete (createPayload as Partial<UpdateProjectDto>).actualEndDate
       await projectApi.create(createPayload)
     }
+
     Message.success(isEdit.value ? '项目更新成功' : '项目创建成功')
     router.push('/project')
-  } catch { return } finally {
+  } finally {
     loading.value = false
   }
 }
-const handleCancel = () => {
+
+function handleCancel() {
   router.push('/project')
 }
+
 onMounted(async () => {
   await loadOptions()
   await loadProject()
-  if (!isEdit.value) {
-    generateProjectCode(formData.countryCode)
-  }
 })
 </script>
+
 <template>
   <div class="create-project-page">
-    <a-card>
-      <template #header>
-        <div class="card-header">
-          <span class="card-title">{{ isEdit ? '编辑项目' : '创建项目' }}</span>
-        </div>
+    <a-card :bordered="false" class="project-form-card">
+      <template #title>
+        {{ isEdit ? '编辑项目' : '创建项目' }}
       </template>
-      <a-form
-        ref="formRef"
-        :model="formData"
-        :rules="rules"
-        label-width="130px"
-        class="project-form"
-      >
-        <a-divider content-position="left">
-          基本信息
-        </a-divider>
-        <a-form-item label="项目名称" prop="projectName">
-          <a-input
-            v-model="formData.projectName"
-            :maxlength="200"
-            show-word-limit
-            placeholder="建议：国家-城市-客户-项目简称-项目类型，如中国-上海-某客户-冷站节能"
-          />
-        </a-form-item>
-        <a-row :gutter="20">
-          <a-col :span="12">
-            <a-form-item label="国家" prop="countryCode">
-              <a-select
-                v-model="formData.countryCode"
-                filterable
-                placeholder="请选择国家"
-                style="width: 100%"
-              >
-                <a-option
-                  v-for="item in countryOptions"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
+
+      <a-spin :loading="optionLoading">
+        <a-form
+          ref="formRef"
+          :model="formData"
+          :rules="rules"
+          label-width="128px"
+          class="project-form"
+        >
+          <a-divider orientation="left">基础信息</a-divider>
+          <a-form-item label="项目名称" prop="projectName">
+            <a-input
+              v-model="formData.projectName"
+              :max-length="200"
+              show-word-limit
+              placeholder="建议：国家-城市-客户简称-项目简称-项目类型，例如：中国-上海-某客户-冷站节能"
+            />
+          </a-form-item>
+          <a-row :gutter="14">
+            <a-col :span="8">
+              <a-form-item label="国家" prop="countryCode">
+                <a-select v-model="formData.countryCode" filterable placeholder="请选择国家">
+                  <a-option
+                    v-for="item in countryOptions"
+                    :key="item.value"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="城市">
+                <a-input v-model="formData.city" :max-length="100" placeholder="例如：上海" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="客户名称">
+                <a-input
+                  v-model="formData.customerName"
+                  :max-length="200"
+                  placeholder="用于生成项目编号和简称"
                 />
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="城市">
-              <a-input v-model="formData.city" :maxlength="100" placeholder="可选" />
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-row v-if="isEdit" :gutter="20">
-          <a-col :span="12">
-            <a-form-item label="项目状态">
-              <a-select v-model="formData.projectStatus" style="width: 100%">
-                <a-option
-                  v-for="item in localizedStatusOptions"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="14">
+            <a-col :span="8">
+              <a-form-item label="项目类型">
+                <a-select v-model="formData.projectType" filterable allow-clear placeholder="请选择">
+                  <a-option
+                    v-for="item in projectTypeOptions"
+                    :key="item.value"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="项目语言">
+                <a-select v-model="formData.projectLanguage" filterable allow-clear placeholder="请选择">
+                  <a-option
+                    v-for="item in languageOptions"
+                    :key="item.value"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="项目编号参考">
+                <a-input v-model="suggestedCode" disabled />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-row v-if="isEdit" :gutter="14">
+            <a-col :span="8">
+              <a-form-item label="项目状态">
+                <a-select v-model="formData.projectStatus">
+                  <a-option
+                    v-for="item in localizedStatusOptions"
+                    :key="item.value"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="实际结束日期">
+                <a-date-picker
+                  v-model="formData.actualEndDate"
+                  value-format="YYYY-MM-DD"
+                  style="width: 100%"
                 />
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="实际结束日期">
-              <a-date-picker
-                v-model="formData.actualEndDate"
-                type="date"
-                value-format="YYYY-MM-DD"
-                style="width: 100%"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-row :gutter="20">
-          <a-col :span="12">
-            <a-form-item label="客户名称">
-              <a-input v-model="formData.customerName" :maxlength="200" placeholder="可选" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="项目类型">
-              <a-select
-                v-model="formData.projectType"
-                filterable
-                placeholder="请选择"
-                clearable
-                style="width: 100%"
-              >
-                <a-option
-                  v-for="item in projectTypeOptions"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-divider orientation="left">金额与计划</a-divider>
+          <a-row :gutter="14">
+            <a-col :span="8">
+              <a-form-item label="合同币种">
+                <a-select v-model="formData.contractCurrency" filterable allow-clear>
+                  <a-option
+                    v-for="item in currencyOptions"
+                    :key="item.value"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="基准币种">
+                <a-select v-model="formData.baseCurrency" filterable allow-clear>
+                  <a-option
+                    v-for="item in currencyOptions"
+                    :key="item.value"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="合同金额">
+                <a-input-number
+                  v-model="formData.contractAmount"
+                  :min="0"
+                  :precision="2"
+                  placeholder="请输入金额"
+                  style="width: 100%"
                 />
-              </a-select>
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-divider content-position="left">
-          财务信息
-        </a-divider>
-        <a-row :gutter="20">
-          <a-col :span="12">
-            <a-form-item label="合同币种">
-              <a-select
-                v-model="formData.contractCurrency"
-                filterable
-                placeholder="请选择"
-                clearable
-                style="width: 100%"
-              >
-                <a-option
-                  v-for="item in currencyOptions"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="14">
+            <a-col :span="8">
+              <a-form-item label="开始日期">
+                <a-date-picker
+                  v-model="formData.startDate"
+                  placeholder="选择日期"
+                  value-format="YYYY-MM-DD"
+                  style="width: 100%"
                 />
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="基准币种">
-              <a-select
-                v-model="formData.baseCurrency"
-                filterable
-                placeholder="请选择"
-                clearable
-                style="width: 100%"
-              >
-                <a-option
-                  v-for="item in currencyOptions"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="计划结束日期">
+                <a-date-picker
+                  v-model="formData.plannedEndDate"
+                  placeholder="选择日期"
+                  value-format="YYYY-MM-DD"
+                  style="width: 100%"
                 />
-              </a-select>
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-form-item label="合同金额">
-          <a-input-number
-            v-model="formData.contractAmount"
-            :min="0"
-            :precision="2"
-            style="width: 240px"
-            placeholder="可选"
-          />
-        </a-form-item>
-        <a-divider content-position="left">
-          项目阶段与风险
-        </a-divider>
-        <a-row :gutter="20">
-          <a-col :span="12">
-            <a-form-item label="当前阶段">
-              <a-select v-model="formData.currentStage" placeholder="请选择" style="width: 100%">
-                <a-option
-                  v-for="item in localizedStageOptions"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="风险等级">
-              <a-select v-model="formData.riskLevel" placeholder="请选择" style="width: 100%">
-                <a-option
-                  v-for="item in localizedRiskOptions"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </a-select>
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-row :gutter="20">
-          <a-col :span="12">
-            <a-form-item label="项目语言">
-              <a-select
-                v-model="formData.projectLanguage"
-                filterable
-                placeholder="请选择"
-                clearable
-                style="width: 100%"
-              >
-                <a-option
-                  v-for="item in languageOptions"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="项目编号（参考）">
-              <a-input v-model="suggestedCode" disabled placeholder="选择国家后自动生成" />
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-row :gutter="20">
-          <a-col :span="12">
-            <a-form-item label="开始日期">
-              <a-date-picker
-                v-model="formData.startDate"
-                type="date"
-                placeholder="选择日期"
-                style="width: 100%"
-                value-format="YYYY-MM-DD"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="计划结束日期">
-              <a-date-picker
-                v-model="formData.plannedEndDate"
-                type="date"
-                placeholder="选择日期"
-                style="width: 100%"
-                value-format="YYYY-MM-DD"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-divider content-position="left">
-          项目负责人
-        </a-divider>
-        <a-row :gutter="20">
-          <a-col :span="12">
-            <a-form-item label="销售负责人">
-              <a-select
-                v-model="formData.salesOwnerId"
-                filterable
-                placeholder="请选择"
-                clearable
-                style="width: 100%"
-              >
-                <a-option
-                  v-for="item in userOptions"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="项目经理">
-              <a-select
-                v-model="formData.projectManagerId"
-                filterable
-                placeholder="请选择"
-                clearable
-                style="width: 100%"
-              >
-                <a-option
-                  v-for="item in userOptions"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </a-select>
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-row :gutter="20">
-          <a-col :span="12">
-            <a-form-item label="电气负责人">
-              <a-select
-                v-model="formData.electricLeaderId"
-                filterable
-                placeholder="请选择"
-                clearable
-                style="width: 100%"
-              >
-                <a-option
-                  v-for="item in userOptions"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="软件负责人">
-              <a-select
-                v-model="formData.softwareLeaderId"
-                filterable
-                placeholder="请选择"
-                clearable
-                style="width: 100%"
-              >
-                <a-option
-                  v-for="item in userOptions"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </a-select>
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-form-item>
-          <a-button type="primary" :loading="loading" @click="handleSubmit">
-            {{ isEdit ? '保存' : '创建' }}
-          </a-button>
-          <a-button @click="handleCancel">
-            取消
-          </a-button>
-        </a-form-item>
-      </a-form>
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-divider orientation="left">阶段与风险</a-divider>
+          <a-row :gutter="14">
+            <a-col :span="8">
+              <a-form-item label="当前阶段">
+                <a-select v-model="formData.currentStage" placeholder="请选择">
+                  <a-option
+                    v-for="item in localizedStageOptions"
+                    :key="item.value"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="风险等级">
+                <a-select v-model="formData.riskLevel" placeholder="请选择">
+                  <a-option
+                    v-for="item in localizedRiskOptions"
+                    :key="item.value"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </a-select>
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-divider orientation="left">项目负责人</a-divider>
+          <a-row :gutter="14">
+            <a-col :span="12">
+              <a-form-item label="销售负责人">
+                <a-select v-model="formData.salesOwnerId" filterable allow-clear placeholder="请选择">
+                  <a-option
+                    v-for="item in userOptions"
+                    :key="item.value"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="项目经理">
+                <a-select v-model="formData.projectManagerId" filterable allow-clear placeholder="请选择">
+                  <a-option
+                    v-for="item in userOptions"
+                    :key="item.value"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </a-select>
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="14">
+            <a-col :span="12">
+              <a-form-item label="电气负责人">
+                <a-select v-model="formData.electricLeaderId" filterable allow-clear placeholder="请选择">
+                  <a-option
+                    v-for="item in userOptions"
+                    :key="item.value"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="软件负责人">
+                <a-select v-model="formData.softwareLeaderId" filterable allow-clear placeholder="请选择">
+                  <a-option
+                    v-for="item in userOptions"
+                    :key="item.value"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </a-select>
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <div class="form-actions">
+            <a-button @click="handleCancel">取消</a-button>
+            <a-button type="primary" :loading="loading" @click="handleSubmit">
+              {{ isEdit ? '保存' : '创建' }}
+            </a-button>
+          </div>
+        </a-form>
+      </a-spin>
     </a-card>
   </div>
 </template>
+
 <style scoped lang="scss">
 .create-project-page {
   min-width: 0;
+  height: 100%;
+  overflow: auto;
+}
 
-  :deep(.arco-card-body) {
-    padding: 16px;
-  }
+.project-form-card {
+  border-radius: 0;
+}
 
-  .project-form {
-    max-width: 1180px;
-  }
+.project-form-card :deep(.arco-card-body) {
+  padding: 12px 16px 18px;
+}
 
-  .project-form :deep(.arco-input),
-  .project-form :deep(.arco-input-number-input),
-  .project-form :deep(.arco-select-view-value) {
-    text-align: left;
-  }
+.project-form {
+  max-width: 1280px;
+}
 
-  .card-header {
-    display: flex;
-    align-items: center;
-  }
-  .card-title {
-    font-size: 16px;
-    font-weight: 600;
+.project-form :deep(.arco-form-item) {
+  margin-bottom: 14px;
+}
+
+.project-form :deep(.arco-input),
+.project-form :deep(.arco-input-number-input),
+.project-form :deep(.arco-select-view-value),
+.project-form :deep(.arco-picker input) {
+  text-align: left;
+}
+
+.project-form :deep(.arco-select),
+.project-form :deep(.arco-input-wrapper),
+.project-form :deep(.arco-picker) {
+  border-radius: 0;
+}
+
+.project-form :deep(.arco-divider-text) {
+  color: var(--color-text-1);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 8px;
+}
+
+@media (max-width: 900px) {
+  .project-form :deep(.arco-col) {
+    flex: 0 0 100%;
+    max-width: 100%;
   }
 }
 </style>

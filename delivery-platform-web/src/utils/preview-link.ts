@@ -28,8 +28,7 @@ export function openPreviewRedirect(
   const targetUrl = `${window.location.origin}${window.location.pathname}${window.location.search}#/preview?${params.toString()}`
   const opened = window.open(targetUrl, '_blank', 'noopener,noreferrer')
   if (!opened) {
-    window.location.href = targetUrl
-    Message.warning('浏览器阻止了新窗口，已在当前窗口打开预览')
+    Message.warning('浏览器阻止了新窗口，请允许弹窗后重试')
   }
   options.onOpened?.()
 }

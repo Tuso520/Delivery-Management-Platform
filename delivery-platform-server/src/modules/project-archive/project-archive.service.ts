@@ -217,7 +217,7 @@ export class ProjectArchiveService {
 
   async findById(id: string, projectId: string, userId: string) {
     await this.projectAccess.assertProjectAccess(projectId, userId);
-    const item = await this.prisma.projectArchiveItem.findUnique({
+    const item = await this.prisma.projectArchiveItem.findFirst({
       where: { id, projectId },
       include: {
         responsibleUser: {
@@ -269,7 +269,7 @@ export class ProjectArchiveService {
 
   async updateItem(id: string, projectId: string, dto: UpdateArchiveItemDto, userId: string) {
     await this.projectAccess.assertProjectAccess(projectId, userId);
-    const item = await this.prisma.projectArchiveItem.findUnique({
+    const item = await this.prisma.projectArchiveItem.findFirst({
       where: { id, projectId },
     });
 
@@ -306,7 +306,7 @@ export class ProjectArchiveService {
 
   async markNotApplicable(id: string, projectId: string, userId: string) {
     await this.projectAccess.assertProjectAccess(projectId, userId);
-    const item = await this.prisma.projectArchiveItem.findUnique({
+    const item = await this.prisma.projectArchiveItem.findFirst({
       where: { id, projectId },
     });
 
