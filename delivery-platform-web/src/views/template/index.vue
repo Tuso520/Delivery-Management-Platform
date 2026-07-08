@@ -15,7 +15,7 @@ import type { PaginatedData } from '@/types/api'
 import type { ApprovalTask } from '@/types/platform'
 import type { TagType } from '@/types/ui'
 import { downloadBlob } from '@/utils/blob'
-import { openSignedPreview } from '@/utils/preview-link'
+import { openPreviewRedirect } from '@/utils/preview-link'
 
 interface TemplateStage {
   code: string
@@ -292,18 +292,15 @@ function displayTemplateFileName(row: DocumentTemplate): string {
   return `${sourceName}.${format}`
 }
 
-async function openTemplatePreview(row: DocumentTemplate): Promise<void> {
+function openTemplatePreview(row: DocumentTemplate): void {
   if (!row.attachmentId) {
     showMissingTemplateFile()
     return
   }
-  await openSignedPreview(
-    () => attachmentApi.createPreviewLink(row.attachmentId as string),
-    {
-      title: displayTemplateFileName(row),
-      onOpened: () => incrementTemplateHeat(row.id, 'previewCount'),
-    },
-  )
+  openPreviewRedirect('attachment', row.attachmentId, {
+    title: displayTemplateFileName(row),
+    onOpened: () => incrementTemplateHeat(row.id, 'previewCount'),
+  })
 }
 
 function resetCreateForm(): void {

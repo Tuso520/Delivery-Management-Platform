@@ -9,7 +9,7 @@ import { reviewApi } from '@/api/review'
 import FileUploader from '@/components/FileUploader/index.vue'
 import { arcoConfirm } from '@/utils/arco-dialog'
 import { downloadBlob } from '@/utils/blob'
-import { openSignedPreview } from '@/utils/preview-link'
+import { openPreviewRedirect } from '@/utils/preview-link'
 import {
   localizeProjectRisk,
   localizeProjectStage,
@@ -270,18 +270,12 @@ async function handleUploadSuccess(): Promise<void> {
   await fetchPendingReviews()
 }
 
-async function openFilePreview(file: ArchiveFile): Promise<void> {
-  await openSignedPreview(
-    () => fileApi.createPreviewLink(file.id),
-    { title: file.originalName },
-  )
+function openFilePreview(file: ArchiveFile): void {
+  openPreviewRedirect('file', file.id, { title: file.originalName })
 }
 
-async function openReviewPreview(row: PendingReview): Promise<void> {
-  await openSignedPreview(
-    () => fileApi.createPreviewLink(row.fileId),
-    { title: row.file.fileName },
-  )
+function openReviewPreview(row: PendingReview): void {
+  openPreviewRedirect('file', row.fileId, { title: row.file.fileName })
 }
 
 function openReviewDialog(row: PendingReview): void {
