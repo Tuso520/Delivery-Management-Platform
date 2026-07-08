@@ -1,35 +1,35 @@
-# Security Policy
+# 安全说明
 
-## Supported Scope
+## 支持范围
 
-Security fixes are expected for the current `main` branch.
+当前只维护 `main` 分支的安全修复和部署安全说明。
 
-## Sensitive Data
+## 敏感数据
 
-Do not commit:
+禁止提交以下内容：
 
-- `.env` files or production environment values.
-- GitHub tokens, SSH passwords, database passwords or JWT secrets.
-- Production backups, MinIO archives or database dumps.
-- Browser screenshots that expose private customer data.
-- Local generated release packages.
+- `.env` 文件或生产环境变量。
+- GitHub Token、SSH 密码、数据库密码、MinIO 密钥和 JWT 密钥。
+- 生产数据库备份、MinIO 归档和服务器日志。
+- 暴露客户数据的浏览器截图。
+- 本地生成的发布包、测试产物和临时日志。
 
-## Deployment Safety
+## 部署安全
 
-Production updates must use `deploy-git.sh` or an equivalent audited flow that:
+生产更新必须使用 `deploy-git.sh` 或经过审查的等效流程，并满足：
 
-- Creates a MySQL backup before migration.
-- Creates a MinIO backup before switching containers.
-- Preserves server-only `.env`.
-- Uses `prisma migrate deploy`, not destructive schema push.
-- Keeps seed scripts idempotent.
+- 数据库迁移前备份 MySQL。
+- 容器切换前备份 MinIO。
+- 保留服务器本地 `.env`，不从 Git 覆盖。
+- 生产环境只使用 `prisma migrate deploy`。
+- 种子脚本必须幂等，禁止清空业务表。
 
-## Reporting
+## 问题报告
 
-For internal use, report security issues to the delivery platform maintainer and include:
+内部发现安全问题时，应提交给交付管理平台维护人，并说明：
 
-- Affected module.
-- Reproduction steps.
-- Expected and actual behavior.
-- Impact assessment.
-- Suggested mitigation if available.
+- 受影响模块。
+- 复现步骤。
+- 预期行为和实际行为。
+- 影响范围。
+- 可选的缓解建议。

@@ -1,44 +1,44 @@
-# Product Overview
+# 产品说明
 
-## Positioning
+## 产品定位
 
-Delivery Management Platform is an internal delivery operations system for cross-country software and engineering delivery teams. It standardizes project ledgers, archives, document approval, knowledge reuse, templates, performance tracking and organization permissions.
+交付管理平台是面向跨国家、跨专业交付团队的内部运营系统。它把项目台账、项目档案、文件审批、知识复用、文档模板、绩效跟踪和组织权限统一到一个平台中，减少交付资料分散、审批链路不清和标准文件难查的问题。
 
-## Primary Users
+## 主要用户
 
-- System administrator: manages users, roles, global configuration and platform data.
-- Delivery manager: monitors delivery risks, project progress, documents and reviews.
-- Project manager: maintains project ledger, archive upload, file review and team coordination.
-- Electrical/software engineers: upload and review professional files, read standards and templates.
-- Purchase, finance and HSE: maintain related project files, approvals and risk records.
-- Standard administrator: maintains knowledge base, document templates and process standards.
+- 系统管理员：维护用户、角色、权限、全局配置和平台基础数据。
+- 交付负责人：查看交付风险、项目进度、文档状态和项目复盘。
+- 项目经理：维护项目台账、项目档案、文件上传、文件审核和团队协同。
+- 电气工程师、软件工程师等专业人员：上传专业资料，查阅知识库和模板。
+- 采购、财务、HSE：维护各自负责的项目资料、审批记录和风险记录。
+- 标准管理员：维护知识库、文档模板、交付流程和检查模板。
 
-## Main Modules
+## 主要模块
 
-| Area | Modules |
+| 领域 | 模块 |
 | --- | --- |
-| Workspace | Dashboard, todo list, delivery risk overview |
-| Project Management | Project ledger, project archive, file review, reports, retrospectives |
-| Standards and Knowledge | Workflow, checklist templates, archive templates, document templates, knowledge base, tools, training |
-| Performance and Team | OKR, monthly scoring, skill assessment |
-| Organization and Permissions | Departments, users, roles, permission matrix |
-| Operations | Country, currency, language, notification, approval config, logs, storage, integrations |
+| 工作台 | 数据看板、我的待办、交付风险概览 |
+| 项目管理 | 项目台账、项目档案、文件审核、工时日报、项目复盘 |
+| 标准与知识 | 交付流程、检查模板、档案模板、文档模板、知识库、工具中心、培训记录 |
+| 绩效与团队 | 目标绩效、月度评分、技能评估 |
+| 组织与权限 | 组织架构、用户管理、角色权限、权限矩阵 |
+| 系统运营 | 国家、币种、语言、通知、审批配置、操作日志、存储备份、接口集成 |
 
-## Current Product Rules
+## 当前产品规则
 
-- Knowledge categories are single-level only. Secondary context belongs in file title, remark or description.
-- Knowledge and template files open preview by clicking the file title.
-- Preview and download heat are shown in list rows.
-- Project archive directories are generated from first-level delivery process stages.
-- Archive item upload must go through review before becoming the current approved file version.
-- Reviewers must be able to compare original and incoming files where applicable.
-- Project ledger search is intentionally simple: one keyword search plus action buttons.
+- 知识库分类只保留一级分类，二级信息写入文件标题、备注或简介。
+- 知识库和文档模板点击文件标题进入在线预览。
+- 知识库和文档模板列表展示预览热度和下载热度。
+- 项目档案目录按交付一级流程阶段生成。
+- 项目档案文件上传必须经过审批，审批通过后才成为当前有效版本。
+- 审批人需要能查看新旧文件差异或内容变化说明。
+- 项目台账筛选保持简洁，当前只保留关键词筛选和主要操作按钮。
 
-## Verified Test Accounts
+## 测试账号
 
-| Role | Username | Password |
+| 角色 | 用户名 | 密码 |
 | --- | --- | --- |
-| Administrator | `admin` | `Admin@123` |
-| Project manager | `pm_wang` | `Pm@123456` |
+| 系统管理员 | `admin` | `Admin@123` |
+| 项目经理 | `pm_wang` | `Pm@123456` |
 
-Production verification on `2026-07-08` confirmed `pm_wang` can log in and see project data.
+2026-07-08 的生产验证确认：`pm_wang` 可以登录并查看项目经理权限范围内的项目数据。

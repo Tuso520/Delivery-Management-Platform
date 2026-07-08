@@ -1,18 +1,21 @@
-# Open Source Readiness
+# 开源准备清单
 
-## Completed
+## 已完成
 
-- Repository layout now follows a GitHub-style structure.
-- Phase folders were consolidated into `docs/`.
-- Local artifacts, browser screenshots and release bundles are ignored.
-- Root documentation has clear entry points for development, deployment, testing and security.
+- 仓库目录已经整理为 GitHub 风格结构。
+- 历史阶段文档已经合并到 `docs/`。
+- 本地产物、浏览器截图、日志和发布包已经加入忽略规则。
+- 根目录文档已经提供开发、部署、测试、安全和开源说明入口。
+- 项目介绍文档已经统一为中文。
+- 主要直接依赖已经整理到 [开源依赖说明](open-source.md) 和根目录 [第三方开源组件声明](../THIRD_PARTY_NOTICES.md)。
 
-## Before Public Open Source
+## 公开开源前仍需确认
 
-The project owner should confirm:
+项目负责人需要确认：
 
-- License selection.
-- Whether sample seed documents under `delivery-platform-server/prisma/seed-files/knowledge-catalog/` can be published.
-- Whether production server URLs should remain in public docs.
-- Whether internal role names, sample customers and project names need anonymization.
-- Whether screenshots and browser artifacts are excluded from every commit.
+- 项目自身采用哪一种开源许可证，并补充根目录 `LICENSE`。
+- `delivery-platform-server/prisma/seed-files/knowledge-catalog/` 下的示例文档是否允许公开。
+- 生产服务器地址是否需要从公开文档中移除或替换为示例地址。
+- 内部角色名、示例客户名、项目名是否需要匿名化。
+- 所有截图、浏览器产物、备份和日志是否已经排除在提交之外。
+- 是否已经执行完整依赖许可证扫描，并留存扫描结果。

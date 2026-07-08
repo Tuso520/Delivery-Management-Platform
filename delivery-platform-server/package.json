@@ -1,7 +1,7 @@
 {
   "name": "delivery-platform-server",
   "version": "1.0.0",
-  "description": "交付管理平台 - 后端服务",
+  "description": "交付管理平台后端服务",
   "private": true,
   "packageManager": "pnpm@10.34.4",
   "license": "UNLICENSED",

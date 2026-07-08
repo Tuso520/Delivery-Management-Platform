@@ -1,67 +1,68 @@
-# Development Guide
+# 开发规范
 
-## Prerequisites
+## 环境要求
 
-- Node.js 20.
-- pnpm.
-- Docker Desktop or Docker Engine for container tests.
+- Node.js 20。
+- pnpm。
+- Docker Desktop 或 Docker Engine，用于容器化测试。
 
-## Install
+## 安装依赖
 
 ```powershell
 pnpm install
 ```
 
-## Local Mock Server
+## 本地模拟服务
 
 ```powershell
 node scripts/local-test-server.mjs
 ```
 
-Default URL:
+默认访问地址：
 
 - `http://127.0.0.1:18080`
 
-Default mock account:
+默认模拟账号：
 
 - `admin / Admin@123456`
 
-## Frontend
+## 前端开发
 
 ```powershell
 pnpm --dir delivery-platform-web build
 ```
 
-Frontend conventions:
+前端约定：
 
-- Use Arco Design Vue components.
-- Keep controls compact and work-focused.
-- Prefer square or low-radius operational surfaces.
-- Keep filters simple and in one row when possible.
-- Validate real browser screenshots for layout-heavy changes.
-- Follow [UI/UX and Arco Design](ui-ux.md).
+- 使用 Arco Design Vue 组件。
+- 页面保持紧凑、清晰、偏工作台风格。
+- 表单、筛选区、表格、弹窗和按钮尽量复用统一组件。
+- 筛选项保持简洁，能一行展示时不要拆成多行。
+- 涉及布局的修改必须通过浏览器截图或实际页面检查。
+- 具体 UI 规范见 [UI/UX 与 Arco Design 规范](ui-ux.md)。
 
-## Backend
+## 后端开发
 
 ```powershell
 pnpm --filter ./delivery-platform-server type-check
 ```
 
-Backend conventions:
+后端约定：
 
-- Keep Prisma migrations guarded and explicit.
-- Seed scripts must be idempotent.
-- Do not clear business tables from seeds.
-- Preserve existing approved file versions when new uploads enter review.
-- Keep file preview logic centralized in attachment/file preview services.
+- Prisma 迁移必须可审查、可回滚，生产禁止破坏性 `db push`。
+- 种子脚本必须幂等，禁止清空业务表。
+- 新上传文件进入审批时，不能覆盖当前已审批版本。
+- 文件预览逻辑集中在附件和文件预览服务中维护。
+- Controller 只处理协议层，业务规则放在 Service。
 
-## Documentation Updates
+## 文档更新要求
 
-Update `docs/` when changing:
+以下内容变化时必须同步更新 `docs/`：
 
-- Product behavior.
-- Permission rules.
-- API contracts.
-- Data model or migration behavior.
-- Deployment flow.
-- Browser-tested workflows.
+- 产品行为。
+- 权限规则。
+- API 契约。
+- 数据模型或迁移策略。
+- 部署流程。
+- 浏览器真实验证结果。
+- 开源依赖或许可证信息。

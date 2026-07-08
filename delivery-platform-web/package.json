@@ -4,7 +4,7 @@
   "private": true,
   "packageManager": "pnpm@10.34.4",
   "type": "module",
-  "description": "交付管理平台 - Frontend",
+  "description": "交付管理平台前端工程",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

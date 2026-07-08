@@ -1,64 +1,64 @@
-# Architecture
+# 技术架构
 
-## High-Level Design
+## 总体结构
 
 ```text
-Browser
+浏览器
   |
-  | HTTPS/HTTP
+  | HTTP / HTTPS
   v
-Nginx frontend container
+Nginx 前端容器
   |
   | /api/v1
   v
-NestJS backend container
+NestJS 后端容器
   |
-  +--> MySQL 8        # relational business data
-  +--> Redis 7        # cache/session/rate related data
-  +--> MinIO          # file and attachment object storage
+  +--> MySQL 8        # 业务关系数据
+  +--> Redis 7        # 缓存、会话和限流相关数据
+  +--> MinIO          # 文件和附件对象存储
 ```
 
-## Frontend
+## 前端
 
-- Location: `delivery-platform-web/`
-- Framework: Vue 3 + TypeScript + Vite.
-- UI library: Arco Design Vue.
-- State: Pinia.
-- Routing: Vue Router hash routes.
-- API access: Axios wrapper under `src/api/`.
-- Shared preview UI: `src/components/AttachmentPreviewPane/` and preview modal wrappers.
+- 位置：`delivery-platform-web/`
+- 框架：Vue 3 + TypeScript + Vite。
+- UI 组件库：Arco Design Vue。
+- 状态管理：Pinia。
+- 路由：Vue Router，当前使用 hash 路由。
+- 接口调用：统一通过 `src/api/` 下的 Axios 封装。
+- 文件预览：主要复用 `src/components/AttachmentPreviewPane/` 和预览弹窗封装。
 
-## Backend
+## 后端
 
-- Location: `delivery-platform-server/`
-- Framework: NestJS 11 + TypeScript.
-- ORM: Prisma 5.
-- Database: MySQL 8.
-- Object storage: MinIO.
-- Auth: JWT, roles and permission guards.
-- File preview: attachment/file preview services generate metadata, signed links and server-side HTML preview for Office-style files.
+- 位置：`delivery-platform-server/`
+- 框架：NestJS 11 + TypeScript。
+- ORM：Prisma 5。
+- 数据库：MySQL 8。
+- 对象存储：MinIO。
+- 认证授权：JWT、角色和权限守卫。
+- 文件预览：附件和文件预览服务负责生成元数据、签名链接和 Office 风格只读 HTML 预览。
 
-## Data Domains
+## 数据领域
 
-- Project: ledger records, members, stages and project access.
-- Archive: generated archive items, current files, review status and upload guidance.
-- File and attachment: uploaded file metadata, storage path, version, current flag and review workflow.
-- Knowledge: categories, articles, attachments, preview/download heat.
-- Template: template category, attachment, remark, preview/download heat.
-- Approval/review: pending, approved, rejected and diff context.
-- Organization: departments, users, roles and permissions.
+- 项目：项目台账、项目成员、阶段、风险和项目访问范围。
+- 档案：档案目录、当前文件、审批状态、上传说明和版本记录。
+- 文件与附件：上传文件元数据、存储路径、版本、当前版本标识和审批流程。
+- 知识库：一级分类、知识条目、附件、预览热度和下载热度。
+- 文档模板：模板分类、附件、备注、预览热度和下载热度。
+- 审批：待审、通过、驳回和差异对比信息。
+- 组织：部门、用户、角色和权限。
 
-## Preview Strategy
+## 在线预览策略
 
-- PDF: PDF.js canvas rendering in the browser.
-- Images: browser image preview.
-- DOCX/XLSX/PPTX: server extracts readable OpenXML content into read-only document/spreadsheet/presentation HTML.
-- Legacy DOC/XLS/PPT: server extracts readable text and wraps it in document, spreadsheet or slide layouts.
-- Markdown/text: rendered as read-only text/Markdown.
+- PDF：浏览器端使用 PDF.js 进行只读渲染。
+- 图片：使用浏览器原生图片预览。
+- DOCX、XLSX、PPTX：后端提取 OpenXML 内容并生成只读文档、表格或演示样式 HTML。
+- DOC、XLS、PPT：后端提取可读文本，并按文档、表格或幻灯片布局展示。
+- Markdown 和文本：按只读文本或 Markdown 方式展示。
 
-## Permission Model
+## 权限模型
 
-- Menus and routes require permission codes.
-- Buttons use permission guards where applicable.
-- Backend controllers enforce JWT and permission checks.
-- Project data is scoped by project membership or elevated roles.
+- 菜单和路由需要权限码。
+- 按钮按需要使用权限守卫。
+- 后端 Controller 必须校验 JWT 和权限。
+- 项目数据默认按项目成员关系限制，高权限角色可查看更大范围。

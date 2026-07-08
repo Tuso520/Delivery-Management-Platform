@@ -1,28 +1,28 @@
-# Deployment Quick Entry
+# 部署快速入口
 
-The full deployment guide is maintained in [docs/deployment.md](docs/deployment.md).
+完整部署说明维护在 [docs/deployment.md](docs/deployment.md)。本文件只保留最常用的生产更新命令和健康检查命令。
 
-## Production Update
+## 生产更新
 
 ```bash
 cd /www/wwwroot/delivery-platform
 BRANCH=main bash deploy-git.sh deploy
 ```
 
-The Git deployment script:
+`deploy-git.sh` 会执行以下步骤：
 
-1. Fetches the target branch, tag or commit.
-2. Writes `RELEASE_ID` and `RELEASE_MANIFEST.txt`.
-3. Validates `.env`, Docker Compose, Dockerfiles and Prisma migration guards.
-4. Builds backend, backend-migrate and frontend images.
-5. Starts MySQL, Redis and MinIO.
-6. Stops backend/frontend before migration.
-7. Backs up MySQL, MinIO and `.env`.
-8. Runs guarded Prisma migration and idempotent seed data.
-9. Recreates backend/frontend.
-10. Verifies backend health, frontend health and release id.
+1. 拉取目标分支、标签或提交。
+2. 写入 `RELEASE_ID` 和 `RELEASE_MANIFEST.txt`。
+3. 检查 `.env`、Docker Compose、Dockerfile 和 Prisma 迁移保护脚本。
+4. 构建后端、迁移容器和前端镜像。
+5. 启动 MySQL、Redis 和 MinIO。
+6. 在迁移前停止后端和前端写入。
+7. 备份 MySQL、MinIO 和 `.env`。
+8. 执行受保护的 Prisma 迁移和幂等种子数据。
+9. 重建后端和前端容器。
+10. 检查后端健康、前端健康和发布版本号。
 
-## Health Checks
+## 健康检查
 
 ```bash
 curl -fsS http://127.0.0.1:8080/build-info.json
@@ -30,4 +30,4 @@ curl -fsS http://127.0.0.1:8080/api/v1/health
 docker compose ps
 ```
 
-The `releaseId` in `build-info.json` must match `git rev-parse --short=12 HEAD`.
+`build-info.json` 中的 `releaseId` 必须和 `git rev-parse --short=12 HEAD` 一致。

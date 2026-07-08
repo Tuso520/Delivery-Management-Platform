@@ -1,44 +1,44 @@
-# Testing Guide
+# 测试验收
 
-## Required Checks
+## 必跑检查
 
 ```powershell
 pnpm --filter ./delivery-platform-server type-check
 pnpm --dir delivery-platform-web build
 ```
 
-For UI changes, also perform browser verification for the changed pages.
+涉及前端界面时，还需要对变更页面做浏览器真实验证。
 
-## Browser Regression Scope
+## 浏览器回归范围
 
-The current critical browser flows are:
+当前关键浏览器流程包括：
 
-- Login.
-- Dashboard role-specific greeting.
-- Project ledger list, search and row actions.
-- Project archive stage tabs, upload guidance, item detail, upload entry and review entry.
-- Knowledge base category list, file remarks, heat indicators and file title preview.
-- Document template list and file title preview.
-- File preview for Word, Excel, PowerPoint, PDF, image and Markdown.
-- File review approval and rejection path.
+- 登录。
+- 数据看板按角色展示欢迎语和重点信息。
+- 项目台账列表、关键词搜索和行操作。
+- 项目档案阶段页签、上传说明、文件详情、上传入口和审批入口。
+- 知识库分类列表、文件备注、热度指标和点击标题预览。
+- 文档模板列表和点击标题预览。
+- Word、Excel、PowerPoint、PDF、图片和 Markdown 文件预览。
+- 文件审批通过和驳回链路。
 
-## 2026-07-08 Verification Summary
+## 2026-07-08 验证摘要
 
-Verified on production URL `http://42.193.176.248:8080`.
+验证地址：`http://42.193.176.248:8080`。
 
-| Area | Result |
+| 验证项 | 结果 |
 | --- | --- |
-| Release id | `1df2a618471e` |
-| Backend health | Passed |
-| Frontend health | Passed |
-| Admin login | Passed |
-| Project manager login | Passed |
-| Project ledger | 11 rows visible in admin UI |
-| Project manager project API | 9 visible projects for `pm_wang` |
-| Knowledge PDF preview | Passed |
-| Knowledge Word preview | Passed |
-| Knowledge Excel preview | Passed |
-| Knowledge PPT preview | Passed, including legacy `.ppt` slide layout |
-| Project archive | Stage tabs, upload guidance, review status and detail modal passed |
+| 发布版本 | `1df2a618471e` |
+| 后端健康检查 | 通过 |
+| 前端健康检查 | 通过 |
+| 管理员登录 | 通过 |
+| 项目经理登录 | 通过 |
+| 项目台账 | 管理员界面可见 11 条项目 |
+| 项目经理项目接口 | `pm_wang` 可见 9 个项目 |
+| 知识库 PDF 预览 | 通过 |
+| 知识库 Word 预览 | 通过 |
+| 知识库 Excel 预览 | 通过 |
+| 知识库 PPT 预览 | 通过，旧版 `.ppt` 使用幻灯片布局 |
+| 项目档案 | 阶段页签、上传说明、审批状态和详情弹窗通过 |
 
-Generated screenshots and temporary artifacts are intentionally excluded from Git.
+浏览器截图和临时测试产物不进入 Git。

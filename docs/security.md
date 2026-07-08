@@ -1,40 +1,40 @@
-# Security Guide
+# 安全说明
 
-## Secrets
+## 密钥与敏感信息
 
-Never commit:
+禁止提交：
 
 - `.env`
-- JWT secrets
-- database credentials
-- MinIO credentials
-- SSH credentials
-- GitHub tokens
-- production backup archives
+- JWT 密钥
+- 数据库账号密码
+- MinIO 账号密码
+- SSH 凭据
+- GitHub Token
+- 生产备份归档
 
-## Data Protection
+## 数据保护
 
-- Production deployment must back up MySQL and MinIO before migration.
-- File upload review must not overwrite the current approved file before approval.
-- Rejected uploads must remain non-current.
-- Approved uploads must deactivate previous current versions.
+- 生产部署必须在迁移前备份 MySQL 和 MinIO。
+- 文件上传审批通过前，不能覆盖当前已审批文件版本。
+- 被驳回的上传文件必须保持非当前版本。
+- 新文件审批通过后，旧的当前版本要自动失效。
 
-## Access Control
+## 访问控制
 
-- UI menus and buttons should follow permission codes.
-- Backend routes must enforce auth and permission checks.
-- Project data should be limited by project membership unless the role is elevated.
-- Knowledge and template management should be limited to standard administrators or elevated roles.
+- 前端菜单和按钮按权限码展示。
+- 后端接口必须执行认证和权限校验。
+- 项目数据默认按项目成员关系限制，高权限角色除外。
+- 知识库和文档模板管理应限制给标准管理员或高权限角色。
 
-## File Preview Safety
+## 文件预览安全
 
-- Online preview is read-only.
-- Preview links should be signed or authenticated.
-- Unsupported files should fall back to download rather than attempting unsafe execution.
-- Browser preview should not expose storage credentials.
+- 在线预览只能只读展示，不能在线编辑原文件。
+- 预览链接应使用签名链接或登录态鉴权。
+- 不支持的文件类型应回退到下载，不尝试执行文件内容。
+- 浏览器预览不能暴露对象存储密钥。
 
-## Operational Safety
+## 运维安全
 
-- Do not remove Docker named volumes manually.
-- Do not restore database backups unless the maintenance window and target backup are explicitly confirmed.
-- Keep `.env` only on the server.
+- 不要手动删除 Docker 命名卷。
+- 不要在未确认维护窗口和备份目标的情况下恢复数据库。
+- `.env` 只保存在服务器本地，不进入 Git。

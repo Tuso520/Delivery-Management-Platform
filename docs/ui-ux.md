@@ -1,42 +1,42 @@
-# UI/UX and Arco Design
+# 界面体验与 Arco Design 规范
 
-## Current Standard
+## 当前标准
 
-The platform uses Arco Design Vue as the primary UI component library.
+平台统一使用 Arco Design Vue 作为主要 UI 组件库。页面设计以企业内部工作台为目标，强调清晰、紧凑、稳定和可重复操作。
 
-## Migration Status
+## 迁移状态
 
-- `@arco-design/web-vue@2.58.0` is installed and imported from `delivery-platform-web/src/main.ts`.
-- New pages and new business components should use Arco Design Vue by default.
-- Existing pages should be migrated as part of related maintenance, not through unrelated broad rewrites.
+- 已安装 `@arco-design/web-vue@2.58.0`，并从 `delivery-platform-web/src/main.ts` 引入。
+- 新页面和新业务组件默认使用 Arco Design Vue。
+- 旧页面在相关维护中逐步迁移，避免无关的大范围重写。
 
-## Migration Priority
+## 迁移优先级
 
-When touching older UI, prioritize these components:
+维护旧页面时，优先检查以下组件：
 
-- Button
-- Form
-- Input
-- Select
-- Table
-- Modal
-- Drawer
-- Pagination
-- Message
-- Notification
+- 按钮
+- 表单
+- 输入框
+- 选择框
+- 表格
+- 弹窗
+- 抽屉
+- 分页
+- 消息提示
+- 通知提醒
 
-## Acceptance Requirements
+## 验收要求
 
-- `pnpm --dir delivery-platform-web build` passes.
-- Key pages have no visual regression.
-- Form validation, pagination, modal confirmation and error feedback work.
-- Loading, empty, error, disabled, readonly, no-permission and validation states are checked.
-- No additional UI component library is introduced.
+- `pnpm --dir delivery-platform-web build` 通过。
+- 关键页面没有明显视觉回退。
+- 表单校验、分页、弹窗确认和错误反馈正常。
+- 加载、空数据、错误、禁用、只读、无权限和校验失败状态都经过检查。
+- 不新增其他 UI 组件库。
 
-## Layout Rules
+## 布局规则
 
-- Operational pages should be compact and work-focused.
-- Keep filters minimal and aligned in one row where possible.
-- Avoid nested cards and oversized decorative surfaces.
-- Use internal scrolling for dense list frames instead of unstable outer page scrolling.
-- Keep file title preview interactions consistent across knowledge base and templates.
+- 业务页面保持紧凑、偏工作台风格。
+- 筛选项尽量少，并优先保持在一行。
+- 避免卡片套卡片和过大的装饰区域。
+- 列表较长时优先在内部框架滚动，避免外层页面滚动导致界面不稳定。
+- 知识库和文档模板的文件标题预览交互保持一致。

@@ -1,24 +1,27 @@
-# Release Notes
+# 版本记录
 
 ## 2026-07-08
 
-### Changed
+### 变更
 
-- Consolidated project documentation into GitHub-style `docs/` structure.
-- Removed phase-based project folders from the repository layout.
-- Improved legacy Office preview rendering:
-  - `.ppt` now uses presentation slide layout.
-  - `.xls` now uses spreadsheet table layout when readable text can be extracted.
-  - `.doc` remains document layout.
-- Expanded and verified project ledger, project archive, knowledge base and document template test data.
-- Switched production deployment to Git based server pull flow.
+- 项目文档合并为 GitHub 风格的 `docs/` 结构。
+- 从仓库布局中删除历史编号阶段目录。
+- 删除旧发布包链路，保留 Git 拉取部署链路。
+- 改进旧版 Office 文件预览：
+  - `.ppt` 使用演示文稿幻灯片布局。
+  - `.xls` 在能提取文本时使用表格布局。
+  - `.doc` 保持文档布局。
+- 补充并验证项目台账、项目档案、知识库和文档模板测试数据。
+- 生产部署切换为服务器从 Git 拉取的发布方式。
+- 项目介绍文档、贡献规范、安全说明、开源依赖说明统一改为中文。
 
-### Verified
+### 验证
 
-- Production release `1df2a618471e` deployed successfully.
-- Browser verification completed for knowledge previews, project ledger and project archive.
-- Data backup completed before migration.
+- 生产版本 `1df2a618471e` 部署成功。
+- 知识库预览、项目台账和项目档案完成浏览器验证。
+- 数据库迁移前已完成备份。
+- 2026-07-08 文档整理后，前端测试、前端构建、后端类型检查和 Git 空白检查通过。
 
-## Earlier
+## 更早记录
 
-See root [CHANGELOG.md](../CHANGELOG.md) for concise release history.
+简要版本历史见根目录 [CHANGELOG.md](../CHANGELOG.md)。
