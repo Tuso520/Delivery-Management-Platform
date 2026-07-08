@@ -187,6 +187,10 @@ export class AttachmentController {
       contentUrl,
     );
     response.setHeader('Content-Type', 'text/html; charset=utf-8');
+    response.setHeader(
+      'Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdn.jsdelivr.net; connect-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; object-src 'self'; frame-src 'self';",
+    );
     response.send(html);
   }
 

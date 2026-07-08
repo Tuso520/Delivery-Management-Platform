@@ -688,9 +688,51 @@ export class FileService {
         ? preview.html || `<img class="preview-image" src="${safeContentUrl}" alt="${title}" />`
         : preview.previewKind === 'pdf'
           ? `<main class="pdf-reader">
-              <object class="pdf-native-main" data="${safeContentUrl}" type="application/pdf" aria-label="${title}">
+              <div id="pdf-js-status" class="pdf-js-status">正在加载 PDF 页面...</div>
+              <div id="pdf-js-pages" class="pdf-js-pages"></div>
+              <object class="pdf-native-main pdf-native-fallback" data="${safeContentUrl}" type="application/pdf" aria-label="${title}">
                 ${preview.html || '<section class="preview-empty"><h2>PDF 预览</h2><p>当前文件未提取到可读文本层，请下载后查看原文件。</p></section>'}
               </object>
+              <script type="module">
+                import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs';
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
+                const pdfUrl = '${safeContentUrl}';
+                const status = document.getElementById('pdf-js-status');
+                const pages = document.getElementById('pdf-js-pages');
+                const fallback = document.querySelector('.pdf-native-fallback');
+                async function renderPdf() {
+                  const pdf = await pdfjsLib.getDocument({ url: pdfUrl }).promise;
+                  pages.innerHTML = '';
+                  const maxPages = Math.min(pdf.numPages, 60);
+                  for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
+                    if (status) status.textContent = '正在渲染第 ' + pageNumber + ' / ' + pdf.numPages + ' 页...';
+                    const page = await pdf.getPage(pageNumber);
+                    const pixelRatio = Math.min(window.devicePixelRatio || 1, 1.8);
+                    const viewport = page.getViewport({ scale: pixelRatio * 1.25 });
+                    const pageWrap = document.createElement('section');
+                    pageWrap.className = 'pdf-rendered-page';
+                    const pageLabel = document.createElement('div');
+                    pageLabel.className = 'pdf-rendered-label';
+                    pageLabel.textContent = '第 ' + pageNumber + ' 页';
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.width = viewport.width;
+                    canvas.height = viewport.height;
+                    canvas.style.width = Math.round(viewport.width / pixelRatio) + 'px';
+                    canvas.style.height = Math.round(viewport.height / pixelRatio) + 'px';
+                    pageWrap.appendChild(pageLabel);
+                    pageWrap.appendChild(canvas);
+                    pages.appendChild(pageWrap);
+                    await page.render({ canvasContext: context, viewport }).promise;
+                  }
+                  if (status) status.remove();
+                  if (fallback) fallback.remove();
+                }
+                renderPdf().catch(() => {
+                  if (status) status.textContent = 'PDF.js 加载失败，已切换浏览器原生预览。';
+                  if (fallback) fallback.style.display = 'block';
+                });
+              </script>
             </main>`
           : preview.previewKind === 'html'
             ? `<main class="preview-document">${preview.html || ''}</main>`
@@ -717,6 +759,11 @@ export class FileService {
     .preview-content { flex: 1; min-height: 0; padding: 16px; overflow: auto; }
     .preview-image { display: block; max-width: 100%; max-height: calc(100vh - 92px); margin: 0 auto; object-fit: contain; background: #fff; border: 1px solid #e5e6eb; }
     .pdf-reader { display: grid; gap: 12px; min-height: calc(100vh - 92px); }
+    .pdf-js-status { width: min(1120px, 100%); margin: 0 auto; padding: 12px 14px; border: 1px solid #d9dfe8; background: #fff; color: #4e5969; font-size: 13px; }
+    .pdf-js-pages { display: grid; gap: 18px; justify-items: center; }
+    .pdf-rendered-page { width: min(1120px, 100%); padding: 12px; border: 1px solid #d9dfe8; background: #fff; box-shadow: 0 16px 42px rgba(15, 23, 42, 0.08); overflow: auto; }
+    .pdf-rendered-label { margin-bottom: 8px; color: #86909c; font-size: 12px; }
+    .pdf-rendered-page canvas { display: block; max-width: 100%; height: auto !important; margin: 0 auto; background: #fff; }
     .pdf-native-main { width: min(1120px, 100%); height: calc(100vh - 92px); min-height: 720px; margin: 0 auto; border: 1px solid #d9dfe8; background: #fff; box-shadow: 0 16px 42px rgba(15, 23, 42, 0.08); }
     .pdf-page-fallback, .word-page { border: 1px solid #d9dfe8; background: #fff; }
     .pdf-page-fallback { min-height: calc(100vh - 92px); padding: 34px 42px; box-shadow: 0 16px 42px rgba(15, 23, 42, 0.12); }
