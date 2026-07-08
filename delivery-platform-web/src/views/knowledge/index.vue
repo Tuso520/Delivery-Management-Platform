@@ -19,7 +19,7 @@ import type {
 import type { ApprovalTask } from '@/types/platform'
 import { downloadBlob } from '@/utils/blob'
 import { arcoPrompt } from '@/utils/arco-dialog'
-import { openPreviewRedirect } from '@/utils/preview-link'
+import { getPreviewRedirectUrl } from '@/utils/preview-link'
 
 interface KnowledgeFileRow extends KnowledgeAttachment {
   articleId: string
@@ -238,8 +238,11 @@ function updateActiveCategoryByScroll(): void {
   activeCategoryId.value = currentId
 }
 
-function openAttachmentPreview(file: KnowledgeFileRow | KnowledgeAttachment): void {
-  openPreviewRedirect('attachment', file.id, { title: file.originalName || '在线预览' })
+function getAttachmentPreviewUrl(file: KnowledgeFileRow | KnowledgeAttachment): string {
+  return getPreviewRedirectUrl('attachment', file.id, { title: file.originalName || '在线预览' })
+}
+
+function markAttachmentPreview(file: KnowledgeFileRow | KnowledgeAttachment): void {
   incrementFileHeat(file.id, 'previewCount')
 }
 
@@ -559,13 +562,15 @@ onMounted(async () => {
               <template #file="{ record }">
                 <div class="file-name-cell">
                   <div class="file-title-line">
-                    <button
+                    <a
                       class="file-title-button"
-                      type="button"
-                      @click="openAttachmentPreview(record)"
+                      :href="getAttachmentPreviewUrl(record)"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      @click="markAttachmentPreview(record)"
                     >
                       {{ record.originalName }}
-                    </button>
+                    </a>
                     <span class="file-heat" title="在线预览热度">
                       <IconEye />
                       {{ record.previewCount || 0 }}
@@ -1040,6 +1045,7 @@ onMounted(async () => {
   font: inherit;
   font-weight: 600;
   text-align: left;
+  text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
 

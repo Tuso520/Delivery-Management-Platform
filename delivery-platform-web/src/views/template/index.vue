@@ -15,7 +15,7 @@ import type { PaginatedData } from '@/types/api'
 import type { ApprovalTask } from '@/types/platform'
 import type { TagType } from '@/types/ui'
 import { downloadBlob } from '@/utils/blob'
-import { openPreviewRedirect } from '@/utils/preview-link'
+import { getPreviewRedirectUrl } from '@/utils/preview-link'
 
 interface TemplateStage {
   code: string
@@ -279,12 +279,19 @@ function isHotTemplate(template: DocumentTemplate): boolean {
   return (template.previewCount || 0) + (template.downloadCount || 0) >= HOT_TEMPLATE_THRESHOLD
 }
 
-function openTemplatePreview(row: DocumentTemplate): void {
+function getTemplatePreviewUrl(row: DocumentTemplate): string {
   if (!row.attachmentId) {
+    return '#'
+  }
+  return getPreviewRedirectUrl('attachment', row.attachmentId as string, { title: row.name || '在线预览' })
+}
+
+function markTemplatePreview(row: DocumentTemplate, event?: MouseEvent): void {
+  if (!row.attachmentId) {
+    event?.preventDefault()
     Message.warning('该模板暂无可预览文件')
     return
   }
-  openPreviewRedirect('attachment', row.attachmentId as string, { title: row.name || '在线预览' })
   incrementTemplateHeat(row.id, 'previewCount')
 }
 
@@ -478,13 +485,15 @@ onMounted(fetchList)
               <template #name="{ record }">
                 <div class="template-name-cell">
                   <div class="template-title-line">
-                    <button
+                    <a
                       class="template-title-button"
-                      type="button"
-                      @click="openTemplatePreview(record)"
+                      :href="getTemplatePreviewUrl(record)"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      @click="markTemplatePreview(record, $event)"
                     >
                       {{ record.name }}
-                    </button>
+                    </a>
                     <span class="template-heat" title="在线预览热度">
                       <IconEye />
                       {{ record.previewCount || 0 }}
@@ -902,6 +911,7 @@ onMounted(fetchList)
   font: inherit;
   font-weight: 600;
   text-align: left;
+  text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
 

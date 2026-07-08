@@ -12,11 +12,11 @@ interface OpenSignedPreviewOptions {
 
 type PreviewSource = 'attachment' | 'file'
 
-export function openPreviewRedirect(
+export function getPreviewRedirectUrl(
   source: PreviewSource,
   id: string,
   options: OpenSignedPreviewOptions = {},
-): void {
+): string {
   const params = new URLSearchParams({
     source,
     id,
@@ -25,7 +25,15 @@ export function openPreviewRedirect(
     params.set('title', options.title)
   }
 
-  const targetUrl = `${window.location.origin}${window.location.pathname}${window.location.search}#/preview?${params.toString()}`
+  return `${window.location.origin}${window.location.pathname}${window.location.search}#/preview?${params.toString()}`
+}
+
+export function openPreviewRedirect(
+  source: PreviewSource,
+  id: string,
+  options: OpenSignedPreviewOptions = {},
+): void {
+  const targetUrl = getPreviewRedirectUrl(source, id, options)
   const opened = window.open(targetUrl, '_blank', 'noopener,noreferrer')
   if (!opened) {
     Message.warning('浏览器阻止了新窗口，请允许弹窗后重试')
