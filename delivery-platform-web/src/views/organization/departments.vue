@@ -96,7 +96,7 @@ onMounted(fetchData)
       default-expand-all
       :tree-props="{ children: 'children' }"
     >
-      <a-table-column prop="departmentName" label="閮ㄩ棬" :min-width="220" />
+      <a-table-column prop="departmentName" label="部门" :min-width="220" />
       <a-table-column prop="departmentCode" label="编码" :width="180" />
       <a-table-column prop="manager.realName" label="负责人" :width="120" />
       <a-table-column prop="userCount" label="人数" :width="80" />

@@ -1,7 +1,9 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { deflateSync } from 'node:zlib';
 
 import { FileStatus, PrismaClient } from '@prisma/client';
+import JSZip = require('jszip');
 import { Client } from 'minio';
 
 interface StorageContext {
@@ -381,7 +383,7 @@ async function seedProjectProcessAndPayments(
 async function seedProjectFilesAndReviews(
   prisma: PrismaClient,
   storage: StorageContext | undefined,
-  samples: SampleCatalog,
+  _samples: SampleCatalog,
   adminId: string,
   users: Array<{ id: string }>,
   projects: Array<{ id: string; projectCode: string }>,
@@ -437,12 +439,18 @@ async function seedProjectFilesAndReviews(
     }
 
     for (const [index, archiveItem] of selectedItems.entries()) {
-      const sampleName = selectSample(samples, preferredExts[index % preferredExts.length]);
-      const sampleExt = fileExt(sampleName);
-      const buffer = await readFile(join(samples.sampleDir, sampleName));
       const stageName = projectStageName(archiveItem.stageCode);
       const itemName = archiveItem.secondName || archiveItem.name;
+      const sampleExt = preferredExts[index % preferredExts.length];
       const originalName = `${project.projectCode}-${stageName}-${itemName}-示例${pad(index + 1)}.${sampleExt}`;
+      const buffer = await buildArchiveDemoFile({
+        fileName: originalName,
+        ext: sampleExt,
+        projectCode: project.projectCode,
+        stageName,
+        itemName,
+        usageDescription: archiveItem.usageDescription ?? '',
+      });
       const storagePath = `files/${project.id}/archive-demo-${archiveItem.id}-${sanitizeObjectName(originalName)}`;
 
       if (storage) {
@@ -1177,6 +1185,338 @@ async function seedKnowledgeFileUpdateApprovalCoverage(
   } else {
     await prisma.approvalAction.create({ data: actionData });
   }
+}
+
+interface ArchiveDemoFileContext {
+  fileName: string;
+  ext: string;
+  projectCode: string;
+  stageName: string;
+  itemName: string;
+  usageDescription: string;
+}
+
+async function buildArchiveDemoFile(context: ArchiveDemoFileContext): Promise<Buffer> {
+  if (context.ext === 'docx') return buildArchiveDocx(context);
+  if (context.ext === 'xlsx') return buildArchiveXlsx(context);
+  if (context.ext === 'pptx') return buildArchivePptx(context);
+  if (context.ext === 'pdf') return buildArchivePdf(context);
+  if (['png', 'jpg', 'jpeg'].includes(context.ext)) return buildArchivePng(960, 540);
+  return Buffer.from(buildArchivePlainText(context), 'utf8');
+}
+
+async function buildArchiveDocx(context: ArchiveDemoFileContext): Promise<Buffer> {
+  const zip = new JSZip();
+  zip.file(
+    '[Content_Types].xml',
+    xml(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`),
+  );
+  zip.file(
+    '_rels/.rels',
+    xml(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`),
+  );
+  zip.file(
+    'word/document.xml',
+    xml(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    ${docParagraph(context.fileName)}
+    ${docParagraph(`项目编号：${context.projectCode}`)}
+    ${docParagraph(`流程阶段：${context.stageName}`)}
+    ${docParagraph(`档案项：${context.itemName}`)}
+    ${docParagraph(`上传指导：${context.usageDescription || '请上传该档案项对应的最终版文件、审批记录或签字确认材料。'}`)}
+    ${docParagraph('审批要求：上传后自动进入审核流程，审核通过后作为项目档案当前版本。')}
+  </w:body>
+</w:document>`),
+  );
+  return zip.generateAsync({ type: 'nodebuffer' });
+}
+
+async function buildArchiveXlsx(context: ArchiveDemoFileContext): Promise<Buffer> {
+  const zip = new JSZip();
+  zip.file(
+    '[Content_Types].xml',
+    xml(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`),
+  );
+  zip.file(
+    '_rels/.rels',
+    xml(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+  );
+  zip.file(
+    'xl/workbook.xml',
+    xml(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="档案说明" sheetId="1" r:id="rId1"/>
+    <sheet name="审批清单" sheetId="2" r:id="rId2"/>
+  </sheets>
+</workbook>`),
+  );
+  zip.file(
+    'xl/_rels/workbook.xml.rels',
+    xml(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+</Relationships>`),
+  );
+
+  zip.file(
+    'xl/worksheets/sheet1.xml',
+    buildWorksheetXml([
+      ['字段', '内容', '说明', '状态'],
+      ['项目编号', context.projectCode, '项目档案归属', '待审核'],
+      ['流程阶段', context.stageName, '一级流程目录', '待审核'],
+      ['档案项', context.itemName, '上传位置', '待审核'],
+      ['文件名', context.fileName, '示例文件名', '已生成'],
+      ['上传指导', context.usageDescription || '请补充正式版资料。', '资料完整性说明', '待补充'],
+    ]),
+  );
+  zip.file(
+    'xl/worksheets/sheet2.xml',
+    buildWorksheetXml([
+      ['检查项', '要求', '责任人', '审核结果'],
+      ['文件完整性', '正文、附件、签字页齐全', '上传人', '待审核'],
+      ['版本号', '与项目档案目录一致', '项目经理', '待审核'],
+      ['审批记录', '审核通过后展示给项目成员', '审核人', '待审核'],
+    ]),
+  );
+  return zip.generateAsync({ type: 'nodebuffer' });
+}
+
+async function buildArchivePptx(context: ArchiveDemoFileContext): Promise<Buffer> {
+  const zip = new JSZip();
+  zip.file(
+    '[Content_Types].xml',
+    xml(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
+  <Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
+  <Override PartName="/ppt/slides/slide2.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
+</Types>`),
+  );
+  zip.file(
+    '_rels/.rels',
+    xml(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
+</Relationships>`),
+  );
+  zip.file(
+    'ppt/presentation.xml',
+    xml(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:sldIdLst>
+    <p:sldId id="256" r:id="rId1"/>
+    <p:sldId id="257" r:id="rId2"/>
+  </p:sldIdLst>
+</p:presentation>`),
+  );
+  zip.file(
+    'ppt/_rels/presentation.xml.rels',
+    xml(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide2.xml"/>
+</Relationships>`),
+  );
+  zip.file('ppt/slides/slide1.xml', buildSlideXml(context.itemName, [
+    `项目编号：${context.projectCode}`,
+    `流程阶段：${context.stageName}`,
+    `示例文件：${context.fileName}`,
+  ]));
+  zip.file('ppt/slides/slide2.xml', buildSlideXml('上传与审批要求', [
+    context.usageDescription || '请上传正式版资料并补充必要说明。',
+    '上传后自动进入审核流程。',
+    '审核通过后作为项目档案当前版本。',
+  ]));
+  return zip.generateAsync({ type: 'nodebuffer' });
+}
+
+function buildArchivePdf(context: ArchiveDemoFileContext): Buffer {
+  const stream = [
+    'BT',
+    '/F1 18 Tf',
+    '72 720 Td',
+    `(Archive file: ${escapePdfText(context.projectCode)}) Tj`,
+    '/F1 12 Tf',
+    '0 -30 Td',
+    `(Stage: ${escapePdfText(asciiFallback(context.stageName))}) Tj`,
+    '0 -20 Td',
+    `(Item: ${escapePdfText(asciiFallback(context.itemName))}) Tj`,
+    '0 -20 Td',
+    `(Name: ${escapePdfText(asciiFallback(context.fileName))}) Tj`,
+    '0 -20 Td',
+    '(This PDF verifies project archive preview and approval flow.) Tj',
+    'ET',
+  ].join('\n');
+
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`,
+  ];
+
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(pdf));
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = Buffer.byteLength(pdf);
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  pdf += offsets
+    .slice(1)
+    .map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`)
+    .join('');
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(pdf, 'utf8');
+}
+
+function buildArchivePng(width: number, height: number): Buffer {
+  const rowSize = 1 + width * 3;
+  const raw = Buffer.alloc(rowSize * height);
+  for (let y = 0; y < height; y += 1) {
+    const rowStart = y * rowSize;
+    raw[rowStart] = 0;
+    for (let x = 0; x < width; x += 1) {
+      const offset = rowStart + 1 + x * 3;
+      const header = y < 104;
+      const grid = Math.floor(x / 96) % 2 === Math.floor(y / 72) % 2;
+      raw[offset] = header ? 22 : grid ? 235 : 250;
+      raw[offset + 1] = header ? 93 : grid ? 245 : 248;
+      raw[offset + 2] = header ? 255 : grid ? 255 : 252;
+    }
+  }
+  return Buffer.concat([
+    Buffer.from('89504e470d0a1a0a', 'hex'),
+    chunk('IHDR', Buffer.concat([uint32(width), uint32(height), Buffer.from([8, 2, 0, 0, 0])])),
+    chunk('IDAT', deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+function buildArchivePlainText(context: ArchiveDemoFileContext): string {
+  return [
+    context.fileName,
+    `项目编号：${context.projectCode}`,
+    `流程阶段：${context.stageName}`,
+    `档案项：${context.itemName}`,
+    `上传指导：${context.usageDescription || '请上传该档案项对应文件。'}`,
+  ].join('\n');
+}
+
+function buildWorksheetXml(rows: string[][]): string {
+  return xml(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    ${rows
+      .map((row, rowIndex) => `<row r="${rowIndex + 1}">
+        ${row
+          .map((cell, cellIndex) => `<c r="${columnName(cellIndex)}${rowIndex + 1}" t="inlineStr"><is><t>${escapeXml(cell)}</t></is></c>`)
+          .join('')}
+      </row>`)
+      .join('')}
+  </sheetData>
+</worksheet>`);
+}
+
+function buildSlideXml(title: string, lines: string[]): string {
+  return xml(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:sp><p:txBody><a:p><a:r><a:t>${escapeXml(title)}</a:t></a:r></a:p></p:txBody></p:sp>
+      ${lines.map((line) => `<p:sp><p:txBody><a:p><a:r><a:t>${escapeXml(line)}</a:t></a:r></a:p></p:txBody></p:sp>`).join('')}
+    </p:spTree>
+  </p:cSld>
+</p:sld>`);
+}
+
+function docParagraph(text: string): string {
+  return `<w:p><w:r><w:t>${escapeXml(text)}</w:t></w:r></w:p>`;
+}
+
+function chunk(type: string, data: Buffer): Buffer {
+  const typeBuffer = Buffer.from(type, 'ascii');
+  return Buffer.concat([
+    uint32(data.length),
+    typeBuffer,
+    data,
+    uint32(crc32(Buffer.concat([typeBuffer, data]))),
+  ]);
+}
+
+function crc32(buffer: Buffer): number {
+  let crc = 0xffffffff;
+  for (const byte of buffer) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = crc & 1 ? 0xedb88320 ^ (crc >>> 1) : crc >>> 1;
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function uint32(value: number): Buffer {
+  const buffer = Buffer.alloc(4);
+  buffer.writeUInt32BE(value >>> 0, 0);
+  return buffer;
+}
+
+function columnName(index: number): string {
+  let value = index + 1;
+  let name = '';
+  while (value > 0) {
+    const remainder = (value - 1) % 26;
+    name = String.fromCharCode(65 + remainder) + name;
+    value = Math.floor((value - 1) / 26);
+  }
+  return name;
+}
+
+function xml(value: string): string {
+  return value.trim();
+}
+
+function escapeXml(value: string): string {
+  return String(value)
+    .replace(/&/gu, '&amp;')
+    .replace(/</gu, '&lt;')
+    .replace(/>/gu, '&gt;')
+    .replace(/"/gu, '&quot;')
+    .replace(/'/gu, '&apos;');
+}
+
+function escapePdfText(value: string): string {
+  return String(value).replace(/[()\\]/gu, '\\$&');
+}
+
+function asciiFallback(value: string): string {
+  const ascii = value.replace(/[^\x20-\x7e]/gu, ' ').replace(/\s+/gu, ' ').trim();
+  return ascii || 'Project archive item';
 }
 
 async function topUpOperationLogs(

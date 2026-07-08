@@ -252,10 +252,13 @@ async function renderXlsx(buffer: Buffer, fileName: string): Promise<string> {
     const rowGroups = splitXlsxTableGroups(rows);
     if (!rowGroups.length) continue;
     const sheetTitle = workbookSheetNames[index] || `工作表 ${index + 1}`;
+    const sheetHeading = isLikelyDuplicateFileTitle(sheetTitle, fileName)
+      ? ''
+      : `<h3>${escapeHtml(sheetTitle)}</h3>`;
 
     tables.push(`
       <section class="preview-sheet">
-        <h3>${escapeHtml(sheetTitle)}</h3>
+        ${sheetHeading}
         ${rowGroups.map((visibleRows, groupIndex) => {
           const columnCount = Math.min(
             Math.max(...visibleRows.map((row) => row.length), 1),
@@ -513,7 +516,7 @@ function renderPdfFallback(buffer: Buffer, fileName: string): string {
   const text = extractSimplePdfText(buffer);
   const body = text.length
     ? text.map((line) => `<p>${escapeHtml(line)}</p>`).join('\n')
-    : renderMessageBody('当前文件未能提取到可读文本层，请使用下方原始 PDF 阅读器或下载后查看。');
+    : renderMessageBody('当前文件未能提取到可读文本层，请下载后查看原文件。');
 
   return wrapPreviewHtml(
     fileName,

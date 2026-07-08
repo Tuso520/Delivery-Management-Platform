@@ -55,7 +55,8 @@
 }
 
 .project-selector {
-  width: min(560px, 50vw);
+  width: clamp(360px, 36vw, 620px) !important;
+  flex: 0 0 clamp(360px, 36vw, 620px);
 }
 
 .project-code-tag {

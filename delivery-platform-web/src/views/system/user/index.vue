@@ -269,7 +269,7 @@ onMounted(async () => {
             <a-option label="锁定" value="Locked" />
           </a-select>
         </a-form-item>
-        <a-form-item label="閮ㄩ棬">
+        <a-form-item label="部门">
           <a-tree-select
             v-model="queryParams.departmentId"
             :data="departmentTree"
@@ -315,7 +315,7 @@ onMounted(async () => {
           show-overflow-tooltip
         />
         <a-table-column prop="phone" label="手机号" :width="140" />
-        <a-table-column label="閮ㄩ棬" :width="140">
+        <a-table-column label="部门" :width="140">
           <template #default="{ row }">
             {{ row.departmentId ? departmentNames.get(row.departmentId) : '未分配 '}}
           </template>

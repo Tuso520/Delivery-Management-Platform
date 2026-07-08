@@ -24,7 +24,7 @@ interface KnowledgeCatalogContent {
 
 interface KnowledgeCatalogFile {
   name: string;
-  kind: 'document' | 'spreadsheet' | 'presentation' | 'pdf' | 'image';
+  kind: 'document' | 'spreadsheet' | 'presentation' | 'pdf' | 'image' | 'markdown';
   needsRevision?: boolean;
 }
 
@@ -448,8 +448,8 @@ async function cleanupLegacyAndDuplicateCategories(
       data: {
         status: 'Inactive',
         description: category.parentId
-          ? '宸插悎骞跺埌涓€绾х煡璇嗗垎绫伙紝鍘熶簩绾у唴瀹逛繚鐣欏湪鐭ヨ瘑鏉＄洰鏍囬鍜屾枃浠剁储寮曚腑'
-          : '宸叉寜鏍囧噯鐭ヨ瘑搴撶洰褰曟竻鐞嗕负闈炴爣鍑嗗垎绫',
+          ? '已合并到一级知识分类，原二级内容保留在知识条目标题和文件索引中'
+          : '已按标准知识库目录清理为非标准分类',
       },
     });
   }
@@ -519,6 +519,7 @@ function labelForKind(kind: KnowledgeCatalogFile['kind']): string {
     presentation: 'PPT 演示',
     pdf: 'PDF 文档',
     image: '图片',
+    markdown: 'Markdown 文档',
   };
   return labels[kind];
 }
@@ -542,6 +543,7 @@ function mimeTypeFor(fileName: string): string {
     jpeg: 'image/jpeg',
     gif: 'image/gif',
     txt: 'text/plain; charset=utf-8',
+    md: 'text/markdown; charset=utf-8',
   };
   return mimeTypes[ext] ?? 'application/octet-stream';
 }

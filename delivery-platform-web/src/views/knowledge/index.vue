@@ -8,6 +8,7 @@ import 'md-editor-v3/lib/style.css'
 import { attachmentApi } from '@/api/attachment'
 import { knowledgeApi } from '@/api/knowledge'
 import { approvalApi } from '@/api/platform'
+import AttachmentPreviewModal from '@/components/AttachmentPreviewModal/index.vue'
 import AttachmentPreviewPane from '@/components/AttachmentPreviewPane/index.vue'
 import type {
   KnowledgeArticle,
@@ -19,7 +20,6 @@ import type {
 import type { ApprovalTask } from '@/types/platform'
 import { downloadBlob } from '@/utils/blob'
 import { arcoPrompt } from '@/utils/arco-dialog'
-import { openPreviewRedirect } from '@/utils/preview-link'
 
 interface KnowledgeFileRow extends KnowledgeAttachment {
   articleId: string
@@ -40,6 +40,8 @@ const categories = ref<KnowledgeCategory[]>([])
 const articles = ref<KnowledgeArticle[]>([])
 const activeCategoryId = ref('')
 const fileStreamRef = ref<HTMLElement>()
+const previewVisible = ref(false)
+const previewTarget = ref<KnowledgeFileRow | KnowledgeAttachment>()
 
 const revisionVisible = ref(false)
 const revisionSubmitting = ref(false)
@@ -240,10 +242,9 @@ function updateActiveCategoryByScroll(): void {
 }
 
 function openAttachmentPreview(file: KnowledgeFileRow | KnowledgeAttachment): void {
-  openPreviewRedirect('attachment', file.id, {
-    title: file.originalName,
-    onOpened: () => incrementFileHeat(file.id, 'previewCount'),
-  })
+  previewTarget.value = file
+  previewVisible.value = true
+  incrementFileHeat(file.id, 'previewCount')
 }
 
 function resetCreateForm(): void {
@@ -841,6 +842,13 @@ onMounted(async () => {
         <a-empty v-else-if="!diffLoading" description="暂无可对比内容" />
       </a-spin>
     </a-modal>
+
+    <AttachmentPreviewModal
+      v-model:visible="previewVisible"
+      source="attachment"
+      :attachment-id="previewTarget?.id"
+      :title="previewTarget?.originalName || '在线预览'"
+    />
 
   </section>
 </template>

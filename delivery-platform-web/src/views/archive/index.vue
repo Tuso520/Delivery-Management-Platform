@@ -6,11 +6,15 @@ import { archiveTemplateApi } from '@/api/archive-template'
 import { fileApi } from '@/api/file'
 import { projectApi } from '@/api/project'
 import { reviewApi } from '@/api/review'
+import AttachmentPreviewModal from '@/components/AttachmentPreviewModal/index.vue'
 import FileUploader from '@/components/FileUploader/index.vue'
 import { arcoConfirm } from '@/utils/arco-dialog'
 import { downloadBlob } from '@/utils/blob'
-import { openPreviewRedirect } from '@/utils/preview-link'
-import { localizeProjectStage } from '@/utils/project-localization'
+import {
+  localizeProjectRisk,
+  localizeProjectStage,
+  localizeProjectStatus,
+} from '@/utils/project-localization'
 import { useLocaleStore } from '@/store/locale'
 import type {
   ArchiveItem,
@@ -56,6 +60,9 @@ const loadingReviews = ref(false)
 const reviewDialogVisible = ref(false)
 const selectedReviewFileId = ref('')
 const selectedReviewFileName = ref('')
+const previewVisible = ref(false)
+const previewFileId = ref('')
+const previewTitle = ref('在线预览')
 
 const defaultAllowedTypes = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'jpg', 'jpeg', 'png']
 
@@ -213,11 +220,15 @@ async function handleUploadSuccess(): Promise<void> {
 }
 
 function openFilePreview(file: ArchiveFile): void {
-  openPreviewRedirect('file', file.id, { title: file.originalName })
+  previewFileId.value = file.id
+  previewTitle.value = file.originalName
+  previewVisible.value = true
 }
 
 function openReviewPreview(row: PendingReview): void {
-  openPreviewRedirect('file', row.fileId, { title: row.file.fileName })
+  previewFileId.value = row.fileId
+  previewTitle.value = row.file.fileName
+  previewVisible.value = true
 }
 
 function openReviewDialog(row: PendingReview): void {
@@ -277,6 +288,13 @@ function formatDate(value?: string): string {
   return date.toLocaleString('zh-CN', { hour12: false })
 }
 
+function formatDateOnly(value?: string): string {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleDateString('zh-CN')
+}
+
 function openProjectDetail(): void {
   showProjectDetail.value = true
 }
@@ -301,6 +319,7 @@ watch(activeArchiveView, (view) => {
             v-loading="loadingProjects"
             placeholder="请选择项目"
             class="project-selector"
+            style="width: clamp(360px, 36vw, 620px)"
             filterable
             @change="handleProjectChange"
           >
@@ -550,16 +569,16 @@ watch(activeArchiveView, (view) => {
           {{ selectedProject.projectType || '-' }}
         </a-descriptions-item>
         <a-descriptions-item label="项目状态">
-          {{ selectedProject.projectStatus || '-' }}
+          {{ selectedProject.projectStatus ? localizeProjectStatus(selectedProject.projectStatus, localeStore.currentLocale) : '-' }}
         </a-descriptions-item>
         <a-descriptions-item label="当前阶段">
-          {{ selectedProject.currentStage || '-' }}
+          {{ selectedProject.currentStage ? localizeProjectStage(selectedProject.currentStage, localeStore.currentLocale) : '-' }}
         </a-descriptions-item>
         <a-descriptions-item label="风险等级">
-          {{ selectedProject.riskLevel || '-' }}
+          {{ selectedProject.riskLevel ? localizeProjectRisk(selectedProject.riskLevel, localeStore.currentLocale) : '-' }}
         </a-descriptions-item>
         <a-descriptions-item label="计划周期" :span="2">
-          {{ selectedProject.startDate || '-' }} 至 {{ selectedProject.plannedEndDate || '-' }}
+          {{ formatDateOnly(selectedProject.startDate) }} 至 {{ formatDateOnly(selectedProject.plannedEndDate) }}
         </a-descriptions-item>
       </a-descriptions>
     </a-modal>
@@ -657,6 +676,13 @@ watch(activeArchiveView, (view) => {
       :file-id="selectedReviewFileId"
       :file-name="selectedReviewFileName"
       @review-complete="handleReviewComplete"
+    />
+
+    <AttachmentPreviewModal
+      v-model:visible="previewVisible"
+      source="file"
+      :attachment-id="previewFileId"
+      :title="previewTitle"
     />
   </div>
 </template>

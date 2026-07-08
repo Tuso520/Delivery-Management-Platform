@@ -297,7 +297,6 @@ async function loadPreview(): Promise<void> {
       objectUrl.value = URL.createObjectURL(blob)
     } else if (nextPreview.previewKind === 'pdf') {
       const blob = await loadPreviewBlob(props.attachmentId)
-      objectUrl.value = URL.createObjectURL(blob)
       await renderPdf(blob, nextPreview.html || '')
     } else if (nextPreview.previewKind === 'html') {
       await enhanceHtmlPreview()
@@ -343,18 +342,8 @@ watch(() => props.source, loadPreview)
           class="preview-html pdf-fallback-html"
           v-html="pdfFallbackHtml"
         />
-        <section v-if="objectUrl" class="pdf-native-reader" :class="{ open: pdfRenderError }">
-          <details :open="Boolean(pdfRenderError)">
-            <summary>浏览器原始 PDF 阅读器</summary>
-            <iframe
-              class="pdf-native-frame"
-              :src="`${objectUrl}#toolbar=1&navpanes=0&view=FitH`"
-              title="PDF 原始预览"
-            />
-          </details>
-        </section>
         <a-empty
-          v-else-if="pdfRenderError && !objectUrl"
+          v-else-if="pdfRenderError"
           :description="pdfRenderError"
           class="preview-empty"
         />
@@ -484,34 +473,6 @@ watch(() => props.source, loadPreview)
   display: block;
   max-width: 100%;
   height: auto !important;
-}
-
-.pdf-native-reader {
-  width: min(1040px, 100%);
-  margin: 0 auto 10px;
-  border: 1px solid #d9dfe8;
-  background: #fff;
-
-  summary {
-    cursor: pointer;
-    padding: 10px 12px;
-    color: #4e5969;
-    font-size: 13px;
-    user-select: none;
-  }
-
-  &.open {
-    min-height: 560px;
-  }
-}
-
-.pdf-native-frame {
-  width: 100%;
-  height: min(72vh, 760px);
-  min-height: 520px;
-  border: 0;
-  border-top: 1px solid #d9dfe8;
-  background: #fff;
 }
 
 .markdown-preview {
@@ -683,13 +644,14 @@ watch(() => props.source, loadPreview)
 }
 
 .preview-html :deep(.preview-slide) {
+  width: min(960px, calc(100% - 32px));
   aspect-ratio: 16 / 9;
-  max-width: 960px;
   margin: 0 auto 18px;
   padding: 48px 56px;
   border: 1px solid #d9dfe8;
   background: #fff;
   box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12);
+  overflow: auto;
 }
 
 .preview-empty {

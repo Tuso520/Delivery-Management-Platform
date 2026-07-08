@@ -6,6 +6,7 @@ import type { TableColumnData } from '@arco-design/web-vue'
 import { IconDownload, IconEye } from '@arco-design/web-vue/es/icon'
 import { MdEditor } from 'md-editor-v3'
 import 'md-editor-v3/lib/style.css'
+import AttachmentPreviewModal from '@/components/AttachmentPreviewModal/index.vue'
 import { arcoConfirm } from '@/utils/arco-dialog'
 import { templateApi } from '@/api/template'
 import { attachmentApi } from '@/api/attachment'
@@ -13,7 +14,6 @@ import type { DocumentTemplate, QueryTemplateDto } from '@/types/template'
 import type { PaginatedData } from '@/types/api'
 import type { TagType } from '@/types/ui'
 import { downloadBlob } from '@/utils/blob'
-import { openPreviewRedirect } from '@/utils/preview-link'
 
 interface TemplateStage {
   code: string
@@ -36,6 +36,9 @@ const createVisible = ref(false)
 const createSubmitting = ref(false)
 const createMode = ref<'markdown' | 'upload'>('markdown')
 const createFiles = ref<File[]>([])
+const previewVisible = ref(false)
+const previewAttachmentId = ref('')
+const previewTitle = ref('在线预览')
 const createForm = ref({
   name: '',
   stageCode: '',
@@ -66,6 +69,9 @@ const templateCategoryOptions = [
   { value: 'Form', label: '表单模板' },
   { value: 'Report', label: '报告模板' },
   { value: 'Config', label: '配置模板' },
+  { value: 'Plan', label: '项目计划' },
+  { value: 'Meeting', label: '会议纪要' },
+  { value: 'Record', label: '记录模板' },
 ]
 
 const NEW_TEMPLATE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
@@ -214,10 +220,10 @@ function openTemplatePreview(row: DocumentTemplate): void {
     Message.warning('该模板暂无可预览文件')
     return
   }
-  openPreviewRedirect('attachment', row.attachmentId as string, {
-    title: row.name,
-    onOpened: () => incrementTemplateHeat(row.id, 'previewCount'),
-  })
+  previewAttachmentId.value = row.attachmentId as string
+  previewTitle.value = row.name
+  previewVisible.value = true
+  incrementTemplateHeat(row.id, 'previewCount')
 }
 
 function resetCreateForm(): void {
@@ -559,6 +565,13 @@ onMounted(fetchList)
         </label>
       </div>
     </a-modal>
+
+    <AttachmentPreviewModal
+      v-model:visible="previewVisible"
+      source="attachment"
+      :attachment-id="previewAttachmentId"
+      :title="previewTitle"
+    />
   </section>
 </template>
 

@@ -111,6 +111,7 @@
           "files": [
             { "name": "项目过程影像管理办法（试行）.docx", "kind": "document" },
             { "name": "项目影像拍摄清单.png", "kind": "image" },
+            { "name": "项目资料上传说明.md", "kind": "markdown" },
             { "name": "管道带压开孔操作规程.docx", "kind": "document" },
             { "name": "3d可视化引擎使用分析0715.pdf", "kind": "pdf" },
             { "name": "标准项目服务器配置_售前标准_20240904.xlsx", "kind": "spreadsheet" }

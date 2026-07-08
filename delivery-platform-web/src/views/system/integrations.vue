@@ -228,7 +228,7 @@ onMounted(fetchRecords)
           <a-form-item label="应用 Secret">
             <a-input v-model="config.secret" type="password" show-password />
           </a-form-item>
-          <a-form-item label="缇ゆ満鍣ㄤ汉">
+          <a-form-item label="群机器人">
             <a-input v-model="config.webhookUrl" placeholder="可选 Webhook URL" />
           </a-form-item>
         </template>
@@ -240,7 +240,7 @@ onMounted(fetchRecords)
             <a-input v-model="config.appSecret" type="password" show-password />
           </a-form-item>
           <a-form-item label="机器人地址">
-            <a-input v-model="config.webhookUrl" placeholder="椋炰功缇ゆ満鍣ㄤ汉 Webhook" />
+            <a-input v-model="config.webhookUrl" placeholder="飞书群机器人 Webhook" />
           </a-form-item>
           <a-form-item label="Encrypt Key">
             <a-input v-model="config.encryptKey" type="password" show-password />
