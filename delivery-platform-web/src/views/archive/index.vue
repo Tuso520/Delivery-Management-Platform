@@ -587,7 +587,7 @@ watch(activeArchiveView, (view) => {
       :mask-closable="false"
       :footer="false"
     >
-      <a-spin :loading="loadingItem">
+      <a-spin :loading="loadingItem" class="item-detail-spin">
         <div v-if="currentItem" class="item-detail">
           <section class="detail-guide">
             <div>

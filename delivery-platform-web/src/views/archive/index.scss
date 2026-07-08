@@ -248,6 +248,12 @@
   gap: 14px;
 }
 
+.item-detail-spin,
+.item-detail-spin :deep(.arco-spin-children) {
+  display: block;
+  width: 100%;
+}
+
 .detail-guide {
   width: 100%;
   display: flex;
