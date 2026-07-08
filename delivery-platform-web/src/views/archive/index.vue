@@ -469,9 +469,9 @@ watch(activeArchiveView, (view) => {
               stripe
               class="archive-table"
               empty-text="当前阶段暂无档案项"
-              :scroll="{ y: '100%', x: 1200 }"
+              :scroll="{ y: '100%', x: 1040 }"
             >
-              <a-table-column label="档案项" :width="280">
+              <a-table-column label="档案项" :width="220">
                 <template #default="{ row }">
                   <div class="archive-name-cell">
                     <strong>{{ row.secondName || row.name }}</strong>
@@ -479,28 +479,28 @@ watch(activeArchiveView, (view) => {
                   </div>
                 </template>
               </a-table-column>
-              <a-table-column label="上传指导" :width="420" show-overflow-tooltip>
+              <a-table-column label="上传指导" :width="360" show-overflow-tooltip>
                 <template #default="{ row }">{{ row.guideText }}</template>
               </a-table-column>
-              <a-table-column label="文件" :width="72" align="center">
+              <a-table-column label="文件" :width="60" align="center">
                 <template #default="{ row }">{{ row.files?.length || 0 }}</template>
               </a-table-column>
-              <a-table-column label="状态" :width="100">
+              <a-table-column label="状态" :width="86">
                 <template #default="{ row }">
                   <a-tag :type="getStatusTag(row.status).type" size="small">
                     {{ getStatusTag(row.status).label }}
                   </a-tag>
                 </template>
               </a-table-column>
-              <a-table-column label="负责人" :width="110">
+              <a-table-column label="负责人" :width="86">
                 <template #default="{ row }">{{ row.responsibleUser?.realName || '-' }}</template>
               </a-table-column>
-              <a-table-column label="审核人" :width="110">
+              <a-table-column label="审核人" :width="86">
                 <template #default="{ row }">
                   {{ row.reviewUser?.realName || row.responsibleUser?.realName || '-' }}
                 </template>
               </a-table-column>
-              <a-table-column label="操作" :width="112" align="center" fixed="right">
+              <a-table-column label="操作" :width="104" align="center" fixed="right">
                 <template #default="{ row }">
                   <a-button type="text" size="mini" @click="viewItemDetail(row.id)">
                     查看/上传
