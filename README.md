@@ -1,72 +1,94 @@
-# 交付管理平台
+# Delivery Management Platform
 
-面向软件交付中心、项目实施团队和管理层的企业级交付管理系统。平台覆盖项目台账、项目档案、文件审核、交付标准、知识库、团队绩效、组织权限和系统配置，支持多国家、多币种、多语言的交付过程管控。
+企业级交付管理平台，面向软件交付中心、项目经理、专业工程师、采购、财务、HSE 与标准管理员，覆盖项目台账、项目档案、文件审批、交付流程、检查模板、文档模板、知识库、绩效与组织权限等流程。
 
-## 技术栈
+## Features
 
-- 前端：Vue 3、TypeScript、Arco Design Vue、Pinia、Vue Router、Vite、vue-i18n、Axios
-- 后端：NestJS 11、TypeScript、Prisma 5、MySQL 8、Redis 7、MinIO
-- 部署：Docker Compose、Nginx、Node.js 20、pnpm
-- 测试：Vitest、Jest、本地模拟服务、Docker Compose 配置校验
+- 项目台账：项目状态、国家、类型、风险、阶段、合同金额与成员管理。
+- 项目档案：按交付一级流程生成档案目录，支持上传指导、文件审批、版本留痕和在线预览。
+- 标准与知识：知识库、文档模板、档案模板、交付流程、检查模板与工具中心。
+- 在线预览：支持 PDF、Word、Excel、PowerPoint、图片和 Markdown 的只读预览。
+- 权限体系：基于角色与权限点控制菜单、按钮、接口和项目数据访问。
+- 部署体系：Docker Compose 本地测试、Git 拉取生产部署、数据库和 MinIO 数据保护。
 
-## 核心功能
+## Tech Stack
 
-- 工作台：数据看板、我的待办、交付风险与关键指标。
-- 项目管理：项目台账、项目档案、文件审核、工时日报、项目复盘。
-- 标准与知识：交付流程、检查模板、档案模板、文档模板、知识库、工具中心、培训记录。
-- 绩效与团队：目标绩效、技能评估、培训参与。
-- 组织与权限：组织架构、用户管理、角色权限、细粒度权限控制。
-- 系统设置：国家、币种汇率、语言翻译、通知审批、操作日志、备份存储、接口集成。
+- Frontend: Vue 3, TypeScript, Vite, Pinia, Vue Router, Arco Design Vue, Axios.
+- Backend: NestJS 11, TypeScript, Prisma 5, MySQL 8, Redis 7, MinIO.
+- Runtime: Docker Compose, Nginx, Node.js 20, pnpm.
+- Quality: TypeScript type check, Vite production build, Prisma guarded migration, browser regression screenshots.
 
-## 工程入口
+## Repository Layout
 
-- `delivery-platform-web/`：前端源码。
-- `delivery-platform-server/`：后端源码、Prisma schema 和种子数据。
-- `docker/`：数据库初始化和容器辅助配置。
-- `scripts/`：本地模拟、Docker、发布包和部署脚本。
-- `00_项目说明/` 至 `11_复盘归档/`：标准化项目文档，当前工程唯一有效文档入口。
-- `DEPLOYMENT.md`：服务器 Git 拉取部署说明。
+```text
+.
+├── .github/                  # GitHub Actions workflow definitions
+├── delivery-platform-web/     # Vue frontend application
+├── delivery-platform-server/  # NestJS backend, Prisma schema, seed data
+├── docker/                    # Container helper configuration
+├── docs/                      # Product, architecture, development and operations docs
+├── scripts/                   # Local test, Docker and release helper scripts
+├── deploy-git.sh              # Git based production deployment
+├── docker-compose.yml         # Production-like compose entry
+├── docker-compose.test.yml    # Local Docker test compose entry
+├── DEPLOYMENT.md              # Deployment quick entry
+└── README.md
+```
 
-## 标准目录
+Historical phase documents have been consolidated into `docs/` for a cleaner GitHub-style project structure.
 
-- `00_项目说明/`：项目背景、工程总览、原始资料和标准流程入口。
-- `01_产品设计/`：产品方案、模块边界、信息架构。
-- `02_需求分析/`：需求规格、业务规则、验收口径。
-- `03_UIUX设计/`：Arco Design 设计规范、页面体验与组件迁移记录。
-- `04_技术设计/`：架构、数据、权限、API、集成设计。
-- `05_代码实现/`：源码结构、模块清单、实现约定。
-- `06_测试验收/`：测试计划、Docker 验收、本地模拟验收。
-- `07_代码审查/`：代码审查记录和整改项。
-- `08_安全性能/`：安全、漏洞、性能和数据保护。
-- `09_部署运维/`：Git 部署、Docker 本地测试、数据保护、回滚。
-- `10_最终交付/`：交付清单和发布说明。
-- `11_复盘归档/`：流程复盘和后续改进。
-
-## 本地模拟测试
+## Quick Start
 
 ```powershell
+pnpm --filter ./delivery-platform-server type-check
 pnpm --dir delivery-platform-web build
 node scripts/local-test-server.mjs
 ```
 
-默认访问地址：
+Local mock URL:
 
-- 平台：http://127.0.0.1:18080
-- 登录账号：`admin`
-- 登录密码：`Admin@123456`
+- Platform: `http://127.0.0.1:18080`
+- Admin account: `admin`
+- Admin password: `Admin@123456`
 
-## Docker 本地测试
+Docker local test:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\local-docker.ps1 up -Build
 ```
 
-默认访问地址：
+## Documentation
 
-- 平台：http://delivery-platform.localhost:18080
-- 健康检查：http://delivery-platform.localhost:18080/api/v1/health
-- 后端直连：http://127.0.0.1:13000/api/v1/health
+- [Documentation Index](docs/README.md)
+- [Product Overview](docs/product.md)
+- [Architecture](docs/architecture.md)
+- [Development Guide](docs/development.md)
+- [Deployment Guide](docs/deployment.md)
+- [Testing Guide](docs/testing.md)
+- [Security Guide](docs/security.md)
+- [Release Notes](docs/release.md)
 
-## 开发规范
+## Production Deployment
 
-开发和 AI 协作规范见 `AGENTS.md`。新增功能必须同步更新标准目录中的产品、需求、UI/UX、技术、测试、部署和交付文档。
+Production deployment is Git based. Push to GitHub, then run on the server:
+
+```bash
+cd /www/wwwroot/delivery-platform
+BRANCH=main bash deploy-git.sh deploy
+```
+
+The deployment script keeps server-only `.env`, backups and Docker named volumes outside Git, and creates MySQL plus MinIO backups before migrations.
+
+## Current Verified Environment
+
+- Production URL: `http://42.193.176.248:8080`
+- Latest verified release: `1df2a618471e`
+- Verification date: `2026-07-08`
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Security
+
+See [SECURITY.md](SECURITY.md). Do not commit `.env`, production backups, release bundles, browser screenshots or local test artifacts.

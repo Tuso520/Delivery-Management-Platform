@@ -9,14 +9,14 @@ import {
 describe('project localization', () => {
   it('uses Chinese labels for the Chinese locale', () => {
     expect(localizeProjectRisk('Critical', 'zh-CN')).toBe('严重')
-    expect(localizeProjectStage('04_construction', 'zh-CN')).toBe('施工与安装')
+    expect(localizeProjectStage('04_construction', 'zh-CN')).toBe('施工与调试')
     expect(localizeProjectStatus('Active', 'zh-CN')).toBe('进行中')
   })
 
   it('uses English labels for the English locale', () => {
     expect(localizeProjectRisk('Critical', 'en-US')).toBe('Critical')
     expect(localizeProjectStage('04_construction', 'en-US')).toBe(
-      'Construction & Installation',
+      'Construction & Commissioning',
     )
     expect(localizeProjectStatus('Active', 'en-US')).toBe('Active')
   })
