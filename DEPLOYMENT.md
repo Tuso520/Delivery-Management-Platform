@@ -20,14 +20,15 @@ BRANCH=main bash deploy-git.sh deploy
 7. 备份 MySQL、MinIO 和 `.env`。
 8. 执行受保护的 Prisma 迁移和幂等种子数据。
 9. 重建后端和前端容器。
-10. 检查后端健康、前端健康和发布版本号。
+10. 检查后端依赖就绪状态、前端响应和发布版本号；失败时记录诊断并尝试回滚。
 
 ## 健康检查
 
 ```bash
 curl -fsS http://127.0.0.1:8080/build-info.json
 curl -fsS http://127.0.0.1:8080/api/v1/health
+curl -fsS http://127.0.0.1:8080/api/v1/ready
 docker compose ps
 ```
 
-`build-info.json` 中的 `releaseId` 必须和 `git rev-parse --short=12 HEAD` 一致。
+`/api/v1/health` 只确认后端进程响应；`/api/v1/ready` 还会检查 MySQL、Redis 和 MinIO。`build-info.json` 中的 `releaseId` 必须和 `git rev-parse --short=12 HEAD` 一致。

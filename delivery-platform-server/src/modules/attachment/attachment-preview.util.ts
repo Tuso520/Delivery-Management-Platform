@@ -4,6 +4,7 @@ import { XMLParser } from 'fast-xml-parser';
 export type AttachmentPreviewKind =
   | 'image'
   | 'pdf'
+  | 'video'
   | 'html'
   | 'text'
   | 'unsupported';
@@ -13,7 +14,7 @@ export interface AttachmentPreviewResult {
   fileExt: string;
   mimeType: string;
   previewKind: AttachmentPreviewKind;
-  viewer: 'image' | 'pdf' | 'document' | 'spreadsheet' | 'presentation' | 'text' | 'download';
+  viewer: 'image' | 'pdf' | 'video' | 'document' | 'spreadsheet' | 'presentation' | 'text' | 'download';
   title: string;
   html?: string;
   text?: string;
@@ -35,6 +36,7 @@ const xmlParser = new XMLParser({
 
 const imageExtensions = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp']);
 const pdfExtensions = new Set(['pdf']);
+const videoExtensions = new Set(['mp4', 'mov', 'webm', 'm4v', 'ogv']);
 const textExtensions = new Set(['md', 'txt', 'csv', 'log']);
 const serverPreviewExtensions = new Set([
   'doc',
@@ -51,7 +53,9 @@ export function canPreviewWithoutServer(fileExt: string, mimeType: string): bool
   return (
     imageExtensions.has(ext) ||
     pdfExtensions.has(ext) ||
+    videoExtensions.has(ext) ||
     mimeType.startsWith('image/') ||
+    mimeType.startsWith('video/') ||
     mimeType === 'application/pdf'
   );
 }
@@ -89,6 +93,13 @@ export async function buildAttachmentPreview(
       previewKind: 'pdf',
       viewer: 'pdf',
       html: input.buffer ? renderPdfFallback(input.buffer, input.fileName) : undefined,
+    };
+  }
+  if (videoExtensions.has(fileExt) || input.mimeType.startsWith('video/')) {
+    return {
+      ...base,
+      previewKind: 'video',
+      viewer: 'video',
     };
   }
 

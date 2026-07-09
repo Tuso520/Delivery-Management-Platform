@@ -26,7 +26,7 @@ NestJS 后端容器
 - 状态管理：Pinia。
 - 路由：Vue Router，当前使用 hash 路由。
 - 接口调用：统一通过 `src/api/` 下的 Axios 封装。
-- 文件预览：主要复用 `src/components/AttachmentPreviewPane/` 和预览弹窗封装。
+- 文件预览：由应用根节点挂载单一预览弹窗，业务页面通过 `useFilePreview` 打开；内容复用 `FilePreviewRouter` 和 `AttachmentPreviewPane`。
 
 ## 后端
 
@@ -50,11 +50,14 @@ NestJS 后端容器
 
 ## 在线预览策略
 
+- 常规预览入口统一使用当前页面内的接近全视口弹窗；文件差异对比保留同一弹窗内的双栏预览。
 - PDF：浏览器端使用 PDF.js 进行只读渲染。
 - 图片：使用浏览器原生图片预览。
 - DOCX、XLSX、PPTX：后端提取 OpenXML 内容并生成只读文档、表格或演示样式 HTML。
 - DOC、XLS、PPT：后端提取可读文本，并按文档、表格或幻灯片布局展示。
 - Markdown 和文本：按只读文本或 Markdown 方式展示。
+- 媒体：文件中心的视频和音频使用浏览器原生媒体控件；通用附件兼容预览当前支持视频。
+- ONLYOFFICE：配置完整时作为文件中心增强预览/编辑能力；未配置、不可用或会话失败时回落到同一弹窗内的兼容只读预览。
 
 ## 权限模型
 

@@ -207,13 +207,31 @@ export class FileController {
   }
 
   @Get(':id/preview')
-  @Permissions('file:download')
+  @Permissions('file:preview', 'file:download')
   @ApiOperation({ summary: '获取项目档案文件在线预览内容' })
   async getPreview(
     @Param('id') id: string,
     @CurrentUser() user: JwtPayload,
   ) {
     return this.fileService.getPreview(id, user.sub);
+  }
+
+  @Get(':id/preview-content')
+  @Permissions('file:preview', 'file:download')
+  @RawResponse()
+  @ApiOperation({ summary: '读取项目档案文件预览流（不计为下载）' })
+  async getPreviewContent(
+    @Param('id') id: string,
+    @CurrentUser() user: JwtPayload,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const content = await this.fileService.getPreviewContent(id, user.sub);
+    response.setHeader('Content-Type', content.mimeType);
+    response.setHeader(
+      'Content-Disposition',
+      `inline; filename*=UTF-8''${encodeURIComponent(content.fileName)}`,
+    );
+    return new StreamableFile(content.stream);
   }
 
   @Get(':id/signed-preview')

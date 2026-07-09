@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, reactive, onMounted } from 'vue'
 import { Message } from '@arco-design/web-vue'
+import type { FormInstance } from '@arco-design/web-vue'
 import { arcoConfirm, arcoPrompt } from '@/utils/arco-dialog'
 import { departmentApi } from '@/api/platform'
 import { userApi } from '@/api/user'
@@ -10,6 +11,7 @@ import {
   getUserStatusLabel as statusLabel,
   getUserStatusTagType as statusTagType,
   passwordFormRules as pwdFormRules,
+  validateArcoForm,
   type UserFormModel,
 } from './form-config'
 import UserFormDialog from './UserFormDialog.vue'
@@ -43,7 +45,7 @@ const roleLoading = ref(false)
 const pwdDialogVisible = ref(false)
 const currentUserForPwd = ref<string>('')
 const pwdFormData = reactive({ newPassword: '' })
-const pwdFormRef = ref()
+const pwdFormRef = ref<FormInstance>()
 const departmentNames = computed(() => {
   const result = new Map<string, string>()
   const collect = (nodes: DepartmentNode[]): void => {
@@ -227,8 +229,7 @@ const openResetPassword = (row: UserListItem) => {
   pwdDialogVisible.value = true
 }
 const handleResetPassword = async () => {
-  const valid = await pwdFormRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!await validateArcoForm(pwdFormRef.value)) return
   actionLoading.value = true
   try {
     await userApi.resetPassword(currentUserForPwd.value, { newPassword: pwdFormData.newPassword })
@@ -470,7 +471,7 @@ onMounted(async () => {
             v-model="pwdFormData.newPassword"
             type="password"
             show-password
-            :maxlength="255"
+            :maxlength="100"
             placeholder="请输入新密码"
           />
         </a-form-item>

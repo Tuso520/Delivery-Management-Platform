@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import type { FormInstance } from '@arco-design/web-vue'
 import type { DepartmentNode } from '@/types/platform'
-import { userFormRules, type UserFormModel } from './form-config'
+import { userFormRules, validateArcoForm, type UserFormModel } from './form-config'
 
 defineProps<{
   isEdit: boolean
@@ -18,8 +18,7 @@ const formData = defineModel<UserFormModel>('formData', { required: true })
 const formRef = ref<FormInstance>()
 
 async function handleSubmit(): Promise<void> {
-  const valid = await formRef.value?.validate().catch(() => false)
-  if (valid) emit('submit')
+  if (await validateArcoForm(formRef.value)) emit('submit')
 }
 </script>
 

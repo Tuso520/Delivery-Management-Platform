@@ -3,11 +3,13 @@ import { onMounted, ref } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { attachmentApi } from '@/api/attachment'
 import type { Attachment } from '@/api/attachment'
-import { openBlob } from '@/utils/blob'
+import { useFilePreview } from '@/composables/useFilePreview'
 import { dictionaryApi, workforceApi } from '@/api/platform'
 import { userApi } from '@/api/user'
 import type { DictionaryItem, TrainingPlan } from '@/types/platform'
 import type { UserListItem } from '@/types/user'
+
+const filePreview = useFilePreview()
 
 const loading = ref(false)
 const records = ref<TrainingPlan[]>([])
@@ -147,8 +149,8 @@ async function uploadMaterials(): Promise<void> {
   await openMaterials(selectedTraining.value)
 }
 
-async function openMaterial(item: Attachment): Promise<void> {
-  openBlob(await attachmentApi.getContent(item.id))
+function openMaterial(item: Attachment): void {
+  filePreview.openPreview({ source: 'attachment', id: item.id, title: item.originalName })
 }
 
 async function deleteMaterial(item: Attachment): Promise<void> {

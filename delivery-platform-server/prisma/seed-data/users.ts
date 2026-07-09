@@ -3,6 +3,7 @@ import * as bcrypt from 'bcrypt';
 
 import {
   resolveSeedPassword,
+  shouldResetExistingSeedUserPasswords,
   type SeedPasswordKey,
 } from './seed-password';
 
@@ -110,23 +111,40 @@ const userDefs: UserSeed[] = [
 ];
 
 export async function seedUsers(prisma: PrismaClient): Promise<void> {
+  const resetExistingPasswords = shouldResetExistingSeedUserPasswords();
+
   for (const user of userDefs) {
     const existingUser = await prisma.user.findUnique({
       where: { username: user.username },
     });
-    const createdUser = existingUser
-      ?? await prisma.user.create({
-          data: {
-            username: user.username,
-            password: await bcrypt.hash(
-              resolveSeedPassword(user.passwordKey),
-              12,
-            ),
-            realName: user.realName,
-            email: user.email,
-            status: 'Active',
-          },
+
+    let seededUser = existingUser;
+    if (existingUser && resetExistingPasswords) {
+      seededUser = await prisma.user.update({
+        where: { id: existingUser.id },
+        data: {
+          password: await bcrypt.hash(
+            resolveSeedPassword(user.passwordKey),
+            12,
+          ),
+        },
       });
+    }
+
+    if (!seededUser) {
+      seededUser = await prisma.user.create({
+        data: {
+          username: user.username,
+          password: await bcrypt.hash(
+            resolveSeedPassword(user.passwordKey),
+            12,
+          ),
+          realName: user.realName,
+          email: user.email,
+          status: 'Active',
+        },
+      });
+    }
 
     // Find the role
     const role = await prisma.role.findUnique({
@@ -144,7 +162,7 @@ export async function seedUsers(prisma: PrismaClient): Promise<void> {
     const existingUserRole = await prisma.userRole.findUnique({
       where: {
         userId_roleId: {
-          userId: createdUser.id,
+          userId: seededUser.id,
           roleId: role.id,
         },
       },
@@ -153,7 +171,7 @@ export async function seedUsers(prisma: PrismaClient): Promise<void> {
     if (!existingUserRole) {
       await prisma.userRole.create({
         data: {
-          userId: createdUser.id,
+          userId: seededUser.id,
           roleId: role.id,
         },
       });

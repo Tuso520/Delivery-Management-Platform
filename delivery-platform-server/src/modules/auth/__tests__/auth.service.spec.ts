@@ -97,18 +97,18 @@ describe('AuthService', () => {
     it('should throw UnauthorizedException when user is not found', async () => {
       prisma.user.findFirst.mockResolvedValue(null);
 
-      await expect(
-        service.validateUser('nonexistent', 'password123'),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.validateUser('nonexistent', 'password123')).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it('should throw UnauthorizedException when password is wrong', async () => {
       prisma.user.findFirst.mockResolvedValue(mockUser);
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
 
-      await expect(
-        service.validateUser('testuser', 'wrongpassword'),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.validateUser('testuser', 'wrongpassword')).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it('should throw UnauthorizedException when account is Inactive', async () => {
@@ -117,9 +117,9 @@ describe('AuthService', () => {
         status: 'Inactive',
       });
 
-      await expect(
-        service.validateUser('testuser', 'password123'),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.validateUser('testuser', 'password123')).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it('should throw UnauthorizedException when account is Locked', async () => {
@@ -128,9 +128,9 @@ describe('AuthService', () => {
         status: 'Locked',
       });
 
-      await expect(
-        service.validateUser('testuser', 'password123'),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.validateUser('testuser', 'password123')).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it('should deduplicate permissions from multiple roles', async () => {
@@ -140,9 +140,7 @@ describe('AuthService', () => {
           {
             role: {
               roleCode: 'PROJECT_MANAGER',
-              rolePermissions: [
-                { permission: { permissionCode: 'project:view' } },
-              ],
+              rolePermissions: [{ permission: { permissionCode: 'project:view' } }],
             },
           },
           {
@@ -181,14 +179,18 @@ describe('AuthService', () => {
       expect(jwtService.sign).toHaveBeenCalledWith(
         expect.objectContaining({ sub: 'user-1', username: 'testuser' }),
       );
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: { lastLoginAt: expect.any(Date) },
+      });
     });
 
     it('should throw UnauthorizedException when credentials are invalid', async () => {
       prisma.user.findFirst.mockResolvedValue(null);
 
-      await expect(
-        service.login({ username: 'baduser', password: 'badpass' }),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.login({ username: 'baduser', password: 'badpass' })).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
   });
 
@@ -204,10 +206,7 @@ describe('AuthService', () => {
 
       await service.logout('jwt-token');
 
-      expect(redisService.blacklistToken).toHaveBeenCalledWith(
-        'token-id',
-        expect.any(Number),
-      );
+      expect(redisService.blacklistToken).toHaveBeenCalledWith('token-id', expect.any(Number));
     });
   });
 
@@ -226,9 +225,7 @@ describe('AuthService', () => {
     it('should throw NotFoundException when user does not exist', async () => {
       prisma.user.findFirst.mockResolvedValue(null);
 
-      await expect(service.getProfile('nonexistent')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.getProfile('nonexistent')).rejects.toThrow(NotFoundException);
     });
 
     it('should return empty arrays when user has no roles', async () => {

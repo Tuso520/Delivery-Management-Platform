@@ -5,7 +5,8 @@ import { Message } from '@arco-design/web-vue'
 import { arcoConfirm, arcoPrompt } from '@/utils/arco-dialog'
 import { attachmentApi } from '@/api/attachment'
 import type { Attachment } from '@/api/attachment'
-import { openBlob } from '@/utils/blob'
+import { useFilePreview } from '@/composables/useFilePreview'
+import { downloadBlob } from '@/utils/blob'
 import { countryApi } from '@/api/country'
 import { dictionaryApi } from '@/api/platform'
 import { languageApi } from '@/api/language'
@@ -19,6 +20,7 @@ import type { DocumentTemplate, DocumentTemplateVersion } from '@/types/template
 
 const route = useRoute()
 const router = useRouter()
+const filePreview = useFilePreview()
 const templateId = computed(() => String(route.params.id ?? ''))
 const isEdit = computed(() => Boolean(templateId.value && templateId.value !== 'create'))
 
@@ -169,8 +171,12 @@ const selectVersionFile = (event: Event) => {
   versionFile.value = (event.target as HTMLInputElement).files?.[0] ?? null
 }
 
-const openAttachment = async (item: Attachment) => {
-  openBlob(await attachmentApi.getContent(item.id))
+const openAttachment = (item: Attachment) => {
+  filePreview.openPreview({ source: 'attachment', id: item.id, title: item.originalName })
+}
+
+const downloadAttachment = async (item: Attachment) => {
+  downloadBlob(await attachmentApi.getContent(item.id), item.originalName)
 }
 
 const deleteAttachment = async (item: Attachment) => {
@@ -353,10 +359,13 @@ onMounted(async () => {
         <a-table-column prop="fileExt" label="格式" :width="80" />
         <a-table-column prop="uploader.realName" label="上传人" :width="110" />
         <a-table-column prop="createdAt" label="上传时间" :width="180" />
-        <a-table-column label="操作" :width="130">
+        <a-table-column label="操作" :width="170">
           <template #default="{ row }">
             <a-button text type="primary" @click="openAttachment(row)">
-              预览/下载
+              预览
+            </a-button>
+            <a-button text @click="downloadAttachment(row)">
+              下载
             </a-button>
             <a-button text status="danger" type="secondary" @click="deleteAttachment(row)">
               删除

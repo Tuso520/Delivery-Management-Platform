@@ -14,7 +14,10 @@ import {
   type ProcessRecordPayload,
   type ProjectProcessRecord,
 } from '@/types/process-record'
-import { downloadBlob, openBlob } from '@/utils/blob'
+import { useFilePreview } from '@/composables/useFilePreview'
+import { downloadBlob } from '@/utils/blob'
+
+const filePreview = useFilePreview()
 
 const loading = ref(false)
 const records = ref<ProjectProcessRecord[]>([])
@@ -128,8 +131,8 @@ async function openFiles(record: ProjectProcessRecord): Promise<void> {
   attachments.value = page.list
 }
 
-async function previewFile(file: Attachment): Promise<void> {
-  openBlob(await attachmentApi.getContent(file.id))
+function previewFile(file: Attachment): void {
+  filePreview.openPreview({ source: 'attachment', id: file.id, title: file.originalName })
 }
 
 async function downloadFile(file: Attachment): Promise<void> {

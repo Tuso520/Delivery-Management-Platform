@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  UnauthorizedException,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { v4 as uuidv4 } from 'uuid';
@@ -33,7 +29,10 @@ export class AuthService {
   /**
    * 提取用户角色和权限（去掉重复逻辑）
    */
-  private extractRolesAndPermissions(user: UserWithRoles): { roles: string[]; permissions: string[] } {
+  private extractRolesAndPermissions(user: UserWithRoles): {
+    roles: string[];
+    permissions: string[];
+  } {
     const roles = user.userRoles.map((ur) => ur.role.roleCode);
     const permissions = [
       ...new Set(
@@ -45,7 +44,10 @@ export class AuthService {
     return { roles, permissions };
   }
 
-  async validateUser(username: string, password: string): Promise<Omit<JwtPayload, 'iat' | 'exp' | 'jti'>> {
+  async validateUser(
+    username: string,
+    password: string,
+  ): Promise<Omit<JwtPayload, 'iat' | 'exp' | 'jti'>> {
     const user = await this.prisma.user.findFirst({
       where: { username, deletedAt: null },
       select: {
@@ -100,10 +102,16 @@ export class AuthService {
     };
   }
 
-  async login(loginDto: LoginDto): Promise<{ accessToken: string; user: Omit<JwtPayload, 'iat' | 'exp' | 'jti'> }> {
+  async login(
+    loginDto: LoginDto,
+  ): Promise<{ accessToken: string; user: Omit<JwtPayload, 'iat' | 'exp' | 'jti'> }> {
     const payload = await this.validateUser(loginDto.username, loginDto.password);
     const jti = uuidv4();
     const accessToken = this.jwtService.sign({ ...payload, jti });
+    await this.prisma.user.update({
+      where: { id: payload.sub },
+      data: { lastLoginAt: new Date() },
+    });
 
     return {
       accessToken,

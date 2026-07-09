@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import type Viewer from 'viewerjs'
@@ -8,8 +8,12 @@ import type { FilePreviewMode, FilePreviewSession, XmindOutlineNode } from '@/ap
 import { downloadBlob } from '@/utils/blob'
 import { renderSafeMarkdown } from '@/utils/markdown-preview'
 
+const AttachmentPreviewPane = defineAsyncComponent(
+  () => import('@/components/AttachmentPreviewPane/index.vue'),
+)
+
 type PdfJsModule = typeof import('pdfjs-dist/legacy/build/pdf.mjs')
-type ViewerConstructor = typeof import('viewerjs')['default']
+type ViewerConstructor = (typeof import('viewerjs'))['default']
 type OnlyOfficeEditor = { destroyEditor?: () => void }
 type OpenSeadragonViewer = {
   destroy: () => void
@@ -28,16 +32,19 @@ declare global {
   }
 }
 
-const props = withDefaults(defineProps<{
-  fileId?: string
-  mode?: FilePreviewMode
-  height?: string
-  compact?: boolean
-}>(), {
-  mode: 'view',
-  height: '72vh',
-  compact: false,
-})
+const props = withDefaults(
+  defineProps<{
+    fileId?: string
+    mode?: FilePreviewMode
+    height?: string
+    compact?: boolean
+  }>(),
+  {
+    mode: 'view',
+    height: '72vh',
+    compact: false,
+  },
+)
 
 let pdfjsLibPromise: Promise<PdfJsModule> | null = null
 let viewerConstructorPromise: Promise<ViewerConstructor> | null = null
@@ -59,6 +66,7 @@ const markdownToc = ref<Array<{ id: string; level: number; text: string }>>([])
 const mediaError = ref('')
 const pdfPageCount = ref(0)
 const pdfError = ref('')
+const fallbackToCompatiblePreview = ref(false)
 
 const paneStyle = computed(() => ({ '--file-preview-height': props.height }))
 const officeElementId = computed(() => `onlyoffice-editor-${props.fileId || 'empty'}`)
@@ -106,6 +114,7 @@ function clearViewers(): void {
 async function loadPreview(): Promise<void> {
   clearViewers()
   session.value = undefined
+  fallbackToCompatiblePreview.value = false
   if (!props.fileId) return
 
   loading.value = true
@@ -115,8 +124,11 @@ async function loadPreview(): Promise<void> {
     await nextTick()
     await renderActiveViewer(nextSession)
   } catch (error) {
-    console.error('File preview session failed', error)
-    Message.error('预览会话加载失败')
+    console.warn('File preview session failed; using compatible preview', error)
+    clearViewers()
+    session.value = undefined
+    fallbackToCompatiblePreview.value = true
+    Message.warning('高级预览暂不可用，已切换兼容预览')
   } finally {
     loading.value = false
   }
@@ -233,10 +245,14 @@ async function renderDeepZoom(url: string): Promise<void> {
 
 async function renderOnlyOffice(nextSession: FilePreviewSession): Promise<void> {
   const office = nextSession.onlyOffice
-  if (!office?.available || !office.docsUrl || !office.config) return
+  if (!office?.available || !office.docsUrl || !office.config) {
+    throw new Error('ONLYOFFICE is unavailable')
+  }
   await loadOnlyOfficeScript(office.docsUrl)
   await nextTick()
-  if (!officeRef.value || !window.DocsAPI) return
+  if (!officeRef.value || !window.DocsAPI) {
+    throw new Error('ONLYOFFICE API did not initialize')
+  }
   officeRef.value.id = officeElementId.value
   onlyOfficeEditor = new window.DocsAPI.DocEditor(officeElementId.value, office.config)
 }
@@ -297,12 +313,14 @@ function renderXmindSheets(sheets: Array<{ title: string; root: XmindOutlineNode
     return '<div class="xmind-empty">未能读取 XMind 大纲，请下载后查看。</div>'
   }
   return sheets
-    .map((sheet) => `
+    .map(
+      (sheet) => `
       <section class="xmind-sheet">
         <h3>${escapeHtml(sheet.title)}</h3>
         ${renderXmindNode(sheet.root)}
       </section>
-    `)
+    `,
+    )
     .join('')
 }
 
@@ -340,12 +358,7 @@ onBeforeUnmount(() => {
         <a-space size="mini">
           <a-tag v-if="route?.editable" color="green">可编辑</a-tag>
           <a-tag v-else>只读</a-tag>
-          <a-button
-            v-if="canDownload"
-            size="mini"
-            :loading="downloading"
-            @click="downloadOriginal"
-          >
+          <a-button v-if="canDownload" size="mini" :loading="downloading" @click="downloadOriginal">
             下载
           </a-button>
         </a-space>
@@ -354,11 +367,12 @@ onBeforeUnmount(() => {
       <main class="preview-body">
         <section v-if="route?.viewer === 'onlyoffice'" class="office-viewer">
           <div v-if="session.onlyOffice?.available" ref="officeRef" class="office-frame" />
-          <a-result
+          <AttachmentPreviewPane
             v-else
-            status="warning"
-            title="Office 预览暂不可用"
-            :subtitle="session.onlyOffice?.reason || route.reason || '请配置 ONLYOFFICE Docs 后使用在线预览。'"
+            :attachment-id="props.fileId"
+            source="file"
+            :height="props.height"
+            compact
           />
         </section>
 
@@ -409,12 +423,23 @@ onBeforeUnmount(() => {
         <section v-else-if="route?.viewer === 'xmind'" class="xmind-viewer" v-html="xmindHtml" />
 
         <section v-else-if="route?.viewer === 'video'" class="media-viewer">
-          <video controls playsinline preload="metadata" :src="session.urls.content" @error="handleMediaError" />
+          <video
+            controls
+            playsinline
+            preload="metadata"
+            :src="session.urls.content"
+            @error="handleMediaError"
+          />
           <a-empty v-if="mediaError" :description="mediaError" />
         </section>
 
         <section v-else-if="route?.viewer === 'audio'" class="media-viewer audio-viewer">
-          <audio controls preload="metadata" :src="session.urls.content" @error="handleMediaError" />
+          <audio
+            controls
+            preload="metadata"
+            :src="session.urls.content"
+            @error="handleMediaError"
+          />
           <a-empty v-if="mediaError" :description="mediaError" />
         </section>
 
@@ -427,6 +452,13 @@ onBeforeUnmount(() => {
         </section>
       </main>
     </div>
+    <AttachmentPreviewPane
+      v-else-if="fallbackToCompatiblePreview && props.fileId"
+      :attachment-id="props.fileId"
+      source="file"
+      :height="props.height"
+      compact
+    />
     <a-empty v-else-if="!loading" description="请选择需要预览的文件" class="preview-empty" />
   </a-spin>
 </template>
@@ -450,8 +482,39 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
 
-  &.compact .preview-body {
-    padding: 8px;
+  &.compact {
+    grid-template-rows: minmax(0, 1fr);
+
+    .preview-header {
+      display: none;
+    }
+
+    .preview-body {
+      padding: 0;
+    }
+
+    .viewer-toolbar {
+      display: none;
+    }
+
+    .office-viewer,
+    .pdf-viewer,
+    .image-viewer,
+    .deep-image-viewer,
+    .markdown-viewer,
+    .xmind-viewer,
+    .media-viewer,
+    .fallback-viewer {
+      width: 100%;
+      margin: 0;
+    }
+
+    .office-frame,
+    .image-stage,
+    .deep-image-stage {
+      height: var(--file-preview-height);
+      border: 0;
+    }
   }
 }
 
@@ -505,9 +568,9 @@ onBeforeUnmount(() => {
 .xmind-viewer,
 .media-viewer,
 .fallback-viewer {
-  width: min(1280px, 100%);
+  width: 100%;
   min-height: 100%;
-  margin: 0 auto;
+  margin: 0;
 }
 
 .office-frame {
@@ -668,7 +731,7 @@ onBeforeUnmount(() => {
   padding: 1px 4px;
   border-radius: 3px;
   background: #f1f3f6;
-  font-family: Consolas, "SFMono-Regular", monospace;
+  font-family: Consolas, 'SFMono-Regular', monospace;
   font-size: 0.92em;
 }
 

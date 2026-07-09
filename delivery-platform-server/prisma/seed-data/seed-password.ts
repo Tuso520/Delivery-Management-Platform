@@ -47,3 +47,21 @@ export function resolveSeedPassword(
   }
   return placeholder ? developmentPasswords[key] : value;
 }
+
+export function shouldResetExistingSeedUserPasswords(
+  environment: NodeJS.ProcessEnv = process.env,
+): boolean {
+  const configured = environment.SEED_RESET_EXISTING_USER_PASSWORDS
+    ?.trim()
+    .toLowerCase();
+
+  if (configured === 'true' || configured === '1' || configured === 'yes') {
+    return true;
+  }
+
+  if (configured === 'false' || configured === '0' || configured === 'no') {
+    return false;
+  }
+
+  return environment.NODE_ENV !== 'production';
+}

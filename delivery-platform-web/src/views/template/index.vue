@@ -8,12 +8,12 @@ import { arcoConfirm } from '@/utils/arco-dialog'
 import { templateApi } from '@/api/template'
 import { attachmentApi } from '@/api/attachment'
 import { approvalApi } from '@/api/platform'
+import { useFilePreview } from '@/composables/useFilePreview'
 import type { DocumentTemplate, QueryTemplateDto } from '@/types/template'
 import type { PaginatedData } from '@/types/api'
 import type { ApprovalTask } from '@/types/platform'
 import type { TagType } from '@/types/ui'
 import { downloadBlob } from '@/utils/blob'
-import { getPreviewRedirectUrl } from '@/utils/preview-link'
 
 const MdEditor = defineAsyncComponent(() =>
   Promise.all([
@@ -34,6 +34,7 @@ interface TemplateSection {
 }
 
 const router = useRouter()
+const filePreview = useFilePreview()
 
 const loading = ref(false)
 const templateList = ref<DocumentTemplate[]>([])
@@ -297,21 +298,16 @@ function displayTemplateFileName(row: DocumentTemplate): string {
   return `${sourceName}.${format}`
 }
 
-function getTemplatePreviewUrl(row: DocumentTemplate): string {
+function previewTemplate(row: DocumentTemplate): void {
   if (!row.attachmentId) {
-    return '#'
-  }
-  return getPreviewRedirectUrl('attachment', row.attachmentId, {
-    title: displayTemplateFileName(row),
-  })
-}
-
-function handleTemplateTitleClick(row: DocumentTemplate, event?: MouseEvent): void {
-  if (!row.attachmentId) {
-    event?.preventDefault()
     showMissingTemplateFile()
     return
   }
+  filePreview.openPreview({
+    source: 'attachment',
+    id: row.attachmentId,
+    title: displayTemplateFileName(row),
+  })
   incrementTemplateHeat(row.id, 'previewCount')
 }
 
@@ -505,21 +501,10 @@ onMounted(fetchList)
               <template #name="{ record }">
                 <div class="template-name-cell">
                   <div class="template-title-line">
-                    <a
-                      v-if="record.attachmentId"
-                      class="template-title-button"
-                      :href="getTemplatePreviewUrl(record)"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      @click="handleTemplateTitleClick(record, $event)"
-                    >
-                      {{ displayTemplateFileName(record) }}
-                    </a>
                     <button
-                      v-else
                       class="template-title-button"
                       type="button"
-                      @click="showMissingTemplateFile"
+                      @click="previewTemplate(record)"
                     >
                       {{ displayTemplateFileName(record) }}
                     </button>

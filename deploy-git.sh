@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+umask 077
 
 # Git based production deployment for the delivery platform.
 # It preserves server-only .env, backups and Docker named volumes.
@@ -14,7 +15,6 @@ BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
 ADOPT_EXISTING_PACKAGE="${ADOPT_EXISTING_PACKAGE:-NO}"
 ALLOW_DIRTY="${ALLOW_DIRTY:-NO}"
 SKIP_GIT_FETCH="${SKIP_GIT_FETCH:-NO}"
-PRESERVE_PREVIOUS_REV="${PRESERVE_PREVIOUS_REV:-NO}"
 QUIESCE_APP_BEFORE_BACKUP="${QUIESCE_APP_BEFORE_BACKUP:-YES}"
 ROLLBACK_DATA_ON_FAILURE="${ROLLBACK_DATA_ON_FAILURE:-NO}"
 CONFIRM_RESTORE="${CONFIRM_RESTORE:-NO}"
@@ -30,10 +30,40 @@ COMPOSE=()
 COMPOSE_ARGS=()
 LOCK_DIR=""
 CURRENT_BACKUP_DIR=""
+DEPLOY_ACTIVE="NO"
+DEPLOY_SUCCEEDED="NO"
 
 log() { echo -e "${GREEN}[deploy]${NC} $*"; }
 warn() { echo -e "${YELLOW}[warn]${NC} $*"; }
 err() { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
+
+restore_deployment_env() {
+  local deploy_dir="${APP_DIR}/.deploy"
+  if [ -f "$deploy_dir/env.before-deploy" ]; then
+    mv -f "$deploy_dir/env.before-deploy" "$APP_DIR/.env" || return 1
+    rm -f "$deploy_dir/env.was_absent"
+    warn "restored the environment file from before this deployment"
+  elif [ -f "$deploy_dir/env.was_absent" ]; then
+    rm -f "$APP_DIR/.env" "$deploy_dir/env.was_absent" || return 1
+    warn "removed the environment file created by the failed deployment"
+  fi
+}
+
+discard_deployment_env_backup() {
+  rm -f "$APP_DIR/.deploy/env.before-deploy" "$APP_DIR/.deploy/env.was_absent"
+}
+
+on_exit() {
+  local status="$?"
+  set +e
+  if [ "$status" -ne 0 ] && [ "$DEPLOY_ACTIVE" = "YES" ] && [ "$DEPLOY_SUCCEEDED" != "YES" ]; then
+    restore_deployment_env || warn "failed to restore the pre-deployment environment file"
+  fi
+  [ -n "$LOCK_DIR" ] && rmdir "$LOCK_DIR" 2>/dev/null
+  return "$status"
+}
+
+trap on_exit EXIT
 
 normalize_app_dir() {
   case "$APP_DIR" in
@@ -83,6 +113,14 @@ target_ref() {
   else
     printf 'origin/%s\n' "$BRANCH"
   fi
+}
+
+write_revision_file() {
+  local path="$1"
+  local revision="$2"
+  local temporary="${path}.tmp.$$"
+  printf '%s\n' "$revision" > "$temporary" || return 1
+  mv -f "$temporary" "$path" || return 1
 }
 
 init_or_adopt_repo() {
@@ -135,7 +173,6 @@ acquire_lock() {
 
   LOCK_DIR=".deploy/deploy.lockdir"
   mkdir "$LOCK_DIR" 2>/dev/null || err "another deployment is already running"
-  trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
 }
 
 write_release_metadata() {
@@ -209,19 +246,19 @@ preflight() {
 
 checkout_target() {
   mkdir -p .deploy
-  local dirty previous target
+  local dirty current target
   dirty="$(git status --porcelain --untracked-files=no)"
   if [ -n "$dirty" ] && [ "$ALLOW_DIRTY" != "YES" ]; then
     printf '%s\n' "$dirty" >&2
     err "tracked files are modified on the server; commit, revert or set ALLOW_DIRTY=YES"
   fi
 
-  if [ "$PRESERVE_PREVIOUS_REV" = "YES" ] && [ -s .deploy/previous_rev ]; then
-    previous="$(cat .deploy/previous_rev)"
-  else
-    previous="$(git rev-parse --verify HEAD 2>/dev/null || true)"
+  if [ ! -s .deploy/last_successful_rev ]; then
+    current="$(git rev-parse --verify HEAD 2>/dev/null || true)"
+    if [ -n "$current" ]; then
+      write_revision_file .deploy/last_successful_rev "$current" || return 1
+    fi
   fi
-  [ -n "$previous" ] && printf '%s\n' "$previous" > .deploy/previous_rev
 
   if [ "$SKIP_GIT_FETCH" = "YES" ]; then
     warn "SKIP_GIT_FETCH=YES; using current server Git object database"
@@ -236,12 +273,18 @@ checkout_target() {
     git checkout -B "$BRANCH" "$target"
     git reset --hard "$target"
   fi
+  git clean -ffd
   write_release_metadata
 }
 
 start_infra() {
   compose up -d mysql redis minio
-  compose up -d minio-init || warn "minio-init did not finish cleanly; continuing"
+  compose up -d minio-init
+  local minio_init_id minio_init_status
+  minio_init_id="$(compose ps --all --quiet minio-init)"
+  [ -n "$minio_init_id" ] || err "minio-init container was not created"
+  minio_init_status="$(docker wait "$minio_init_id")"
+  [ "$minio_init_status" = "0" ] || err "minio-init failed with exit code $minio_init_status"
   wait_mysql
 }
 
@@ -277,9 +320,9 @@ backup_database() {
   source_env
   local sql_file="$CURRENT_BACKUP_DIR/mysql.sql"
   log "backing up MySQL"
-  compose exec -T mysql sh -c 'mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers --events --hex-blob "$MYSQL_DATABASE"' > "$sql_file"
-  gzip -f "$sql_file"
-  gzip -t "${sql_file}.gz"
+  compose exec -T mysql sh -c 'mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers --events --hex-blob "$MYSQL_DATABASE"' > "$sql_file" || return 1
+  gzip -f "$sql_file" || return 1
+  gzip -t "${sql_file}.gz" || return 1
 }
 
 minio_volume_name() {
@@ -300,8 +343,8 @@ backup_minio() {
   docker run --rm \
     -v "${volume_name}:/data:ro" \
     -v "$(pwd)/${CURRENT_BACKUP_DIR}:/backup" \
-    alpine sh -c 'tar czf /backup/minio.tar.gz -C /data .'
-  gzip -t "$CURRENT_BACKUP_DIR/minio.tar.gz" >/dev/null 2>&1 || true
+    alpine sh -c 'tar czf /backup/minio.tar.gz -C /data .' || return 1
+  tar -tzf "$CURRENT_BACKUP_DIR/minio.tar.gz" >/dev/null || return 1
 }
 
 create_backup() {
@@ -309,15 +352,17 @@ create_backup() {
   stamp="$(date +%Y%m%d_%H%M%S)"
   id="$(release_id)"
   CURRENT_BACKUP_DIR="backups/git-deploy/${stamp}-${id}"
-  mkdir -p "$CURRENT_BACKUP_DIR"
-  cp -p .env "$CURRENT_BACKUP_DIR/env.snapshot"
+  mkdir -p "$CURRENT_BACKUP_DIR" || return 1
+  chmod 700 "$CURRENT_BACKUP_DIR" || return 1
+  cp -p .env "$CURRENT_BACKUP_DIR/env.snapshot" || return 1
   chmod 600 "$CURRENT_BACKUP_DIR/env.snapshot" || true
-  git rev-parse HEAD > "$CURRENT_BACKUP_DIR/git-revision.txt"
-  compose config > "$CURRENT_BACKUP_DIR/docker-compose.resolved.yml" || true
-  write_table_audit "$CURRENT_BACKUP_DIR/table-counts.before.tsv"
-  backup_database
-  backup_minio
-  printf '%s\n' "$CURRENT_BACKUP_DIR" > .deploy/latest_backup
+  git rev-parse HEAD > "$CURRENT_BACKUP_DIR/git-revision.txt" || return 1
+  compose config > "$CURRENT_BACKUP_DIR/docker-compose.resolved.yml" || return 1
+  chmod 600 "$CURRENT_BACKUP_DIR/docker-compose.resolved.yml" || return 1
+  write_table_audit "$CURRENT_BACKUP_DIR/table-counts.before.tsv" || return 1
+  backup_database || return 1
+  backup_minio || return 1
+  printf '%s\n' "$CURRENT_BACKUP_DIR" > .deploy/latest_backup || return 1
   log "backup saved: $CURRENT_BACKUP_DIR"
 }
 
@@ -333,8 +378,8 @@ build_images() {
 
 run_migrations() {
   log "running guarded Prisma migration and idempotent seed"
-  compose run --rm backend-migrate
-  write_table_audit "$CURRENT_BACKUP_DIR/table-counts.after.tsv"
+  compose run --rm backend-migrate || return 1
+  write_table_audit "$CURRENT_BACKUP_DIR/table-counts.after.tsv" || return 1
 }
 
 check_url() {
@@ -342,7 +387,7 @@ check_url() {
   local url="$2"
   local attempt
   for attempt in $(seq 1 40); do
-    if curl -fsS "$url" >/dev/null 2>&1; then
+    if curl -fsS --connect-timeout 3 --max-time 10 "$url" >/dev/null 2>&1; then
       log "$name healthy"
       return 0
     fi
@@ -356,7 +401,7 @@ verify_release_version() {
   local expected response actual url
   expected="$(release_id)"
   url="http://127.0.0.1:${FRONTEND_PORT:-8080}/build-info.json"
-  response="$(curl -fsS -H 'Cache-Control: no-cache' "$url" 2>/dev/null)" || return 1
+  response="$(curl -fsS --connect-timeout 3 --max-time 10 -H 'Cache-Control: no-cache' "$url" 2>/dev/null)" || return 1
   actual="$(printf '%s' "$response" | sed -n 's/.*"releaseId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
   [ "$actual" = "$expected" ] || {
     warn "release id mismatch: expected $expected, got ${actual:-empty}"
@@ -367,10 +412,21 @@ verify_release_version() {
 
 switch_app() {
   log "switching application containers"
-  compose up -d --force-recreate backend frontend
-  check_url "backend" "http://127.0.0.1:${BACKEND_PORT:-3000}/api/v1/health"
-  check_url "frontend" "http://127.0.0.1:${FRONTEND_PORT:-8080}"
-  verify_release_version
+  compose up -d --force-recreate backend frontend || return 1
+  check_url "backend readiness" "http://127.0.0.1:${BACKEND_PORT:-3000}/api/v1/ready" || return 1
+  check_url "frontend" "http://127.0.0.1:${FRONTEND_PORT:-8080}" || return 1
+  verify_release_version || return 1
+}
+
+mark_deployment_successful() {
+  local current previous
+  current="$(git rev-parse --verify HEAD)" || return 1
+  previous="$(cat .deploy/last_successful_rev 2>/dev/null || true)"
+  if [ -n "$previous" ] && [ "$previous" != "$current" ]; then
+    write_revision_file .deploy/previous_successful_rev "$previous" || return 1
+  fi
+  write_revision_file .deploy/last_successful_rev "$current" || return 1
+  log "successful revision recorded: $current"
 }
 
 capture_failure_diagnostics() {
@@ -396,48 +452,73 @@ capture_failure_diagnostics() {
   warn "failure diagnostics saved: $output"
 }
 
-rollback_code_to_previous() {
-  local previous
-  previous="$(cat .deploy/previous_rev 2>/dev/null || true)"
-  [ -n "$previous" ] || {
-    warn "previous git revision is unknown; skipping code rollback"
+rollback_code_from_revision_file() {
+  local revision_file="$1"
+  local revision_label="$2"
+  local revision
+  revision="$(cat "$revision_file" 2>/dev/null || true)"
+  [ -n "$revision" ] || {
+    warn "$revision_label git revision is unknown; skipping code rollback"
     return 1
   }
-  warn "rolling code back to $previous"
-  git checkout --detach "$previous"
-  git reset --hard "$previous"
-  write_release_metadata
-  build_images
-  compose up -d --force-recreate backend frontend
+  warn "rolling code back to $revision"
+  git checkout --detach "$revision" || return 1
+  git reset --hard "$revision" || return 1
+  write_release_metadata || return 1
+  build_images || return 1
+}
+
+rollback_code_to_last_successful() {
+  rollback_code_from_revision_file .deploy/last_successful_rev "last successful"
+}
+
+rollback_code_to_previous_successful() {
+  rollback_code_from_revision_file .deploy/previous_successful_rev "previous successful"
 }
 
 restore_data_from_backup() {
-  [ "$CONFIRM_RESTORE" = "YES" ] || err "data restore is destructive. Set CONFIRM_RESTORE=YES and BACKUP_PATH=... to continue."
+  [ "$CONFIRM_RESTORE" = "YES" ] || {
+    warn "data restore is destructive. Set CONFIRM_RESTORE=YES and BACKUP_PATH=... to continue."
+    return 1
+  }
   source_env
   local backup volume_name
   backup="$BACKUP_PATH"
   if [ -z "$backup" ]; then
     backup="$(cat .deploy/latest_backup 2>/dev/null || true)"
   fi
-  [ -n "$backup" ] && [ -d "$backup" ] || err "backup directory not found: ${backup:-empty}"
-  [ -f "$backup/mysql.sql.gz" ] || err "missing database backup: $backup/mysql.sql.gz"
+  [ -n "$backup" ] && [ -d "$backup" ] || {
+    warn "backup directory not found: ${backup:-empty}"
+    return 1
+  }
+  [ -f "$backup/mysql.sql.gz" ] || {
+    warn "missing database backup: $backup/mysql.sql.gz"
+    return 1
+  }
+  gzip -t "$backup/mysql.sql.gz" || return 1
+  if [ -f "$backup/minio.tar.gz" ]; then
+    tar -tzf "$backup/minio.tar.gz" >/dev/null || return 1
+  fi
 
-  start_infra
+  start_infra || return 1
   compose stop backend frontend >/dev/null 2>&1 || true
   log "restoring MySQL from $backup/mysql.sql.gz"
-  compose exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP DATABASE IF EXISTS \`$MYSQL_DATABASE\`; CREATE DATABASE \`$MYSQL_DATABASE\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"'
-  gunzip -c "$backup/mysql.sql.gz" | compose exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'
+  compose exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP DATABASE IF EXISTS \`$MYSQL_DATABASE\`; CREATE DATABASE \`$MYSQL_DATABASE\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"' || return 1
+  gunzip -c "$backup/mysql.sql.gz" | compose exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' || return 1
 
   if [ -f "$backup/minio.tar.gz" ]; then
     volume_name="$(minio_volume_name)"
-    [ -n "$volume_name" ] || err "MinIO volume not found"
+    [ -n "$volume_name" ] || {
+      warn "MinIO volume not found"
+      return 1
+    }
     log "restoring MinIO volume: $volume_name"
     compose stop minio >/dev/null 2>&1 || true
     docker run --rm \
       -v "${volume_name}:/data" \
       -v "$(pwd)/${backup}:/backup:ro" \
-      alpine sh -c 'find /data -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar xzf /backup/minio.tar.gz -C /data'
-    compose up -d minio
+      alpine sh -c 'find /data -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar xzf /backup/minio.tar.gz -C /data' || return 1
+    compose up -d minio || return 1
   fi
 
   log "data restore finished"
@@ -448,13 +529,21 @@ handle_deploy_failure() {
   capture_failure_diagnostics
   if [ "$ROLLBACK_DATA_ON_FAILURE" = "YES" ]; then
     warn "ROLLBACK_DATA_ON_FAILURE=YES, restoring latest backup"
-    CONFIRM_RESTORE=YES BACKUP_PATH="${CURRENT_BACKUP_DIR:-$BACKUP_PATH}" restore_data_from_backup || warn "data restore failed"
+    if ! CONFIRM_RESTORE=YES BACKUP_PATH="${CURRENT_BACKUP_DIR:-$BACKUP_PATH}" restore_data_from_backup; then
+      err "data restore failed; application remains stopped for manual recovery"
+    fi
   fi
-  rollback_code_to_previous || resume_existing_app
+  restore_deployment_env || warn "failed to restore the pre-deployment environment file"
+  if rollback_code_to_last_successful; then
+    switch_app || warn "rollback completed but health verification failed"
+  else
+    resume_existing_app
+  fi
   err "$reason"
 }
 
 deploy() {
+  DEPLOY_ACTIVE="YES"
   init_or_adopt_repo
   acquire_lock
   checkout_target
@@ -474,6 +563,11 @@ deploy() {
   if ! switch_app; then
     handle_deploy_failure "health check failed after switching containers"
   fi
+  if ! mark_deployment_successful; then
+    handle_deploy_failure "deployment succeeded but the successful revision could not be recorded"
+  fi
+  discard_deployment_env_backup
+  DEPLOY_SUCCEEDED="YES"
   rotate_backups
   log "deployment completed"
 }
@@ -516,8 +610,8 @@ case "${1:-deploy}" in
   backup) manual_backup ;;
   status) show_status ;;
   logs) show_logs ;;
-  rollback-code) init_or_adopt_repo; acquire_lock; preflight; rollback_code_to_previous; switch_app ;;
-  restore-data) init_or_adopt_repo; acquire_lock; preflight; restore_data_from_backup ;;
+  rollback-code) init_or_adopt_repo; acquire_lock; preflight; rollback_code_to_previous_successful; switch_app; mark_deployment_successful ;;
+  restore-data) init_or_adopt_repo; acquire_lock; preflight; restore_data_from_backup; switch_app ;;
   *)
     cat <<'USAGE'
 Usage:
@@ -535,7 +629,6 @@ Important environment variables:
   ADOPT_EXISTING_PACKAGE=YES # first conversion from package deployment
   COMPOSE_FILES=docker-compose.yml
   SKIP_GIT_FETCH=YES         # use current local Git objects, for CI artifact deployment
-  PRESERVE_PREVIOUS_REV=YES  # keep .deploy/previous_rev created before artifact extraction
 USAGE
     ;;
 esac

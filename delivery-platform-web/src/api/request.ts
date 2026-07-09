@@ -31,6 +31,12 @@ function isSilent(config?: AxiosRequestConfig): boolean {
   return Boolean((config as RequestOptions | undefined)?.silent)
 }
 
+async function resetUnauthorizedSession(): Promise<void> {
+  removeToken()
+  const { useUserStore } = await import('@/store/user')
+  useUserStore().resetState()
+}
+
 // Request interceptor: attach Bearer token
 axiosInstance.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
@@ -64,7 +70,7 @@ axiosInstance.interceptors.response.use(
 
     return data
   },
-  (error) => {
+  async (error) => {
     if (error.response) {
       const { status, data } = error.response
 
@@ -76,12 +82,13 @@ axiosInstance.interceptors.response.use(
         case 401:
           if (!isRefreshing) {
             isRefreshing = true
-            removeToken()
-            Message.error('登录已过期，请重新登录')
-            router.push('/login').then(() => {
-              // 导航完成后重置标识，以便下次 401 能正确触发跳转
-              setTimeout(() => { isRefreshing = false }, 100)
-            })
+            try {
+              await resetUnauthorizedSession()
+              Message.error('登录已过期，请重新登录')
+              await router.replace('/login')
+            } finally {
+              isRefreshing = false
+            }
           }
           break
         case 403:

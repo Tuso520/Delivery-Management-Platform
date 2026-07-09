@@ -1,21 +1,18 @@
 <script setup lang="ts">
-import { defineAsyncComponent, ref, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { reviewApi } from '@/api/review'
 import type { PendingReview } from '@/types/file'
 import ReviewDialog from './components/ReviewDialog.vue'
+import { useFilePreview } from '@/composables/useFilePreview'
 
-const AttachmentPreviewModal = defineAsyncComponent(() =>
-  import('@/components/AttachmentPreviewModal/index.vue'),
-)
+const filePreview = useFilePreview()
 
 const loading = ref(false)
 const reviewList = ref<PendingReview[]>([])
 const reviewDialogVisible = ref(false)
 const selectedFileId = ref<string>('')
 const selectedFileName = ref<string>('')
-const previewVisible = ref(false)
-const previewTarget = ref<PendingReview | null>(null)
 
 async function fetchPendingReviews() {
   loading.value = true
@@ -35,8 +32,11 @@ function openReviewDialog(fileId: string, fileName: string) {
 }
 
 function openPreview(row: PendingReview) {
-  previewTarget.value = row
-  previewVisible.value = true
+  filePreview.openPreview({
+    source: 'file',
+    id: row.fileId,
+    title: row.file.fileName,
+  })
 }
 
 function handleReviewComplete() {
@@ -133,13 +133,6 @@ onMounted(fetchPendingReviews)
       @review-complete="handleReviewComplete"
     />
 
-    <AttachmentPreviewModal
-      v-if="previewVisible"
-      v-model:visible="previewVisible"
-      source="file"
-      :attachment-id="previewTarget?.fileId"
-      :title="previewTarget?.file.fileName || '文件预览'"
-    />
   </div>
 </template>
 

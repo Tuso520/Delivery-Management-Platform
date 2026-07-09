@@ -464,6 +464,29 @@ export class FileService {
     };
   }
 
+  async getPreviewContent(
+    fileId: string,
+    userId: string,
+  ): Promise<{ stream: Readable; fileName: string; mimeType: string }> {
+    const fileRecord = await this.findById(fileId, userId);
+    const stream = await this.fileStorage.getObject(fileRecord.storagePath);
+    await this.prisma.operationLog.create({
+      data: {
+        userId,
+        module: 'file',
+        action: 'preview_content',
+        targetType: 'file',
+        targetId: fileId,
+        result: 'success',
+      },
+    });
+    return {
+      stream,
+      fileName: fileRecord.originalName,
+      mimeType: fileRecord.mimeType,
+    };
+  }
+
   async createPreviewLink(
     fileId: string,
     userId: string,

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { downloadBlob, openBlob } from '../blob'
+import { downloadBlob } from '../blob'
 
 describe('blob helpers', () => {
   beforeEach(() => {
@@ -8,17 +8,6 @@ describe('blob helpers', () => {
       createObjectURL: vi.fn().mockReturnValue('blob:test'),
       revokeObjectURL: vi.fn(),
     })
-  })
-
-  it('opens a blob in a new tab', () => {
-    const click = vi.fn()
-    vi.spyOn(document, 'createElement').mockReturnValue({
-      click,
-    } as unknown as HTMLAnchorElement)
-
-    openBlob(new Blob(['preview']))
-
-    expect(click).toHaveBeenCalledOnce()
   })
 
   it('assigns a file name for downloads', () => {

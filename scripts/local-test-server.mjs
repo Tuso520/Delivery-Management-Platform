@@ -13,6 +13,10 @@ const localStorageRoot = join(projectRoot, 'storage', 'local-test');
 const port = Number(process.env.LOCAL_TEST_PORT || 18080);
 const host = process.env.LOCAL_TEST_HOST || '127.0.0.1';
 const now = () => new Date().toISOString();
+const demoCredentials = new Map([
+  ['admin', 'Admin@123'],
+  ['pm_wang', 'Pm@123456'],
+]);
 
 const adminUser = {
   id: 'user-admin',
@@ -1366,6 +1370,17 @@ function attachmentPreview(id) {
     };
   }
 
+  if (['mp4', 'mov', 'webm', 'm4v', 'ogv'].includes(item.fileExt)) {
+    return {
+      fileName: item.originalName,
+      fileExt: item.fileExt,
+      mimeType: item.mimeType,
+      previewKind: 'video',
+      viewer: 'video',
+      title: item.originalName,
+    };
+  }
+
   const viewer = item.fileExt.includes('xls')
     ? 'spreadsheet'
     : item.fileExt.includes('ppt')
@@ -1481,13 +1496,18 @@ function escapePdfText(text) {
 
 function samplePng() {
   return Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAASwAAACgCAYAAABkW7XSAAAACXBIWXMAAAsTAAALEwEAmpwYAAAEJElEQVR4nO3dQU7bQBiG0T9ogB24T9kF2CB7Aw6gwAt0AHaADeAG3QGIG1RFYhJpJ5E4h0yT8v4nGuxqS4T+ZpLQIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB4Hq7r+t5wOBy2bdu2fX7f99s0zQMAwMlkcrfb7dY0TXN3d7e9Xq+v6/puWZYNAIC7u7t93/f9dLvdXq/Xt20bAAB4fX3d9/3+9fV1Xdd1nU4nAADw+vq677v9+fn5er2+bdvWMA0AAPDw8LDv+/3r6+u6rus6nU4AAOD19XXfd/vT09N1Xdd1Op0AAAB8fHzc933+8fFxnU6nruu6TqcTAADw8PCw7/v86+vrOp1O27ZtAwAA3t7e9n2/f319Xdd1nU4nAADw8vKy7/v96+vrOp1O27ZtAwAA3t/f933f9fV1Xdd1nU4nAADw9va277v9+fn5er2+bdvWMA0AAPD29rbv+/3p6WmdTqeu67pOpxMAAPD09LTv+/3p6WmdTqeu67pOpxMAAPD8/Lzv+/3p6WmdTqeu67pOpxMAAPD+/r7v+/3p6WmdTqeu67pOpxMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwH9wCDsE0qN7wAAAAAElFTkSuQmCC',
+    'iVBORw0KGgoAAAANSUhEUgAAASwAAACgCAYAAAC2eFFiAAACHklEQVR42u3UsQkAIBAEwW/D3qzQ6kzMhBcsQlAnmAbuYKOPmQA3CCMAggUgWIBgAQgWgGABggUgWACCBQgWgGABCBYgWACCBSBYgGABCBaAYAGCBSBYAIIFCBbAW8EqtQEfECxAsAQLECzBAsESLECwBAsQLMECwRIsQLAECxAsR4JgCRYgWIIFCBYgWIIFCJZgAYIFCJZgAYIlWIBgAYIlWIBgCRYgWIBgCRYgWIIFCBYgWIIFCJZgAYIFCJZgAYIlWCBYggUIlmABgiVYIFiCBQiWYAGCJVggWIIFCJZgAYLlSBAswQIES7AAwQIES7AAwRIsQLAAwRIsQLAECxAsQLAECxAswQIECxAswQIES7AAwQIES7AAwRIsQLAAwRIsQLAECwRLsADBEixAsAQLBEuwAMESLECwBAsES7AAwRIsQLAcCYIlWIBgCRYgWIBgCRYgWIIFCBYgWIIFCJZgAYIFCJZgAYIlWIBgAYIlWIBgCRYgWIBgCRYgWIIFCBYgWIIFCJZggWAJFiBYggUIlmCBYAkWIFiCBQiWYIFgCRYgWIIFCJYjQbAECxAswQIECxAswQIES7AAwQIES7AAwRIsQLAAwRIsQLAECxAsQLAECxAswQIECxAswQIES7AAwQIE63iwAAQLECwAwQIQLECwAAQLQLAAwQIQLADBAgQLQLAABAsQLADBAhAsQLAABAtAsADBAhAsgG0BTc17r3UW9qcAAAAASUVORK5CYII=',
     'base64',
   );
 }
 
 function ensureAuthorized(req) {
-  if (req.url.includes('/auth/login') || req.url.includes('/system-config/public')) return true;
+  if (
+    req.url.includes('/auth/login')
+    || req.url.includes('/system-config/public')
+    || req.url.includes('/ready')
+    || req.url.includes('/signed-content?token=local-preview')
+  ) return true;
   return Boolean(req.headers.authorization);
 }
 
@@ -1546,6 +1566,14 @@ async function handleApi(req, res, url) {
 
   const path = url.pathname.replace(/^\/api\/v1/, '');
 
+  if (req.method === 'GET' && path === '/ready') {
+    sendJson(res, envelope({
+      status: 'ready',
+      checks: { database: 'ok', redis: 'ok', storage: 'ok' },
+    }));
+    return;
+  }
+
   if (req.method === 'GET' && path === '/system-config/public') {
     sendJson(res, envelope({
       'platform.name': '交付管理平台',
@@ -1556,15 +1584,15 @@ async function handleApi(req, res, url) {
 
   if (req.method === 'POST' && path === '/auth/login') {
     const body = await readJson(req);
-    if (!body.username || !body.password || String(body.password).length < 6) {
+    const username = String(body.username || '');
+    const password = String(body.password || '');
+    const expectedPassword = demoCredentials.get(username);
+
+    if (!expectedPassword || password !== expectedPassword) {
       sendJson(res, envelope(null, '用户名或密码错误', 401), 401);
       return;
     }
-    if (body.username === 'pm_wang') {
-      if (body.password !== 'Pm@123456') {
-        sendJson(res, envelope(null, '用户名或密码错误', 401), 401);
-        return;
-      }
+    if (username === 'pm_wang') {
       activeUser = projectManagerUser;
     } else {
       activeUser = adminUser;
@@ -1976,7 +2004,7 @@ async function handleApi(req, res, url) {
     return;
   }
 
-  const contentMatch = path.match(/^\/attachments\/([^/]+)\/content$/);
+  const contentMatch = path.match(/^\/attachments\/([^/]+)\/(?:content|preview-content)$/);
   if (req.method === 'GET' && contentMatch) {
     const item = attachments.find((attachment) => attachment.id === contentMatch[1]);
     if (!item) {
@@ -2049,7 +2077,15 @@ async function handleApi(req, res, url) {
       { id: 'template-acceptance', templateNo: 'DC-TPL-ACCEPTANCE', name: '项目验收资料移交清单模板', category: 'Checklist', countryCode: 'CN', projectType: null, stageCode: '05_acceptance', applicableRole: 'PROJECT_MANAGER', language: 'zh-CN', fileFormat: 'xlsx', storagePath: null, status: 'Published', publishedAt: now(), createdAt: now(), updatedAt: now() },
       { id: 'template-review', templateNo: 'DC-TPL-REVIEW', name: '项目管理复盘报告模板', category: 'Report', countryCode: 'CN', projectType: null, stageCode: '06_review', applicableRole: 'PROJECT_MANAGER', language: 'zh-CN', fileFormat: 'docx', storagePath: null, status: 'Published', publishedAt: now(), createdAt: now(), updatedAt: now() },
     ];
-    sendJson(res, envelope(page(templates, url.searchParams.get('page'), url.searchParams.get('pageSize'))));
+    const templatesWithFiles = templates.map((template) => {
+      const attachment = attachments.find((item) => item.fileExt === template.fileFormat);
+      return {
+        ...template,
+        attachmentId: attachment?.id ?? null,
+        attachmentFileName: attachment ? `${template.name}.${template.fileFormat}` : null,
+      };
+    });
+    sendJson(res, envelope(page(templatesWithFiles, url.searchParams.get('page'), url.searchParams.get('pageSize'))));
     return;
   }
 
@@ -2308,6 +2344,24 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  const resetPasswordMatch = path.match(/^\/users\/([^/]+)\/reset-password$/);
+  if (req.method === 'POST' && resetPasswordMatch) {
+    const user = localUsers.find((item) => item.id === resetPasswordMatch[1]);
+    const body = await readJson(req);
+    const newPassword = String(body.newPassword || '');
+    if (!user) {
+      sendJson(res, envelope(null, '用户不存在', 404), 404);
+      return;
+    }
+    if (newPassword.length < 6 || newPassword.length > 100) {
+      sendJson(res, envelope(null, '密码长度必须为 6-100 个字符', 422), 422);
+      return;
+    }
+    demoCredentials.set(user.username, newPassword);
+    sendJson(res, envelope({ message: '密码重置成功' }));
+    return;
+  }
+
   if (req.method === 'GET' && path === '/users') {
     sendJson(res, envelope(page([
       { id: 'user-admin', username: 'admin', realName: '系统管理员', email: 'admin@delivery-platform.local', phone: '13800000000', departmentId: 'dept-delivery', status: 'Active', lastLoginAt: now(), createdAt: now(), updatedAt: now(), roles: [{ id: 'role-super', roleCode: 'SUPER_ADMIN', roleName: '超级管理员' }] },
@@ -2399,7 +2453,67 @@ async function handleApi(req, res, url) {
     return;
   }
 
-  const fileDownloadMatch = path.match(/^\/files\/([^/]+)\/download$/);
+  const filePreviewSessionMatch = path.match(/^\/files\/([^/]+)\/preview-session$/);
+  if (req.method === 'GET' && filePreviewSessionMatch) {
+    const file = projectFiles.find((entry) => entry.id === filePreviewSessionMatch[1] && !entry.deletedAt);
+    if (!file) {
+      sendJson(res, envelope(null, '文件不存在', 404), 404);
+      return;
+    }
+
+    const ext = String(file.fileExt || '').toLowerCase();
+    const viewer = ext === 'pdf'
+      ? 'pdf'
+      : ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)
+        ? 'image'
+        : ['mp4', 'mov', 'webm', 'm4v', 'ogv'].includes(ext)
+          ? 'video'
+          : ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac'].includes(ext)
+            ? 'audio'
+            : ['md', 'markdown'].includes(ext)
+              ? 'markdown'
+              : 'onlyoffice';
+    const contentUrl = `/api/v1/files/${file.id}/signed-content?token=local-preview`;
+    const session = {
+      file: {
+        id: file.id,
+        projectId: file.projectId,
+        archiveItemId: file.archiveItemId || null,
+        fileName: file.fileName,
+        originalName: file.originalName,
+        fileExt: ext,
+        fileSize: String(file.fileSize || 0),
+        mimeType: file.mimeType,
+        versionNo: file.versionNo || 'V1.0',
+        isCurrent: Boolean(file.isCurrent),
+        fileStatus: file.fileStatus || 'Uploaded',
+        updatedAt: file.updatedAt || now(),
+      },
+      route: {
+        viewer,
+        category: viewer === 'onlyoffice' ? 'office' : viewer,
+        mode: 'view',
+        editable: false,
+        readonly: true,
+        supportsDownload: true,
+        ...(viewer === 'onlyoffice'
+          ? { reason: '本地模拟环境未配置 ONLYOFFICE，使用兼容预览。' }
+          : {}),
+      },
+      urls: {
+        content: contentUrl,
+        download: `/api/v1/files/${file.id}/download`,
+      },
+      signed: { expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString() },
+      ...(viewer === 'onlyoffice'
+        ? { onlyOffice: { available: false, reason: '本地模拟环境未配置 ONLYOFFICE，使用兼容预览。' } }
+        : {}),
+    };
+    sendJson(res, envelope(session));
+    return;
+  }
+
+  const fileDownloadMatch = path.match(/^\/files\/([^/]+)\/(?:download|preview-content|signed-content)$/);
   if (req.method === 'GET' && fileDownloadMatch) {
     const file = projectFiles.find((entry) => entry.id === fileDownloadMatch[1] && !entry.deletedAt);
     if (!file) {
@@ -2670,5 +2784,6 @@ const server = createServer(async (req, res) => {
 
 server.listen(port, host, () => {
   console.log(`Delivery platform local test server: http://localhost:${port}`);
-  console.log('Login: admin / Admin@123456');
+  console.log('Login: admin / Admin@123');
+  console.log('Login: pm_wang / Pm@123456');
 });

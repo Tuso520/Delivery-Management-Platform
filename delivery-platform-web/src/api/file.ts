@@ -161,6 +161,13 @@ export const fileApi = {
     })
   },
 
+  getPreviewContent(id: string) {
+    return request.get<Blob>(`/files/${id}/preview-content`, {
+      responseType: 'blob',
+      timeout: 120000,
+    })
+  },
+
   createPreviewSession(id: string, mode: FilePreviewMode = 'view') {
     return request.get<FilePreviewSession>(`/files/${id}/preview-session`, {
       params: { mode },

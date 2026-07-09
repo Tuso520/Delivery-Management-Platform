@@ -193,4 +193,54 @@ describe('AttachmentService project ownership', () => {
       expect.objectContaining({ action: 'preview', targetId: 'attachment-1' }),
     );
   });
+
+  it('audits preview content separately from downloads', async () => {
+    const prisma = {
+      attachment: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'attachment-video',
+          ownerType: 'TrainingPlan',
+          ownerId: 'training-1',
+          projectId: null,
+          originalName: 'recording.mp4',
+          fileExt: 'mp4',
+          fileSize: BigInt(128),
+          mimeType: 'video/mp4',
+          storagePath: 'attachments/training/recording.mp4',
+        }),
+      },
+      trainingPlan: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'training-1' }),
+      },
+      user: {
+        findUnique: jest.fn().mockResolvedValue({
+          userRoles: [{ role: { roleCode: 'SUPER_ADMIN', rolePermissions: [] } }],
+        }),
+      },
+    } as unknown as PrismaService;
+    const stream = Readable.from([Buffer.from('video')]);
+    const previewStorage = {
+      getObject: jest.fn().mockResolvedValue(stream),
+    } as unknown as FileStorageService;
+    const log = jest.fn();
+    const service = new AttachmentService(
+      prisma,
+      previewStorage,
+      { log } as unknown as OperationLogService,
+      { assertProjectAccess: jest.fn() } as unknown as ProjectAccessService,
+      configService,
+    );
+
+    const result = await service.getPreviewContent('attachment-video', 'user-1', {
+      ipAddress: '127.0.0.1',
+      userAgent: 'jest',
+    });
+
+    expect(result.stream).toBe(stream);
+    expect(log).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'preview_content',
+      targetId: 'attachment-video',
+    }));
+    expect(log).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'download' }));
+  });
 });

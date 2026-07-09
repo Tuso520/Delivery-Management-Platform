@@ -22,11 +22,7 @@ import {
   needsServerPreview,
   type AttachmentPreviewResult,
 } from './attachment-preview.util';
-import {
-  AttachmentOwnerType,
-  QueryAttachmentDto,
-  UploadAttachmentDto,
-} from './dto/attachment.dto';
+import { AttachmentOwnerType, QueryAttachmentDto, UploadAttachmentDto } from './dto/attachment.dto';
 
 interface AuditContext {
   ipAddress?: string;
@@ -64,18 +60,11 @@ export class AttachmentService {
     private readonly configService: ConfigService,
   ) {}
 
-  async uploadMany(
-    files: Express.Multer.File[],
-    dto: UploadAttachmentDto,
-    userId: string,
-  ) {
+  async uploadMany(files: Express.Multer.File[], dto: UploadAttachmentDto, userId: string) {
     if (!files.length) {
       throw new BadRequestException('请至少选择一个文件');
     }
-    const ownerProjectId = await this.resolveOwnerProjectId(
-      dto.ownerType,
-      dto.ownerId,
-    );
+    const ownerProjectId = await this.resolveOwnerProjectId(dto.ownerType, dto.ownerId);
     if (ownerProjectId && dto.projectId && ownerProjectId !== dto.projectId) {
       throw new BadRequestException('附件关联项目与所属业务记录不一致');
     }
@@ -131,8 +120,7 @@ export class AttachmentService {
   }
 
   async findAll(query: QueryAttachmentDto, userId: string) {
-    const { page = 1, pageSize = 20, ownerType, ownerId, projectId, category } =
-      query;
+    const { page = 1, pageSize = 20, ownerType, ownerId, projectId, category } = query;
     let scopedProjectId = projectId;
     if (ownerType && ownerId) {
       const ownerProjectId = await this.resolveOwnerProjectId(ownerType, ownerId);
@@ -198,6 +186,30 @@ export class AttachmentService {
       action: 'download',
       targetType: attachment.ownerType,
       targetId: id,
+      ipAddress: audit.ipAddress,
+      userAgent: audit.userAgent,
+    });
+    return {
+      stream,
+      fileName: attachment.originalName,
+      mimeType: attachment.mimeType,
+    };
+  }
+
+  async getPreviewContent(
+    id: string,
+    userId: string,
+    audit: AuditContext = {},
+  ): Promise<{ stream: Readable; fileName: string; mimeType: string }> {
+    const attachment = await this.findById(id);
+    await this.assertAttachmentAccess(attachment, userId, 'view');
+    const stream = await this.storage.getObject(attachment.storagePath);
+    await this.operationLog.log({
+      userId,
+      module: 'attachment',
+      action: 'preview_content',
+      targetType: attachment.ownerType,
+      targetId: attachment.id,
       ipAddress: audit.ipAddress,
       userAgent: audit.userAgent,
     });
@@ -276,23 +288,8 @@ export class AttachmentService {
       fileExt,
       mimeType: attachment.mimeType,
     };
-    const isImage =
-      attachment.mimeType.startsWith('image/') ||
-      ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExt);
-
     let preview: AttachmentPreviewResult;
-    if (isImage && attachment.fileSize <= BigInt(MAX_SERVER_PREVIEW_BYTES)) {
-      const stream = await this.storage.getObject(attachment.storagePath);
-      const buffer = await this.streamToBuffer(stream);
-      preview = await buildAttachmentPreview({ ...base, buffer });
-    } else if (
-      fileExt === 'pdf' &&
-      attachment.fileSize <= BigInt(MAX_SERVER_PREVIEW_BYTES)
-    ) {
-      const stream = await this.storage.getObject(attachment.storagePath);
-      const buffer = await this.streamToBuffer(stream);
-      preview = await buildAttachmentPreview({ ...base, buffer });
-    } else if (canPreviewWithoutServer(fileExt, attachment.mimeType)) {
+    if (canPreviewWithoutServer(fileExt, attachment.mimeType)) {
       preview = await buildAttachmentPreview(base);
     } else if (!needsServerPreview(fileExt)) {
       preview = await buildAttachmentPreview(base);
@@ -331,27 +328,20 @@ export class AttachmentService {
   }
 
   private signPreviewToken(payload: PreviewTokenPayload): string {
-    const body = Buffer.from(JSON.stringify(payload), 'utf8').toString(
-      'base64url',
-    );
+    const body = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
     const signature = createHmac('sha256', this.getPreviewSecret())
       .update(body)
       .digest('base64url');
     return `${body}.${signature}`;
   }
 
-  private verifyPreviewToken(
-    attachmentId: string,
-    token?: string,
-  ): PreviewTokenPayload {
+  private verifyPreviewToken(attachmentId: string, token?: string): PreviewTokenPayload {
     if (!token || !token.includes('.')) {
       throw new ForbiddenException('预览链接无效或已过期');
     }
 
     const [body, signature] = token.split('.', 2);
-    const expected = createHmac('sha256', this.getPreviewSecret())
-      .update(body)
-      .digest('base64url');
+    const expected = createHmac('sha256', this.getPreviewSecret()).update(body).digest('base64url');
     const signatureBuffer = Buffer.from(signature);
     const expectedBuffer = Buffer.from(expected);
     if (
@@ -363,9 +353,7 @@ export class AttachmentService {
 
     let payload: PreviewTokenPayload;
     try {
-      payload = JSON.parse(
-        Buffer.from(body, 'base64url').toString('utf8'),
-      ) as PreviewTokenPayload;
+      payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as PreviewTokenPayload;
     } catch {
       throw new ForbiddenException('预览链接无效或已过期');
     }
@@ -386,10 +374,7 @@ export class AttachmentService {
     return this.configService.get<string>('auth.jwtSecret') || process.env.JWT_SECRET || '';
   }
 
-  private renderPreviewPage(
-    preview: AttachmentPreviewResult,
-    contentUrl: string,
-  ): string {
+  private renderPreviewPage(preview: AttachmentPreviewResult, contentUrl: string): string {
     const title = escapeHtml(preview.title || preview.fileName);
     const safeContentUrl = escapeAttribute(contentUrl);
     const body =
@@ -856,8 +841,7 @@ export class AttachmentService {
   ): Promise<void> {
     const ownerType = attachment.ownerType as AttachmentOwnerType;
     const projectId =
-      attachment.projectId ??
-      (await this.resolveOwnerProjectId(ownerType, attachment.ownerId));
+      attachment.projectId ?? (await this.resolveOwnerProjectId(ownerType, attachment.ownerId));
     if (projectId) {
       await this.projectAccess.assertProjectAccess(projectId, userId);
       return;
@@ -979,14 +963,10 @@ export class AttachmentService {
       throw new BadRequestException('该检查项不允许从相册选择照片');
     }
     for (const file of files) {
-      const evidenceType = file.mimetype.startsWith('image/')
-        ? 'photo'
-        : 'file';
+      const evidenceType = file.mimetype.startsWith('image/') ? 'photo' : 'file';
       if (!allowedTypes.has(evidenceType)) {
         throw new BadRequestException(
-          evidenceType === 'photo'
-            ? '该检查项不接受照片证据'
-            : '该检查项不接受文档证据',
+          evidenceType === 'photo' ? '该检查项不接受照片证据' : '该检查项不接受文档证据',
         );
       }
     }
@@ -997,9 +977,7 @@ export class AttachmentService {
     userId: string,
     action: 'view' | 'manage',
   ): Promise<void> {
-    const permissionMap: Partial<
-      Record<AttachmentOwnerType, { view: string; manage: string }>
-    > = {
+    const permissionMap: Partial<Record<AttachmentOwnerType, { view: string; manage: string }>> = {
       KnowledgeArticle: {
         view: 'knowledge:view',
         manage: 'knowledge:update',

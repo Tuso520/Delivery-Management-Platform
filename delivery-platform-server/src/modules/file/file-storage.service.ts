@@ -67,16 +67,10 @@ export class FileStorageService {
     const fileBody = this.getUploadBody(uploadFile);
 
     try {
-      await this.client.putObject(
-        this.bucket,
-        objectName,
-        fileBody,
-        uploadFile.size,
-        {
-          'Content-Type': uploadFile.mimetype,
-          'X-Amz-Meta-Original-Name': encodeURIComponent(uploadFile.originalname),
-        },
-      );
+      await this.client.putObject(this.bucket, objectName, fileBody, uploadFile.size, {
+        'Content-Type': uploadFile.mimetype,
+        'X-Amz-Meta-Original-Name': encodeURIComponent(uploadFile.originalname),
+      });
       this.logger.log(`Object uploaded: ${this.bucket}/${objectName}`);
       return objectName;
     } catch (error) {
@@ -85,21 +79,13 @@ export class FileStorageService {
     }
   }
 
-  async uploadBuffer(
-    data: Buffer,
-    objectName: string,
-    contentType: string,
-  ): Promise<string> {
+  async uploadBuffer(data: Buffer, objectName: string, contentType: string): Promise<string> {
     await this.ensureBucket();
     const normalizedName = this.normalizePath(objectName);
     try {
-      await this.client.putObject(
-        this.bucket,
-        normalizedName,
-        data,
-        data.length,
-        { 'Content-Type': contentType },
-      );
+      await this.client.putObject(this.bucket, normalizedName, data, data.length, {
+        'Content-Type': contentType,
+      });
       return normalizedName;
     } catch (error) {
       this.logger.error(`MinIO upload failed for ${normalizedName}`, error);
@@ -109,8 +95,8 @@ export class FileStorageService {
 
   async getStatus(): Promise<{ bucket: string; available: boolean }> {
     try {
-      await this.ensureBucket();
-      return { bucket: this.bucket, available: true };
+      const available = await this.client.bucketExists(this.bucket);
+      return { bucket: this.bucket, available };
     } catch {
       return { bucket: this.bucket, available: false };
     }
@@ -131,17 +117,10 @@ export class FileStorageService {
     return this.getPresignedUrl(storagePath, 900);
   }
 
-  async getPresignedUrl(
-    storagePath: string,
-    expiresIn: number,
-  ): Promise<string> {
+  async getPresignedUrl(storagePath: string, expiresIn: number): Promise<string> {
     await this.ensureBucket();
     try {
-      return await this.client.presignedGetObject(
-        this.bucket,
-        storagePath,
-        expiresIn,
-      );
+      return await this.client.presignedGetObject(this.bucket, storagePath, expiresIn);
     } catch (error) {
       this.logger.error(`MinIO signed URL failed for ${storagePath}`, error);
       throw new ServiceUnavailableException('文件存储服务暂不可用');
@@ -199,9 +178,7 @@ export class FileStorageService {
       .join('/');
   }
 
-  private getUploadBody(
-    file: Express.Multer.File,
-  ): Buffer | Readable | string {
+  private getUploadBody(file: Express.Multer.File): Buffer | Readable | string {
     const rawBuffer = (file as unknown as { buffer?: unknown }).buffer;
 
     if (Buffer.isBuffer(rawBuffer)) {
@@ -213,11 +190,7 @@ export class FileStorageService {
     }
 
     if (ArrayBuffer.isView(rawBuffer)) {
-      return Buffer.from(
-        rawBuffer.buffer,
-        rawBuffer.byteOffset,
-        rawBuffer.byteLength,
-      );
+      return Buffer.from(rawBuffer.buffer, rawBuffer.byteOffset, rawBuffer.byteLength);
     }
 
     const serializedBuffer = this.restoreSerializedBuffer(rawBuffer);

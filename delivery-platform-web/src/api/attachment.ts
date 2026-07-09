@@ -24,8 +24,8 @@ export interface AttachmentPreview {
   fileName: string
   fileExt: string
   mimeType: string
-  previewKind: 'image' | 'pdf' | 'html' | 'text' | 'unsupported'
-  viewer: 'image' | 'pdf' | 'document' | 'spreadsheet' | 'presentation' | 'text' | 'download'
+  previewKind: 'image' | 'pdf' | 'video' | 'html' | 'text' | 'unsupported'
+  viewer: 'image' | 'pdf' | 'video' | 'document' | 'spreadsheet' | 'presentation' | 'text' | 'download'
   title: string
   html?: string
   text?: string
@@ -49,6 +49,12 @@ export const attachmentApi = {
   },
   getPreview(id: string) {
     return request.get<AttachmentPreview>(`/attachments/${id}/preview`, {
+      timeout: 120000,
+    })
+  },
+  getPreviewContent(id: string) {
+    return request.get<Blob>(`/attachments/${id}/preview-content`, {
+      responseType: 'blob',
       timeout: 120000,
     })
   },

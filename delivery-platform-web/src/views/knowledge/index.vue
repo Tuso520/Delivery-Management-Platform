@@ -14,6 +14,7 @@ import type {
   QueryKnowledgeArticleDto,
 } from '@/types/knowledge'
 import type { ApprovalTask } from '@/types/platform'
+import { useFilePreview } from '@/composables/useFilePreview'
 import { downloadBlob } from '@/utils/blob'
 import { arcoPrompt } from '@/utils/arco-dialog'
 
@@ -23,12 +24,11 @@ const MdEditor = defineAsyncComponent(() =>
     import('md-editor-v3/lib/style.css'),
   ]).then(([module]) => module.MdEditor),
 )
-const AttachmentPreviewModal = defineAsyncComponent(() =>
-  import('@/components/AttachmentPreviewModal/index.vue'),
-)
 const AttachmentPreviewPane = defineAsyncComponent(() =>
   import('@/components/AttachmentPreviewPane/index.vue'),
 )
+
+const filePreview = useFilePreview()
 
 interface KnowledgeFileRow extends KnowledgeAttachment {
   articleId: string
@@ -60,10 +60,6 @@ const approvalTasks = ref<ApprovalTask[]>([])
 const diffVisible = ref(false)
 const diffLoading = ref(false)
 const currentDiff = ref<KnowledgeFileRevisionDiff>()
-const previewVisible = ref(false)
-const previewAttachmentId = ref('')
-const previewTitle = ref('在线预览')
-
 const createVisible = ref(false)
 const createSubmitting = ref(false)
 const createMode = ref<'markdown' | 'upload'>('markdown')
@@ -264,9 +260,11 @@ function resetCreateForm(): void {
 }
 
 function openAttachmentPreview(file: KnowledgeFileRow | KnowledgeAttachment): void {
-  previewAttachmentId.value = file.id
-  previewTitle.value = file.originalName || '在线预览'
-  previewVisible.value = true
+  filePreview.openPreview({
+    source: 'attachment',
+    id: file.id,
+    title: file.originalName,
+  })
   incrementFileHeat(file.id, 'previewCount')
 }
 
@@ -857,14 +855,6 @@ onMounted(async () => {
         <a-empty v-else-if="!diffLoading" description="暂无可对比内容" />
       </a-spin>
     </a-modal>
-
-    <AttachmentPreviewModal
-      v-if="previewVisible"
-      v-model:visible="previewVisible"
-      source="attachment"
-      :attachment-id="previewAttachmentId"
-      :title="previewTitle"
-    />
 
   </section>
 </template>

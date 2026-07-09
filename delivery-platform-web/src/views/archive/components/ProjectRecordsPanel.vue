@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { defineAsyncComponent, onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import dayjs from 'dayjs'
 import { Message } from '@arco-design/web-vue'
 import type { FileItem } from '@arco-design/web-vue'
@@ -12,11 +12,10 @@ import {
   type ProcessRecordPayload,
   type ProjectProcessRecord,
 } from '@/types/process-record'
+import { useFilePreview } from '@/composables/useFilePreview'
 import { downloadBlob } from '@/utils/blob'
 
-const AttachmentPreviewModal = defineAsyncComponent(() =>
-  import('@/components/AttachmentPreviewModal/index.vue'),
-)
+const filePreview = useFilePreview()
 
 const props = defineProps<{
   projectId: string
@@ -34,9 +33,6 @@ const editingId = ref('')
 const currentRecord = ref<ProjectProcessRecord>()
 const recordType = ref('')
 const keyword = ref('')
-const previewVisible = ref(false)
-const previewAttachmentId = ref('')
-const previewTitle = ref('在线预览')
 const form = ref<ProcessRecordPayload>(createEmptyForm())
 
 function createEmptyForm(): ProcessRecordPayload {
@@ -132,9 +128,7 @@ async function openFiles(record: ProjectProcessRecord): Promise<void> {
 }
 
 function previewFile(file: Attachment): void {
-  previewAttachmentId.value = file.id
-  previewTitle.value = file.originalName
-  previewVisible.value = true
+  filePreview.openPreview({ source: 'attachment', id: file.id, title: file.originalName })
 }
 
 async function downloadFile(file: Attachment): Promise<void> {
@@ -315,13 +309,6 @@ onMounted(fetchRecords)
       <a-empty v-if="attachments.length === 0" description="暂无相关文件" />
     </a-modal>
 
-    <AttachmentPreviewModal
-      v-if="previewVisible"
-      v-model:visible="previewVisible"
-      source="attachment"
-      :attachment-id="previewAttachmentId"
-      :title="previewTitle"
-    />
   </section>
 </template>
 

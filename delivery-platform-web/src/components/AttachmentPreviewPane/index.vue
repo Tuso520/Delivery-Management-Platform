@@ -112,8 +112,8 @@ async function loadPreviewMeta(id: string): Promise<AttachmentPreview> {
 
 async function loadPreviewBlob(id: string): Promise<Blob> {
   return props.source === 'file'
-    ? fileApi.download(id)
-    : attachmentApi.getContent(id)
+    ? fileApi.getPreviewContent(id)
+    : attachmentApi.getPreviewContent(id)
 }
 
 async function renderPdf(blob: Blob, fallbackHtml = ''): Promise<void> {
@@ -141,10 +141,11 @@ async function renderPdf(blob: Blob, fallbackHtml = ''): Promise<void> {
     }
 
     pdfPageCount.value = pdf.numPages
+    const maxPages = Math.min(pdf.numPages, 80)
     const scale = 1.35
     const pixelRatio = window.devicePixelRatio || 1
 
-    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+    for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
       if (token !== pdfRenderToken) break
       const page = await pdf.getPage(pageNumber)
       const viewport = page.getViewport({ scale })
@@ -169,6 +170,13 @@ async function renderPdf(blob: Blob, fallbackHtml = ''): Promise<void> {
       wrapper.append(pageLabel, canvas)
       container.appendChild(wrapper)
       await page.render({ canvasContext: context, viewport }).promise
+    }
+
+    if (pdf.numPages > maxPages) {
+      const notice = document.createElement('div')
+      notice.className = 'pdf-page-limit'
+      notice.textContent = `已渲染前 ${maxPages} 页，完整文件请下载查看。`
+      container.appendChild(notice)
     }
 
     await loadingTask.destroy()
@@ -405,6 +413,9 @@ async function loadPreview(): Promise<void> {
     } else if (nextPreview.previewKind === 'pdf') {
       const blob = await loadPreviewBlob(props.attachmentId)
       await renderPdf(blob, nextPreview.html || '')
+    } else if (nextPreview.previewKind === 'video') {
+      const blob = await loadPreviewBlob(props.attachmentId)
+      objectUrl.value = URL.createObjectURL(blob)
     } else if (nextPreview.previewKind === 'html') {
       await enhanceHtmlPreview()
     }
@@ -433,8 +444,8 @@ watch(() => props.source, loadPreview)
         v-if="preview.previewKind === 'image' && objectUrl"
         class="preview-image-shell"
       >
-        <div class="image-toolbar">
-          <span>Viewer.js / PhotoSwipe 图片预览</span>
+        <div v-if="!props.compact" class="image-toolbar">
+          <span>图片预览</span>
           <div>
             <a-button size="mini" @click="openViewerZoom">缩放查看</a-button>
             <a-button size="mini" type="primary" @click="openPhotoSwipe">全屏查看</a-button>
@@ -454,7 +465,7 @@ watch(() => props.source, loadPreview)
         v-else-if="preview.previewKind === 'pdf'"
         class="preview-pdf"
       >
-        <div class="pdf-toolbar">
+        <div v-if="!props.compact" class="pdf-toolbar">
           <span>PDF 只读预览</span>
           <span v-if="pdfPageCount">{{ pdfPageCount }} 页</span>
         </div>
@@ -469,6 +480,13 @@ watch(() => props.source, loadPreview)
           :description="pdfRenderError"
           class="preview-empty"
         />
+      </div>
+
+      <div
+        v-else-if="preview.previewKind === 'video' && objectUrl"
+        class="preview-video"
+      >
+        <video :src="objectUrl" controls playsinline preload="metadata" />
       </div>
 
       <MdPreview
@@ -487,9 +505,8 @@ watch(() => props.source, loadPreview)
         ref="htmlContainerRef"
         class="preview-html"
       >
-        <div v-if="officeViewerLabel" class="office-toolbar">
+        <div v-if="officeViewerLabel && !props.compact" class="office-toolbar">
           <span>{{ officeViewerLabel }}</span>
-          <em>已预留 ONLYOFFICE Docs Community 接入，当前使用服务端只读解析保证本地可预览。</em>
         </div>
         <div v-html="preview.html || ''" />
       </div>
@@ -525,27 +542,55 @@ watch(() => props.source, loadPreview)
   padding: 16px;
 
   &.compact {
-    padding: 10px;
+    padding: 0;
   }
 }
 
 .preview-text,
 .markdown-preview,
 .preview-html,
-.preview-pdf {
-  width: min(1240px, 100%);
+.preview-pdf,
+.preview-video {
+  width: 100%;
   min-height: 100%;
-  margin: 0 auto;
+  margin: 0;
   background: transparent;
 }
 
+.preview-video {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background: #111;
+}
+
+.preview-video video {
+  width: 100%;
+  height: 100%;
+  max-height: var(--preview-pane-height);
+  object-fit: contain;
+}
+
 .preview-image-shell {
-  width: min(1240px, 100%);
+  width: 100%;
   min-height: 100%;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  margin: 0 auto;
+  margin: 0;
+}
+
+.preview-surface.compact .preview-image-shell,
+.preview-surface.compact .preview-pdf,
+.preview-surface.compact .preview-video,
+.preview-surface.compact .preview-html,
+.preview-surface.compact .preview-text,
+.preview-surface.compact .markdown-preview {
+  border: 0;
+}
+
+.preview-surface.compact .image-viewer-stage {
+  border: 0;
 }
 
 .image-toolbar,
@@ -656,6 +701,14 @@ watch(() => props.source, loadPreview)
   display: block;
   max-width: 100%;
   height: auto !important;
+}
+
+.preview-pdf :deep(.pdf-page-limit) {
+  padding: 10px 12px;
+  border: 1px solid #d9dfe8;
+  background: #fff;
+  color: #4e5969;
+  font-size: 13px;
 }
 
 .markdown-preview {

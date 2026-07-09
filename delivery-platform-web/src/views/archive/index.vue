@@ -7,9 +7,9 @@ import { fileApi } from '@/api/file'
 import { projectApi } from '@/api/project'
 import { reviewApi } from '@/api/review'
 import FileUploader from '@/components/FileUploader/index.vue'
+import { useFilePreview } from '@/composables/useFilePreview'
 import { arcoConfirm } from '@/utils/arco-dialog'
 import { downloadBlob } from '@/utils/blob'
-import { getPreviewRedirectUrl } from '@/utils/preview-link'
 import {
   localizeProjectRisk,
   localizeProjectStage,
@@ -45,6 +45,7 @@ interface ArchiveSection {
 }
 
 const localeStore = useLocaleStore()
+const filePreview = useFilePreview()
 
 const projectList = ref<Project[]>([])
 const selectedProjectId = ref('')
@@ -270,12 +271,12 @@ async function handleUploadSuccess(): Promise<void> {
   await fetchPendingReviews()
 }
 
-function getFilePreviewUrl(file: ArchiveFile): string {
-  return getPreviewRedirectUrl('file', file.id, { title: file.originalName })
+function previewArchiveFile(file: ArchiveFile): void {
+  filePreview.openPreview({ source: 'file', id: file.id, title: file.originalName })
 }
 
-function getReviewPreviewUrl(row: PendingReview): string {
-  return getPreviewRedirectUrl('file', row.fileId, { title: row.file.fileName })
+function previewReviewFile(row: PendingReview): void {
+  filePreview.openPreview({ source: 'file', id: row.fileId, title: row.file.fileName })
 }
 
 function openReviewDialog(row: PendingReview): void {
@@ -434,14 +435,13 @@ watch(activeArchiveView, (view) => {
         >
           <a-table-column label="文件名称" :min-width="260">
             <template #default="{ row }">
-              <a
-                class="file-link"
-                :href="getReviewPreviewUrl(row)"
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                class="file-preview-link"
+                type="button"
+                @click="previewReviewFile(row)"
               >
                 {{ row.file.fileName }}
-              </a>
+              </button>
             </template>
           </a-table-column>
           <a-table-column label="档案项" :min-width="180" show-overflow-tooltip>
@@ -464,14 +464,7 @@ watch(activeArchiveView, (view) => {
           <a-table-column label="操作" :width="124" fixed="right">
             <template #default="{ row }">
               <a-space size="mini" :wrap="false">
-                <a
-                  class="arco-btn arco-btn-text arco-btn-size-mini archive-preview-action"
-                  :href="getReviewPreviewUrl(row)"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  预览
-                </a>
+                <a-button type="text" size="mini" @click="previewReviewFile(row)">预览</a-button>
                 <a-button type="primary" size="mini" @click="openReviewDialog(row)">审核</a-button>
               </a-space>
             </template>
@@ -550,15 +543,14 @@ watch(activeArchiveView, (view) => {
                       </a-table-column>
                       <a-table-column label="当前文件" :width="280">
                         <template #default="{ row }">
-                          <a
+                          <button
                             v-if="row.files?.length"
-                            class="file-link"
-                            :href="getFilePreviewUrl(row.files[0])"
-                            target="_blank"
-                            rel="noopener noreferrer"
+                            class="file-preview-link"
+                            type="button"
+                            @click="previewArchiveFile(row.files[0])"
                           >
                             {{ row.files[0].originalName }}
-                          </a>
+                          </button>
                           <span v-else class="muted-text">待上传</span>
                         </template>
                       </a-table-column>
@@ -709,14 +701,13 @@ watch(activeArchiveView, (view) => {
             >
               <a-table-column label="文件名称" :min-width="260">
                 <template #default="{ row }">
-                  <a
-                    class="file-link"
-                    :href="getFilePreviewUrl(row)"
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    class="file-preview-link"
+                    type="button"
+                    @click="previewArchiveFile(row)"
                   >
                     {{ row.originalName }}
-                  </a>
+                  </button>
                 </template>
               </a-table-column>
               <a-table-column prop="fileExt" label="格式" :width="70" />

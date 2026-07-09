@@ -45,6 +45,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     const result = await this.client.get(`jti:${jti}`);
     return result !== null;
   }
+
+  async ping(): Promise<string> {
+    return this.client.ping();
+  }
 }
 
 @Global()

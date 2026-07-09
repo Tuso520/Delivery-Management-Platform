@@ -1,22 +1,25 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent } from 'vue'
 
-const AttachmentPreviewPane = defineAsyncComponent(() =>
-  import('@/components/AttachmentPreviewPane/index.vue'),
+const AttachmentPreviewPane = defineAsyncComponent(
+  () => import('@/components/AttachmentPreviewPane/index.vue'),
 )
-const FilePreviewRouter = defineAsyncComponent(() =>
-  import('@/components/FilePreviewRouter/index.vue'),
+const FilePreviewRouter = defineAsyncComponent(
+  () => import('@/components/FilePreviewRouter/index.vue'),
 )
 
-const props = withDefaults(defineProps<{
-  visible: boolean
-  attachmentId?: string
-  source?: 'attachment' | 'file'
-  title?: string
-}>(), {
-  source: 'attachment',
-  title: '在线预览',
-})
+const props = withDefaults(
+  defineProps<{
+    visible: boolean
+    resourceId?: string
+    source?: 'attachment' | 'file'
+    title?: string
+  }>(),
+  {
+    source: 'attachment',
+    title: '在线预览',
+  },
+)
 
 const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void
@@ -29,34 +32,29 @@ const modalTitle = computed(() => props.title || '在线预览')
   <a-modal
     :visible="props.visible"
     :title="modalTitle"
-    :width="'94vw'"
+    :width="'calc(100vw - 24px)'"
+    :top="12"
+    :align-center="false"
+    :body-style="{ padding: 0 }"
     :footer="false"
     :mask-closable="false"
+    :unmount-on-close="true"
     class="attachment-preview-modal"
     @update:visible="emit('update:visible', $event)"
     @cancel="emit('update:visible', false)"
   >
     <FilePreviewRouter
       v-if="props.visible && props.source === 'file'"
-      :file-id="props.attachmentId"
-      height="78vh"
+      :file-id="props.resourceId"
+      height="calc(100vh - 76px)"
+      compact
     />
     <AttachmentPreviewPane
       v-else-if="props.visible"
-      :attachment-id="props.attachmentId"
+      :attachment-id="props.resourceId"
       :source="props.source"
-      height="78vh"
+      height="calc(100vh - 76px)"
+      compact
     />
   </a-modal>
 </template>
-
-<style scoped lang="scss">
-.attachment-preview-modal :deep(.arco-modal-body) {
-  padding: 0;
-}
-
-.attachment-preview-modal :deep(.arco-modal-header) {
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--color-border-2);
-}
-</style>

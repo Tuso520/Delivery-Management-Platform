@@ -5,27 +5,66 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      environment:
-        description: 部署目标环境
-        required: true
-        default: test
-        type: choice
-        options:
-          - test
-          - production
       ref:
-        description: 可选 Git ref、tag 或 commit SHA；留空时部署当前提交
+        description: 可选 main 上的 Git ref、tag 或 commit SHA；留空时部署 main
         required: false
-        default: ''
+        default: ""
 
 permissions:
   contents: read
 
 concurrency:
-  group: deploy-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'test' }}
+  group: deploy-test
   cancel-in-progress: false
 
 jobs:
+  quality:
+    name: 部署前质量门禁
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.sha }}
+          fetch-depth: 0
+      - name: 限制手动部署版本
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor HEAD origin/main || {
+            echo "::error::仅允许部署 main 历史中的提交或标签"
+            exit 1
+          }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.4
+      - name: 安装后端依赖
+        working-directory: delivery-platform-server
+        run: pnpm install --frozen-lockfile
+      - name: 后端类型检查
+        working-directory: delivery-platform-server
+        run: pnpm prisma:generate && pnpm type-check
+      - name: 后端测试
+        working-directory: delivery-platform-server
+        run: pnpm test --runInBand
+      - name: 后端构建
+        working-directory: delivery-platform-server
+        run: pnpm build
+      - name: 安装前端依赖
+        working-directory: delivery-platform-web
+        run: pnpm install --frozen-lockfile
+      - name: 前端类型检查
+        working-directory: delivery-platform-web
+        run: pnpm type-check
+      - name: 前端测试
+        working-directory: delivery-platform-web
+        run: pnpm test
+      - name: 前端构建
+        working-directory: delivery-platform-web
+        run: pnpm build
+
   validate:
     name: 部署配置校验
     runs-on: ubuntu-latest
@@ -41,16 +80,17 @@ jobs:
 
   deploy:
     name: 部署到服务器
-    needs: validate
+    needs: [quality, validate]
     runs-on: ubuntu-latest
-    environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'test' }}
+    environment: test
     env:
-      DEPLOY_ENV: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'test' }}
+      DEPLOY_ENV: test
       DEPLOY_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.sha }}
       SERVER_HOST: ${{ vars.DEPLOY_HOST || secrets.DEPLOY_HOST }}
       SERVER_USER: ${{ vars.DEPLOY_USER || secrets.DEPLOY_USER }}
       SERVER_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
       SERVER_ENV_FILE_B64: ${{ secrets.DEPLOY_ENV_FILE_B64 }}
+      SERVER_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
       SERVER_PORT: ${{ vars.DEPLOY_PORT || '22' }}
       APP_DIR: ${{ vars.DEPLOY_APP_DIR || '/www/wwwroot/delivery-platform' }}
       BRANCH: main
@@ -62,10 +102,13 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: 固定部署提交
+        run: echo "DEPLOY_REF=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
       - name: 校验部署密钥配置
         run: |
           missing=0
-          for name in SERVER_HOST SERVER_USER SERVER_SSH_KEY; do
+          for name in SERVER_HOST SERVER_USER SERVER_SSH_KEY SERVER_KNOWN_HOSTS; do
             if [ -z "${!name}" ]; then
               echo "::error::$name is required for environment ${DEPLOY_ENV}"
               missing=1
@@ -78,7 +121,8 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -p "$SERVER_PORT" "$SERVER_HOST" >> ~/.ssh/known_hosts
+          printf '%s\n' "$SERVER_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
 
       - name: 打包当前提交
         run: |
@@ -101,54 +145,105 @@ jobs:
           scp -i ~/.ssh/deploy_key -P "$SERVER_PORT" \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             /tmp/delivery-platform-release.tgz \
-            "$SERVER_USER@$SERVER_HOST:/tmp/delivery-platform-release-${GITHUB_SHA}.tgz"
+            "$SERVER_USER@$SERVER_HOST:/tmp/delivery-platform-release-${DEPLOY_REF}.tgz"
 
           ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             "$SERVER_USER@$SERVER_HOST" 'bash -s' -- \
-            "$APP_DIR" "/tmp/delivery-platform-release-${GITHUB_SHA}.tgz" <<'REMOTE'
+            "$APP_DIR" "/tmp/delivery-platform-release-${DEPLOY_REF}.tgz" <<'REMOTE'
           set -Eeuo pipefail
           APP_DIR="$1"
           ARCHIVE="$2"
 
-          mkdir -p "$APP_DIR" "$APP_DIR/.deploy"
-          if [ -d "$APP_DIR/.git" ]; then
-            git -C "$APP_DIR" rev-parse --verify HEAD > "$APP_DIR/.deploy/previous_rev" 2>/dev/null || true
-          fi
-          tar xzf "$ARCHIVE" -C "$APP_DIR"
-          rm -f "$ARCHIVE"
-          REMOTE
-
-      - name: 可选同步服务器 .env
-        if: ${{ env.SERVER_ENV_FILE_B64 != '' }}
-        run: |
-          printf '%s' "$SERVER_ENV_FILE_B64" | base64 -d | \
-            ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
-              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-              "$SERVER_USER@$SERVER_HOST" 'bash -s' -- "$APP_DIR" <<'REMOTE'
-          set -Eeuo pipefail
-          APP_DIR="$1"
           mkdir -p "$APP_DIR"
-          umask 077
-          cat > "$APP_DIR/.env"
+          install -d -m 700 "$APP_DIR/.deploy"
+          if [ -d "$APP_DIR/.git" ] && [ ! -s "$APP_DIR/.deploy/last_successful_rev" ]; then
+            current_revision="$(git -C "$APP_DIR" rev-parse --verify HEAD 2>/dev/null || true)"
+            if [ -n "$current_revision" ]; then
+              printf '%s\n' "$current_revision" > "$APP_DIR/.deploy/last_successful_rev.tmp"
+              mv -f "$APP_DIR/.deploy/last_successful_rev.tmp" "$APP_DIR/.deploy/last_successful_rev"
+            fi
+          fi
+          tar --no-same-owner -xzf "$ARCHIVE" -C "$APP_DIR"
+          rm -f "$ARCHIVE"
           REMOTE
 
       - name: 执行 Git 拉取部署
         run: |
+          local_env=""
+          remote_env=""
+          env_sha=""
+          cleanup_local_env() {
+            if [ -n "$local_env" ]; then
+              rm -f "$local_env"
+            fi
+          }
+          trap cleanup_local_env EXIT
+
+          if [ -n "$SERVER_ENV_FILE_B64" ]; then
+            local_env="$(mktemp)"
+            printf '%s' "$SERVER_ENV_FILE_B64" | base64 -d > "$local_env"
+            test -s "$local_env"
+            chmod 600 "$local_env"
+            env_sha="$(sha256sum "$local_env" | awk '{print $1}')"
+            remote_env="$APP_DIR/.deploy/env-${DEPLOY_REF}.upload"
+            scp -i ~/.ssh/deploy_key -P "$SERVER_PORT" \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              "$local_env" "$SERVER_USER@$SERVER_HOST:$remote_env"
+          fi
+
           ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             "$SERVER_USER@$SERVER_HOST" 'bash -s' -- \
-            "$APP_DIR" "$BRANCH" "$COMPOSE_FILES" "$DEPLOY_REF" <<'REMOTE'
+            "$APP_DIR" "$BRANCH" "$COMPOSE_FILES" "$DEPLOY_REF" "$remote_env" "$env_sha" <<'REMOTE'
           set -Eeuo pipefail
           APP_DIR="$1"
           BRANCH="$2"
           COMPOSE_FILES="$3"
           DEPLOY_REF="$4"
+          REMOTE_ENV="${5:-}"
+          EXPECTED_ENV_SHA="${6:-}"
+          ENV_REPLACED="NO"
+          umask 077
+
+          restore_env_on_exit() {
+            status="$?"
+            trap - EXIT
+            set +e
+            if [ -n "$REMOTE_ENV" ]; then
+              rm -f "$REMOTE_ENV"
+            fi
+            if [ "$status" -ne 0 ] && [ "$ENV_REPLACED" = "YES" ]; then
+              if [ -f "$APP_DIR/.deploy/env.before-deploy" ]; then
+                mv -f "$APP_DIR/.deploy/env.before-deploy" "$APP_DIR/.env"
+                rm -f "$APP_DIR/.deploy/env.was_absent"
+              elif [ -f "$APP_DIR/.deploy/env.was_absent" ]; then
+                rm -f "$APP_DIR/.env" "$APP_DIR/.deploy/env.was_absent"
+              fi
+            fi
+            exit "$status"
+          }
+          trap restore_env_on_exit EXIT
+
+          if [ -n "$REMOTE_ENV" ]; then
+            chmod 600 "$REMOTE_ENV"
+            actual_sha="$(sha256sum "$REMOTE_ENV" | awk '{print $1}')"
+            test "$actual_sha" = "$EXPECTED_ENV_SHA"
+            if [ -f "$APP_DIR/.env" ]; then
+              cp -p "$APP_DIR/.env" "$APP_DIR/.deploy/env.before-deploy"
+              chmod 600 "$APP_DIR/.deploy/env.before-deploy"
+              rm -f "$APP_DIR/.deploy/env.was_absent"
+            else
+              rm -f "$APP_DIR/.deploy/env.before-deploy"
+              install -m 600 /dev/null "$APP_DIR/.deploy/env.was_absent"
+            fi
+            mv -f "$REMOTE_ENV" "$APP_DIR/.env"
+            ENV_REPLACED="YES"
+          fi
 
           cd "$APP_DIR"
           export APP_DIR BRANCH COMPOSE_FILES
           export SKIP_GIT_FETCH=YES
-          export PRESERVE_PREVIOUS_REV=YES
           if [ -n "$DEPLOY_REF" ]; then
             export REF="$DEPLOY_REF"
           fi

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import type { TableColumnData } from '@arco-design/web-vue'
 import { attachmentApi } from '@/api/attachment'
-import type { Attachment, AttachmentPreview } from '@/api/attachment'
+import type { Attachment } from '@/api/attachment'
 import { knowledgeApi } from '@/api/knowledge'
+import { useFilePreview } from '@/composables/useFilePreview'
 import type { KnowledgeArticle, KnowledgeCategory } from '@/types/knowledge'
 import { downloadBlob } from '@/utils/blob'
 
@@ -22,17 +23,13 @@ const MdPreview = defineAsyncComponent(() =>
   ]).then(([module]) => module.MdPreview),
 )
 
-type PreviewState = AttachmentPreview & { objectUrl?: string }
-
 const route = useRoute()
 const router = useRouter()
+const filePreview = useFilePreview()
 const articleId = computed(() => String(route.params.id ?? ''))
 const isNew = computed(() => !articleId.value || articleId.value === 'new')
 const editing = ref(isNew.value || route.query.edit === '1')
 const loading = ref(false)
-const previewVisible = ref(false)
-const previewLoading = ref(false)
-const preview = ref<PreviewState>()
 const article = ref<KnowledgeArticle>()
 const categories = ref<KnowledgeCategory[]>([])
 const attachments = ref<Attachment[]>([])
@@ -59,8 +56,6 @@ const categoryOptions = computed(() =>
   categories.value.filter((category) => !category.parentId),
 )
 
-const previewTitle = computed(() => preview.value?.title || preview.value?.fileName || '在线预览')
-
 function formatFileSize(value: string | number): string {
   const size = Number(value)
   if (!Number.isFinite(size)) return '-'
@@ -74,19 +69,6 @@ function formatDate(value?: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   return date.toLocaleString('zh-CN', { hour12: false })
-}
-
-function viewerLabel(viewer?: AttachmentPreview['viewer']): string {
-  const labels: Record<AttachmentPreview['viewer'], string> = {
-    image: '图片预览',
-    pdf: 'PDF 预览',
-    document: '文档预览',
-    spreadsheet: '表格预览',
-    presentation: '演示预览',
-    text: '文本预览',
-    download: '下载查看',
-  }
-  return viewer ? labels[viewer] : '在线预览'
 }
 
 async function fetchOptions(): Promise<void> {
@@ -185,32 +167,8 @@ async function publish(): Promise<void> {
   await fetchArticle()
 }
 
-async function previewAttachment(item: Attachment): Promise<void> {
-  releasePreviewObjectUrl()
-  previewVisible.value = true
-  previewLoading.value = true
-  preview.value = {
-    fileName: item.originalName,
-    fileExt: item.fileExt,
-    mimeType: item.mimeType,
-    previewKind: 'unsupported',
-    viewer: 'download',
-    title: item.originalName,
-  }
-
-  try {
-    const metadata = await attachmentApi.getPreview(item.id)
-    if (metadata.previewKind === 'image' || metadata.previewKind === 'pdf') {
-      preview.value = {
-        ...metadata,
-        objectUrl: URL.createObjectURL(await attachmentApi.getContent(item.id)),
-      }
-    } else {
-      preview.value = metadata
-    }
-  } finally {
-    previewLoading.value = false
-  }
+function previewAttachment(item: Attachment): void {
+  filePreview.openPreview({ source: 'attachment', id: item.id, title: item.originalName })
 }
 
 async function downloadAttachment(item: Attachment): Promise<void> {
@@ -232,19 +190,9 @@ function deleteAttachment(item: Attachment): void {
   })
 }
 
-function releasePreviewObjectUrl(): void {
-  if (preview.value?.objectUrl) {
-    URL.revokeObjectURL(preview.value.objectUrl)
-  }
-}
-
 function resetArticleState(): void {
-  releasePreviewObjectUrl()
   article.value = undefined
   attachments.value = []
-  previewVisible.value = false
-  previewLoading.value = false
-  preview.value = undefined
   pendingFiles.value = []
 }
 
@@ -263,10 +211,6 @@ watch(articleId, async () => {
   }
 })
 
-watch(previewVisible, (visible) => {
-  if (!visible) releasePreviewObjectUrl()
-})
-
 onMounted(async () => {
   loading.value = true
   try {
@@ -277,9 +221,6 @@ onMounted(async () => {
   }
 })
 
-onBeforeUnmount(() => {
-  releasePreviewObjectUrl()
-})
 </script>
 
 <template>
@@ -387,44 +328,6 @@ onBeforeUnmount(() => {
       </a-table>
     </a-card>
 
-    <a-modal
-      v-model:visible="previewVisible"
-      :title="previewTitle"
-      :footer="false"
-      :width="980"
-      class="preview-modal"
-    >
-      <a-spin :loading="previewLoading">
-        <div class="preview-meta">
-          <a-tag>{{ viewerLabel(preview?.viewer) }}</a-tag>
-          <span>{{ preview?.fileExt?.toUpperCase() }}</span>
-        </div>
-        <img
-          v-if="preview?.previewKind === 'image' && preview.objectUrl"
-          :src="preview.objectUrl"
-          alt=""
-          class="image-preview"
-        />
-        <iframe
-          v-else-if="preview?.previewKind === 'pdf' && preview.objectUrl"
-          :src="preview.objectUrl"
-          class="pdf-preview"
-          title="PDF 在线预览"
-        />
-        <div
-          v-else-if="preview?.previewKind === 'html'"
-          class="office-preview"
-          v-html="preview.html"
-        />
-        <pre v-else-if="preview?.previewKind === 'text'" class="text-preview">{{ preview.text }}</pre>
-        <a-result
-          v-else
-          status="warning"
-          title="暂不支持在线预览"
-          :subtitle="preview?.reason || '请下载后查看该文件。'"
-        />
-      </a-spin>
-    </a-modal>
   </a-spin>
 </template>
 

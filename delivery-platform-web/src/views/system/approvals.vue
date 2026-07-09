@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import type { TableColumnData } from '@arco-design/web-vue'
 import { attachmentApi } from '@/api/attachment'
-import type { AttachmentPreview } from '@/api/attachment'
 import { countryApi } from '@/api/country'
 import { knowledgeApi } from '@/api/knowledge'
 import { approvalApi } from '@/api/platform'
@@ -18,10 +17,10 @@ import type { UserListItem } from '@/types/user'
 import { arcoPrompt } from '@/utils/arco-dialog'
 import { getApprovalBusinessLabel } from '@/utils/approval'
 import { downloadBlob } from '@/utils/blob'
-
-type PreviewState = AttachmentPreview & { objectUrl?: string }
+import { useFilePreview } from '@/composables/useFilePreview'
 
 const route = useRoute()
+const filePreview = useFilePreview()
 const loading = ref(false)
 const activeTab = ref(route.query.tab === 'tasks' ? 'tasks' : 'templates')
 const templates = ref<ApprovalTemplate[]>([])
@@ -34,9 +33,6 @@ const dialogVisible = ref(false)
 const diffVisible = ref(false)
 const diffLoading = ref(false)
 const currentDiff = ref<KnowledgeFileRevisionDiff>()
-const previewVisible = ref(false)
-const previewLoading = ref(false)
-const preview = ref<PreviewState>()
 
 const defaultStep = (): ApprovalStep => ({
   stepOrder: 1,
@@ -90,8 +86,6 @@ const diffColumns: TableColumnData[] = [
   { title: '新文件', dataIndex: 'after', ellipsis: true, tooltip: true },
   { title: '结果', dataIndex: 'changed', slotName: 'changed', width: 100 },
 ]
-
-const previewTitle = computed(() => preview.value?.title || preview.value?.fileName || '在线预览')
 
 async function fetchData(): Promise<void> {
   loading.value = true
@@ -220,62 +214,15 @@ function formatDate(value?: string): string {
   return date.toLocaleString('zh-CN', { hour12: false })
 }
 
-function viewerLabel(viewer?: AttachmentPreview['viewer']): string {
-  const labels: Record<AttachmentPreview['viewer'], string> = {
-    image: '图片预览',
-    pdf: 'PDF 预览',
-    document: '文档预览',
-    spreadsheet: '表格预览',
-    presentation: '演示预览',
-    text: '文本预览',
-    download: '下载查看',
-  }
-  return viewer ? labels[viewer] : '在线预览'
-}
-
-async function previewAttachment(item: KnowledgeAttachment): Promise<void> {
-  releasePreviewObjectUrl()
-  previewVisible.value = true
-  previewLoading.value = true
-  preview.value = {
-    fileName: item.originalName,
-    fileExt: item.fileExt,
-    mimeType: item.mimeType,
-    previewKind: 'unsupported',
-    viewer: 'download',
-    title: item.originalName,
-  }
-
-  try {
-    const metadata = await attachmentApi.getPreview(item.id)
-    if (metadata.previewKind === 'image' || metadata.previewKind === 'pdf') {
-      preview.value = {
-        ...metadata,
-        objectUrl: URL.createObjectURL(await attachmentApi.getContent(item.id)),
-      }
-    } else {
-      preview.value = metadata
-    }
-  } finally {
-    previewLoading.value = false
-  }
+function previewAttachment(item: KnowledgeAttachment): void {
+  filePreview.openPreview({ source: 'attachment', id: item.id, title: item.originalName })
 }
 
 async function downloadAttachment(item: KnowledgeAttachment): Promise<void> {
   downloadBlob(await attachmentApi.getContent(item.id), item.originalName)
 }
 
-function releasePreviewObjectUrl(): void {
-  if (preview.value?.objectUrl) {
-    URL.revokeObjectURL(preview.value.objectUrl)
-  }
-}
-
 onMounted(fetchData)
-
-onBeforeUnmount(() => {
-  releasePreviewObjectUrl()
-})
 </script>
 
 <template>
@@ -523,44 +470,6 @@ onBeforeUnmount(() => {
         </a-spin>
       </a-modal>
 
-      <a-modal
-        v-model:visible="previewVisible"
-        :title="previewTitle"
-        :footer="false"
-        :width="980"
-        class="preview-modal"
-      >
-        <a-spin :loading="previewLoading">
-          <div class="preview-meta">
-            <a-tag>{{ viewerLabel(preview?.viewer) }}</a-tag>
-            <span>{{ preview?.fileExt?.toUpperCase() }}</span>
-          </div>
-          <img
-            v-if="preview?.previewKind === 'image' && preview.objectUrl"
-            :src="preview.objectUrl"
-            alt=""
-            class="image-preview"
-          />
-          <iframe
-            v-else-if="preview?.previewKind === 'pdf' && preview.objectUrl"
-            :src="preview.objectUrl"
-            class="pdf-preview"
-            title="PDF 在线预览"
-          />
-          <div
-            v-else-if="preview?.previewKind === 'html'"
-            class="office-preview"
-            v-html="preview.html"
-          />
-          <pre v-else-if="preview?.previewKind === 'text'" class="text-preview">{{ preview.text }}</pre>
-          <a-result
-            v-else
-            status="warning"
-            title="暂不支持在线预览"
-            :subtitle="preview?.reason || '请下载后查看该文件。'"
-          />
-        </a-spin>
-      </a-modal>
     </section>
   </a-spin>
 </template>

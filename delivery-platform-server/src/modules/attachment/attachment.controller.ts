@@ -144,6 +144,28 @@ export class AttachmentController {
     });
   }
 
+  @Get(':id/preview-content')
+  @Permissions('attachment:download')
+  @RawResponse()
+  @ApiOperation({ summary: '读取私有附件在线预览文件流（不计为下载）' })
+  async getPreviewContent(
+    @Param('id') id: string,
+    @CurrentUser() user: JwtPayload,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const content = await this.attachmentService.getPreviewContent(id, user.sub, {
+      ipAddress: request.ip,
+      userAgent: request.get('user-agent'),
+    });
+    response.setHeader('Content-Type', content.mimeType);
+    response.setHeader(
+      'Content-Disposition',
+      `inline; filename*=UTF-8''${encodeURIComponent(content.fileName)}`,
+    );
+    return new StreamableFile(content.stream);
+  }
+
   @Post(':id/preview-link')
   @Permissions('attachment:download')
   @HttpCode(HttpStatus.OK)

@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 
 import { seedKnowledge } from '../../../prisma/seed-data/knowledge';
 import { seedReportsAndPerformance } from '../../../prisma/seed-data/performance';
@@ -6,6 +7,11 @@ import { seedProjects } from '../../../prisma/seed-data/projects';
 import { seedRoles } from '../../../prisma/seed-data/roles';
 import { resolveSeedPassword } from '../../../prisma/seed-data/seed-password';
 import { seedSystemOperations } from '../../../prisma/seed-data/system-operations';
+import { seedUsers } from '../../../prisma/seed-data/users';
+
+jest.mock('bcrypt', () => ({
+  hash: jest.fn((value: string) => Promise.resolve(`hashed:${value}`)),
+}));
 
 describe('deployment seed safety', () => {
   it('does not overwrite existing projects', async () => {
@@ -145,6 +151,128 @@ describe('deployment seed safety', () => {
         },
       ),
     ).toThrow('生产环境首次初始化必须配置 SEED_ADMIN_PASSWORD');
+  });
+
+  it('resets existing seeded user passwords outside production without reviving accounts', async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalReset = process.env.SEED_RESET_EXISTING_USER_PASSWORDS;
+    process.env.NODE_ENV = 'development';
+    delete process.env.SEED_RESET_EXISTING_USER_PASSWORDS;
+    jest.clearAllMocks();
+
+    const userUpdate = jest.fn(({ where, data }) =>
+      Promise.resolve({ id: where.id, username: where.id, ...data }),
+    );
+    const prisma = {
+      user: {
+        findUnique: jest.fn(({ where }) =>
+          Promise.resolve({
+            id: `user-${where.username}`,
+            username: where.username,
+            status: 'Locked',
+            deletedAt: new Date('2026-07-01T00:00:00.000Z'),
+          }),
+        ),
+        create: jest.fn(),
+        update: userUpdate,
+      },
+      role: {
+        findUnique: jest.fn(({ where }) =>
+          Promise.resolve({ id: `role-${where.roleCode}` }),
+        ),
+      },
+      userRole: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'existing-link' }),
+        create: jest.fn(),
+      },
+    } as unknown as PrismaClient;
+
+    try {
+      await seedUsers(prisma);
+    } finally {
+      if (originalNodeEnv === undefined) {
+        delete process.env.NODE_ENV;
+      } else {
+        process.env.NODE_ENV = originalNodeEnv;
+      }
+
+      if (originalReset === undefined) {
+        delete process.env.SEED_RESET_EXISTING_USER_PASSWORDS;
+      } else {
+        process.env.SEED_RESET_EXISTING_USER_PASSWORDS = originalReset;
+      }
+    }
+
+    expect(prisma.user.create).not.toHaveBeenCalled();
+    expect(userUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'user-admin' },
+        data: {
+          password: 'hashed:Admin@123',
+        },
+      }),
+    );
+    expect(userUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'user-pm_wang' },
+        data: expect.objectContaining({
+          password: 'hashed:Pm@123456',
+        }),
+      }),
+    );
+    expect(bcrypt.hash).toHaveBeenCalledWith('Admin@123', 12);
+  });
+
+  it('does not reset existing seeded user passwords in production by default', async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalReset = process.env.SEED_RESET_EXISTING_USER_PASSWORDS;
+    process.env.NODE_ENV = 'production';
+    delete process.env.SEED_RESET_EXISTING_USER_PASSWORDS;
+    jest.clearAllMocks();
+
+    const prisma = {
+      user: {
+        findUnique: jest.fn(({ where }) =>
+          Promise.resolve({
+            id: `user-${where.username}`,
+            username: where.username,
+            status: 'Active',
+            deletedAt: null,
+          }),
+        ),
+        create: jest.fn(),
+        update: jest.fn(),
+      },
+      role: {
+        findUnique: jest.fn(({ where }) =>
+          Promise.resolve({ id: `role-${where.roleCode}` }),
+        ),
+      },
+      userRole: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'existing-link' }),
+        create: jest.fn(),
+      },
+    } as unknown as PrismaClient;
+
+    try {
+      await seedUsers(prisma);
+    } finally {
+      if (originalNodeEnv === undefined) {
+        delete process.env.NODE_ENV;
+      } else {
+        process.env.NODE_ENV = originalNodeEnv;
+      }
+
+      if (originalReset === undefined) {
+        delete process.env.SEED_RESET_EXISTING_USER_PASSWORDS;
+      } else {
+        process.env.SEED_RESET_EXISTING_USER_PASSWORDS = originalReset;
+      }
+    }
+
+    expect(prisma.user.create).not.toHaveBeenCalled();
+    expect(prisma.user.update).not.toHaveBeenCalled();
+    expect(bcrypt.hash).not.toHaveBeenCalled();
   });
 
   it('does not remove permissions added to seeded roles in production', async () => {

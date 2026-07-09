@@ -85,11 +85,10 @@ services:
       minio:
         condition: service_healthy
     entrypoint: >
-      /bin/sh -c "
+      /bin/sh -ec "
       mc alias set local http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
       mc mb --ignore-existing local/${MINIO_BUCKET};
       echo 'MinIO bucket initialized';
-      exit 0;
       "
     networks:
       - delivery-network
@@ -144,6 +143,7 @@ services:
     environment:
       - NODE_ENV=production
       - DATABASE_URL=mysql://${MYSQL_USER}:${MYSQL_USER_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
+      - SEED_RESET_EXISTING_USER_PASSWORDS=${SEED_RESET_EXISTING_USER_PASSWORDS:-false}
       - SEED_ADMIN_PASSWORD=${SEED_ADMIN_PASSWORD}
       - SEED_DEFAULT_PASSWORD=${SEED_DEFAULT_PASSWORD}
       - MINIO_ENDPOINT=minio
