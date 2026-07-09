@@ -5,8 +5,9 @@
 # ============================================================
 
 ARG RELEASE_ID=development
+ARG NODE_IMAGE=node:20-bookworm-slim@sha256:3d0f05455dea2c82e2f76e7e2543964c30f6b7d673fc1a83286736d44fe4c41c
 
-FROM node:20-bookworm-slim AS builder
+FROM ${NODE_IMAGE} AS builder
 ARG RELEASE_ID
 WORKDIR /app
 ENV VITE_RELEASE_ID=${RELEASE_ID}
