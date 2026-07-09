@@ -23,6 +23,9 @@ importers:
       md-editor-v3:
         specifier: 6.5.3
         version: 6.5.3(vue@3.5.38(typescript@5.5.4))
+      openseadragon:
+        specifier: ^6.0.2
+        version: 6.0.2
       pdfjs-dist:
         specifier: ^4.10.38
         version: 4.10.38
@@ -1591,6 +1594,9 @@ packages:
 
   once@1.4.0:
     resolution: {integrity: sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==}
+
+  openseadragon@6.0.2:
+    resolution: {integrity: sha512-WNPPQWp9sHunyzkV9J2yhfxnSfDF9CfBsE6unmkdxh1uTWzFcueMvBPhmuZdY7M1v/ffJ3NdaF3Qq3jogphIbA==}
 
   optionator@0.9.4:
     resolution: {integrity: sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g==}
@@ -3760,6 +3766,8 @@ snapshots:
   once@1.4.0:
     dependencies:
       wrappy: 1.0.2
+
+  openseadragon@6.0.2: {}
 
   optionator@0.9.4:
     dependencies:

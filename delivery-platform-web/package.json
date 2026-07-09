@@ -23,6 +23,7 @@
     "axios": "1.18.1",
     "dayjs": "1.11.21",
     "md-editor-v3": "6.5.3",
+    "openseadragon": "^6.0.2",
     "pdfjs-dist": "^4.10.38",
     "photoswipe": "^5.4.4",
     "pinia": "2.1.7",

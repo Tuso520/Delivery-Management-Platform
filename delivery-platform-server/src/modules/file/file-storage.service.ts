@@ -158,6 +158,16 @@ export class FileStorageService {
     }
   }
 
+  async objectExists(storagePath: string): Promise<boolean> {
+    await this.ensureBucket();
+    try {
+      await this.client.statObject(this.bucket, storagePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private async ensureBucket(): Promise<void> {
     if (!this.readyPromise) {
       this.readyPromise = this.initializeBucket().catch((error: unknown) => {

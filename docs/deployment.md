@@ -99,3 +99,17 @@ docker compose ps
 - Redis 健康检查通过。
 - MinIO 健康检查通过。
 - 备份目录：`backups/git-deploy/20260708_161928-1df2a618471e`。
+
+## File Preview Environment
+
+The unified file preview center works without exposing storage paths. Office editing requires an ONLYOFFICE Docs Community server that can reach the backend public API.
+
+Optional environment variables:
+
+```text
+ONLYOFFICE_DOCS_URL=https://onlyoffice.example.com
+ONLYOFFICE_JWT_SECRET=<same secret configured in ONLYOFFICE Docs, if JWT is enabled>
+PUBLIC_API_BASE_URL=https://delivery-platform.example.com
+```
+
+If `ONLYOFFICE_DOCS_URL` or `PUBLIC_API_BASE_URL` is missing, Office formats degrade to "preview unavailable + download". PDF, image, Markdown, XMind outline, video, audio, and thumbnail paths continue to work through signed file URLs.

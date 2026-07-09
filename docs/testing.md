@@ -42,3 +42,20 @@ pnpm --dir delivery-platform-web build
 | 项目档案 | 阶段页签、上传说明、审批状态和详情弹窗通过 |
 
 浏览器截图和临时测试产物不进入 Git。
+
+## File Preview Regression Scope
+
+For file preview changes, verify:
+
+- `GET /api/v1/files/:id/preview-session` returns a route without `storagePath`.
+- `GET /api/v1/files/:id/signed-content` and `signed-thumbnail` work only with a valid short-lived token.
+- Office edit mode is returned only when backend permissions allow it and ONLYOFFICE configuration is present.
+- Markdown raw HTML is escaped, while headings, TOC, code blocks, and tables render.
+- Unsupported CAD and Visio files show degraded preview with download available.
+
+Automated checks added in this area:
+
+```powershell
+pnpm --filter ./delivery-platform-server test -- file-preview-route.spec.ts
+pnpm --dir delivery-platform-web test -- markdown-preview.spec.ts
+```

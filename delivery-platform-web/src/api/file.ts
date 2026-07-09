@@ -9,6 +9,86 @@ export interface UploadProgressEvent {
   total: number
 }
 
+export type FilePreviewMode = 'view' | 'edit'
+
+export type FilePreviewViewer =
+  | 'onlyoffice'
+  | 'pdf'
+  | 'image'
+  | 'deep-zoom-image'
+  | 'markdown'
+  | 'xmind'
+  | 'cad'
+  | 'visio'
+  | 'video'
+  | 'audio'
+  | 'unavailable'
+
+export interface FilePreviewRoute {
+  viewer: FilePreviewViewer
+  category:
+    | 'office'
+    | 'pdf'
+    | 'image'
+    | 'markdown'
+    | 'xmind'
+    | 'cad'
+    | 'visio'
+    | 'video'
+    | 'audio'
+    | 'unsupported'
+  mode: FilePreviewMode
+  editable: boolean
+  readonly: boolean
+  supportsDownload: boolean
+  reason?: string
+}
+
+export interface XmindOutlineNode {
+  title: string
+  children: XmindOutlineNode[]
+}
+
+export interface XmindOutlineSheet {
+  title: string
+  root: XmindOutlineNode
+}
+
+export interface FilePreviewSession {
+  file: {
+    id: string
+    projectId: string
+    archiveItemId: string | null
+    fileName: string
+    originalName: string
+    fileExt: string
+    fileSize: string
+    mimeType: string
+    versionNo: string
+    isCurrent: boolean
+    fileStatus: string
+    updatedAt: string
+  }
+  route: FilePreviewRoute
+  urls: {
+    content: string
+    thumbnail?: string
+    download: string
+  }
+  signed: {
+    expiresAt: string
+  }
+  onlyOffice?: {
+    available: boolean
+    docsUrl?: string
+    reason?: string
+    config?: Record<string, unknown>
+  }
+  xmind?: {
+    sheets: XmindOutlineSheet[]
+  }
+}
+
 export const fileApi = {
   /**
    * 上传文件
@@ -77,6 +157,13 @@ export const fileApi = {
    */
   getPreview(id: string) {
     return request.get<AttachmentPreview>(`/files/${id}/preview`, {
+      timeout: 120000,
+    })
+  },
+
+  createPreviewSession(id: string, mode: FilePreviewMode = 'view') {
+    return request.get<FilePreviewSession>(`/files/${id}/preview-session`, {
+      params: { mode },
       timeout: 120000,
     })
   },

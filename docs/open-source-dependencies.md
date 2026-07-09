@@ -90,3 +90,10 @@
 - 当前直接依赖主要为 MIT、Apache-2.0 和 BSD-2-Clause。
 - `jszip` 声明为双许可证 `MIT OR GPL-3.0-or-later`，项目可按 MIT 路径使用，但正式开源前仍需在许可证扫描中确认间接依赖。
 - 本清单未覆盖 Docker 基础镜像、系统软件和所有间接依赖，公开开源前必须补充自动化扫描结果。
+
+## Additional File Preview Dependencies
+
+| Dependency | Version | Type | License |
+| --- | --- | --- | --- |
+| `openseadragon` | `6.0.2` | runtime dependency | BSD-3-Clause |
+| `sharp` | `0.35.3` | runtime dependency | Apache-2.0 |

@@ -4,6 +4,9 @@ import { computed, defineAsyncComponent } from 'vue'
 const AttachmentPreviewPane = defineAsyncComponent(() =>
   import('@/components/AttachmentPreviewPane/index.vue'),
 )
+const FilePreviewRouter = defineAsyncComponent(() =>
+  import('@/components/FilePreviewRouter/index.vue'),
+)
 
 const props = withDefaults(defineProps<{
   visible: boolean
@@ -33,8 +36,13 @@ const modalTitle = computed(() => props.title || '在线预览')
     @update:visible="emit('update:visible', $event)"
     @cancel="emit('update:visible', false)"
   >
+    <FilePreviewRouter
+      v-if="props.visible && props.source === 'file'"
+      :file-id="props.attachmentId"
+      height="78vh"
+    />
     <AttachmentPreviewPane
-      v-if="props.visible"
+      v-else-if="props.visible"
       :attachment-id="props.attachmentId"
       :source="props.source"
       height="78vh"

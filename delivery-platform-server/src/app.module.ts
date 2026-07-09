@@ -8,6 +8,7 @@ import { OperationAuditInterceptor } from './common/interceptors/operation-audit
 import appConfig from './config/app.config';
 import authConfig from './config/auth.config';
 import databaseConfig from './config/database.config';
+import documentConfig from './config/document.config';
 import storageConfig from './config/storage.config';
 import { PrismaModule } from './database/prisma.service';
 import { RedisModule } from './database/redis.service';
@@ -44,7 +45,7 @@ import { WorkflowModule } from './modules/workflow/workflow.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, databaseConfig, authConfig, storageConfig],
+      load: [appConfig, databaseConfig, authConfig, storageConfig, documentConfig],
       envFilePath: '.env',
     }),
     PrismaModule,

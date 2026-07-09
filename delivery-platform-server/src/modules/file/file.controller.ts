@@ -40,8 +40,44 @@ import { JwtPayload } from '../auth/strategies/jwt.strategy';
 
 import { UploadFileDto } from './dto/upload-file.dto';
 import { FileService } from './file.service';
+import type { FilePreviewMode } from './file-preview-route';
 
 const FILE_API_BASE_PATH = '/api/v1/files';
+const ALLOWED_FILE_EXTENSIONS = [
+  'pdf',
+  'doc',
+  'docx',
+  'xls',
+  'xlsx',
+  'ppt',
+  'pptx',
+  'jpg',
+  'jpeg',
+  'png',
+  'gif',
+  'webp',
+  'avif',
+  'zip',
+  'rar',
+  'dwg',
+  'dxf',
+  'xmind',
+  'md',
+  'markdown',
+  'vsd',
+  'vsdx',
+  'mp4',
+  'webm',
+  'mov',
+  'm4v',
+  'ogv',
+  'mp3',
+  'wav',
+  'm4a',
+  'aac',
+  'ogg',
+  'flac',
+] as const;
 
 @ApiTags('Files')
 @ApiBearerAuth('JWT-auth')
@@ -56,9 +92,11 @@ export class FileController {
     storage: memoryStorage(),
     limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
     fileFilter: (_req, file, cb) => {
-      const allowedTypes = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png', 'gif', 'zip', 'rar', 'dwg'];
       const ext = file.originalname.split('.').pop()?.toLowerCase();
-      if (ext && allowedTypes.includes(ext)) {
+      if (
+        ext &&
+        (ALLOWED_FILE_EXTENSIONS as readonly string[]).includes(ext)
+      ) {
         cb(null, true);
       } else {
         cb(new BadRequestException(`不支持的文件类型: .${ext}`), false);
@@ -131,6 +169,43 @@ export class FileController {
     };
   }
 
+  @Get(':id/preview-session')
+  @Permissions('file:preview', 'file:download')
+  @ApiOperation({ summary: 'Create file preview session' })
+  async createPreviewSession(
+    @Param('id') id: string,
+    @Query('mode') mode: FilePreviewMode | undefined,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.fileService.createPreviewSession(
+      id,
+      user,
+      mode === 'edit' ? 'edit' : 'view',
+    );
+  }
+
+  @Get(':id/thumbnail')
+  @Permissions('file:preview', 'file:download')
+  @RawResponse()
+  @ApiOperation({ summary: 'Get file thumbnail' })
+  async getThumbnail(
+    @Param('id') id: string,
+    @CurrentUser() user: JwtPayload,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const thumbnail = await this.fileService.getThumbnail(id, user.sub);
+    if (!thumbnail) {
+      response.status(204);
+      return undefined;
+    }
+    response.setHeader('Content-Type', thumbnail.mimeType);
+    response.setHeader(
+      'Content-Disposition',
+      `inline; filename*=UTF-8''${encodeURIComponent(thumbnail.fileName)}`,
+    );
+    return new StreamableFile(thumbnail.stream);
+  }
+
   @Get(':id/preview')
   @Permissions('file:download')
   @ApiOperation({ summary: '获取项目档案文件在线预览内容' })
@@ -183,6 +258,47 @@ export class FileController {
       `inline; filename*=UTF-8''${encodeURIComponent(content.fileName)}`,
     );
     return new StreamableFile(content.stream);
+  }
+
+  @Get(':id/signed-thumbnail')
+  @Public()
+  @RawResponse()
+  @ApiOperation({ summary: 'Get signed file thumbnail' })
+  async getSignedThumbnail(
+    @Param('id') id: string,
+    @Query('token') token: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const thumbnail = await this.fileService.getSignedThumbnail(id, token);
+    if (!thumbnail) {
+      response.status(204);
+      return undefined;
+    }
+    response.setHeader('Content-Type', thumbnail.mimeType);
+    response.setHeader(
+      'Content-Disposition',
+      `inline; filename*=UTF-8''${encodeURIComponent(thumbnail.fileName)}`,
+    );
+    return new StreamableFile(thumbnail.stream);
+  }
+
+  @Post(':id/onlyoffice/callback')
+  @Public()
+  @RawResponse()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'ONLYOFFICE Docs Community callback' })
+  async handleOnlyOfficeCallback(
+    @Param('id') id: string,
+    @Query('token') token: string,
+    @Body() body: unknown,
+    @Res() response: Response,
+  ) {
+    const result = await this.fileService.handleOnlyOfficeCallback(
+      id,
+      token,
+      body,
+    );
+    response.json(result);
   }
 
   @Get(':id/download')

@@ -6,11 +6,14 @@ import {
   NotFoundException,
   Logger,
   ForbiddenException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma, type ArchiveItemStatus, type FileStatus } from '@prisma/client';
+import sharp from 'sharp';
 
 import { PrismaService } from '../../database/prisma.service';
+import type { JwtPayload } from '../auth/strategies/jwt.strategy';
 import {
   buildAttachmentPreview,
   canPreviewWithoutServer,
@@ -21,7 +24,18 @@ import { ProjectAccessService } from '../project/project-access.service';
 
 import { UploadFileDto } from './dto/upload-file.dto';
 import { FileStorageService } from './file-storage.service';
+import {
+  getOnlyOfficeDocumentType,
+  isImagePreviewFile,
+  resolveFilePreviewRoute,
+  type FilePreviewMode,
+  type FilePreviewRoute,
+} from './file-preview-route';
 import { withNormalizedUploadFileName } from './upload-file-name.util';
+import {
+  buildXmindOutline,
+  type XmindOutlineSheet,
+} from './xmind-outline.util';
 
 interface FileListItem {
   id: string;
@@ -47,14 +61,66 @@ interface FileListItem {
   };
 }
 
+type FilePreviewTokenPurpose = 'preview' | 'content' | 'onlyoffice-callback';
+
 interface FilePreviewTokenPayload {
   fileId: string;
   userId: string;
   expiresAt: number;
+  purpose?: FilePreviewTokenPurpose;
+  canEdit?: boolean;
+}
+
+interface FilePreviewSession {
+  file: {
+    id: string;
+    projectId: string;
+    archiveItemId: string | null;
+    fileName: string;
+    originalName: string;
+    fileExt: string;
+    fileSize: string;
+    mimeType: string;
+    versionNo: string;
+    isCurrent: boolean;
+    fileStatus: string;
+    updatedAt: string;
+  };
+  route: FilePreviewRoute;
+  urls: {
+    content: string;
+    thumbnail?: string;
+    download: string;
+  };
+  signed: {
+    expiresAt: string;
+  };
+  onlyOffice?: {
+    available: boolean;
+    docsUrl?: string;
+    reason?: string;
+    config?: Record<string, unknown>;
+  };
+  xmind?: {
+    sheets: XmindOutlineSheet[];
+  };
+}
+
+interface OnlyOfficeCallbackBody {
+  status?: number;
+  url?: string;
+}
+
+interface ThumbnailContent {
+  stream: Readable;
+  fileName: string;
+  mimeType: string;
 }
 
 const MAX_SERVER_PREVIEW_BYTES = 25 * 1024 * 1024;
 const PREVIEW_TOKEN_TTL_MS = 10 * 60 * 1000;
+const ONLYOFFICE_CALLBACK_TTL_MS = 12 * 60 * 60 * 1000;
+const FILE_API_BASE_PATH = '/api/v1/files';
 
 @Injectable()
 export class FileService {
@@ -232,6 +298,11 @@ export class FileService {
     });
 
     this.logger.log(`File uploaded: ${dbFile.fileName} (${dbFile.id})`);
+    await this.ensureThumbnailCache(dbFile).catch((error: unknown) => {
+      this.logger.warn(
+        `Thumbnail generation skipped for ${dbFile.id}: ${this.describeError(error)}`,
+      );
+    });
     return dbFile;
   }
 
@@ -407,6 +478,192 @@ export class FileService {
       }),
       expiresAt: expiresAt.toISOString(),
     };
+  }
+
+  async createPreviewSession(
+    fileId: string,
+    user: JwtPayload,
+    requestedMode: FilePreviewMode = 'view',
+  ): Promise<FilePreviewSession> {
+    const fileRecord = await this.findById(fileId, user.sub);
+    const contentExpiresAt = new Date(Date.now() + PREVIEW_TOKEN_TTL_MS);
+    const onlyOfficeDocsUrl = this.normalizeBaseUrl(
+      this.configService.get<string>('document.onlyOfficeDocsUrl') || '',
+    );
+    const publicApiBaseUrl = this.normalizeBaseUrl(
+      this.configService.get<string>('document.publicApiBaseUrl') || '',
+    );
+    const onlyOfficeAvailable = Boolean(onlyOfficeDocsUrl && publicApiBaseUrl);
+    const canEditOffice = this.canEditOfficeFile(fileRecord, user);
+    const route = resolveFilePreviewRoute({
+      fileExt: fileRecord.fileExt,
+      mimeType: fileRecord.mimeType,
+      fileSize: fileRecord.fileSize,
+      requestedMode,
+      canEditOffice,
+      onlyOfficeAvailable,
+    });
+    const contentToken = this.signPreviewToken({
+      fileId,
+      userId: user.sub,
+      expiresAt: contentExpiresAt.getTime(),
+      purpose: 'content',
+    });
+    const relativeContentUrl = this.buildSignedFileUrl(
+      fileId,
+      'signed-content',
+      contentToken,
+    );
+    const relativeThumbnailUrl =
+      route.category === 'image'
+        ? this.buildSignedFileUrl(fileId, 'signed-thumbnail', contentToken)
+        : undefined;
+
+    const session: FilePreviewSession = {
+      file: {
+        id: fileRecord.id,
+        projectId: fileRecord.projectId,
+        archiveItemId: fileRecord.archiveItemId,
+        fileName: fileRecord.fileName,
+        originalName: fileRecord.originalName,
+        fileExt: fileRecord.fileExt,
+        fileSize: fileRecord.fileSize.toString(),
+        mimeType: fileRecord.mimeType,
+        versionNo: fileRecord.versionNo,
+        isCurrent: fileRecord.isCurrent,
+        fileStatus: fileRecord.fileStatus,
+        updatedAt: fileRecord.updatedAt.toISOString(),
+      },
+      route,
+      urls: {
+        content: relativeContentUrl,
+        thumbnail: relativeThumbnailUrl,
+        download: `${FILE_API_BASE_PATH}/${fileId}/download`,
+      },
+      signed: {
+        expiresAt: contentExpiresAt.toISOString(),
+      },
+    };
+
+    if (route.viewer === 'onlyoffice') {
+      session.onlyOffice = this.buildOnlyOfficeSession(
+        fileRecord,
+        user,
+        route,
+        onlyOfficeDocsUrl,
+        publicApiBaseUrl,
+        relativeContentUrl,
+      );
+    }
+
+    if (route.viewer === 'xmind') {
+      session.xmind = { sheets: await this.readXmindOutline(fileRecord) };
+    }
+
+    await this.prisma.operationLog.create({
+      data: {
+        userId: user.sub,
+        module: 'file',
+        action: 'preview',
+        targetType: 'file',
+        targetId: fileId,
+        result: 'success',
+      },
+    });
+
+    return session;
+  }
+
+  async getThumbnail(
+    fileId: string,
+    userId: string,
+  ): Promise<ThumbnailContent | null> {
+    const fileRecord = await this.findById(fileId, userId);
+    const thumbnailPath = await this.ensureThumbnailCache(fileRecord);
+    if (!thumbnailPath) return null;
+    return {
+      stream: await this.fileStorage.getObject(thumbnailPath),
+      fileName: `${fileRecord.id}.webp`,
+      mimeType: 'image/webp',
+    };
+  }
+
+  async getSignedThumbnail(
+    fileId: string,
+    token: string | undefined,
+  ): Promise<ThumbnailContent | null> {
+    const payload = this.verifyPreviewToken(fileId, token);
+    return this.getThumbnail(fileId, payload.userId);
+  }
+
+  async handleOnlyOfficeCallback(
+    fileId: string,
+    token: string | undefined,
+    body: unknown,
+  ): Promise<{ error: number }> {
+    const payload = this.verifyOnlyOfficeCallbackToken(fileId, token);
+    const callbackBody = this.parseOnlyOfficeCallback(body);
+    if (![2, 6].includes(callbackBody.status ?? 0)) {
+      return { error: 0 };
+    }
+    if (!payload.canEdit) {
+      throw new ForbiddenException('ONLYOFFICE callback is not authorized to save this file');
+    }
+    if (!callbackBody.url) {
+      return { error: 1 };
+    }
+
+    const fileRecord = await this.findById(fileId, payload.userId);
+    const sourceUrl = this.parseRemoteUrl(callbackBody.url);
+    if (!sourceUrl || !this.isAllowedOnlyOfficeDownloadUrl(sourceUrl)) {
+      return { error: 1 };
+    }
+
+    try {
+      const response = await fetch(sourceUrl);
+      if (!response.ok) {
+        this.logger.warn(
+          `ONLYOFFICE save fetch failed for ${fileId}: ${response.status}`,
+        );
+        return { error: 1 };
+      }
+      const buffer = Buffer.from(await response.arrayBuffer());
+      await this.fileStorage.uploadBuffer(
+        buffer,
+        fileRecord.storagePath,
+        fileRecord.mimeType,
+      );
+      await this.prisma.file.update({
+        where: { id: fileId },
+        data: { fileSize: BigInt(buffer.length) },
+      });
+      await this.prisma.operationLog.create({
+        data: {
+          userId: payload.userId,
+          module: 'file',
+          action: 'onlyoffice_save',
+          targetType: 'file',
+          targetId: fileId,
+          result: 'success',
+          afterData: {
+            status: callbackBody.status,
+            fileSize: buffer.length,
+          } satisfies Prisma.JsonObject,
+        },
+      });
+      await this.ensureThumbnailCache({
+        ...fileRecord,
+        fileSize: BigInt(buffer.length),
+      }).catch((error: unknown) => {
+        this.logger.warn(
+          `Thumbnail refresh skipped for ${fileId}: ${this.describeError(error)}`,
+        );
+      });
+      return { error: 0 };
+    } catch (error) {
+      this.logger.error(`ONLYOFFICE callback failed for ${fileId}`, error);
+      throw new ServiceUnavailableException('ONLYOFFICE callback save failed');
+    }
   }
 
   async getPreview(fileId: string, userId: string): Promise<AttachmentPreviewResult> {
@@ -593,6 +850,210 @@ export class FileService {
     return originalName.substring(dotIndex + 1).toLowerCase();
   }
 
+  private buildOnlyOfficeSession(
+    file: FileListItem,
+    user: JwtPayload,
+    route: FilePreviewRoute,
+    docsUrl: string,
+    publicApiBaseUrl: string,
+    relativeContentUrl: string,
+  ): NonNullable<FilePreviewSession['onlyOffice']> {
+    const documentType = getOnlyOfficeDocumentType(file.fileExt);
+    if (!docsUrl || !publicApiBaseUrl || !documentType) {
+      return {
+        available: false,
+        docsUrl: docsUrl || undefined,
+        reason:
+          route.reason ||
+          'ONLYOFFICE Docs URL and PUBLIC_API_BASE_URL are required for Office preview.',
+      };
+    }
+
+    const callbackExpiresAt = Date.now() + ONLYOFFICE_CALLBACK_TTL_MS;
+    const callbackToken = this.signPreviewToken({
+      fileId: file.id,
+      userId: user.sub,
+      expiresAt: callbackExpiresAt,
+      purpose: 'onlyoffice-callback',
+      canEdit: route.editable,
+    });
+    const callbackUrl = `${publicApiBaseUrl}${FILE_API_BASE_PATH}/${file.id}/onlyoffice/callback?token=${encodeURIComponent(
+      callbackToken,
+    )}`;
+    const config: Record<string, unknown> = {
+      type: 'desktop',
+      documentType,
+      width: '100%',
+      height: '100%',
+      document: {
+        fileType: file.fileExt,
+        key: `${file.id}-${file.updatedAt.getTime()}`,
+        title: file.originalName,
+        url: `${publicApiBaseUrl}${relativeContentUrl}`,
+        permissions: {
+          comment: route.editable,
+          copy: true,
+          download: true,
+          edit: route.editable,
+          print: true,
+          review: false,
+        },
+      },
+      editorConfig: {
+        callbackUrl,
+        lang: 'zh-CN',
+        mode: route.editable ? 'edit' : 'view',
+        user: {
+          id: user.sub,
+          name: user.realName || user.username,
+        },
+        customization: {
+          autosave: route.editable,
+          compactHeader: true,
+          forcesave: route.editable,
+        },
+      },
+    };
+
+    const onlyOfficeJwtSecret =
+      this.configService.get<string>('document.onlyOfficeJwtSecret') || '';
+    if (onlyOfficeJwtSecret) {
+      config.token = this.signJsonWebToken(config, onlyOfficeJwtSecret);
+    }
+
+    return {
+      available: true,
+      docsUrl,
+      config,
+      reason: route.reason,
+    };
+  }
+
+  private canEditOfficeFile(file: FileListItem, user: JwtPayload): boolean {
+    if (['Archived', 'Deprecated'].includes(file.fileStatus)) {
+      return false;
+    }
+    if (user.roles.includes('SUPER_ADMIN')) {
+      return true;
+    }
+    return (
+      user.permissions.includes('file:set_current') ||
+      (user.permissions.includes('file:upload') && file.uploadUserId === user.sub)
+    );
+  }
+
+  private async readXmindOutline(file: FileListItem): Promise<XmindOutlineSheet[]> {
+    if (file.fileSize > BigInt(MAX_SERVER_PREVIEW_BYTES)) {
+      return [];
+    }
+    const stream = await this.fileStorage.getObject(file.storagePath);
+    const buffer = await this.streamToBuffer(stream);
+    return buildXmindOutline(buffer);
+  }
+
+  private async ensureThumbnailCache(file: FileListItem): Promise<string | null> {
+    if (!isImagePreviewFile(file.fileExt, file.mimeType)) {
+      return null;
+    }
+    const thumbnailPath = this.getThumbnailStoragePath(file.id);
+    if (await this.fileStorage.objectExists(thumbnailPath)) {
+      return thumbnailPath;
+    }
+
+    const stream = await this.fileStorage.getObject(file.storagePath);
+    const source = await this.streamToBuffer(stream);
+    const thumbnail = await sharp(source, { failOn: 'none' })
+      .rotate()
+      .resize({
+        width: 480,
+        height: 360,
+        fit: 'inside',
+        withoutEnlargement: true,
+      })
+      .webp({ quality: 78 })
+      .toBuffer();
+    await this.fileStorage.uploadBuffer(thumbnail, thumbnailPath, 'image/webp');
+    return thumbnailPath;
+  }
+
+  private getThumbnailStoragePath(fileId: string): string {
+    return `thumbnails/files/${fileId}.webp`;
+  }
+
+  private buildSignedFileUrl(
+    fileId: string,
+    endpoint: 'signed-content' | 'signed-thumbnail',
+    token: string,
+  ): string {
+    return `${FILE_API_BASE_PATH}/${fileId}/${endpoint}?token=${encodeURIComponent(
+      token,
+    )}`;
+  }
+
+  private parseOnlyOfficeCallback(body: unknown): OnlyOfficeCallbackBody {
+    if (!body || typeof body !== 'object') {
+      return {};
+    }
+    const record = body as Record<string, unknown>;
+    return {
+      status:
+        typeof record.status === 'number'
+          ? record.status
+          : Number.isFinite(Number(record.status))
+            ? Number(record.status)
+            : undefined,
+      url: typeof record.url === 'string' ? record.url : undefined,
+    };
+  }
+
+  private parseRemoteUrl(value: string): string | null {
+    try {
+      const url = new URL(value);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+        return null;
+      }
+      return url.toString();
+    } catch {
+      return null;
+    }
+  }
+
+  private isAllowedOnlyOfficeDownloadUrl(value: string): boolean {
+    const docsUrl = this.normalizeBaseUrl(
+      this.configService.get<string>('document.onlyOfficeDocsUrl') || '',
+    );
+    if (!docsUrl) return false;
+    try {
+      return new URL(value).origin === new URL(docsUrl).origin;
+    } catch {
+      return false;
+    }
+  }
+
+  private normalizeBaseUrl(value: string): string {
+    return value.trim().replace(/\/+$/u, '');
+  }
+
+  private signJsonWebToken(
+    payload: Record<string, unknown>,
+    secret: string,
+  ): string {
+    const header = this.base64UrlJson({ alg: 'HS256', typ: 'JWT' });
+    const body = this.base64UrlJson(payload);
+    const signature = createHmac('sha256', secret)
+      .update(`${header}.${body}`)
+      .digest('base64url');
+    return `${header}.${body}.${signature}`;
+  }
+
+  private base64UrlJson(payload: Record<string, unknown>): string {
+    return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+  }
+
+  private describeError(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+  }
+
   private async buildPreviewForFile(file: FileListItem): Promise<AttachmentPreviewResult> {
     const fileExt = file.fileExt.toLowerCase();
     const base = {
@@ -689,6 +1150,17 @@ export class FileService {
 
   private getPreviewSecret(): string {
     return this.configService.get<string>('auth.jwtSecret') || process.env.JWT_SECRET || '';
+  }
+
+  private verifyOnlyOfficeCallbackToken(
+    fileId: string,
+    token?: string,
+  ): FilePreviewTokenPayload {
+    const payload = this.verifyPreviewToken(fileId, token);
+    if (payload.purpose !== 'onlyoffice-callback') {
+      throw new ForbiddenException('Preview token is invalid or expired');
+    }
+    return payload;
   }
 
   private async streamToBuffer(stream: Readable): Promise<Buffer> {

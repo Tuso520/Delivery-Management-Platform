@@ -62,3 +62,17 @@ NestJS 后端容器
 - 按钮按需要使用权限守卫。
 - 后端 Controller 必须校验 JWT 和权限。
 - 项目数据默认按项目成员关系限制，高权限角色可查看更大范围。
+
+## File Preview Center
+
+- Frontend entry: `delivery-platform-web/src/components/FilePreviewRouter/`.
+- Backend session API: `GET /api/v1/files/:id/preview-session?mode=view|edit`.
+- Signed content URLs are short-lived and do not expose MinIO bucket names or object paths.
+- Office files (`doc`, `docx`, `xls`, `xlsx`, `ppt`, `pptx`) route to ONLYOFFICE Docs Community when `ONLYOFFICE_DOCS_URL` and `PUBLIC_API_BASE_URL` are configured. OOXML files can be edited only when backend permissions allow it.
+- PDF files render with PDF.js in read-only mode.
+- Normal images render with Viewer.js. Large images over 15 MB route to OpenSeadragon.
+- Image thumbnails are generated with `sharp`, stored under a private MinIO thumbnail prefix, and exposed only through authenticated or signed thumbnail endpoints.
+- Markdown is fetched through signed content URLs and rendered by a safe renderer that escapes raw HTML, supports headings, TOC, code blocks, tables, links, lists, and quotes.
+- XMind files are read-only and parsed into an outline from `content.json` or `content.xml`.
+- CAD (`dwg`, `dxf`) and Visio (`vsd`, `vsdx`) are read-only degraded previews until a conversion service is configured.
+- Video and audio use native HTML5 playback.

@@ -62,3 +62,10 @@
 - 使用自动化工具导出完整依赖许可证清单。
 - 复核 `pnpm-lock.yaml` 中的间接依赖许可证。
 - 确认示例文档、种子数据和演示项目不包含客户或内部敏感信息。
+
+## Additional File Preview Dependencies
+
+| Component | Usage | Common license |
+| --- | --- | --- |
+| OpenSeadragon | Large image pan and zoom preview | BSD-3-Clause |
+| sharp | Image thumbnail generation | Apache-2.0 |
