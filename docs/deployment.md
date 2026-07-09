@@ -23,6 +23,7 @@ BRANCH=main bash deploy-git.sh deploy
 - 推送 `main` 后自动部署到 GitHub Environment `test`。
 - 手动触发 `workflow_dispatch` 时可选择 `test` 或 `production`。
 - 自动部署仍复用服务器上的 `deploy-git.sh`，不会绕过备份、迁移、健康检查和回滚逻辑。
+- GitHub Actions 会打包当前提交并通过 SSH 上传到服务器，服务器不需要配置 GitHub 私有仓库读取权限。
 
 GitHub Environment 需要配置：
 
@@ -32,7 +33,6 @@ DEPLOY_HOST=公司当前默认测试服务器地址
 DEPLOY_PORT=22
 DEPLOY_USER=root
 DEPLOY_APP_DIR=/www/wwwroot/delivery-platform
-DEPLOY_REPO_URL=https://github.com/Tuso520/Delivery-Management-Platform.git
 DEPLOY_COMPOSE_FILES=docker-compose.yml:docker-compose.prod.yml
 
 Secrets:

@@ -13,6 +13,8 @@ COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-delivery-platform}"
 BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
 ADOPT_EXISTING_PACKAGE="${ADOPT_EXISTING_PACKAGE:-NO}"
 ALLOW_DIRTY="${ALLOW_DIRTY:-NO}"
+SKIP_GIT_FETCH="${SKIP_GIT_FETCH:-NO}"
+PRESERVE_PREVIOUS_REV="${PRESERVE_PREVIOUS_REV:-NO}"
 QUIESCE_APP_BEFORE_BACKUP="${QUIESCE_APP_BEFORE_BACKUP:-YES}"
 ROLLBACK_DATA_ON_FAILURE="${ROLLBACK_DATA_ON_FAILURE:-NO}"
 CONFIRM_RESTORE="${CONFIRM_RESTORE:-NO}"
@@ -208,10 +210,18 @@ checkout_target() {
     err "tracked files are modified on the server; commit, revert or set ALLOW_DIRTY=YES"
   fi
 
-  previous="$(git rev-parse --verify HEAD 2>/dev/null || true)"
+  if [ "$PRESERVE_PREVIOUS_REV" = "YES" ] && [ -s .deploy/previous_rev ]; then
+    previous="$(cat .deploy/previous_rev)"
+  else
+    previous="$(git rev-parse --verify HEAD 2>/dev/null || true)"
+  fi
   [ -n "$previous" ] && printf '%s\n' "$previous" > .deploy/previous_rev
 
-  git fetch --tags --prune origin
+  if [ "$SKIP_GIT_FETCH" = "YES" ]; then
+    warn "SKIP_GIT_FETCH=YES; using current server Git object database"
+  else
+    git fetch --tags --prune origin
+  fi
   target="$(target_ref)"
   if [ -n "$REF" ]; then
     git checkout --detach "$target"
@@ -518,6 +528,8 @@ Important environment variables:
   APP_DIR=/www/wwwroot/delivery-platform
   ADOPT_EXISTING_PACKAGE=YES # first conversion from package deployment
   COMPOSE_FILES=docker-compose.yml
+  SKIP_GIT_FETCH=YES         # use current local Git objects, for CI artifact deployment
+  PRESERVE_PREVIOUS_REV=YES  # keep .deploy/previous_rev created before artifact extraction
 USAGE
     ;;
 esac
