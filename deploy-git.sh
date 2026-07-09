@@ -143,6 +143,12 @@ write_release_metadata() {
   id="$(release_id)"
   export RELEASE_ID="$id"
   printf '%s\n' "$id" > RELEASE_ID
+  ensure_env
+  if grep -q '^RELEASE_ID=' .env; then
+    sed -i "s|^RELEASE_ID=.*|RELEASE_ID=$id|" .env
+  else
+    printf '\nRELEASE_ID=%s\n' "$id" >> .env
+  fi
   git ls-files > RELEASE_MANIFEST.txt
   log "release id: $id"
 }
