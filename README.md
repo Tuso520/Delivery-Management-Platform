@@ -79,7 +79,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\local-docker.ps1 up -Build
 
 ## 生产部署
 
-生产发布采用 Git 拉取部署。代码推送到 GitHub 后，在服务器执行：
+生产发布采用 Git 拉取部署。代码推送到 GitHub 后，可以通过 GitHub Environment 自动 SSH 到服务器执行 `deploy-git.sh`；首次配置方式见 [部署运维](docs/deployment.md)。
+
+也可以在服务器手动执行：
 
 ```bash
 cd /www/wwwroot/delivery-platform

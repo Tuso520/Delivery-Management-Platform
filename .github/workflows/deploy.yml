@@ -1,6 +1,8 @@
-name: 部署校验
+name: 部署
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       environment:
@@ -11,9 +13,20 @@ on:
         options:
           - test
           - production
+      ref:
+        description: 可选 Git ref、tag 或 commit SHA；留空时部署当前提交
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'test' }}
+  cancel-in-progress: false
 
 jobs:
-  package:
+  validate:
     name: 部署配置校验
     runs-on: ubuntu-latest
     steps:
@@ -21,10 +34,102 @@ jobs:
       - name: 校验 Compose 配置
         run: |
           docker compose --env-file .env.local.example -f docker-compose.test.yml config -q
-          docker compose --env-file .env.example -f docker-compose.prod.yml config -q
+          docker compose --env-file .env.example -f docker-compose.yml config -q
+          docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.prod.yml config -q
       - name: 校验 Git 部署脚本
         run: bash -n deploy-git.sh
-      - name: 输出部署交接说明
+
+  deploy:
+    name: 部署到服务器
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'test' }}
+    env:
+      DEPLOY_ENV: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'test' }}
+      DEPLOY_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.sha }}
+      SERVER_HOST: ${{ vars.DEPLOY_HOST || secrets.DEPLOY_HOST }}
+      SERVER_USER: ${{ vars.DEPLOY_USER || secrets.DEPLOY_USER }}
+      SERVER_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      SERVER_ENV_FILE_B64: ${{ secrets.DEPLOY_ENV_FILE_B64 }}
+      SERVER_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+      APP_DIR: ${{ vars.DEPLOY_APP_DIR || '/www/wwwroot/delivery-platform' }}
+      REPO_URL: ${{ vars.DEPLOY_REPO_URL || format('{0}/{1}.git', github.server_url, github.repository) }}
+      BRANCH: main
+      COMPOSE_FILES: ${{ vars.DEPLOY_COMPOSE_FILES || 'docker-compose.yml:docker-compose.prod.yml' }}
+      ADOPT_EXISTING_PACKAGE: ${{ vars.DEPLOY_ADOPT_EXISTING_PACKAGE || 'NO' }}
+    steps:
+      - name: 校验部署密钥配置
         run: |
-          echo "推送或打标签后，在目标服务器执行 deploy-git.sh。"
-          echo "服务器本地保留 .env、备份目录和 Docker 命名卷，不从 Git 覆盖。"
+          missing=0
+          for name in SERVER_HOST SERVER_USER SERVER_SSH_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is required for environment ${DEPLOY_ENV}"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: 配置 SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "$SERVER_PORT" "$SERVER_HOST" >> ~/.ssh/known_hosts
+
+      - name: 准备服务器仓库
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            "$SERVER_USER@$SERVER_HOST" 'bash -s' -- \
+            "$APP_DIR" "$REPO_URL" "$BRANCH" <<'REMOTE'
+          set -Eeuo pipefail
+          APP_DIR="$1"
+          REPO_URL="$2"
+          BRANCH="$3"
+
+          if [ -d "$APP_DIR/.git" ]; then
+            cd "$APP_DIR"
+            git remote set-url origin "$REPO_URL" || true
+            git fetch --tags --prune origin
+          else
+            mkdir -p "$(dirname "$APP_DIR")"
+            git clone --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
+          fi
+          REMOTE
+
+      - name: 可选同步服务器 .env
+        if: ${{ env.SERVER_ENV_FILE_B64 != '' }}
+        run: |
+          printf '%s' "$SERVER_ENV_FILE_B64" | base64 -d | \
+            ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              "$SERVER_USER@$SERVER_HOST" 'bash -s' -- "$APP_DIR" <<'REMOTE'
+          set -Eeuo pipefail
+          APP_DIR="$1"
+          mkdir -p "$APP_DIR"
+          umask 077
+          cat > "$APP_DIR/.env"
+          REMOTE
+
+      - name: 执行 Git 拉取部署
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            "$SERVER_USER@$SERVER_HOST" 'bash -s' -- \
+            "$APP_DIR" "$BRANCH" "$COMPOSE_FILES" "$ADOPT_EXISTING_PACKAGE" "$DEPLOY_REF" <<'REMOTE'
+          set -Eeuo pipefail
+          APP_DIR="$1"
+          BRANCH="$2"
+          COMPOSE_FILES="$3"
+          ADOPT_EXISTING_PACKAGE="$4"
+          DEPLOY_REF="$5"
+
+          cd "$APP_DIR"
+          export APP_DIR BRANCH COMPOSE_FILES ADOPT_EXISTING_PACKAGE
+          if [ -n "$DEPLOY_REF" ]; then
+            export REF="$DEPLOY_REF"
+          fi
+
+          bash deploy-git.sh deploy
+          bash deploy-git.sh status
+          REMOTE

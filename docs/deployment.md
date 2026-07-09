@@ -16,6 +16,44 @@ cd /www/wwwroot/delivery-platform
 BRANCH=main bash deploy-git.sh deploy
 ```
 
+## GitHub 自动部署
+
+`.github/workflows/deploy.yml` 已配置自动部署流程：
+
+- 推送 `main` 后自动部署到 GitHub Environment `test`。
+- 手动触发 `workflow_dispatch` 时可选择 `test` 或 `production`。
+- 自动部署仍复用服务器上的 `deploy-git.sh`，不会绕过备份、迁移、健康检查和回滚逻辑。
+
+GitHub Environment 需要配置：
+
+```text
+Variables:
+DEPLOY_HOST=公司当前默认测试服务器地址
+DEPLOY_PORT=22
+DEPLOY_USER=root
+DEPLOY_APP_DIR=/www/wwwroot/delivery-platform
+DEPLOY_REPO_URL=https://github.com/Tuso520/Delivery-Management-Platform.git
+DEPLOY_COMPOSE_FILES=docker-compose.yml:docker-compose.prod.yml
+
+Secrets:
+DEPLOY_SSH_KEY=<可登录服务器的私钥>
+DEPLOY_ENV_FILE_B64=<可选，服务器 .env 的 base64 内容>
+```
+
+`DEPLOY_ENV_FILE_B64` 为空时，服务器保留现有 `.env`。首次部署或需要刷新测试环境变量时，可在本机生成：
+
+```bash
+base64 -w0 .env.test
+```
+
+Windows PowerShell：
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes(".env.test"))
+```
+
+测试服务器地址以公司级流程文档为准，不在项目代码中写死。生产环境必须使用单独的 GitHub Environment、独立 SSH key 和独立 `.env`。
+
 ## 服务器数据保护
 
 切换应用容器前，`deploy-git.sh` 会生成：
