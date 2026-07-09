@@ -47,7 +47,7 @@ services:
       - delivery-local-network
 
   minio:
-    image: ${MINIO_IMAGE:-minio/minio:RELEASE.2025-09-07T16-13-09Z}
+    image: ${MINIO_IMAGE:-quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z}
     container_name: delivery-local-minio
     restart: unless-stopped
     environment:
@@ -63,7 +63,7 @@ services:
       - delivery-local-network
 
   minio-init:
-    image: ${MINIO_MC_IMAGE:-minio/mc:RELEASE.2025-07-21T05-28-08Z}
+    image: ${MINIO_MC_IMAGE:-quay.io/minio/mc:RELEASE.2025-07-21T05-28-08Z}
     container_name: delivery-local-minio-init
     depends_on:
       minio:

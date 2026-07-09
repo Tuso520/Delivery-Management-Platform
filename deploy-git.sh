@@ -189,8 +189,8 @@ validate_env() {
     fi
   done
   [ "${#JWT_SECRET}" -ge 32 ] || err "JWT_SECRET must contain at least 32 characters"
-  [[ "${MINIO_IMAGE}" == minio/minio:RELEASE.* ]] || err "MINIO_IMAGE must use a fixed RELEASE tag"
-  [[ "${MINIO_MC_IMAGE}" == minio/mc:RELEASE.* ]] || err "MINIO_MC_IMAGE must use a fixed RELEASE tag"
+  [[ "${MINIO_IMAGE}" =~ ^(minio/minio|quay\.io/minio/minio):RELEASE\. ]] || err "MINIO_IMAGE must use a fixed RELEASE tag from minio/minio or quay.io/minio/minio"
+  [[ "${MINIO_MC_IMAGE}" =~ ^(minio/mc|quay\.io/minio/mc):RELEASE\. ]] || err "MINIO_MC_IMAGE must use a fixed RELEASE tag from minio/mc or quay.io/minio/mc"
 }
 
 preflight() {
