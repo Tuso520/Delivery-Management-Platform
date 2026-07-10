@@ -244,7 +244,7 @@ async function cleanupRemovedCredentialFeature(prisma: PrismaClient): Promise<vo
     });
   }
 }
-async function seedDictionaries(prisma: PrismaClient): Promise<void> {
+export async function seedDictionaries(prisma: PrismaClient): Promise<void> {
   void dictionaries;
   const normalizedDictionaries: DictionarySeed[] = [
     {
@@ -289,6 +289,27 @@ async function seedDictionaries(prisma: PrismaClient): Promise<void> {
       ],
     },
     {
+      code: 'skill_level',
+      name: '技能等级',
+      items: [
+        { value: '1', label: '了解' },
+        { value: '2', label: '可协助' },
+        { value: '3', label: '可独立完成' },
+        { value: '4', label: '可指导他人' },
+        { value: '5', label: '专家' },
+      ],
+    },
+    {
+      code: 'evidence_category',
+      name: '检查证据阶段',
+      items: [
+        { value: 'before', label: '检查前' },
+        { value: 'during', label: '检查中' },
+        { value: 'after', label: '检查后' },
+        { value: 'document', label: '记录文件' },
+      ],
+    },
+    {
       code: 'template_category',
       name: '文档模板分类',
       items: [
@@ -326,6 +347,41 @@ async function seedDictionaries(prisma: PrismaClient): Promise<void> {
         { value: 'jpeg', label: 'JPEG 图片' },
         { value: 'png', label: 'PNG 图片' },
         { value: 'zip', label: 'ZIP 压缩包' },
+      ],
+    },
+    {
+      code: 'skill_category',
+      name: '技能分类',
+      items: [
+        { value: 'Project', label: '项目管理' },
+        { value: 'Electrical', label: '电气技术' },
+        { value: 'Software', label: '软件技术' },
+        { value: 'Commissioning', label: '调试交付' },
+        { value: 'Safety', label: '现场安全' },
+        { value: 'Language', label: '语言能力' },
+        { value: 'Quality', label: '质量与风险' },
+        { value: 'General', label: '通用与协同' },
+      ],
+    },
+    {
+      code: 'training_category',
+      name: '培训分类',
+      items: [
+        { value: 'Onboarding', label: '入职培训' },
+        { value: 'Technical', label: '专业技术' },
+        { value: 'Safety', label: '安全培训' },
+        { value: 'Process', label: '流程制度' },
+        { value: 'Language', label: '语言文化' },
+      ],
+    },
+    {
+      code: 'training_status',
+      name: '培训状态',
+      items: [
+        { value: 'Planned', label: '已计划' },
+        { value: 'InProgress', label: '进行中' },
+        { value: 'Completed', label: '已完成' },
+        { value: 'Cancelled', label: '已取消' },
       ],
     },
     {

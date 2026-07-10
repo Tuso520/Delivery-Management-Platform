@@ -3,6 +3,7 @@ import * as bcrypt from 'bcrypt';
 
 import { seedKnowledge } from '../../../prisma/seed-data/knowledge';
 import { seedReportsAndPerformance } from '../../../prisma/seed-data/performance';
+import { seedDictionaries } from '../../../prisma/seed-data/platform';
 import { seedProjects } from '../../../prisma/seed-data/projects';
 import { seedRoles } from '../../../prisma/seed-data/roles';
 import { resolveSeedPassword } from '../../../prisma/seed-data/seed-password';
@@ -151,6 +152,36 @@ describe('deployment seed safety', () => {
         },
       ),
     ).toThrow('生产环境首次初始化必须配置 SEED_ADMIN_PASSWORD');
+  });
+
+  it('seeds every dictionary required by skills and training pages', async () => {
+    const categoryUpsert = jest.fn(({ where }) =>
+      Promise.resolve({ id: `category-${where.categoryCode}` }),
+    );
+    const itemUpsert = jest.fn().mockResolvedValue({ id: 'item-1' });
+    const prisma = {
+      dictionaryCategory: { upsert: categoryUpsert },
+      dictionaryItem: { upsert: itemUpsert },
+    } as unknown as PrismaClient;
+
+    await seedDictionaries(prisma);
+
+    const categoryCodes = categoryUpsert.mock.calls.map(([call]) => call.where.categoryCode);
+    expect(categoryCodes).toEqual(
+      expect.arrayContaining([
+        'skill_level',
+        'evidence_category',
+        'skill_category',
+        'training_category',
+        'training_status',
+      ]),
+    );
+
+    const trainingStatusValues = itemUpsert.mock.calls
+      .map(([call]) => call.create)
+      .filter((item) => item.categoryId === 'category-training_status')
+      .map((item) => item.itemValue);
+    expect(trainingStatusValues).toEqual(['Planned', 'InProgress', 'Completed', 'Cancelled']);
   });
 
   it('resets existing seeded user passwords outside production without reviving accounts', async () => {
