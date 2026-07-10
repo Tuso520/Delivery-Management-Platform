@@ -77,6 +77,17 @@ pnpm --dir delivery-platform-web test -- useFilePreview.spec.ts
 4. 测试服务器 `/api/v1/ready` 返回就绪，登录和统一预览关键路径完成浏览器冒烟验证。
 5. Actions 失败时保留失败事实并检查缺失的 Environment 配置、服务器诊断日志和回滚结果，不把“工作流已配置”写成“自动部署已成功”。
 
+## 当前自动部署验证
+
+2026-07-10，提交 `6ee245676e5e02f98504b044fab8b1ea763fb47e` 推送到 `main` 后自动完成测试环境发布：
+
+- GitHub Actions [质量检查](https://github.com/Tuso520/Delivery-Management-Platform/actions/runs/29065028580) 与 [部署](https://github.com/Tuso520/Delivery-Management-Platform/actions/runs/29065028601) 均由 `push` 事件触发，并在第一次运行成功。
+- 测试服务器 `http://1.117.73.165:18080` 的 `build-info.json.releaseId` 为 `6ee245676e5e`，服务器 Git HEAD 与目标提交完全一致。
+- `/api/v1/ready` 返回 `status: ready`，MySQL、Redis、MinIO 均为 `ok`，前后端及依赖容器均为 healthy。
+- `admin / Admin@123` 与 `pm_wang / Pm@123456` 登录成功，旧管理员密码返回 401。
+- 项目档案、文件审核、知识库和文档模板的 PDF、Word、Excel、PowerPoint、PNG 均使用站内统一弹窗；1280×720 和 1920×1080 下弹窗距视口 12px、内容区无 padding，预览不新增浏览器标签。
+- 培训及技能字典接口返回完整条目，培训记录页加载无控制台错误。
+
 ## 历史验证基线
 
 2026-07-08，版本 `1df2a618471e` 曾在 `http://42.193.176.248:8080` 完成管理员/项目经理登录、项目台账、项目档案及知识库 PDF、Word、Excel、PPT 预览验证。该历史结果不覆盖当前提交，也不能作为本轮 GitHub 自动部署成功的证据。

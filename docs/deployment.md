@@ -36,10 +36,11 @@ DEPLOY_HOST=<测试服务器地址，必填>
 DEPLOY_PORT=22
 DEPLOY_USER=<SSH 用户，必填>
 DEPLOY_APP_DIR=/www/wwwroot/delivery-platform
+DEPLOY_BRANCH=main
 DEPLOY_COMPOSE_FILES=docker-compose.yml:docker-compose.prod.yml
 ```
 
-其中 `DEPLOY_PORT`、`DEPLOY_APP_DIR` 和 `DEPLOY_COMPOSE_FILES` 有工作流默认值，但建议在 Environment 中显式维护，避免服务器约定变化后产生歧义。`DEPLOY_HOST` 和 `DEPLOY_USER` 也兼容从同名 Secret 读取，但推荐使用 Variable；不得把服务器地址、用户名或目录硬编码到工作流。
+其中 `DEPLOY_PORT`、`DEPLOY_APP_DIR`、`DEPLOY_BRANCH` 和 `DEPLOY_COMPOSE_FILES` 有工作流默认值，但建议在 Environment 中显式维护，避免服务器约定变化后产生歧义。`DEPLOY_HOST` 和 `DEPLOY_USER` 也兼容从同名 Secret 读取，但推荐使用 Variable；不得把服务器地址、用户名或目录硬编码到工作流。
 
 配置以下 Secrets：
 
@@ -122,6 +123,10 @@ PUBLIC_API_BASE_URL=https://delivery-platform.example.com
 - 未配置 ONLYOFFICE、ONLYOFFICE 不可用或高级预览会话创建失败时，Office 文件会在同一弹窗内切换到兼容只读预览，由后端提取 DOCX、XLSX、PPTX 内容并生成文档、表格或幻灯片视图。
 - 旧版 DOC、XLS、PPT 仅在能安全提取出可读内容时提供兼容预览；无法解析的二进制旧格式会提示下载查看。
 - 文件中心预览会话还支持 XMind、视频和音频；通用附件兼容预览支持 PDF、图片、Markdown/文本、Office 和视频。CAD、Visio 或未命中对应渲染器的格式保持明确的降级提示。
+
+## 最近一次自动部署记录
+
+2026-07-10，提交 `6ee245676e5e02f98504b044fab8b1ea763fb47e` 推送到 `main` 后，GitHub Actions 通过 Environment `test` 自动部署到 `http://1.117.73.165:18080`。质量检查和部署工作流均在第一次运行成功，服务器 Git HEAD、`build-info.json.releaseId` 和目标提交一致；`/api/v1/ready`、账号登录、统一文件预览与培训页面复验通过。部署脚本生成备份 `backups/git-deploy/20260710_104429-6ee245676e5e`，上一成功版本记录为 `3244cfabca4c8119ce08cd3acb3b8c3a375c4dc8`。
 
 ## 历史人工部署记录
 
