@@ -15,7 +15,6 @@ BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
 ADOPT_EXISTING_PACKAGE="${ADOPT_EXISTING_PACKAGE:-NO}"
 ALLOW_DIRTY="${ALLOW_DIRTY:-NO}"
 SKIP_GIT_FETCH="${SKIP_GIT_FETCH:-NO}"
-QUIESCE_APP_BEFORE_BACKUP="${QUIESCE_APP_BEFORE_BACKUP:-YES}"
 ROLLBACK_DATA_ON_FAILURE="${ROLLBACK_DATA_ON_FAILURE:-NO}"
 CONFIRM_RESTORE="${CONFIRM_RESTORE:-NO}"
 BACKUP_PATH="${BACKUP_PATH:-}"
@@ -62,8 +61,6 @@ on_exit() {
   [ -n "$LOCK_DIR" ] && rmdir "$LOCK_DIR" 2>/dev/null
   return "$status"
 }
-
-trap on_exit EXIT
 
 normalize_app_dir() {
   case "$APP_DIR" in
@@ -290,25 +287,26 @@ start_infra() {
 
 wait_mysql() {
   source_env
-  local attempt
-  for attempt in $(seq 1 60); do
+  local remaining=60
+  while [ "$remaining" -gt 0 ]; do
     if compose exec -T mysql sh -c 'mysqladmin ping -uroot -p"$MYSQL_ROOT_PASSWORD" --silent' >/dev/null 2>&1; then
       return 0
     fi
+    remaining=$((remaining - 1))
     sleep 2
   done
   err "mysql did not become ready"
 }
 
 quiesce_app() {
-  if [ "$QUIESCE_APP_BEFORE_BACKUP" = "YES" ]; then
-    log "stopping application containers before backup and migration"
-    compose stop backend frontend >/dev/null 2>&1 || true
-  fi
+  log "stopping workers and application containers before backup and migration"
+  compose stop file-worker outbox-worker >/dev/null 2>&1 || return 1
+  compose stop backend frontend >/dev/null 2>&1 || return 1
 }
 
 resume_existing_app() {
   compose start backend frontend >/dev/null 2>&1 || true
+  compose start file-worker outbox-worker >/dev/null 2>&1 || true
 }
 
 write_table_audit() {
@@ -385,16 +383,51 @@ run_migrations() {
 check_url() {
   local name="$1"
   local url="$2"
-  local attempt
-  for attempt in $(seq 1 40); do
+  local remaining=40
+  while [ "$remaining" -gt 0 ]; do
     if curl -fsS --connect-timeout 3 --max-time 10 "$url" >/dev/null 2>&1; then
       log "$name healthy"
       return 0
     fi
+    remaining=$((remaining - 1))
     sleep 3
   done
   warn "$name did not respond: $url"
   return 1
+}
+
+check_service_running() {
+  local service="$1"
+  local remaining=20 container_id
+  while [ "$remaining" -gt 0 ]; do
+    container_id="$(compose ps --status running --quiet "$service" 2>/dev/null || true)"
+    if [ -n "$container_id" ]; then
+      log "$service running"
+      return 0
+    fi
+    remaining=$((remaining - 1))
+    sleep 3
+  done
+  warn "$service is not running"
+  return 1
+}
+
+verify_service_release() {
+  local expected service container_id actual
+  expected="$(release_id)"
+  for service in backend file-worker outbox-worker frontend; do
+    container_id="$(compose ps --all --quiet "$service")"
+    [ -n "$container_id" ] || {
+      warn "$service container was not found"
+      return 1
+    }
+    actual="$(docker inspect "$container_id" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' 2>/dev/null)" || return 1
+    [ "$actual" = "$expected" ] || {
+      warn "$service release mismatch: expected $expected, got ${actual:-empty}"
+      return 1
+    }
+  done
+  log "application and worker release labels verified: $expected"
 }
 
 verify_release_version() {
@@ -412,10 +445,15 @@ verify_release_version() {
 
 switch_app() {
   log "switching application containers"
-  compose up -d --force-recreate backend frontend || return 1
+  compose up -d --no-deps --force-recreate backend || return 1
   check_url "backend readiness" "http://127.0.0.1:${BACKEND_PORT:-3000}/api/v1/ready" || return 1
+  compose up -d --no-deps --force-recreate file-worker outbox-worker || return 1
+  check_service_running "file-worker" || return 1
+  check_service_running "outbox-worker" || return 1
+  compose up -d --no-deps --force-recreate frontend || return 1
   check_url "frontend" "http://127.0.0.1:${FRONTEND_PORT:-8080}" || return 1
   verify_release_version || return 1
+  verify_service_release || return 1
 }
 
 mark_deployment_successful() {
@@ -447,7 +485,7 @@ capture_failure_diagnostics() {
     compose ps -a || true
     echo
     echo "===== logs ====="
-    compose logs --no-color --tail=300 backend backend-migrate frontend mysql minio || true
+    compose logs --no-color --tail=300 backend backend-migrate file-worker outbox-worker frontend mysql redis minio || true
   } > "$output" 2>&1
   warn "failure diagnostics saved: $output"
 }
@@ -501,7 +539,7 @@ restore_data_from_backup() {
   fi
 
   start_infra || return 1
-  compose stop backend frontend >/dev/null 2>&1 || true
+  compose stop file-worker outbox-worker backend frontend >/dev/null 2>&1 || return 1
   log "restoring MySQL from $backup/mysql.sql.gz"
   compose exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP DATABASE IF EXISTS \`$MYSQL_DATABASE\`; CREATE DATABASE \`$MYSQL_DATABASE\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"' || return 1
   gunzip -c "$backup/mysql.sql.gz" | compose exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' || return 1
@@ -552,7 +590,9 @@ deploy() {
     handle_deploy_failure "image build failed"
   fi
   start_infra
-  quiesce_app
+  if ! quiesce_app; then
+    handle_deploy_failure "workers or application containers could not be stopped safely"
+  fi
   if ! create_backup; then
     resume_existing_app
     handle_deploy_failure "backup failed"
@@ -590,7 +630,10 @@ manual_backup() {
   acquire_lock
   preflight
   start_infra
-  quiesce_app
+  if ! quiesce_app; then
+    resume_existing_app
+    err "workers or application containers could not be stopped safely"
+  fi
   if ! create_backup; then
     resume_existing_app
     err "backup failed"
@@ -601,19 +644,21 @@ manual_backup() {
 show_logs() {
   init_or_adopt_repo
   detect_compose
-  compose logs -f --tail=200 backend frontend backend-migrate
+  compose logs -f --tail=200 backend frontend backend-migrate file-worker outbox-worker
 }
 
-case "${1:-deploy}" in
-  deploy) deploy ;;
-  preflight) init_or_adopt_repo; acquire_lock; preflight ;;
-  backup) manual_backup ;;
-  status) show_status ;;
-  logs) show_logs ;;
-  rollback-code) init_or_adopt_repo; acquire_lock; preflight; rollback_code_to_previous_successful; switch_app; mark_deployment_successful ;;
-  restore-data) init_or_adopt_repo; acquire_lock; preflight; restore_data_from_backup; switch_app ;;
-  *)
-    cat <<'USAGE'
+main() {
+  trap on_exit EXIT
+  case "${1:-deploy}" in
+    deploy) deploy ;;
+    preflight) init_or_adopt_repo; acquire_lock; preflight ;;
+    backup) manual_backup ;;
+    status) show_status ;;
+    logs) show_logs ;;
+    rollback-code) init_or_adopt_repo; acquire_lock; preflight; rollback_code_to_previous_successful; switch_app; mark_deployment_successful ;;
+    restore-data) init_or_adopt_repo; acquire_lock; preflight; restore_data_from_backup; switch_app ;;
+    *)
+      cat <<'USAGE'
 Usage:
   bash deploy-git.sh deploy
   bash deploy-git.sh status
@@ -630,5 +675,10 @@ Important environment variables:
   COMPOSE_FILES=docker-compose.yml
   SKIP_GIT_FETCH=YES         # use current local Git objects, for CI artifact deployment
 USAGE
-    ;;
-esac
+      ;;
+  esac
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

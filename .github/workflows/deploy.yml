@@ -82,7 +82,9 @@ jobs:
           docker compose --env-file .env.example -f docker-compose.yml config -q
           docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.prod.yml config -q
       - name: 校验 Git 部署脚本
-        run: bash -n deploy-git.sh
+        run: |
+          bash -n deploy-git.sh
+          bash scripts/test-deploy-git.sh
 
   deploy:
     name: 部署到服务器

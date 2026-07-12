@@ -109,6 +109,7 @@ services:
       dockerfile: Dockerfile
       args:
         RELEASE_ID: ${RELEASE_ID:-development}
+    image: delivery-platform-backend:${RELEASE_ID:-development}
     container_name: delivery-backend
     restart: unless-stopped
     ports:
@@ -147,11 +148,7 @@ services:
       - delivery-network
 
   file-worker:
-    build:
-      context: ./delivery-platform-server
-      dockerfile: Dockerfile
-      args:
-        RELEASE_ID: ${RELEASE_ID:-development}
+    image: delivery-platform-backend:${RELEASE_ID:-development}
     container_name: delivery-file-worker
     restart: unless-stopped
     init: true
@@ -186,11 +183,7 @@ services:
       - delivery-network
 
   outbox-worker:
-    build:
-      context: ./delivery-platform-server
-      dockerfile: Dockerfile
-      args:
-        RELEASE_ID: ${RELEASE_ID:-development}
+    image: delivery-platform-backend:${RELEASE_ID:-development}
     container_name: delivery-outbox-worker
     restart: unless-stopped
     init: true

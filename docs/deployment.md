@@ -142,7 +142,7 @@ docker compose ps
 - File Worker 执行缩略图、大图、CAD/Visio、XMind 和视频处理；通过数据库租约领取任务，支持租约回收、指数退避和最大尝试次数。
 - `FILE_CONVERTER_URL` 为空时，需要转换的格式返回 `FILE_CONVERTER_NOT_CONFIGURED`，不会伪装为预览成功。转换服务必须限制输出大小并使用独立 Token。
 - Outbox Worker 解析通知规则并投递站内、飞书和企业微信，按事件/用户/通道记录 `NotificationDelivery`。缺少身份/配置是 `SKIPPED`，暂时错误重试，达到上限进入 `DEAD`。
-- 发布切换前停止两个 Worker；schema、目标数据与 Secret 迁移完成后先启动 API，再启动 Worker。回滚前同样先停 Worker。
+- API、File Worker 与 Outbox Worker 使用同一个带 release 标签的后端镜像。发布切换前必须先停止两个 Worker，再停止 API；schema、目标数据与 Secret 迁移完成后按 API、Worker、前端顺序启动，并核对四个容器的 release 标签。回滚前同样先停 Worker，部署脚本不提供跳过静默阶段的开关。
 
 ## 文件预览环境
 
