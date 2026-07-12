@@ -247,10 +247,10 @@ preflight() {
 checkout_target() {
   mkdir -p .deploy
   local dirty current target
-  dirty="$(git status --porcelain --untracked-files=no)"
+  dirty="$(git status --porcelain --untracked-files=normal)"
   if [ -n "$dirty" ] && [ "$ALLOW_DIRTY" != "YES" ]; then
     printf '%s\n' "$dirty" >&2
-    err "tracked files are modified on the server; commit, revert or set ALLOW_DIRTY=YES"
+    err "the server worktree contains tracked or untracked source changes; commit, preserve and remove them, or set ALLOW_DIRTY=YES"
   fi
 
   if [ ! -s .deploy/last_successful_rev ]; then

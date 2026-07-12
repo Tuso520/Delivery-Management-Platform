@@ -112,7 +112,7 @@ pnpm --dir delivery-platform-web test:smoke:api
 推送后以同一提交的实际结果为准：
 
 1. `quality`、`validate` 成功后才能进入 `deploy`。
-2. Environment 使用固定核验的 SSH host key，目标提交与发布包一致。
+2. Environment 使用固定核验的 SSH host key，目标提交与 Git bundle 中的 `HEAD` 一致。
 3. 服务器 Git HEAD、`build-info.json.releaseId` 和工作流目标提交一致。
 4. `/api/v1/ready`、API E2E、浏览器关键路径和两个 Worker 状态通过。
 5. 失败时保存诊断与回滚事实；“工作流已配置”不等于“当前版本部署成功”。

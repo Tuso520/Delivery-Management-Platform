@@ -5,7 +5,7 @@
 平台保留两种使用同一套 `deploy-git.sh` 的部署入口：
 
 - 人工部署：在服务器应用目录执行脚本，适用于首次接入、故障处理和受控发布。
-- GitHub 自动部署：推送 `main` 后，由 GitHub Actions 先完成质量门禁和部署配置校验，再把固定到具体提交的发布包上传到测试服务器并执行脚本。
+- GitHub 自动部署：推送 `main` 后，由 GitHub Actions 先完成质量门禁和部署配置校验，再把固定到具体提交的 Git bundle 与部署脚本上传到测试服务器并执行。
 
 当前 `.github/workflows/deploy.yml` 只部署 GitHub Environment `test`。手动触发也只允许选择 `main` 历史中的提交或标签，并仍然部署到 `test`；生产发布不复用该测试 Environment，必须另行建立隔离的审批、凭据和环境变量。
 
@@ -22,8 +22,10 @@ BRANCH=main bash deploy-git.sh deploy
 
 1. `quality`：安装前后端依赖，执行后端类型检查、测试、构建，以及前端类型检查、测试、构建。
 2. `validate`：校验本地、默认和生产 Compose 组合，并对 `deploy-git.sh` 执行 shell 语法检查。
-3. `deploy`：仅当前两项都通过时进入 Environment `test`，固定目标提交，使用 SSH 上传发布包并调用服务器上的 `deploy-git.sh`。
+3. `deploy`：仅当前两项都通过时进入 Environment `test`，固定目标提交，使用 SSH 上传并校验 Git bundle；bundle 只向服务器 Git 对象库导入目标提交，不预先覆盖线上工作区，随后由同一提交中的 `deploy-git.sh` 完成备份、migration、容器切换和健康检查。
 4. 部署脚本备份 MySQL、MinIO 和环境快照，执行受控迁移，重建 API、File Worker、Outbox Worker 和前端容器，并检查依赖就绪状态、Worker 运行状态、前端响应和发布版本号；失败时保存诊断信息并尝试回滚到上一提交。
+
+服务器工作区存在任何未提交的受跟踪或未跟踪源码时，自动部署都会在切换代码前拒绝继续；`.env`、备份、存储和发布元数据等 `.gitignore` 中的服务器专属文件不受影响。不得通过清理未知文件绕过该门禁，应先识别并保留服务器侧改动。
 
 工作流已具备上述逻辑不等于自动部署已经跑通。首次启用或凭据变更后，必须以 GitHub Actions 中对应提交的 `quality`、`validate`、`deploy` 三个作业均成功，以及测试服务器版本核对结果为准。
 

@@ -130,48 +130,58 @@ jobs:
           printf '%s\n' "$SERVER_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: 打包当前提交
+      - name: 生成当前提交 Git bundle
         run: |
-          tar \
-            --exclude='./.env' \
-            --exclude='./.env.local' \
-            --exclude='./backups' \
-            --exclude='./storage' \
-            --exclude='./.deploy' \
-            --exclude='./node_modules' \
-            --exclude='./delivery-platform-server/node_modules' \
-            --exclude='./delivery-platform-server/dist' \
-            --exclude='./delivery-platform-web/node_modules' \
-            --exclude='./delivery-platform-web/dist' \
-            --exclude='./coverage' \
-            -czf /tmp/delivery-platform-release.tgz .
+          git bundle create /tmp/delivery-platform-release.bundle HEAD
+          git bundle verify /tmp/delivery-platform-release.bundle
+          bundled_ref="$(git bundle list-heads /tmp/delivery-platform-release.bundle | awk '$2 == "HEAD" { print $1 }')"
+          test "$bundled_ref" = "$DEPLOY_REF"
 
       - name: 上传当前提交到服务器
         run: |
+          remote_bundle="/tmp/delivery-platform-release-${DEPLOY_REF}.bundle"
+          remote_script="/tmp/delivery-platform-deploy-${DEPLOY_REF}.sh"
           scp -i ~/.ssh/deploy_key -P "$SERVER_PORT" \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-            /tmp/delivery-platform-release.tgz \
-            "$SERVER_USER@$SERVER_HOST:/tmp/delivery-platform-release-${DEPLOY_REF}.tgz"
+            /tmp/delivery-platform-release.bundle deploy-git.sh \
+            "$SERVER_USER@$SERVER_HOST:/tmp/"
 
           ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             "$SERVER_USER@$SERVER_HOST" 'bash -s' -- \
-            "$APP_DIR" "/tmp/delivery-platform-release-${DEPLOY_REF}.tgz" <<'REMOTE'
+            "$APP_DIR" "$DEPLOY_REF" "$remote_bundle" "$remote_script" <<'REMOTE'
           set -Eeuo pipefail
           APP_DIR="$1"
-          ARCHIVE="$2"
+          DEPLOY_REF="$2"
+          REMOTE_BUNDLE="$3"
+          REMOTE_SCRIPT="$4"
 
-          mkdir -p "$APP_DIR"
+          test -d "$APP_DIR/.git" || {
+            echo "::error::APP_DIR is not an initialized Git repository: $APP_DIR" >&2
+            exit 1
+          }
           install -d -m 700 "$APP_DIR/.deploy"
-          if [ -d "$APP_DIR/.git" ] && [ ! -s "$APP_DIR/.deploy/last_successful_rev" ]; then
+          mv -f /tmp/delivery-platform-release.bundle "$REMOTE_BUNDLE"
+          mv -f /tmp/deploy-git.sh "$REMOTE_SCRIPT"
+          chmod 600 "$REMOTE_BUNDLE"
+          chmod 700 "$REMOTE_SCRIPT"
+
+          if [ -n "$(git -C "$APP_DIR" status --porcelain --untracked-files=normal)" ]; then
+            echo "::error::the server worktree contains tracked or untracked source changes; refusing to import a release" >&2
+            exit 1
+          fi
+          if [ ! -s "$APP_DIR/.deploy/last_successful_rev" ]; then
             current_revision="$(git -C "$APP_DIR" rev-parse --verify HEAD 2>/dev/null || true)"
             if [ -n "$current_revision" ]; then
               printf '%s\n' "$current_revision" > "$APP_DIR/.deploy/last_successful_rev.tmp"
               mv -f "$APP_DIR/.deploy/last_successful_rev.tmp" "$APP_DIR/.deploy/last_successful_rev"
             fi
           fi
-          tar --no-same-owner -xzf "$ARCHIVE" -C "$APP_DIR"
-          rm -f "$ARCHIVE"
+
+          git -C "$APP_DIR" fetch "$REMOTE_BUNDLE" HEAD
+          fetched_ref="$(git -C "$APP_DIR" rev-parse FETCH_HEAD)"
+          test "$fetched_ref" = "$DEPLOY_REF"
+          git -C "$APP_DIR" cat-file -e "${DEPLOY_REF}^{commit}"
           REMOTE
 
       - name: 执行 Git 拉取部署
@@ -201,7 +211,9 @@ jobs:
           ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             "$SERVER_USER@$SERVER_HOST" 'bash -s' -- \
-            "$APP_DIR" "$BRANCH" "$COMPOSE_FILES" "$DEPLOY_REF" "$remote_env" "$env_sha" <<'REMOTE'
+            "$APP_DIR" "$BRANCH" "$COMPOSE_FILES" "$DEPLOY_REF" "$remote_env" "$env_sha" \
+            "/tmp/delivery-platform-deploy-${DEPLOY_REF}.sh" \
+            "/tmp/delivery-platform-release-${DEPLOY_REF}.bundle" <<'REMOTE'
           set -Eeuo pipefail
           APP_DIR="$1"
           BRANCH="$2"
@@ -209,6 +221,8 @@ jobs:
           DEPLOY_REF="$4"
           REMOTE_ENV="${5:-}"
           EXPECTED_ENV_SHA="${6:-}"
+          DEPLOY_SCRIPT="$7"
+          REMOTE_BUNDLE="$8"
           ENV_REPLACED="NO"
           umask 077
 
@@ -219,6 +233,7 @@ jobs:
             if [ -n "$REMOTE_ENV" ]; then
               rm -f "$REMOTE_ENV"
             fi
+            rm -f "$DEPLOY_SCRIPT" "$REMOTE_BUNDLE"
             if [ "$status" -ne 0 ] && [ "$ENV_REPLACED" = "YES" ]; then
               if [ -f "$APP_DIR/.deploy/env.before-deploy" ]; then
                 mv -f "$APP_DIR/.deploy/env.before-deploy" "$APP_DIR/.env"
@@ -254,6 +269,6 @@ jobs:
             export REF="$DEPLOY_REF"
           fi
 
-          bash deploy-git.sh deploy
-          bash deploy-git.sh status
+          bash "$DEPLOY_SCRIPT" deploy
+          bash "$DEPLOY_SCRIPT" status
           REMOTE
