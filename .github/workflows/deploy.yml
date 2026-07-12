@@ -155,6 +155,7 @@ jobs:
           DEPLOY_REF="$2"
           REMOTE_BUNDLE="$3"
           REMOTE_SCRIPT="$4"
+          umask 077
 
           test -d "$APP_DIR/.git" || {
             echo "::error::APP_DIR is not an initialized Git repository: $APP_DIR" >&2
@@ -166,10 +167,84 @@ jobs:
           chmod 600 "$REMOTE_BUNDLE"
           chmod 700 "$REMOTE_SCRIPT"
 
+          cleanup_failed_upload() {
+            status="$?"
+            trap - EXIT
+            if [ "$status" -ne 0 ]; then
+              rm -f "$REMOTE_BUNDLE" "$REMOTE_SCRIPT"
+            fi
+            exit "$status"
+          }
+          trap cleanup_failed_upload EXIT
+
+          git -C "$APP_DIR" fetch "$REMOTE_BUNDLE" HEAD
+          fetched_ref="$(git -C "$APP_DIR" rev-parse FETCH_HEAD)"
+          test "$fetched_ref" = "$DEPLOY_REF"
+          git -C "$APP_DIR" cat-file -e "${DEPLOY_REF}^{commit}"
+
+          # One-time recovery for the previous archive-based workflow. It is
+          # allowed only when every changed source file exactly matches one
+          # imported historical release; unknown server edits still fail closed.
+          recover_release_overlay() {
+            local -a overlay_paths=()
+            local -a untracked_paths=()
+            local actual_hashes expected_hashes candidate revision path
+            local stamp recovery_dir destination candidate_short
+
+            git -C "$APP_DIR" diff --cached --quiet || return 1
+            mapfile -d '' -t overlay_paths < <(
+              git -C "$APP_DIR" diff --name-only -z
+              git -C "$APP_DIR" ls-files --others --exclude-standard -z
+            )
+            [ "${#overlay_paths[@]}" -gt 0 ] || return 1
+            for path in "${overlay_paths[@]}"; do
+              [ -f "$APP_DIR/$path" ] || return 1
+              case "$path" in
+                *$'\n'*) return 1 ;;
+              esac
+            done
+            actual_hashes="$(printf '%s\n' "${overlay_paths[@]}" | git -C "$APP_DIR" hash-object --stdin-paths)" || return 1
+
+            candidate=""
+            while IFS= read -r revision; do
+              expected_hashes="$({
+                for path in "${overlay_paths[@]}"; do
+                  printf '%s:%s\n' "$revision" "$path"
+                done
+              } | git -C "$APP_DIR" cat-file --batch-check='%(objectname)')" || return 1
+              if [ "$actual_hashes" = "$expected_hashes" ]; then
+                candidate="$revision"
+                break
+              fi
+            done < <(git -C "$APP_DIR" rev-list --max-count=32 "$DEPLOY_REF")
+            [ -n "$candidate" ] || return 1
+
+            stamp="$(date +%Y%m%d_%H%M%S)"
+            candidate_short="${candidate:0:12}"
+            recovery_dir="$APP_DIR/.deploy/recovered-overlays/${stamp}-${candidate_short}"
+            mkdir -p "$recovery_dir/untracked"
+            git -C "$APP_DIR" status --porcelain=v1 -z --untracked-files=normal > "$recovery_dir/status.z"
+            git -C "$APP_DIR" diff --binary > "$recovery_dir/tracked.patch"
+            mapfile -d '' -t untracked_paths < <(git -C "$APP_DIR" ls-files --others --exclude-standard -z)
+            for path in "${untracked_paths[@]}"; do
+              destination="$recovery_dir/untracked/$path"
+              mkdir -p "$(dirname "$destination")" || return 1
+              mv "$APP_DIR/$path" "$destination" || return 1
+            done
+            git -C "$APP_DIR" restore --source=HEAD --worktree -- . || return 1
+            [ -z "$(git -C "$APP_DIR" status --porcelain --untracked-files=normal)" ] || return 1
+            printf '%s\n' "$candidate" > "$recovery_dir/recovered-release.txt"
+            echo "recovered exact archive overlay from release $candidate_short"
+          }
+
           if [ -n "$(git -C "$APP_DIR" status --porcelain --untracked-files=normal)" ]; then
-            echo "::error::the server worktree contains tracked or untracked source changes; refusing to import a release" >&2
-            exit 1
+            recover_release_overlay || {
+              echo "::error::the server worktree contains changes that do not exactly match a historical release; refusing deployment" >&2
+              git -C "$APP_DIR" status --short --untracked-files=normal >&2
+              exit 1
+            }
           fi
+
           if [ ! -s "$APP_DIR/.deploy/last_successful_rev" ]; then
             current_revision="$(git -C "$APP_DIR" rev-parse --verify HEAD 2>/dev/null || true)"
             if [ -n "$current_revision" ]; then
@@ -177,11 +252,7 @@ jobs:
               mv -f "$APP_DIR/.deploy/last_successful_rev.tmp" "$APP_DIR/.deploy/last_successful_rev"
             fi
           fi
-
-          git -C "$APP_DIR" fetch "$REMOTE_BUNDLE" HEAD
-          fetched_ref="$(git -C "$APP_DIR" rev-parse FETCH_HEAD)"
-          test "$fetched_ref" = "$DEPLOY_REF"
-          git -C "$APP_DIR" cat-file -e "${DEPLOY_REF}^{commit}"
+          trap - EXIT
           REMOTE
 
       - name: 执行 Git 拉取部署
