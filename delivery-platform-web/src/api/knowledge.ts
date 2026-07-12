@@ -1,86 +1,91 @@
 import request from './request'
-import type { PaginatedData } from '@/types/api'
+import { runIdempotentUpload } from './upload-idempotency'
 import type {
   KnowledgeCategory,
-  KnowledgeArticle,
-  KnowledgeFileRevisionDiff,
-  CreateKnowledgeCategoryDto,
-  UpdateKnowledgeCategoryDto,
-  CreateKnowledgeArticleDto,
-  UpdateKnowledgeArticleDto,
-  QueryKnowledgeArticleDto,
+  CreateKnowledgeItemDto,
+  CreateKnowledgeVersionDto,
+  KnowledgeItem,
+  KnowledgeItemPage,
+  KnowledgeReviewSubmissionResult,
+  KnowledgeSummary,
+  QueryKnowledgeItemDto,
+  UpdateKnowledgeItemDto,
+  KnowledgeVersion,
+  KnowledgeDraftFileUploadResult,
 } from '@/types/knowledge'
 
 export const knowledgeApi = {
-  // Categories
-  getCategories() {
-    return request.get<KnowledgeCategory[]>('/knowledge/categories')
+  uploadDraftFile(file: File, changeDescription?: string) {
+    const data = new FormData()
+    data.append('file', file)
+    data.append('ownerType', 'KNOWLEDGE')
+    if (changeDescription?.trim()) data.append('changeDescription', changeDescription.trim())
+    const operation = JSON.stringify({
+      ownerType: 'KNOWLEDGE',
+      changeDescription: changeDescription?.trim(),
+    })
+    return runIdempotentUpload(file, operation, (idempotencyKey) =>
+      request.post<KnowledgeDraftFileUploadResult>('/files/drafts', data, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          'Idempotency-Key': idempotencyKey,
+        },
+        timeout: 120000,
+      }),
+    )
   },
 
-  getCategoryById(id: string) {
-    return request.get<KnowledgeCategory>(`/knowledge/categories/${id}`)
+  // Unified knowledge items
+  getSummary() {
+    return request.get<KnowledgeSummary>('/knowledge/summary')
   },
 
-  createCategory(data: CreateKnowledgeCategoryDto) {
-    return request.post<KnowledgeCategory>('/knowledge/categories', data)
+  getList(params: QueryKnowledgeItemDto) {
+    return request.get<KnowledgeItemPage>('/knowledge', { params })
   },
 
-  updateCategory(id: string, data: UpdateKnowledgeCategoryDto) {
-    return request.put<KnowledgeCategory>(`/knowledge/categories/${id}`, data)
+  getById(id: string) {
+    return request.get<KnowledgeItem>(`/knowledge/${id}`)
   },
 
-  deleteCategory(id: string) {
-    return request.delete<void>(`/knowledge/categories/${id}`)
+  create(data: CreateKnowledgeItemDto) {
+    return request.post<KnowledgeItem>('/knowledge', data)
   },
 
-  // Articles
-  getArticles(params: QueryKnowledgeArticleDto) {
-    return request.get<PaginatedData<KnowledgeArticle>>('/knowledge/articles', { params })
+  update(id: string, data: UpdateKnowledgeItemDto) {
+    return request.patch<KnowledgeItem>(`/knowledge/${id}`, data)
   },
 
-  getArticleById(id: string) {
-    return request.get<KnowledgeArticle>(`/knowledge/articles/${id}`)
+  createVersion(id: string, data: CreateKnowledgeVersionDto) {
+    return request.post<KnowledgeVersion>(`/knowledge/${id}/versions`, data)
   },
 
-  createArticle(data: CreateKnowledgeArticleDto) {
-    return request.post<KnowledgeArticle>('/knowledge/articles', data)
+  updateVersion(versionId: string, data: CreateKnowledgeVersionDto) {
+    return request.patch<KnowledgeVersion>(`/knowledge-versions/${versionId}`, data)
   },
 
-  updateArticle(id: string, data: UpdateKnowledgeArticleDto) {
-    return request.put<KnowledgeArticle>(`/knowledge/articles/${id}`, data)
+  submitReview(versionId: string, approvalTemplateId?: string) {
+    return request.post<KnowledgeReviewSubmissionResult>(
+      `/knowledge-versions/${versionId}/submit-review`,
+      approvalTemplateId ? { approvalTemplateId } : {},
+    )
   },
 
-  deleteArticle(id: string) {
-    return request.delete<void>(`/knowledge/articles/${id}`)
+  archive(id: string) {
+    return request.post<Pick<KnowledgeItem, 'id' | 'status' | 'archivedAt'>>(
+      `/knowledge/${id}/archive`,
+    )
   },
 
-  publishArticle(id: string) {
-    return request.post<KnowledgeArticle>(`/knowledge/articles/${id}/publish`)
-  },
-
-  deprecateArticle(id: string) {
-    return request.post<KnowledgeArticle>(`/knowledge/articles/${id}/deprecate`)
-  },
-
-  getVersions(id: string) {
-    return request.get<NonNullable<KnowledgeArticle['versions']>>(`/knowledge/articles/${id}/versions`)
-  },
-
-  submitFileRevision(articleId: string, attachmentId: string, data: FormData) {
-    return request.post(`/knowledge/articles/${articleId}/files/${attachmentId}/revisions`, data, {
-      headers: { 'Content-Type': 'multipart/form-data' },
+  downloadFile(logicalFileId: string) {
+    return request.get<Blob>(`/files/${logicalFileId}/download`, {
+      responseType: 'blob',
       timeout: 120000,
     })
   },
 
-  getFileRevisionDiff(id: string) {
-    return request.get<KnowledgeFileRevisionDiff>(`/knowledge/file-revisions/${id}/diff`)
-  },
-
-  /** Upload a file as a knowledge article */
-  uploadFile(data: FormData) {
-    return request.post<KnowledgeArticle>('/knowledge/articles', data, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
+  // Categories
+  getCategories() {
+    return request.get<KnowledgeCategory[]>('/knowledge/categories')
   },
 }

@@ -1,12 +1,18 @@
+<script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
+</script>
+
 <template>
   <div class="not-found-page">
     <div class="not-found-code">
       404
     </div>
-    <h1>页面不可用</h1>
-    <p>页面不存在，或当前账号没有访问权限。</p>
+    <h1>{{ t('notFound.title') }}</h1>
+    <p>{{ t('notFound.description') }}</p>
     <a-button type="primary" @click="$router.push('/dashboard')">
-      返回工作台
+      {{ t('notFound.back') }}
     </a-button>
   </div>
 </template>

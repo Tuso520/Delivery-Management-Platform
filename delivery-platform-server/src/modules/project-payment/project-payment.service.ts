@@ -1,11 +1,8 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
+import { OperationLogService } from '../operation-log/operation-log.service';
 import { ProjectAccessService } from '../project/project-access.service';
 
 import {
@@ -14,14 +11,25 @@ import {
   UpdateProjectPaymentDto,
 } from './dto/project-payment.dto';
 
+interface PaymentReadAuditContext {
+  ipAddress?: string;
+  userAgent?: string;
+  traceId?: string;
+}
+
 @Injectable()
 export class ProjectPaymentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly projectAccess: ProjectAccessService,
+    private readonly operationLog: OperationLogService,
   ) {}
 
-  async findAll(query: QueryProjectPaymentDto, userId: string) {
+  async findAll(
+    query: QueryProjectPaymentDto,
+    userId: string,
+    auditContext: PaymentReadAuditContext = {},
+  ) {
     const { page = 1, pageSize = 20, projectId, status } = query;
     const where: Prisma.ProjectPaymentWhereInput = {
       deletedAt: null,
@@ -29,30 +37,49 @@ export class ProjectPaymentService {
       status,
       project: await this.projectAccess.buildProjectWhere(userId),
     };
-    const [total, list] = await Promise.all([
-      this.prisma.projectPayment.count({ where }),
-      this.prisma.projectPayment.findMany({
-        where,
-        include: {
-          project: {
-            select: { id: true, projectCode: true, projectName: true },
+    return this.prisma.$transaction(async (tx) => {
+      const [total, list] = await Promise.all([
+        tx.projectPayment.count({ where }),
+        tx.projectPayment.findMany({
+          where,
+          include: {
+            project: {
+              select: { id: true, projectCode: true, projectName: true },
+            },
+            creator: { select: { id: true, realName: true } },
           },
-          creator: { select: { id: true, realName: true } },
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
+        }),
+      ]);
+      await this.operationLog.log(
+        {
+          userId,
+          module: 'project-payment',
+          action: 'view_cost',
+          targetType: projectId ? 'project' : 'project_payment',
+          targetId: projectId ?? userId,
+          afterData: {
+            filters: { projectId: projectId ?? null, status: status ?? null },
+            page,
+            pageSize,
+            resultCount: list.length,
+            total,
+          },
+          ipAddress: auditContext.ipAddress,
+          userAgent: auditContext.userAgent,
+          traceId: auditContext.traceId,
         },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
-      }),
-    ]);
-    return {
-      list: list.map((item) => this.serialize(item)),
-      pagination: {
+        tx,
+      );
+      return {
+        items: list.map((item) => this.serialize(item)),
         page,
         pageSize,
         total,
-        totalPages: Math.ceil(total / pageSize),
-      },
-    };
+      };
+    });
   }
 
   async create(dto: CreateProjectPaymentDto, userId: string) {
@@ -92,13 +119,11 @@ export class ProjectPaymentService {
     if (dto.projectId && dto.projectId !== existing.projectId) {
       throw new BadRequestException('不能修改回款记录所属项目');
     }
-    const originalAmount =
-      dto.originalAmount ?? existing.originalAmount.toNumber();
+    const originalAmount = dto.originalAmount ?? existing.originalAmount.toNumber();
     const receivedOriginalAmount =
       dto.receivedOriginalAmount ?? existing.receivedOriginalAmount.toNumber();
     const originalCurrency = dto.originalCurrency ?? existing.originalCurrency;
-    const convertedCurrency =
-      dto.convertedCurrency ?? existing.convertedCurrency;
+    const convertedCurrency = dto.convertedCurrency ?? existing.convertedCurrency;
     const amount = await this.resolveAmount(
       originalAmount,
       receivedOriginalAmount,
@@ -106,25 +131,15 @@ export class ProjectPaymentService {
       convertedCurrency,
     );
     const dueDate =
-      dto.dueDate === undefined
-        ? existing.dueDate
-        : dto.dueDate
-          ? new Date(dto.dueDate)
-          : null;
+      dto.dueDate === undefined ? existing.dueDate : dto.dueDate ? new Date(dto.dueDate) : null;
     const record = await this.prisma.projectPayment.update({
       where: { id },
       data: {
         paymentName: dto.paymentName,
         paymentType: dto.paymentType,
         dueDate,
-        receivedDate: dto.receivedDate
-          ? new Date(dto.receivedDate)
-          : undefined,
-        status: this.resolveStatus(
-          originalAmount,
-          receivedOriginalAmount,
-          dueDate?.toISOString(),
-        ),
+        receivedDate: dto.receivedDate ? new Date(dto.receivedDate) : undefined,
+        status: this.resolveStatus(originalAmount, receivedOriginalAmount, dueDate?.toISOString()),
         ...amount,
         remark: dto.remark,
       },
@@ -205,13 +220,15 @@ export class ProjectPaymentService {
     return 'Planned';
   }
 
-  private serialize<T extends {
-    originalAmount: Prisma.Decimal;
-    exchangeRate: Prisma.Decimal;
-    convertedAmount: Prisma.Decimal;
-    receivedOriginalAmount: Prisma.Decimal;
-    receivedConvertedAmount: Prisma.Decimal;
-  }>(record: T) {
+  private serialize<
+    T extends {
+      originalAmount: Prisma.Decimal;
+      exchangeRate: Prisma.Decimal;
+      convertedAmount: Prisma.Decimal;
+      receivedOriginalAmount: Prisma.Decimal;
+      receivedConvertedAmount: Prisma.Decimal;
+    },
+  >(record: T) {
     return {
       ...record,
       originalAmount: record.originalAmount.toNumber(),

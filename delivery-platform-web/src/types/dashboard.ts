@@ -1,75 +1,61 @@
-export interface DashboardOverview {
-  totalProjects: number
-  activeProjects: number
-  highRiskProjects: number
-  delayedProjects: number
-  pendingReviews: number
-  avgCompletionRate: number
-  byStatus: { status: string; count: number }[]
-  byStage: { stage: string; count: number }[]
-  acceptedProjects: number
-  draftProjects: number
-  totalContractAmount: number
-  totalPlannedPaymentAmount: number
-  totalReceivedAmount: number
-  outstandingPaymentAmount: number
-  overduePaymentAmount: number
-  overduePaymentCount: number
-  paymentCompletionRate: number
-  recentProjects: {
-    id: string
-    projectCode: string
-    projectName: string
-    countryCode: string
-    status: string
-    riskLevel: string
-    createdAt: string
-  }[]
+export interface DashboardProjectSummary {
+  total: number
+  active: number
+  accepted: number
+  highRisk: number
 }
 
-export interface CountryStats {
-  countryCode: string
-  totalProjects: number
-  activeProjects: number
-  completionRate: number
-}
+export type DashboardTaskType =
+  | 'FILE_REVIEW'
+  | 'FILE_REVISION'
+  | 'PROJECT_RISK'
+  | 'PROJECT_STAGE'
+  | 'SYSTEM_NOTIFICATION'
 
-export interface ProjectStats {
-  projectId: string
-  projectName: string
-  projectCode: string
-  status: string
-  riskLevel: string
-  totalArchiveItems: number
-  completedArchiveItems: number
-  pendingUploadItems: number
-  reviewingItems: number
-  rejectedItems: number
-  totalChecklistItems: number
-  completedChecklistItems: number
-  pendingChecklistItems: number
-  totalFiles: number
-  memberCount: number
-}
-
-export interface TodoItem {
-  type: 'pending_upload' | 'pending_review' | 'rejected'
+export interface DashboardTask {
   id: string
-  projectId: string
-  projectName: string
-  itemName: string
-  stageCode: string
-  status: string
+  type: DashboardTaskType
+  title: string
+  description: string | null
+  sourceType: string | null
+  sourceId: string | null
+  projectId: string | null
+  projectName: string | null
+  priority: 'URGENT' | 'HIGH' | 'NORMAL'
+  dueAt: string | null
   createdAt: string
 }
 
-export interface UserProject {
+export interface DashboardHighRiskProject {
+  id: string
+  projectCode: string
+  projectName: string
+  riskLevel: string
+  riskDescription: string | null
+  currentStage: string | null
+  status: string
+  expectedAcceptanceAt: string | null
+  updatedAt: string
+}
+
+export interface DashboardRecentProject {
   id: string
   projectCode: string
   projectName: string
   countryCode: string
-  projectStatus: string
+  status: string
   riskLevel: string
-  currentStage: string
-  role: string
+  currentStage: string | null
+  progressPercent: number | null
+  updatedAt: string
+}
+
+export interface DashboardRecentActivity {
+  id: string
+  module: string
+  action: string
+  projectId: string
+  projectName: string
+  actorName: string
+  occurredAt: string
 }

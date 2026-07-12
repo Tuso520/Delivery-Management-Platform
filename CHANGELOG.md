@@ -1,5 +1,14 @@
 # 更新记录
 
+## 2026-07-13
+
+- 按前后端重构实施规范完成工作台、项目、两级档案、档案模版、统一文件与审核、标准、知识、工具、组织权限和系统设置的运行时切换。
+- 新增并验证 26 个 Prisma migration、目标内容/档案/项目/集成 Secret 数据迁移脚本和严格数据完整性门禁；旧业务表仅作为只读迁移源保留。
+- 文件统一为 LogicalFile、FileAsset 和不可变 FileVersion，审核统一为 ReviewTask/Step/Assignee/ActionEvent，支持单人、全员、ANY_N、串行与并行审批。
+- 前端统一使用 Arco Design Vue、业务组件、TanStack Query、权限路由和单一只读文件预览入口，删除旧页面、旧 API、兼容组件和重复状态流程。
+- API、File Worker 与 Outbox Worker 独立运行；通知投递、文件处理、敏感操作审计、Refresh Token 轮换、数据范围和敏感字段裁剪完成加固。
+- lint、类型检查和生产构建通过；前端 40/173、后端 63/369、真实 API 2/2、依赖冒烟 2/2、Chrome 关键流程 2/2 全部通过。
+
 ## 2026-07-08
 
 - 将项目文档统一整理为 GitHub 风格结构，文档入口集中到 `docs/`。

@@ -1,755 +1,1106 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
+import { useMutation, useQueryClient } from '@tanstack/vue-query'
+
 import { archiveApi } from '@/api/archive'
-import { archiveTemplateApi } from '@/api/archive-template'
-import { fileApi } from '@/api/file'
-import { projectApi } from '@/api/project'
-import { reviewApi } from '@/api/review'
-import FileUploader from '@/components/FileUploader/index.vue'
-import { useFilePreview } from '@/composables/useFilePreview'
-import { arcoConfirm } from '@/utils/arco-dialog'
-import { downloadBlob } from '@/utils/blob'
 import {
-  localizeProjectRisk,
-  localizeProjectStage,
-  localizeProjectStatus,
-} from '@/utils/project-localization'
-import { useLocaleStore } from '@/store/locale'
-import type {
-  ArchiveItem,
-  ArchiveStatistics,
-  ArchiveTemplate,
-  ArchiveTreeData,
-} from '@/types/archive'
-import { ARCHIVE_ITEM_STATUS_OPTIONS } from '@/types/archive'
-import type { PendingReview } from '@/types/file'
-import type { Project } from '@/types/project'
-import type { TagType } from '@/types/ui'
-import ProjectRecordsPanel from './components/ProjectRecordsPanel.vue'
-import ReviewDialog from '../review/components/ReviewDialog.vue'
+  BusinessModal,
+  BusinessTable,
+  Can,
+  PageContainer,
+  PageToolbar,
+  SectionCard,
+  StatCard,
+  StatusBadge,
+} from '@/components/business'
+import {
+  useArchiveProjectOptionsQuery,
+  useArchiveTemplateDiffQuery,
+  useArchiveTreeQuery,
+} from '@/composables/queries/useArchiveQueries'
+import { useProjectUserOptionsQuery } from '@/composables/queries/useProjectQueries'
+import { useApprovalTemplatesQuery } from '@/composables/queries/useOperationsQueries'
+import { useFilePreview } from '@/composables/useFilePreview'
+import { queryKeys } from '@/query/keys'
+import type { ProjectArchiveTargetFolder, ProjectArchiveTargetItem } from '@/types/archive'
+import { arcoConfirm } from '@/utils/arco-dialog'
 
-type ArchiveFile = NonNullable<ArchiveItem['files']>[number]
-
-interface UploadPoint extends ArchiveItem {
-  parentName?: string
-  guideText: string
+interface ArcoUploadFileItem {
+  file?: File
 }
 
-interface ArchiveSection {
-  stageCode: string
-  stageName: string
-  items: UploadPoint[]
-  totalItems: number
-  completedItems: number
-}
-
-const localeStore = useLocaleStore()
+const route = useRoute()
+const router = useRouter()
+const { t, locale } = useI18n()
 const filePreview = useFilePreview()
+const queryClient = useQueryClient()
 
-const projectList = ref<Project[]>([])
-const selectedProjectId = ref('')
-const loadingProjects = ref(false)
-const archiveTree = ref<ArchiveTreeData | null>(null)
-const statistics = ref<ArchiveStatistics | null>(null)
-const loadingArchive = ref(false)
-const templateList = ref<ArchiveTemplate[]>([])
-const loadingTemplates = ref(false)
-const showGenerateDialog = ref(false)
-const selectedTemplateId = ref('')
-const generatingArchive = ref(false)
-const activeStage = ref('')
-const activeArchiveView = ref<'directory' | 'records' | 'reviews'>('directory')
-const showItemDetail = ref(false)
-const showProjectDetail = ref(false)
-const currentItem = ref<ArchiveItem | null>(null)
-const loadingItem = ref(false)
-const pendingReviews = ref<PendingReview[]>([])
-const loadingReviews = ref(false)
-const reviewDialogVisible = ref(false)
-const selectedReviewFileId = ref('')
-const selectedReviewFileName = ref('')
-const archiveStreamRef = ref<HTMLElement>()
+const selectedProjectId = ref(normalizeProjectId(route.query.projectId))
+const projectKeyword = ref('')
 
-const defaultAllowedTypes = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'jpg', 'jpeg', 'png']
-const archiveViewOptions = [
-  { label: '档案目录', value: 'directory' },
-  { label: '上传记录', value: 'records' },
-  { label: '待审核', value: 'reviews' },
-] as const
-
-const selectedProjectName = computed(() =>
-  projectList.value.find((project) => project.id === selectedProjectId.value)?.projectName || '',
-)
-
-const selectedProject = computed(() =>
-  projectList.value.find((project) => project.id === selectedProjectId.value),
-)
-
-const archiveSections = computed<ArchiveSection[]>(() =>
-  (archiveTree.value?.stages || []).map((stage) => {
-    const stats = getStageStats(stage.stageCode)
-    const items = flattenUploadPoints(stage.items || [])
-    return {
-      stageCode: stage.stageCode,
-      stageName: localizeProjectStage(stage.stageCode, localeStore.currentLocale),
-      items,
-      totalItems: stats?.totalItems ?? items.length,
-      completedItems: stats?.completedItems ?? items.filter((item) => item.status === 'Completed').length,
-    }
-  }),
-)
-
-const activeArchiveSection = computed(() =>
-  archiveSections.value.find((section) => section.stageCode === activeStage.value)
-  || archiveSections.value[0],
-)
-
-const currentProjectReviews = computed(() =>
-  pendingReviews.value.filter((review) => review.file.project?.id === selectedProjectId.value),
-)
-
-async function fetchProjects(): Promise<void> {
-  loadingProjects.value = true
-  try {
-    const res = await projectApi.getList({ page: 1, pageSize: 100 })
-    const data = res as unknown as { list: Project[] }
-    projectList.value = data.list || []
-    if (!selectedProjectId.value && projectList.value.length) {
-      selectedProjectId.value = projectList.value[0].id
-    }
-    if (selectedProjectId.value) {
-      await Promise.all([fetchArchive(), fetchPendingReviews()])
-    }
-  } catch {
-    projectList.value = []
-  } finally {
-    loadingProjects.value = false
-  }
-}
-
-async function fetchArchive(): Promise<void> {
-  if (!selectedProjectId.value) {
-    archiveTree.value = null
-    statistics.value = null
-    return
-  }
-  loadingArchive.value = true
-  try {
-    const [treeRes, statsRes] = await Promise.all([
-      archiveApi.getArchiveTree(selectedProjectId.value),
-      archiveApi.getStatistics(selectedProjectId.value),
-    ])
-    archiveTree.value = treeRes as unknown as ArchiveTreeData
-    statistics.value = statsRes as unknown as ArchiveStatistics
-    const stages = archiveTree.value?.stages || []
-    if (!stages.some((stage) => stage.stageCode === activeStage.value)) {
-      activeStage.value = stages[0]?.stageCode || ''
-    }
-  } catch {
-    archiveTree.value = null
-    statistics.value = null
-  } finally {
-    loadingArchive.value = false
-  }
-}
-
-async function fetchTemplates(): Promise<void> {
-  loadingTemplates.value = true
-  try {
-    templateList.value = (await archiveTemplateApi.getList()) as unknown as ArchiveTemplate[]
-  } catch {
-    templateList.value = []
-  } finally {
-    loadingTemplates.value = false
-  }
-}
-
-function flattenUploadPoints(items: ArchiveItem[], parentName?: string): UploadPoint[] {
-  return items.flatMap((item) => {
-    if (item.children?.length) {
-      return flattenUploadPoints(item.children, item.secondName || item.name)
-    }
-    const name = item.secondName || item.name
-    return [{
-      ...item,
-      parentName,
-      guideText: item.usageDescription
-        || (parentName
-          ? `请上传「${parentName} / ${name}」对应的最终版文件、过程记录或审批确认材料。`
-          : `请上传「${name}」对应的文件，并在备注中说明适用范围和版本。`),
-    }]
-  })
-}
-
-function handleProjectChange(): void {
-  activeArchiveView.value = 'directory'
-  Promise.all([fetchArchive(), fetchPendingReviews()])
-}
-
-async function scrollToArchiveStage(stageCode: string): Promise<void> {
-  activeStage.value = stageCode
-  await nextTick()
-  const container = archiveStreamRef.value
-  const target = document.getElementById(`archive-stage-${stageCode}`)
-  if (container && target) {
-    container.scrollTo({ top: target.offsetTop, behavior: 'smooth' })
-  }
-}
-
-function updateActiveArchiveStageByScroll(): void {
-  const container = archiveStreamRef.value
-  if (!container || !archiveSections.value.length) return
-  const containerTop = container.getBoundingClientRect().top
-  let currentCode = archiveSections.value[0].stageCode
-  for (const section of archiveSections.value) {
-    const element = document.getElementById(`archive-stage-${section.stageCode}`)
-    if (!element) continue
-    if (element.getBoundingClientRect().top - containerTop <= 56) {
-      currentCode = section.stageCode
-    } else {
-      break
-    }
-  }
-  activeStage.value = currentCode
-}
-
-async function fetchPendingReviews(): Promise<void> {
-  loadingReviews.value = true
-  try {
-    pendingReviews.value = await reviewApi.getPending()
-  } catch {
-    pendingReviews.value = []
-  } finally {
-    loadingReviews.value = false
-  }
-}
-
-function openGenerateDialog(): void {
-  selectedTemplateId.value = ''
-  fetchTemplates()
-  showGenerateDialog.value = true
-}
-
-async function handleGenerateArchive(): Promise<void> {
-  if (!selectedProjectId.value || !selectedTemplateId.value) {
-    Message.warning('请选择项目和档案模板')
-    return
-  }
-  generatingArchive.value = true
-  try {
-    await archiveApi.generate(selectedProjectId.value, selectedTemplateId.value)
-    Message.success('档案目录生成成功')
-    showGenerateDialog.value = false
-    await fetchArchive()
-  } finally {
-    generatingArchive.value = false
-  }
-}
-
-async function viewItemDetail(itemId: string): Promise<void> {
-  if (!selectedProjectId.value) return
-  showItemDetail.value = true
-  loadingItem.value = true
-  try {
-    currentItem.value = await archiveApi.getItem(selectedProjectId.value, itemId) as unknown as ArchiveItem
-  } finally {
-    loadingItem.value = false
-  }
-}
-
-async function reloadCurrentItem(): Promise<void> {
-  if (currentItem.value?.id) {
-    await viewItemDetail(currentItem.value.id)
-  }
-  await fetchArchive()
-}
-
-async function handleUploadSuccess(): Promise<void> {
-  Message.success('文件已上传，系统已按目录规则进入审核流程')
-  await reloadCurrentItem()
-  await fetchPendingReviews()
-}
-
-function previewArchiveFile(file: ArchiveFile): void {
-  filePreview.openPreview({ source: 'file', id: file.id, title: file.originalName })
-}
-
-function previewReviewFile(row: PendingReview): void {
-  filePreview.openPreview({ source: 'file', id: row.fileId, title: row.file.fileName })
-}
-
-function openReviewDialog(row: PendingReview): void {
-  selectedReviewFileId.value = row.fileId
-  selectedReviewFileName.value = row.file.fileName
-  reviewDialogVisible.value = true
-}
-
-async function handleReviewComplete(): Promise<void> {
-  reviewDialogVisible.value = false
-  Message.success('审核完成')
-  await Promise.all([fetchPendingReviews(), fetchArchive()])
-  if (currentItem.value?.id) {
-    await reloadCurrentItem()
-  }
-}
-
-async function downloadFile(file: ArchiveFile): Promise<void> {
-  downloadBlob(await fileApi.download(file.id), file.originalName)
-}
-
-async function deleteFile(file: ArchiveFile): Promise<void> {
-  await arcoConfirm(`确定删除文件「${file.originalName}」？`, '确认删除', {
-    type: 'warning',
-    confirmButtonText: '删除',
-    cancelButtonText: '取消',
-  })
-  await fileApi.delete(file.id)
-  Message.success('文件已删除')
-  await reloadCurrentItem()
-}
-
-function getStageStats(stageCode: string) {
-  return statistics.value?.stages.find((stage) => stage.stageCode === stageCode)
-}
-
-function getStatusTag(status: string): { type: TagType; label: string } {
-  const option = ARCHIVE_ITEM_STATUS_OPTIONS.find((item) => item.value === status)
-  return {
-    type: (option?.type || 'info') as TagType,
-    label: option?.label || status,
-  }
-}
-
-function getAllowedTypes(item?: ArchiveItem | null): string[] {
-  const configured = item?.allowedFileTypes
-    ?.split(',')
-    .map((type) => type.trim().toLowerCase())
-    .filter(Boolean)
-  return configured?.length ? configured : defaultAllowedTypes
-}
-
-function formatFileSize(value?: number | string): string {
-  const size = Number(value)
-  if (!Number.isFinite(size)) return '-'
-  if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`
-  if (size >= 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${size} B`
-}
-
-function formatDate(value?: string): string {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString('zh-CN', { hour12: false })
-}
-
-function formatDateOnly(value?: string): string {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleDateString('zh-CN')
-}
-
-function openProjectDetail(): void {
-  showProjectDetail.value = true
-}
-
-onMounted(fetchProjects)
-
-watch(activeArchiveView, (view) => {
-  if (view === 'reviews') {
-    fetchPendingReviews()
-  }
+const uploadVisible = ref(false)
+const uploadItem = ref<ProjectArchiveTargetItem | null>(null)
+const uploadFile = ref<File | null>(null)
+const uploadProgress = ref(0)
+const uploadForm = reactive({
+  uploadMode: 'NEW_VERSION' as 'REPLACE' | 'NEW_VERSION',
+  revisionLevel: 'MINOR' as 'MINOR' | 'MAJOR',
+  createAsNewFile: false,
+  changeDescription: '',
 })
+
+const temporaryVisible = ref(false)
+const temporaryForm = reactive({
+  folderId: '',
+  name: '',
+  description: '',
+  reason: '',
+  ownerUserId: '',
+  required: false,
+  reviewRequired: false,
+  approvalTemplateId: '',
+  suggestedForTemplate: false,
+  allowMultipleFiles: false,
+  allowedExtensions: '',
+})
+
+const syncVisible = ref(false)
+
+const archiveProjectsQuery = useArchiveProjectOptionsQuery()
+const archiveTreeQuery = useArchiveTreeQuery(selectedProjectId)
+const archiveTemplateDiffQuery = useArchiveTemplateDiffQuery(selectedProjectId, syncVisible)
+const archiveUserOptionsQuery = useProjectUserOptionsQuery('project-member')
+const archiveApprovalTemplatesQuery = useApprovalTemplatesQuery({
+  page: 1,
+  pageSize: 100,
+  businessType: 'PROJECT_ARCHIVE_FILE',
+  enabled: true,
+})
+const projects = computed(() => archiveProjectsQuery.data.value?.items ?? [])
+const tree = computed(() => archiveTreeQuery.data.value ?? null)
+const templateDiff = computed(() => archiveTemplateDiffQuery.data.value ?? null)
+const userOptions = computed(() => archiveUserOptionsQuery.data.value ?? [])
+const approvalTemplateOptions = computed(
+  () => archiveApprovalTemplatesQuery.data.value?.items ?? [],
+)
+const loadingProjects = computed(() => archiveProjectsQuery.isFetching.value)
+const loadingTree = computed(() => archiveTreeQuery.isFetching.value)
+const syncLoading = computed(() => archiveTemplateDiffQuery.isFetching.value)
+
+const filteredProjects = computed(() => {
+  const keyword = projectKeyword.value.trim().toLowerCase()
+  if (!keyword) return projects.value
+  return projects.value.filter((project) =>
+    `${project.projectCode} ${project.projectName}`.toLowerCase().includes(keyword),
+  )
+})
+
+const activeFolders = computed(() =>
+  (tree.value?.folders ?? []).filter((folder) => !folder.archivedAt),
+)
+
+const totalItems = computed(() =>
+  activeFolders.value.reduce((total, folder) => total + folder.totalCount, 0),
+)
+
+const completedItems = computed(() =>
+  activeFolders.value.reduce((total, folder) => total + folder.completedCount, 0),
+)
+
+const requiredTotal = computed(() =>
+  activeFolders.value.reduce((total, folder) => total + folder.requiredTotalCount, 0),
+)
+
+const requiredCompleted = computed(() =>
+  activeFolders.value.reduce((total, folder) => total + folder.requiredCompletedCount, 0),
+)
+
+const completionRate = computed(() =>
+  totalItems.value > 0 ? Math.round((completedItems.value / totalItems.value) * 100) : 0,
+)
+
+function normalizeProjectId(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+async function changeProject(value: unknown): Promise<void> {
+  const projectId = typeof value === 'string' ? value : ''
+  selectedProjectId.value = projectId
+  await router.replace({
+    path: route.path,
+    query: projectId ? { projectId } : {},
+  })
+}
+
+async function invalidateArchiveTree(projectId = selectedProjectId.value): Promise<void> {
+  if (!projectId) return
+  await queryClient.invalidateQueries({ queryKey: queryKeys.archive.tree(projectId) })
+}
+
+const uploadMutation = useMutation({
+  mutationFn: ({
+    projectId,
+    itemId,
+    file,
+    logicalFileId,
+  }: {
+    projectId: string
+    itemId: string
+    file: File
+    logicalFileId?: string
+  }) =>
+    archiveApi.uploadFile(
+      projectId,
+      itemId,
+      file,
+      {
+        uploadMode: uploadForm.uploadMode,
+        revisionLevel: uploadForm.revisionLevel,
+        logicalFileId: uploadForm.createAsNewFile ? undefined : logicalFileId,
+        createNewLogicalFile: uploadForm.createAsNewFile,
+        changeDescription: uploadForm.changeDescription.trim() || undefined,
+      },
+      (percentage) => {
+        uploadProgress.value = percentage
+      },
+    ),
+  retry: false,
+  onSuccess: async (_, variables) => invalidateArchiveTree(variables.projectId),
+})
+
+const temporaryItemMutation = useMutation({
+  mutationFn: ({
+    projectId,
+    folderId,
+    data,
+  }: {
+    projectId: string
+    folderId: string
+    data: Parameters<typeof archiveApi.createTemporaryItem>[2]
+  }) => archiveApi.createTemporaryItem(projectId, folderId, data),
+  retry: false,
+  onSuccess: async (_, variables) => invalidateArchiveTree(variables.projectId),
+})
+
+const templateSyncMutation = useMutation({
+  mutationFn: ({
+    projectId,
+    folderStableKeys,
+    itemStableKeys,
+  }: {
+    projectId: string
+    folderStableKeys: string[]
+    itemStableKeys: string[]
+  }) =>
+    archiveApi.syncTemplateAdditions(projectId, {
+      confirmAdditions: true,
+      folderStableKeys,
+      itemStableKeys,
+    }),
+  retry: false,
+  onSuccess: async (_, variables) =>
+    Promise.all([
+      invalidateArchiveTree(variables.projectId),
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.archive.templateDiff(variables.projectId),
+      }),
+    ]),
+})
+
+const archiveItemMutation = useMutation({
+  mutationFn: ({
+    projectId,
+    itemId,
+    action,
+  }: {
+    projectId: string
+    itemId: string
+    action: 'archive' | 'restore'
+  }) =>
+    action === 'archive'
+      ? archiveApi.archiveItem(projectId, itemId)
+      : archiveApi.restoreItem(projectId, itemId),
+  retry: false,
+  onSuccess: async (_, variables) => invalidateArchiveTree(variables.projectId),
+})
+
+const uploading = computed(() => uploadMutation.isPending.value)
+const temporarySaving = computed(() => temporaryItemMutation.isPending.value)
+const syncSaving = computed(() => templateSyncMutation.isPending.value)
+
+function viewProject(): void {
+  if (!selectedProjectId.value) return
+  void router.push(`/projects/${selectedProjectId.value}`)
+}
+
+function folderProgress(folder: ProjectArchiveTargetFolder): number {
+  return folder.totalCount > 0 ? Math.round((folder.completedCount / folder.totalCount) * 100) : 0
+}
+
+function normalizeArchiveStatus(status: string): string {
+  return status ? status.toUpperCase() : 'NOT_STARTED'
+}
+
+function formatDate(value?: string | null): string {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return new Intl.DateTimeFormat(locale.value, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+}
+
+function previewItem(item: ProjectArchiveTargetItem): void {
+  if (item.currentVersion?.canPreview === false) {
+    Message.warning(t('archive.messages.previewRestricted'))
+    return
+  }
+  const previewIdentifier =
+    item.currentVersion?.previewIdentifier || item.currentVersion?.logicalFileId
+  if (!previewIdentifier) {
+    Message.info(t('archive.messages.noPreviewFile'))
+    return
+  }
+  filePreview.openPreview({
+    id: previewIdentifier,
+    title: item.currentVersion?.displayName || item.name,
+  })
+}
+
+function openUpload(item: ProjectArchiveTargetItem): void {
+  uploadItem.value = item
+  uploadFile.value = null
+  uploadProgress.value = 0
+  uploadForm.uploadMode = item.currentVersion ? 'NEW_VERSION' : 'REPLACE'
+  uploadForm.revisionLevel = 'MINOR'
+  uploadForm.createAsNewFile = false
+  uploadForm.changeDescription = ''
+  uploadVisible.value = true
+}
+
+function handleUploadSelection(
+  _fileList: ArcoUploadFileItem[],
+  fileItem?: ArcoUploadFileItem,
+): void {
+  uploadFile.value = fileItem?.file ?? null
+}
+
+async function submitUpload(): Promise<void> {
+  if (!uploadItem.value || !selectedProjectId.value || !uploadFile.value) {
+    Message.warning(t('archive.validation.uploadFileRequired'))
+    return
+  }
+  const currentLogicalFileId = uploadItem.value.currentVersion?.logicalFileId
+  await uploadMutation.mutateAsync({
+    projectId: selectedProjectId.value,
+    itemId: uploadItem.value.id,
+    file: uploadFile.value,
+    logicalFileId: currentLogicalFileId,
+  })
+  Message.success(
+    uploadItem.value.reviewRequired
+      ? t('archive.messages.uploadedForReview')
+      : t('archive.messages.uploaded'),
+  )
+  uploadVisible.value = false
+}
+
+async function openTemporaryItem(): Promise<void> {
+  if (!activeFolders.value.length) {
+    Message.warning(t('archive.messages.noAvailableFolder'))
+    return
+  }
+  temporaryForm.folderId = activeFolders.value[0].id
+  temporaryForm.name = ''
+  temporaryForm.description = ''
+  temporaryForm.reason = ''
+  temporaryForm.ownerUserId = ''
+  temporaryForm.required = false
+  temporaryForm.reviewRequired = false
+  temporaryForm.approvalTemplateId = ''
+  temporaryForm.suggestedForTemplate = false
+  temporaryForm.allowMultipleFiles = false
+  temporaryForm.allowedExtensions = ''
+  temporaryVisible.value = true
+  if (!archiveUserOptionsQuery.data.value) await archiveUserOptionsQuery.refetch()
+}
+
+async function saveTemporaryItem(): Promise<void> {
+  if (!selectedProjectId.value || !temporaryForm.folderId) return
+  if (!temporaryForm.name.trim() || !temporaryForm.reason.trim() || !temporaryForm.ownerUserId) {
+    Message.warning(t('archive.validation.temporaryRequired'))
+    return
+  }
+  if (temporaryForm.reviewRequired && !temporaryForm.approvalTemplateId) {
+    Message.warning(t('archive.validation.approvalTemplateRequired'))
+    return
+  }
+  const extensions = temporaryForm.allowedExtensions
+    .split(/[，,\s]+/u)
+    .map((value) => value.replace(/^\./u, '').trim().toLowerCase())
+    .filter(Boolean)
+  await temporaryItemMutation.mutateAsync({
+    projectId: selectedProjectId.value,
+    folderId: temporaryForm.folderId,
+    data: {
+      name: temporaryForm.name.trim(),
+      description: temporaryForm.description.trim() || undefined,
+      reason: temporaryForm.reason.trim(),
+      ownerUserId: temporaryForm.ownerUserId,
+      required: temporaryForm.required,
+      reviewRequired: temporaryForm.reviewRequired,
+      approvalTemplateId: temporaryForm.reviewRequired
+        ? temporaryForm.approvalTemplateId
+        : undefined,
+      suggestedForTemplate: temporaryForm.suggestedForTemplate,
+      allowMultipleFiles: temporaryForm.allowMultipleFiles,
+      allowedExtensions: extensions.length ? extensions : undefined,
+    },
+  })
+  Message.success(t('archive.messages.temporaryCreated'))
+  temporaryVisible.value = false
+}
+
+async function openTemplateSync(): Promise<void> {
+  if (!selectedProjectId.value) return
+  syncVisible.value = true
+  await archiveTemplateDiffQuery.refetch()
+}
+
+async function confirmTemplateSync(): Promise<void> {
+  if (!selectedProjectId.value || !templateDiff.value?.canSync) return
+  await templateSyncMutation.mutateAsync({
+    projectId: selectedProjectId.value,
+    folderStableKeys: templateDiff.value.additions.folders.map((item) => item.stableKey),
+    itemStableKeys: templateDiff.value.additions.items.map((item) => item.stableKey),
+  })
+  Message.success(t('archive.messages.templateSynced'))
+  syncVisible.value = false
+}
+
+async function archiveItem(item: ProjectArchiveTargetItem): Promise<void> {
+  if (!selectedProjectId.value) return
+  try {
+    await arcoConfirm(
+      t('archive.archiveItem.confirm', { name: item.name }),
+      t('archive.archiveItem.title'),
+      {
+        type: 'warning',
+        confirmButtonText: t('archive.archiveItem.action'),
+      },
+    )
+  } catch {
+    return
+  }
+  await archiveItemMutation.mutateAsync({
+    projectId: selectedProjectId.value,
+    itemId: item.id,
+    action: 'archive',
+  })
+  Message.success(t('archive.messages.archived'))
+}
+
+async function restoreItem(item: ProjectArchiveTargetItem): Promise<void> {
+  if (!selectedProjectId.value) return
+  await archiveItemMutation.mutateAsync({
+    projectId: selectedProjectId.value,
+    itemId: item.id,
+    action: 'restore',
+  })
+  Message.success(t('archive.messages.restored'))
+}
+
+watch(
+  () => route.query.projectId,
+  (value) => {
+    const projectId = normalizeProjectId(value)
+    if (projectId && projectId !== selectedProjectId.value) {
+      selectedProjectId.value = projectId
+    }
+  },
+)
+
+watch(
+  projects,
+  (projectList) => {
+    if (!projectList.length) {
+      selectedProjectId.value = ''
+      return
+    }
+    if (!projectList.some((project) => project.id === selectedProjectId.value)) {
+      selectedProjectId.value = projectList[0].id
+      void router.replace({
+        path: route.path,
+        query: { ...route.query, projectId: selectedProjectId.value },
+      })
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
-  <div class="archive-page">
-    <a-card class="archive-shell" :bordered="false">
-      <div class="archive-topbar">
+  <PageContainer class="archive-page">
+    <PageToolbar :title="t('archive.title')" :description="t('archive.subtitle')">
+      <template #actions>
+        <a-space>
+          <Can permission="archive:item:create_temporary">
+            <a-button :disabled="!tree" @click="openTemporaryItem">
+              {{ t('archive.temporaryCreate') }}
+            </a-button>
+          </Can>
+          <Can permission="archive:template:sync">
+            <a-button :disabled="!tree" type="primary" @click="openTemplateSync">
+              {{ t('archive.syncTemplate') }}
+            </a-button>
+          </Can>
+        </a-space>
+      </template>
+    </PageToolbar>
+
+    <SectionCard class="project-selector" :bordered="false">
+      <div class="selector-row">
         <div class="project-picker">
-          <span>项目</span>
+          <span class="field-label">{{ t('archive.selectProject') }}</span>
           <a-select
-            v-model="selectedProjectId"
+            :model-value="selectedProjectId"
             :loading="loadingProjects"
-            placeholder="请选择项目"
-            class="project-selector"
-            filterable
-            @change="handleProjectChange"
+            allow-search
+            :placeholder="t('archive.projectSearchPlaceholder')"
+            @search="projectKeyword = $event"
+            @change="changeProject"
           >
             <a-option
-              v-for="item in projectList"
-              :key="item.id"
-              :label="item.projectName"
-              :value="item.id"
+              v-for="project in filteredProjects"
+              :key="project.id"
+              :value="project.id"
+              :label="`${project.projectName}（${project.projectCode}）`"
             />
           </a-select>
-          <a-tag v-if="selectedProject?.projectCode" size="small" class="project-code-tag">
-            {{ selectedProject.projectCode }}
+          <a-button type="text" :disabled="!selectedProjectId" @click="viewProject">
+            {{
+              t('archive.projectDetail')
+            }}
+          </a-button>
+        </div>
+        <div v-if="tree" class="project-meta">
+          <span>{{ tree.project.code }}</span>
+          <a-tag>
+            {{
+              tree.template.version
+                ? t('archive.templateVersion', { version: tree.template.version })
+                : t('archive.noTemplateVersion')
+            }}
           </a-tag>
-          <a-button size="mini" type="text" :disabled="!selectedProjectId" @click="openProjectDetail">
-            详情
-          </a-button>
+          <a-tag v-if="tree.template.hasDiff" color="orange">
+            {{
+              t('archive.templateHasAdditions')
+            }}
+          </a-tag>
         </div>
+      </div>
+    </SectionCard>
 
-        <div class="archive-actions">
-          <div class="archive-view-switch" role="tablist" aria-label="项目档案视图切换">
-            <a-button
-              v-for="option in archiveViewOptions"
-              :key="option.value"
+    <a-spin :loading="loadingTree" class="archive-loading">
+      <template v-if="tree">
+        <section class="summary-grid">
+          <StatCard :label="t('archive.summary.completion')" :value="`${completionRate}%`">
+            <a-progress :percent="completionRate / 100" :show-text="false" />
+          </StatCard>
+          <StatCard
+            :label="t('archive.summary.items')"
+            :value="`${completedItems} / ${totalItems}`"
+          >
+            <small>{{ t('archive.summary.completedAll') }}</small>
+          </StatCard>
+          <StatCard
+            :label="t('archive.summary.required')"
+            :value="`${requiredCompleted} / ${requiredTotal}`"
+          >
+            <small>{{ t('archive.summary.completedRequired') }}</small>
+          </StatCard>
+          <StatCard :label="t('archive.summary.scale')" :value="activeFolders.length">
+            <small>{{ t('archive.summary.twoLevelFolders') }}</small>
+          </StatCard>
+        </section>
+
+        <a-empty v-if="!activeFolders.length" :description="t('archive.emptySnapshot')" />
+
+        <section v-else class="folder-tree">
+          <SectionCard
+            v-for="folder in activeFolders"
+            :key="folder.id"
+            class="folder-card"
+            :bordered="false"
+          >
+            <template #title>
+              <div class="folder-title">
+                <div>
+                  <strong>{{ folder.name }}</strong>
+                  <span v-if="folder.description">{{ folder.description }}</span>
+                </div>
+                <div class="folder-progress">
+                  <span>{{ folder.completedCount }} / {{ folder.totalCount }}</span>
+                  <a-progress
+                    size="small"
+                    :percent="folderProgress(folder) / 100"
+                    :show-text="false"
+                  />
+                </div>
+              </div>
+            </template>
+
+            <BusinessTable
+              :data="folder.items"
+              row-key="id"
               size="small"
-              :type="activeArchiveView === option.value ? 'primary' : 'secondary'"
-              role="tab"
-              @click="activeArchiveView = option.value"
+              :scroll="{ x: 960 }"
+              :empty-title="t('archive.emptyFolder')"
             >
-              {{ option.label }}
-            </a-button>
-          </div>
-          <a-button size="small" type="primary" :disabled="!selectedProjectId" @click="openGenerateDialog">
-            生成目录
+              <template #columns>
+                <a-table-column :title="t('archive.columns.itemName')" :width="280">
+                  <template #cell="{ record }">
+                    <button
+                      class="item-title"
+                      :class="{
+                        disabled:
+                          !record.currentVersion || record.currentVersion.canPreview === false,
+                      }"
+                      type="button"
+                      @click="previewItem(record)"
+                    >
+                      <span>{{ record.name }}</span>
+                      <a-tag v-if="record.required" size="small" color="red">
+                        {{
+                          t('archive.required')
+                        }}
+                      </a-tag>
+                      <a-tag v-if="record.isTemporary" size="small">
+                        {{
+                          t('archive.temporary')
+                        }}
+                      </a-tag>
+                    </button>
+                    <p v-if="record.description" class="item-description">
+                      {{ record.description }}
+                    </p>
+                  </template>
+                </a-table-column>
+                <a-table-column :title="t('archive.columns.fileStatus')" :width="120">
+                  <template #cell="{ record }">
+                    <StatusBadge domain="archive" :status="normalizeArchiveStatus(record.status)" />
+                    <span v-if="record.pendingReviewSummary.count" class="review-count">
+                      {{
+                        t('archive.reviewTaskCount', {
+                          count: record.pendingReviewSummary.count,
+                        })
+                      }}
+                    </span>
+                  </template>
+                </a-table-column>
+                <a-table-column :title="t('archive.columns.currentVersion')" :width="150">
+                  <template #cell="{ record }">
+                    <span v-if="record.currentVersion">
+                      {{ record.currentVersion.version }}
+                      <small v-if="record.fileCount > 1">{{
+                        t('archive.fileCount', { count: record.fileCount })
+                      }}</small>
+                    </span>
+                    <span v-else>—</span>
+                  </template>
+                </a-table-column>
+                <a-table-column :title="t('archive.columns.owner')" :width="130">
+                  <template #cell="{ record }">
+                    {{
+                      record.owner?.realName || record.owner?.username || t('archive.unassigned')
+                    }}
+                  </template>
+                </a-table-column>
+                <a-table-column :title="t('archive.columns.updatedAt')" :width="120">
+                  <template #cell="{ record }">
+                    {{ formatDate(record.updatedAt) }}
+                  </template>
+                </a-table-column>
+                <a-table-column :title="t('common.action')" :width="180" fixed="right">
+                  <template #cell="{ record }">
+                    <a-space size="mini">
+                      <a-button
+                        v-if="record.canUpload"
+                        type="text"
+                        size="mini"
+                        @click="openUpload(record)"
+                      >
+                        {{
+                          record.currentVersion ? t('archive.uploadNewVersion') : t('common.upload')
+                        }}
+                      </a-button>
+                      <a-button
+                        v-if="record.canArchive"
+                        type="text"
+                        size="mini"
+                        status="danger"
+                        @click="archiveItem(record)"
+                      >
+                        {{ t('archive.archiveItem.action') }}
+                      </a-button>
+                      <a-button
+                        v-if="record.canRestore"
+                        type="text"
+                        size="mini"
+                        @click="restoreItem(record)"
+                      >
+                        {{ t('archive.restore') }}
+                      </a-button>
+                    </a-space>
+                  </template>
+                </a-table-column>
+              </template>
+            </BusinessTable>
+          </SectionCard>
+        </section>
+      </template>
+      <a-empty v-else-if="!loadingTree" :description="t('archive.selectAccessibleProject')" />
+    </a-spin>
+
+    <BusinessModal
+      v-model:visible="uploadVisible"
+      :title="t('archive.uploadTitle')"
+      :width="560"
+      :footer="false"
+      :mask-closable="!uploading"
+      :closable="!uploading"
+    >
+      <a-form :model="uploadForm" layout="vertical">
+        <a-form-item :label="t('archive.archiveItemLabel')">
+          <a-input :model-value="uploadItem?.name" disabled />
+        </a-form-item>
+        <a-form-item :label="t('archive.file')" required>
+          <a-upload
+            :auto-upload="false"
+            :limit="1"
+            :disabled="uploading"
+            @change="handleUploadSelection"
+          />
+        </a-form-item>
+        <a-grid :cols="2" :col-gap="16">
+          <a-grid-item>
+            <a-form-item :label="t('archive.uploadMode')">
+              <a-radio-group v-model="uploadForm.uploadMode" type="button">
+                <a-radio value="NEW_VERSION">
+                  {{ t('archive.newVersion') }}
+                </a-radio>
+                <a-radio value="REPLACE">
+                  {{ t('archive.replace') }}
+                </a-radio>
+              </a-radio-group>
+            </a-form-item>
+          </a-grid-item>
+          <a-grid-item>
+            <a-form-item :label="t('archive.revisionLevel')">
+              <a-radio-group v-model="uploadForm.revisionLevel" type="button">
+                <a-radio value="MINOR">
+                  {{ t('archive.minorVersion') }}
+                </a-radio>
+                <a-radio value="MAJOR">
+                  {{ t('archive.majorVersion') }}
+                </a-radio>
+              </a-radio-group>
+            </a-form-item>
+          </a-grid-item>
+        </a-grid>
+        <a-form-item
+          v-if="uploadItem?.allowMultipleFiles && uploadItem.currentVersion"
+          :label="t('archive.multipleFileItem')"
+        >
+          <a-checkbox v-model="uploadForm.createAsNewFile">
+            {{
+              t('archive.uploadAsIndependent')
+            }}
+          </a-checkbox>
+        </a-form-item>
+        <a-form-item :label="t('archive.changeDescription')">
+          <a-textarea
+            v-model="uploadForm.changeDescription"
+            :max-length="1000"
+            show-word-limit
+            :placeholder="t('archive.changePlaceholder')"
+          />
+        </a-form-item>
+        <a-progress v-if="uploading" :percent="uploadProgress / 100" />
+        <div class="modal-actions">
+          <a-button :disabled="uploading" @click="uploadVisible = false">
+            {{
+              t('common.cancel')
+            }}
+          </a-button>
+          <a-button type="primary" :loading="uploading" @click="submitUpload">
+            {{
+              t('archive.confirmUpload')
+            }}
           </a-button>
         </div>
-      </div>
+      </a-form>
+    </BusinessModal>
 
-      <ProjectRecordsPanel
-        v-if="activeArchiveView === 'records' && selectedProjectId"
-        :project-id="selectedProjectId"
-        :project-name="selectedProjectName"
-      />
-
-      <div v-else-if="activeArchiveView === 'reviews' && selectedProjectId" class="archive-review-panel">
-        <div class="stage-title-row">
-          <h3>待审核文件</h3>
-          <span>上传后自动进入这里，由负责人或交付管理人员完成预览、通过或驳回。</span>
-        </div>
-        <a-table
-          :loading="loadingReviews"
-          :data="currentProjectReviews"
-          row-key="id"
-          border
-          stripe
-          class="archive-table"
-          empty-text="当前项目暂无待审核文件"
-          :scroll="{ y: '100%', x: 980 }"
-        >
-          <a-table-column label="文件名称" :min-width="260">
-            <template #default="{ row }">
-              <button
-                class="file-preview-link"
-                type="button"
-                @click="previewReviewFile(row)"
-              >
-                {{ row.file.fileName }}
-              </button>
-            </template>
-          </a-table-column>
-          <a-table-column label="档案项" :min-width="180" show-overflow-tooltip>
-            <template #default="{ row }">{{ row.archiveItem.name }}</template>
-          </a-table-column>
-          <a-table-column label="版本" :width="76" align="center">
-            <template #default="{ row }">{{ row.file.versionNo }}</template>
-          </a-table-column>
-          <a-table-column label="审核人" :width="108">
-            <template #default="{ row }">{{ row.reviewer.realName }}</template>
-          </a-table-column>
-          <a-table-column label="提交时间" :width="152">
-            <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
-          </a-table-column>
-          <a-table-column label="状态" :width="90" align="center">
-            <template #default>
-              <a-tag color="orange" size="small">待审核</a-tag>
-            </template>
-          </a-table-column>
-          <a-table-column label="操作" :width="124" fixed="right">
-            <template #default="{ row }">
-              <a-space size="mini" :wrap="false">
-                <a-button type="text" size="mini" @click="previewReviewFile(row)">预览</a-button>
-                <a-button type="primary" size="mini" @click="openReviewDialog(row)">审核</a-button>
-              </a-space>
-            </template>
-          </a-table-column>
-        </a-table>
-      </div>
-
-      <template v-else-if="selectedProjectId">
-        <a-spin :loading="loadingArchive" class="archive-spin">
-          <template v-if="archiveTree?.stages?.length">
-            <div class="archive-library">
-              <aside class="archive-sidebar">
-                <div class="archive-sidebar-header">
-                  <h3>{{ activeArchiveSection?.stageName || '项目档案' }}</h3>
-                  <span>{{ statistics?.completionRate || 0 }}%</span>
-                </div>
-                <div class="archive-stage-list">
-                  <button
-                    v-for="section in archiveSections"
-                    :key="section.stageCode"
-                    class="archive-stage-item"
-                    :class="{ active: section.stageCode === activeStage }"
-                    type="button"
-                    @click="scrollToArchiveStage(section.stageCode)"
-                  >
-                    <span>{{ section.stageName }}</span>
-                    <em>{{ section.completedItems }}/{{ section.totalItems }}</em>
-                  </button>
-                </div>
-              </aside>
-
-              <main class="archive-list-panel">
-                <div class="archive-list-toolbar">
-                  <div class="toolbar-title">
-                    <strong>{{ activeArchiveSection?.stageName || '项目档案' }}</strong>
-                    <span>文件上传后进入审批，通过后作为当前可查阅版本。</span>
-                  </div>
-                  <div class="summary-metrics">
-                    <span>总项 <strong>{{ statistics?.totalItems || 0 }}</strong></span>
-                    <span>已完成 <strong>{{ statistics?.completedItems || 0 }}</strong></span>
-                    <span>必填 <strong>{{ statistics?.requiredItems || 0 }}</strong></span>
-                  </div>
-                </div>
-
-                <div
-                  ref="archiveStreamRef"
-                  class="archive-stream"
-                  @scroll.passive="updateActiveArchiveStageByScroll"
-                >
-                  <section
-                    v-for="section in archiveSections"
-                    :id="`archive-stage-${section.stageCode}`"
-                    :key="section.stageCode"
-                    class="archive-section"
-                  >
-                    <a-table
-                      :data="section.items"
-                      row-key="id"
-                      border
-                      stripe
-                      class="archive-table"
-                      empty-text="当前阶段暂无档案项"
-                      :pagination="false"
-                      :scroll="{ x: 1260 }"
-                    >
-                      <a-table-column :label="section.stageName" :width="200">
-                        <template #default="{ row }">
-                          <div class="archive-name-cell">
-                            <strong>{{ row.secondName || row.name }}</strong>
-                            <span v-if="row.parentName">{{ row.parentName }}</span>
-                          </div>
-                        </template>
-                      </a-table-column>
-                      <a-table-column label="上传指导" :width="350" show-overflow-tooltip>
-                        <template #default="{ row }">{{ row.guideText }}</template>
-                      </a-table-column>
-                      <a-table-column label="当前文件" :width="280">
-                        <template #default="{ row }">
-                          <button
-                            v-if="row.files?.length"
-                            class="file-preview-link"
-                            type="button"
-                            @click="previewArchiveFile(row.files[0])"
-                          >
-                            {{ row.files[0].originalName }}
-                          </button>
-                          <span v-else class="muted-text">待上传</span>
-                        </template>
-                      </a-table-column>
-                      <a-table-column label="数量" :width="60" align="center">
-                        <template #default="{ row }">{{ row.files?.length || 0 }}</template>
-                      </a-table-column>
-                      <a-table-column label="状态" :width="86">
-                        <template #default="{ row }">
-                          <a-tag :type="getStatusTag(row.status).type" size="small">
-                            {{ getStatusTag(row.status).label }}
-                          </a-tag>
-                        </template>
-                      </a-table-column>
-                      <a-table-column label="负责人" :width="96">
-                        <template #default="{ row }">{{ row.responsibleUser?.realName || '-' }}</template>
-                      </a-table-column>
-                      <a-table-column label="审核人" :width="96">
-                        <template #default="{ row }">
-                          {{ row.reviewUser?.realName || row.responsibleUser?.realName || '-' }}
-                        </template>
-                      </a-table-column>
-                      <a-table-column label="操作" :width="120" align="center" fixed="right">
-                        <template #default="{ row }">
-                          <a-button type="text" size="mini" @click="viewItemDetail(row.id)">
-                            查看/上传
-                          </a-button>
-                        </template>
-                      </a-table-column>
-                    </a-table>
-                  </section>
-                </div>
-              </main>
-            </div>
-          </template>
-          <a-empty v-else description="暂无档案目录，请先生成目录" class="archive-empty" />
-        </a-spin>
-      </template>
-    </a-card>
-
-    <a-modal
-      v-model:visible="showGenerateDialog"
-      title="生成项目档案目录"
-      :width="500"
-      :mask-closable="false"
+    <BusinessModal
+      v-model:visible="temporaryVisible"
+      :title="t('archive.temporaryCreate')"
+      :width="640"
+      :footer="false"
     >
-      <a-form :model="{}" label-width="92px">
-        <a-form-item label="档案模板">
+      <a-alert type="info" class="modal-alert">
+        {{ t('archive.temporaryHint') }}
+      </a-alert>
+      <a-form :model="temporaryForm" layout="vertical">
+        <a-form-item :label="t('archive.folder')" required>
+          <a-select v-model="temporaryForm.folderId">
+            <a-option v-for="folder in activeFolders" :key="folder.id" :value="folder.id">
+              {{ folder.name }}
+            </a-option>
+          </a-select>
+        </a-form-item>
+        <a-grid :cols="2" :col-gap="16">
+          <a-grid-item>
+            <a-form-item :label="t('archive.columns.itemName')" required>
+              <a-input v-model="temporaryForm.name" :max-length="200" />
+            </a-form-item>
+          </a-grid-item>
+          <a-grid-item>
+            <a-form-item :label="t('archive.columns.owner')" required>
+              <a-select v-model="temporaryForm.ownerUserId" allow-search>
+                <a-option
+                  v-for="user in userOptions"
+                  :key="user.id"
+                  :value="user.id"
+                  :label="user.displayName"
+                />
+              </a-select>
+            </a-form-item>
+          </a-grid-item>
+        </a-grid>
+        <a-form-item :label="t('common.description')">
+          <a-textarea v-model="temporaryForm.description" />
+        </a-form-item>
+        <a-form-item :label="t('archive.createReason')" required>
+          <a-textarea v-model="temporaryForm.reason" :max-length="500" show-word-limit />
+        </a-form-item>
+        <a-form-item :label="t('archive.allowedExtensions')">
+          <a-input
+            v-model="temporaryForm.allowedExtensions"
+            :placeholder="t('archive.extensionsPlaceholder')"
+          />
+        </a-form-item>
+        <a-form-item
+          v-if="temporaryForm.reviewRequired"
+          :label="t('archive.approvalTemplate')"
+          required
+        >
           <a-select
-            v-model="selectedTemplateId"
-            :loading="loadingTemplates"
-            placeholder="请选择档案模板"
-            filterable
+            v-model="temporaryForm.approvalTemplateId"
+            allow-search
+            :placeholder="t('archive.approvalTemplatePlaceholder')"
           >
             <a-option
-              v-for="item in templateList"
-              :key="item.id"
-              :label="`${item.templateCode} - ${item.templateName}`"
-              :value="item.id"
+              v-for="template in approvalTemplateOptions"
+              :key="template.id"
+              :value="template.id"
+              :label="template.templateName"
             />
           </a-select>
         </a-form-item>
+        <a-space wrap>
+          <a-checkbox v-model="temporaryForm.required">
+            {{ t('archive.required') }}
+          </a-checkbox>
+          <a-checkbox v-model="temporaryForm.reviewRequired">
+            {{
+              t('archive.reviewRequired')
+            }}
+          </a-checkbox>
+          <a-checkbox v-model="temporaryForm.allowMultipleFiles">
+            {{
+              t('archive.allowMultipleFiles')
+            }}
+          </a-checkbox>
+          <a-checkbox v-model="temporaryForm.suggestedForTemplate">
+            {{
+              t('archive.suggestTemplate')
+            }}
+          </a-checkbox>
+        </a-space>
+        <div class="modal-actions">
+          <a-button :disabled="temporarySaving" @click="temporaryVisible = false">
+            {{
+              t('common.cancel')
+            }}
+          </a-button>
+          <a-button type="primary" :loading="temporarySaving" @click="saveTemporaryItem">
+            {{
+              t('common.create')
+            }}
+          </a-button>
+        </div>
       </a-form>
-      <template #footer>
-        <a-button @click="showGenerateDialog = false">取消</a-button>
-        <a-button type="primary" :loading="generatingArchive" @click="handleGenerateArchive">
-          生成
-        </a-button>
-      </template>
-    </a-modal>
+    </BusinessModal>
 
-    <a-modal
-      v-model:visible="showProjectDetail"
-      title="项目详情"
+    <BusinessModal
+      v-model:visible="syncVisible"
+      :title="t('archive.syncTitle')"
       :width="680"
       :footer="false"
     >
-      <a-descriptions
-        v-if="selectedProject"
-        :column="2"
-        bordered
-        size="small"
-        class="project-detail-descriptions"
-      >
-        <a-descriptions-item label="项目名称">{{ selectedProject.projectName }}</a-descriptions-item>
-        <a-descriptions-item label="项目编号">{{ selectedProject.projectCode }}</a-descriptions-item>
-        <a-descriptions-item label="客户">{{ selectedProject.customerName || '-' }}</a-descriptions-item>
-        <a-descriptions-item label="国家/城市">
-          {{ selectedProject.countryCode || '-' }} / {{ selectedProject.city || '-' }}
-        </a-descriptions-item>
-        <a-descriptions-item label="项目类型">{{ selectedProject.projectType || '-' }}</a-descriptions-item>
-        <a-descriptions-item label="项目状态">
-          {{ selectedProject.projectStatus ? localizeProjectStatus(selectedProject.projectStatus, localeStore.currentLocale) : '-' }}
-        </a-descriptions-item>
-        <a-descriptions-item label="当前阶段">
-          {{ selectedProject.currentStage ? localizeProjectStage(selectedProject.currentStage, localeStore.currentLocale) : '-' }}
-        </a-descriptions-item>
-        <a-descriptions-item label="风险等级">
-          {{ selectedProject.riskLevel ? localizeProjectRisk(selectedProject.riskLevel, localeStore.currentLocale) : '-' }}
-        </a-descriptions-item>
-        <a-descriptions-item label="计划周期" :span="2">
-          {{ formatDateOnly(selectedProject.startDate) }} 至 {{ formatDateOnly(selectedProject.plannedEndDate) }}
-        </a-descriptions-item>
-      </a-descriptions>
-    </a-modal>
-
-    <a-modal
-      v-model:visible="showItemDetail"
-      :title="currentItem?.secondName || currentItem?.name || '档案项详情'"
-      :width="920"
-      :mask-closable="false"
-      :footer="false"
-    >
-      <a-spin :loading="loadingItem" class="item-detail-spin">
-        <div v-if="currentItem" class="item-detail">
-          <section class="detail-guide">
-            <div>
-              <h3>{{ currentItem.secondName || currentItem.name }}</h3>
-              <p>{{ currentItem.usageDescription || '请按项目实际情况上传该档案项对应文件。' }}</p>
-            </div>
-            <div class="detail-meta">
-              <a-tag :type="getStatusTag(currentItem.status).type">
-                {{ getStatusTag(currentItem.status).label }}
-              </a-tag>
-              <span>负责人：{{ currentItem.responsibleUser?.realName || '-' }}</span>
-              <span>审核人：{{ currentItem.reviewUser?.realName || currentItem.responsibleUser?.realName || '-' }}</span>
-            </div>
-          </section>
-
-          <FileUploader
-            :project-id="selectedProjectId"
-            :archive-item-id="currentItem.id"
-            :allowed-types="getAllowedTypes(currentItem)"
-            @upload-success="handleUploadSuccess"
+      <a-spin :loading="syncLoading">
+        <template v-if="templateDiff">
+          <a-alert v-if="templateDiff.requiresMigration" type="warning">
+            {{ templateDiff.reason || t('archive.migrationRequired') }}
+          </a-alert>
+          <a-result
+            v-else-if="!templateDiff.hasDiff"
+            status="success"
+            :title="t('archive.alreadyLatest')"
           />
-
-          <div class="files-block">
-            <div class="files-heading">
-              <h4>已上传文件</h4>
-              <span>{{ currentItem.files?.length || 0 }} 个文件</span>
+          <template v-else>
+            <a-alert type="warning" class="modal-alert">
+              {{ t('archive.syncHint') }}
+            </a-alert>
+            <div class="diff-summary">
+              <span>{{
+                t('archive.projectSnapshot', {
+                  version: templateDiff.sourceVersion.version || t('archive.unmarked'),
+                })
+              }}</span>
+              <span>{{
+                t('archive.latestTemplate', {
+                  version: templateDiff.latestVersion?.version || '—',
+                })
+              }}</span>
             </div>
-            <a-table
-              v-if="currentItem.files?.length"
-              :data="currentItem.files"
-              row-key="id"
-              border
-              stripe
-              class="file-table"
+            <a-descriptions :column="2" bordered size="small">
+              <a-descriptions-item :label="t('archive.addedFolders')">
+                {{ templateDiff.additions.folders.length }}
+              </a-descriptions-item>
+              <a-descriptions-item :label="t('archive.addedItems')">
+                {{ templateDiff.additions.items.length }}
+              </a-descriptions-item>
+              <a-descriptions-item :label="t('archive.changedNotOverwritten')">
+                {{ templateDiff.changes.folders.length + templateDiff.changes.items.length }}
+              </a-descriptions-item>
+              <a-descriptions-item :label="t('archive.projectOnly')">
+                {{
+                  templateDiff.projectOnly.folders.length + templateDiff.projectOnly.items.length
+                }}
+              </a-descriptions-item>
+            </a-descriptions>
+            <div v-if="templateDiff.additions.folders.length" class="diff-list">
+              <strong>{{ t('archive.addedFolders') }}</strong>
+              <a-tag v-for="item in templateDiff.additions.folders" :key="item.stableKey">
+                {{ item.name }}
+              </a-tag>
+            </div>
+            <div v-if="templateDiff.additions.items.length" class="diff-list">
+              <strong>{{ t('archive.addedItems') }}</strong>
+              <a-tag v-for="item in templateDiff.additions.items" :key="item.stableKey">
+                {{ item.name }}
+              </a-tag>
+            </div>
+          </template>
+          <div class="modal-actions">
+            <a-button :disabled="syncSaving" @click="syncVisible = false">
+              {{
+                t('common.close')
+              }}
+            </a-button>
+            <a-button
+              v-if="templateDiff.canSync"
+              type="primary"
+              :loading="syncSaving"
+              @click="confirmTemplateSync"
             >
-              <a-table-column label="文件名称" :min-width="260">
-                <template #default="{ row }">
-                  <button
-                    class="file-preview-link"
-                    type="button"
-                    @click="previewArchiveFile(row)"
-                  >
-                    {{ row.originalName }}
-                  </button>
-                </template>
-              </a-table-column>
-              <a-table-column prop="fileExt" label="格式" :width="70" />
-              <a-table-column label="大小" :width="90">
-                <template #default="{ row }">{{ formatFileSize(row.fileSize) }}</template>
-              </a-table-column>
-              <a-table-column prop="versionNo" label="版本" :width="76" />
-              <a-table-column label="状态" :width="92">
-                <template #default="{ row }">
-                  <a-tag :type="getStatusTag(row.fileStatus).type" size="small">
-                    {{ getStatusTag(row.fileStatus).label }}
-                  </a-tag>
-                </template>
-              </a-table-column>
-              <a-table-column label="上传人" :width="100">
-                <template #default="{ row }">{{ row.uploadUser?.realName || '-' }}</template>
-              </a-table-column>
-              <a-table-column label="上传时间" :width="150">
-                <template #default="{ row }">{{ formatDate(row.uploadTime) }}</template>
-              </a-table-column>
-              <a-table-column label="操作" :width="132" fixed="right">
-                <template #default="{ row }">
-                  <a-space size="mini" :wrap="false">
-                    <a-button type="text" size="mini" @click="downloadFile(row)">下载</a-button>
-                    <a-button type="text" status="danger" size="mini" @click="deleteFile(row)">删除</a-button>
-                  </a-space>
-                </template>
-              </a-table-column>
-            </a-table>
-            <a-empty v-else description="暂无上传文件" class="detail-empty" />
+              {{ t('archive.confirmAddOnlySync') }}
+            </a-button>
           </div>
-        </div>
+        </template>
       </a-spin>
-    </a-modal>
-
-    <ReviewDialog
-      v-model:visible="reviewDialogVisible"
-      :file-id="selectedReviewFileId"
-      :file-name="selectedReviewFileName"
-      @review-complete="handleReviewComplete"
-    />
-  </div>
+    </BusinessModal>
+  </PageContainer>
 </template>
 
-<style scoped lang="scss" src="./index.scss"></style>
+<style scoped lang="scss">
+.archive-page {
+  display: grid;
+  gap: 16px;
+}
+
+.selector-row,
+.folder-title,
+.modal-actions,
+.diff-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.project-selector :deep(.arco-card-body) {
+  padding: 14px 16px;
+}
+
+.project-picker,
+.project-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.project-picker :deep(.arco-select-view) {
+  width: 360px;
+}
+
+.field-label {
+  color: var(--color-text-2);
+  font-weight: 600;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.summary-grid small {
+  color: var(--color-text-3);
+}
+
+.archive-loading {
+  display: grid;
+  min-height: 240px;
+}
+
+.archive-loading :deep(.arco-spin-children) {
+  display: grid;
+  gap: 16px;
+}
+
+.folder-tree {
+  display: grid;
+  gap: 12px;
+}
+
+.folder-card :deep(.arco-card-header) {
+  min-height: 56px;
+  border-bottom-color: var(--color-border-2);
+}
+
+.folder-card :deep(.arco-card-body) {
+  padding: 0;
+}
+
+.folder-title {
+  width: 100%;
+}
+
+.folder-title > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.folder-title span {
+  color: var(--color-text-3);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.folder-progress {
+  display: grid;
+  grid-template-columns: auto 120px;
+  align-items: center;
+  gap: 10px;
+}
+
+.item-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgb(var(--primary-6));
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.item-title.disabled {
+  color: var(--color-text-1);
+  cursor: default;
+}
+
+.item-description {
+  margin: 4px 0 0;
+  color: var(--color-text-3);
+  font-size: 12px;
+}
+
+.review-count {
+  display: block;
+  margin-top: 4px;
+  color: var(--color-text-3);
+  font-size: 12px;
+}
+
+.modal-alert {
+  margin-bottom: 16px;
+}
+
+.modal-actions {
+  justify-content: flex-end;
+  margin-top: 22px;
+}
+
+.diff-summary {
+  margin: 16px 0;
+  padding: 10px 12px;
+  background: var(--color-fill-2);
+  color: var(--color-text-2);
+}
+
+.diff-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+@media (max-width: 1100px) {
+  .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .selector-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 720px) {
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .project-picker {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .project-picker :deep(.arco-select-view) {
+    width: 100%;
+  }
+}
+</style>

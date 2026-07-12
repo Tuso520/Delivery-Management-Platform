@@ -104,9 +104,14 @@ export class FileStorageService {
 
   async delete(storagePath: string): Promise<void> {
     await this.ensureBucket();
+    return this.deleteFrom(this.bucket, storagePath);
+  }
+
+  async deleteFrom(bucket: string, storagePath: string): Promise<void> {
+    await this.assertBucketExists(bucket);
     try {
-      await this.client.removeObject(this.bucket, storagePath);
-      this.logger.log(`Object deleted: ${this.bucket}/${storagePath}`);
+      await this.client.removeObject(bucket, this.normalizePath(storagePath));
+      this.logger.log(`Object deleted: ${bucket}/${storagePath}`);
     } catch (error) {
       this.logger.error(`MinIO delete failed for ${storagePath}`, error);
       throw new ServiceUnavailableException('文件存储服务暂不可用');
@@ -119,8 +124,21 @@ export class FileStorageService {
 
   async getPresignedUrl(storagePath: string, expiresIn: number): Promise<string> {
     await this.ensureBucket();
+    return this.getPresignedUrlFrom(this.bucket, storagePath, expiresIn);
+  }
+
+  async getPresignedUrlFrom(
+    bucket: string,
+    storagePath: string,
+    expiresIn: number,
+  ): Promise<string> {
+    await this.assertBucketExists(bucket);
     try {
-      return await this.client.presignedGetObject(this.bucket, storagePath, expiresIn);
+      return await this.client.presignedGetObject(
+        bucket,
+        this.normalizePath(storagePath),
+        expiresIn,
+      );
     } catch (error) {
       this.logger.error(`MinIO signed URL failed for ${storagePath}`, error);
       throw new ServiceUnavailableException('文件存储服务暂不可用');
@@ -129,8 +147,13 @@ export class FileStorageService {
 
   async getObject(storagePath: string): Promise<Readable> {
     await this.ensureBucket();
+    return this.getObjectFrom(this.bucket, storagePath);
+  }
+
+  async getObjectFrom(bucket: string, storagePath: string): Promise<Readable> {
+    await this.assertBucketExists(bucket);
     try {
-      return await this.client.getObject(this.bucket, storagePath);
+      return await this.client.getObject(bucket, this.normalizePath(storagePath));
     } catch (error) {
       this.logger.error(`MinIO object read failed for ${storagePath}`, error);
       throw new ServiceUnavailableException('文件存储服务暂不可用');
@@ -139,8 +162,13 @@ export class FileStorageService {
 
   async objectExists(storagePath: string): Promise<boolean> {
     await this.ensureBucket();
+    return this.objectExistsIn(this.bucket, storagePath);
+  }
+
+  async objectExistsIn(bucket: string, storagePath: string): Promise<boolean> {
+    await this.assertBucketExists(bucket);
     try {
-      await this.client.statObject(this.bucket, storagePath);
+      await this.client.statObject(bucket, this.normalizePath(storagePath));
       return true;
     } catch {
       return false;
@@ -166,6 +194,25 @@ export class FileStorageService {
       }
     } catch (error) {
       this.logger.error('MinIO initialization failed', error);
+      throw new ServiceUnavailableException('文件存储服务暂不可用');
+    }
+  }
+
+  private async assertBucketExists(bucket: string): Promise<void> {
+    if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket)) {
+      throw new BadRequestException('文件存储桶名称无效');
+    }
+    if (bucket === this.bucket) {
+      await this.ensureBucket();
+      return;
+    }
+    try {
+      if (!(await this.client.bucketExists(bucket))) {
+        throw new ServiceUnavailableException('文件存储桶不可用');
+      }
+    } catch (error) {
+      if (error instanceof ServiceUnavailableException) throw error;
+      this.logger.error(`MinIO bucket check failed for ${bucket}`, error);
       throw new ServiceUnavailableException('文件存储服务暂不可用');
     }
   }

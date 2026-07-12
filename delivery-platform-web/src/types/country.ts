@@ -17,35 +17,6 @@ export interface Country {
   updatedAt: string
 }
 
-export interface CreateCountryDto {
-  countryCode: string
-  nameZh: string
-  nameEn: string
-  defaultLanguage?: string
-  defaultCurrency?: string
-  timezone?: string
-  weekendRule?: string
-  entryRequirements?: string
-  safetyNotes?: string
-  taxNotes?: string
-  paymentNotes?: string
-  supplierNotes?: string
-}
-
-export interface UpdateCountryDto {
-  nameZh?: string
-  nameEn?: string
-  defaultLanguage?: string
-  defaultCurrency?: string
-  timezone?: string
-  weekendRule?: string
-  entryRequirements?: string
-  safetyNotes?: string
-  taxNotes?: string
-  paymentNotes?: string
-  supplierNotes?: string
-}
-
 export interface QueryCountryParams {
   page?: number
   pageSize?: number

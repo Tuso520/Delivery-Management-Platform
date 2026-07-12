@@ -1,15 +1,15 @@
 import { Module } from '@nestjs/common';
 
-import { AttachmentModule } from '../attachment/attachment.module';
-import { PlatformModule } from '../platform/platform.module';
+import { ReviewModule } from '../review/review.module';
+import { SystemConfigModule } from '../system-config/system-config.module';
 
-import { KnowledgeController } from './knowledge.controller';
-import { KnowledgeService } from './knowledge.service';
+import { KnowledgeItemController } from './knowledge-item.controller';
+import { KnowledgeItemService } from './knowledge-item.service';
 
 @Module({
-  imports: [AttachmentModule, PlatformModule],
-  controllers: [KnowledgeController],
-  providers: [KnowledgeService],
-  exports: [KnowledgeService],
+  imports: [ReviewModule, SystemConfigModule],
+  controllers: [KnowledgeItemController],
+  providers: [KnowledgeItemService],
+  exports: [KnowledgeItemService],
 })
 export class KnowledgeModule {}

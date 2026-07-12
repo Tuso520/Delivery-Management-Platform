@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 
+import { withTransientPrismaReadRetry } from '../../../database/prisma-transient-read';
 import { PrismaService } from '../../../database/prisma.service';
 import { RedisService } from '../../../database/redis.service';
 
@@ -13,6 +14,7 @@ export interface JwtPayload {
   email: string | null;
   roles: string[];
   permissions: string[];
+  permissionVersion: number;
   jti?: string;
   iat?: number;
   exp?: number;
@@ -51,7 +53,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       }
     }
 
-    const user = await this.prisma.user.findFirst({
+    const user = await withTransientPrismaReadRetry(() => this.prisma.user.findFirst({
       where: {
         id: payload.sub,
         deletedAt: null,
@@ -62,12 +64,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         username: true,
         realName: true,
         email: true,
+        permissionVersion: true,
         userRoles: {
+          where: { role: { status: 'Active' } },
           select: {
             role: {
               select: {
                 roleCode: true,
                 rolePermissions: {
+                  where: { permission: { deprecatedAt: null } },
                   select: {
                     permission: {
                       select: { permissionCode: true },
@@ -79,9 +84,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
           },
         },
       },
-    });
+    }));
     if (!user) {
       throw new UnauthorizedException('用户不存在或已停用');
+    }
+
+    if (payload.permissionVersion !== user.permissionVersion) {
+      throw new UnauthorizedException('权限已变更，请刷新会话');
     }
 
     return {
@@ -93,12 +102,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       permissions: [
         ...new Set(
           user.userRoles.flatMap(({ role }) =>
-            role.rolePermissions.map(
-              ({ permission }) => permission.permissionCode,
-            ),
+            role.rolePermissions.map(({ permission }) => permission.permissionCode),
           ),
         ),
       ],
+      permissionVersion: user.permissionVersion,
     };
   }
 }

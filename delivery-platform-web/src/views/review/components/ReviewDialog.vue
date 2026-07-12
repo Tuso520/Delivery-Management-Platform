@@ -1,90 +1,149 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, reactive, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
+import { useMutation, useQueryClient } from '@tanstack/vue-query'
+import { useI18n } from 'vue-i18n'
+
 import { reviewApi } from '@/api/review'
+import { queryKeys } from '@/query/keys'
 
 const props = defineProps<{
   visible: boolean
-  fileId: string
+  taskId: string
   fileName: string
+  currentStepNo: number
+  totalSteps: number
 }>()
 
 const emit = defineEmits<{
-  (e: 'update:visible', value: boolean): void
-  (e: 'review-complete'): void
+  (event: 'update:visible', value: boolean): void
+  (event: 'review-complete'): void
 }>()
+const queryClient = useQueryClient()
+const { t } = useI18n()
 
-const decision = ref<'Approved' | 'Rejected'>('Approved')
-const comment = ref('')
-const submitting = ref(false)
+const form = reactive({
+  decision: 'APPROVED' as 'APPROVED' | 'REJECTED',
+  comment: '',
+})
+const reviewMutation = useMutation({
+  mutationFn: ({
+    taskId,
+    decision,
+    comment,
+  }: {
+    taskId: string
+    decision: 'APPROVED' | 'REJECTED'
+    comment: string
+  }) =>
+    decision === 'APPROVED'
+      ? reviewApi.approve(taskId, comment ? { comment } : {})
+      : reviewApi.reject(taskId, { comment }),
+  retry: false,
+  onSuccess: async (_, variables) =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.reviews.lists() }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.reviews.summary() }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.reviews.detail(variables.taskId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.reviews.history(variables.taskId) }),
+    ]),
+})
+const submitting = computed(() => reviewMutation.isPending.value)
+const isReject = computed(() => form.decision === 'REJECTED')
+const submitDisabled = computed(() => !props.taskId || (isReject.value && !form.comment.trim()))
 
 watch(
   () => props.visible,
   (visible) => {
-    if (visible) {
-      decision.value = 'Approved'
-      comment.value = ''
-    }
+    if (!visible) return
+    form.decision = 'APPROVED'
+    form.comment = ''
   },
 )
 
-async function handleSubmit() {
-  if (!comment.value.trim()) {
-    Message.warning('请输入审核意见')
+async function handleSubmit(): Promise<void> {
+  const comment = form.comment.trim()
+  if (isReject.value && !comment) {
+    Message.warning(t('review.dialog.rejectCommentRequired'))
     return
   }
 
-  submitting.value = true
-  try {
-    if (decision.value === 'Approved') {
-      await reviewApi.approve(props.fileId, comment.value)
-    } else {
-      await reviewApi.reject(props.fileId, comment.value)
-    }
-    Message.success(decision.value === 'Approved' ? '审核已通过' : '审核已驳回')
-    emit('review-complete')
-  } finally {
-    submitting.value = false
+  await reviewMutation.mutateAsync({
+    taskId: props.taskId,
+    decision: form.decision,
+    comment,
+  })
+  if (form.decision === 'APPROVED') {
+    Message.success(t('review.dialog.approveSuccess'))
+  } else {
+    Message.success(t('review.dialog.rejectSuccess'))
   }
+  emit('review-complete')
 }
 
-function handleClose() {
-  emit('update:visible', false)
+function handleClose(): void {
+  if (!submitting.value) emit('update:visible', false)
 }
 </script>
 
 <template>
   <a-modal
     :visible="props.visible"
-    title="文件审核"
+    :title="t('review.dialog.title')"
     :width="560"
     :mask-closable="false"
+    :esc-to-close="!submitting"
+    :closable="!submitting"
     @update:visible="emit('update:visible', $event)"
     @cancel="handleClose"
   >
     <div class="review-dialog-content">
       <a-descriptions :column="1" bordered size="small">
-        <a-descriptions-item label="文件名称">
+        <a-descriptions-item :label="t('review.dialog.fileName')">
           {{ props.fileName }}
+        </a-descriptions-item>
+        <a-descriptions-item :label="t('review.dialog.currentProgress')">
+          {{
+            t('review.dialog.stepProgress', {
+              current: props.currentStepNo,
+              total: props.totalSteps,
+            })
+          }}
         </a-descriptions-item>
       </a-descriptions>
 
-      <a-divider />
+      <a-alert class="assignment-alert" type="info">
+        {{ t('review.dialog.assignmentHint') }}
+      </a-alert>
 
-      <a-form :model="{}" label-width="100px">
-        <a-form-item label="审核结果">
-          <a-radio-group v-model="decision">
-            <a-radio value="Approved">通过</a-radio>
-            <a-radio value="Rejected">驳回</a-radio>
+      <a-form :model="form" layout="vertical">
+        <a-form-item field="decision" :label="t('review.dialog.result')" required>
+          <a-radio-group v-model="form.decision" type="button">
+            <a-radio value="APPROVED">
+              {{ t('review.dialog.approve') }}
+            </a-radio>
+            <a-radio value="REJECTED">
+              {{ t('review.dialog.reject') }}
+            </a-radio>
           </a-radio-group>
         </a-form-item>
 
-        <a-form-item label="审核意见">
+        <a-form-item
+          field="comment"
+          :label="
+            isReject ? t('review.dialog.commentRequired') : t('review.dialog.commentOptional')
+          "
+          :required="isReject"
+        >
           <a-textarea
-            v-model="comment"
-            :rows="4"
-            placeholder="请输入审核意见（必填）"
-            :max-length="1000"
+            v-model="form.comment"
+            :auto-size="{ minRows: 5, maxRows: 5 }"
+            :placeholder="
+              isReject
+                ? t('review.dialog.rejectPlaceholder')
+                : t('review.dialog.commentPlaceholder')
+            "
+            :max-length="2000"
             show-word-limit
           />
         </a-form-item>
@@ -92,14 +151,17 @@ function handleClose() {
     </div>
 
     <template #footer>
-      <a-button @click="handleClose">取消</a-button>
+      <a-button :disabled="submitting" @click="handleClose">
+        {{ t('common.cancel') }}
+      </a-button>
       <a-button
         type="primary"
+        :status="isReject ? 'danger' : 'normal'"
         :loading="submitting"
-        :disabled="!comment.trim()"
+        :disabled="submitDisabled"
         @click="handleSubmit"
       >
-        提交审核
+        {{ isReject ? t('review.dialog.confirmReject') : t('review.dialog.confirmApprove') }}
       </a-button>
     </template>
   </a-modal>
@@ -107,6 +169,12 @@ function handleClose() {
 
 <style scoped lang="scss">
 .review-dialog-content {
-  padding: 8px 0;
+  display: grid;
+  gap: 16px;
+  padding: 4px 0;
+}
+
+.assignment-alert {
+  margin: 0;
 }
 </style>

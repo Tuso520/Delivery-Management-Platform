@@ -21,7 +21,6 @@ const arcoLocale = computed(() =>
     <router-view />
     <AttachmentPreviewModal
       :visible="filePreview.visible.value"
-      :source="filePreview.source.value"
       :resource-id="filePreview.resourceId.value"
       :title="filePreview.title.value"
       @update:visible="filePreview.closePreview"

@@ -1,57 +1,38 @@
-export interface ToolCategory {
+export type ToolType = 'INTERNAL' | 'EXTERNAL'
+
+export interface ToolDefinition {
   id: string
   name: string
+  category: string
   description: string | null
+  toolType: ToolType
+  routeOrUrl: string | null
+  enabled: boolean
   sortOrder: number
-  status: string
-  createdAt: string
-  updatedAt: string
-  tools?: ToolItem[]
+  configuration: Record<string, unknown> | null
 }
 
-export interface ToolItem {
-  id: string
-  categoryId: string
-  name: string
-  description: string | null
-  toolType: string
-  url: string | null
-  icon: string | null
-  sortOrder: number
-  status: string
-  createdAt: string
-  updatedAt: string
-  category?: { id: string; name: string }
+export interface QueryToolsParams {
+  category?: string
+  includeDisabled?: boolean
 }
 
-export interface CreateToolCategoryDto {
+export interface CreateToolDefinitionDto {
   name: string
+  category: string
   description?: string
+  toolType: ToolType
+  routeOrUrl?: string
   sortOrder?: number
+  configuration?: Record<string, unknown>
 }
 
-export interface UpdateToolCategoryDto {
+export interface UpdateToolDefinitionDto {
   name?: string
+  category?: string
   description?: string
+  toolType?: ToolType
+  routeOrUrl?: string
   sortOrder?: number
-}
-
-export interface CreateToolItemDto {
-  categoryId: string
-  name: string
-  description?: string
-  toolType?: string
-  url?: string
-  icon?: string
-  sortOrder?: number
-}
-
-export interface UpdateToolItemDto {
-  categoryId?: string
-  name?: string
-  description?: string
-  toolType?: string
-  url?: string
-  icon?: string
-  sortOrder?: number
+  configuration?: Record<string, unknown>
 }

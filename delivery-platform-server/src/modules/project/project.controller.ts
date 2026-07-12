@@ -2,7 +2,6 @@ import {
   Controller,
   Get,
   Post,
-  Put,
   Delete,
   Body,
   Param,
@@ -10,6 +9,9 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  Patch,
+  Req,
+  Headers,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -17,31 +19,41 @@ import {
   ApiBearerAuth,
   ApiResponse,
   ApiBody,
+  ApiHeader,
 } from '@nestjs/swagger';
+import type { Request } from 'express';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Permissions } from '../../common/decorators/permissions.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
+import type { JwtPayload } from '../auth/strategies/jwt.strategy';
 
 import { CreateProjectDto } from './dto/create-project.dto';
+import { ProjectStatusActionDto } from './dto/project-status-action.dto';
 import { QueryProjectDto } from './dto/query-project.dto';
+import { UpdateProjectAcceptanceDto } from './dto/update-project-acceptance.dto';
+import { UpdateProjectStageDto } from './dto/update-project-stage.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
-import { ProjectService } from './project.service';
+import { validateProjectCreateIdempotencyKey } from './project-create-idempotency';
+import { ProjectService, type ProjectReadAuditContext } from './project.service';
 
+function getReadAuditContext(request: Request): ProjectReadAuditContext {
+  return {
+    ipAddress: request.ip,
+    userAgent: request.get('user-agent'),
+  };
+}
 
 @ApiTags('Projects')
 @ApiBearerAuth('JWT-auth')
 @Controller('projects')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
-@Roles('DELIVERY_MANAGER', 'COUNTRY_MANAGER', 'PROJECT_MANAGER')
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class ProjectController {
   constructor(private readonly projectService: ProjectService) {}
 
   @Get()
-  @Permissions('project:view')
+  @RequirePermissions({ all: ['project:view'] })
   @ApiOperation({ summary: '获取项目列表（分页+搜索+筛选）' })
   @ApiResponse({
     status: 200,
@@ -51,7 +63,7 @@ export class ProjectController {
         code: 0,
         message: 'success',
         data: {
-          list: [
+          items: [
             {
               id: 'uuid',
               projectCode: 'VN-AC-2026-001',
@@ -62,10 +74,10 @@ export class ProjectController {
               projectType: 'Network',
               contractCurrency: 'USD',
               baseCurrency: 'CNY',
-              contractAmount: 100000.00,
+              contractAmount: 100000.0,
               projectLanguage: 'zh-CN',
-              currentStage: 'Initiation',
-              projectStatus: 'Draft',
+              currentStage: 'STARTUP',
+              status: 'DRAFT',
               riskLevel: 'Low',
               startDate: '2026-07-01T00:00:00.000Z',
               plannedEndDate: '2026-12-31T00:00:00.000Z',
@@ -76,7 +88,9 @@ export class ProjectController {
               members: [],
             },
           ],
-          pagination: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+          page: 1,
+          pageSize: 20,
+          total: 1,
         },
         timestamp: '2026-06-22T10:00:00.000Z',
       },
@@ -84,15 +98,28 @@ export class ProjectController {
   })
   async findAll(
     @Query() query: QueryProjectDto,
-    @CurrentUser('sub') userId: string,
+    @CurrentUser() user: JwtPayload,
+    @Req() request: Request,
   ) {
-    return this.projectService.findAll(query, userId);
+    return this.projectService.findAll(query, user, getReadAuditContext(request));
+  }
+
+  @Get('summary')
+  @RequirePermissions({ all: ['project:view'] })
+  @ApiOperation({ summary: '获取当前数据范围内的项目概览统计' })
+  getSummary(@CurrentUser() user: JwtPayload) {
+    return this.projectService.getSummary(user);
   }
 
   @Post()
-  @Permissions('project:create')
+  @RequirePermissions({ all: ['project:create'] })
   @ApiOperation({ summary: '创建项目' })
   @ApiBody({ type: CreateProjectDto })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: true,
+    description: '8-100 位安全字符；仅在重试完全相同的项目创建请求时复用',
+  })
   @ApiResponse({
     status: 201,
     description: '创建成功',
@@ -105,7 +132,8 @@ export class ProjectController {
           projectCode: 'VN-AC-2026-001',
           projectName: '某网络建设项目',
           countryCode: 'VN',
-          projectStatus: 'Draft',
+          status: 'DRAFT',
+          currentStage: 'STARTUP',
         },
         timestamp: '2026-06-22T10:00:00.000Z',
       },
@@ -113,38 +141,120 @@ export class ProjectController {
   })
   async create(
     @Body() dto: CreateProjectDto,
-    @CurrentUser('sub') userId: string,
+    @CurrentUser() user: JwtPayload,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.projectService.create(dto, userId);
+    return this.projectService.create(
+      dto,
+      user,
+      validateProjectCreateIdempotencyKey(idempotencyKey),
+    );
   }
 
   @Get(':id')
-  @Permissions('project:view')
+  @RequirePermissions({ all: ['project:view'] })
   @ApiOperation({ summary: '获取项目详情' })
   @ApiResponse({ status: 200, description: '项目详情' })
   @ApiResponse({ status: 404, description: '项目不存在' })
-  async findOne(@Param('id') id: string, @CurrentUser('sub') userId: string) {
-    return this.projectService.findById(id, userId);
+  async findOne(@Param('id') id: string, @CurrentUser() user: JwtPayload, @Req() request: Request) {
+    return this.projectService.findById(id, user, getReadAuditContext(request));
   }
 
-  @Put(':id')
-  @Permissions('project:update')
-  @ApiOperation({ summary: '更新项目信息' })
-  @ApiBody({ type: UpdateProjectDto })
-  @ApiResponse({ status: 200, description: '更新成功' })
-  @ApiResponse({ status: 404, description: '项目不存在' })
-  async update(
+  @Patch(':id')
+  @RequirePermissions({ all: ['project:update'] })
+  @ApiOperation({ summary: '更新项目普通可编辑字段' })
+  patch(@Param('id') id: string, @Body() dto: UpdateProjectDto, @CurrentUser() user: JwtPayload) {
+    return this.projectService.update(id, dto, user);
+  }
+
+  @Patch(':id/stage')
+  @RequirePermissions({ all: ['project:stage:update'] })
+  @ApiOperation({ summary: '使用专用命令修改项目阶段' })
+  updateStage(
     @Param('id') id: string,
-    @Body() dto: UpdateProjectDto,
-    @CurrentUser('sub') userId: string,
+    @Body() dto: UpdateProjectStageDto,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.projectService.update(id, dto, userId);
+    return this.projectService.updateStage(id, dto, user);
+  }
+
+  @Patch(':id/acceptance')
+  @RequirePermissions({
+    all: ['project:update', 'project:view_acceptance'],
+  })
+  @ApiOperation({ summary: '使用专用命令更新项目验收时间' })
+  updateAcceptance(
+    @Param('id') id: string,
+    @Body() dto: UpdateProjectAcceptanceDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.projectService.updateAcceptance(id, dto, user);
+  }
+
+  @Post(':id/pause')
+  @RequirePermissions({ all: ['project:update'] })
+  pause(
+    @Param('id') id: string,
+    @Body() dto: ProjectStatusActionDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.projectService.changeStatus(id, 'pause', dto, user);
+  }
+
+  @Post(':id/resume')
+  @RequirePermissions({ all: ['project:update'] })
+  resume(
+    @Param('id') id: string,
+    @Body() dto: ProjectStatusActionDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.projectService.changeStatus(id, 'resume', dto, user);
+  }
+
+  @Post(':id/complete')
+  @RequirePermissions({ all: ['project:update'] })
+  complete(
+    @Param('id') id: string,
+    @Body() dto: ProjectStatusActionDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.projectService.changeStatus(id, 'complete', dto, user);
+  }
+
+  @Post(':id/cancel')
+  @RequirePermissions({ all: ['project:update'] })
+  cancel(
+    @Param('id') id: string,
+    @Body() dto: ProjectStatusActionDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.projectService.changeStatus(id, 'cancel', dto, user);
+  }
+
+  @Post(':id/archive')
+  @RequirePermissions({ all: ['project:archive'] })
+  archive(
+    @Param('id') id: string,
+    @Body() dto: ProjectStatusActionDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.projectService.changeStatus(id, 'archive', dto, user);
+  }
+
+  @Post(':id/restore')
+  @RequirePermissions({ all: ['project:restore'] })
+  restore(
+    @Param('id') id: string,
+    @Body() dto: ProjectStatusActionDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.projectService.changeStatus(id, 'restore', dto, user);
   }
 
   @Delete(':id')
-  @Permissions('project:delete')
+  @RequirePermissions({ all: ['project:delete'] })
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '删除项目（软删除）' })
+  @ApiOperation({ summary: '物理删除无关联记录的项目（仅超级管理员）' })
   @ApiResponse({
     status: 200,
     description: '删除成功',
@@ -158,8 +268,9 @@ export class ProjectController {
     },
   })
   @ApiResponse({ status: 404, description: '项目不存在' })
-  async remove(@Param('id') id: string, @CurrentUser('sub') userId: string) {
-    await this.projectService.softDelete(id, userId);
+  @ApiResponse({ status: 409, description: '项目存在文件、审核、财务或审计记录' })
+  async remove(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
+    await this.projectService.purge(id, user);
     return null;
   }
 }

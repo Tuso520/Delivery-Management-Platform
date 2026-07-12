@@ -1,31 +1,23 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent } from 'vue'
+import { useI18n } from 'vue-i18n'
 
-const AttachmentPreviewPane = defineAsyncComponent(
-  () => import('@/components/AttachmentPreviewPane/index.vue'),
-)
 const FilePreviewRouter = defineAsyncComponent(
   () => import('@/components/FilePreviewRouter/index.vue'),
 )
 
-const props = withDefaults(
-  defineProps<{
-    visible: boolean
-    resourceId?: string
-    source?: 'attachment' | 'file'
-    title?: string
-  }>(),
-  {
-    source: 'attachment',
-    title: '在线预览',
-  },
-)
+const { t } = useI18n()
+const props = defineProps<{
+  visible: boolean
+  resourceId?: string
+  title?: string
+}>()
 
 const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void
 }>()
 
-const modalTitle = computed(() => props.title || '在线预览')
+const modalTitle = computed(() => props.title || t('filePreview.onlinePreview'))
 </script>
 
 <template>
@@ -44,15 +36,8 @@ const modalTitle = computed(() => props.title || '在线预览')
     @cancel="emit('update:visible', false)"
   >
     <FilePreviewRouter
-      v-if="props.visible && props.source === 'file'"
+      v-if="props.visible"
       :file-id="props.resourceId"
-      height="calc(100vh - 76px)"
-      compact
-    />
-    <AttachmentPreviewPane
-      v-else-if="props.visible"
-      :attachment-id="props.resourceId"
-      :source="props.source"
       height="calc(100vh - 76px)"
       compact
     />

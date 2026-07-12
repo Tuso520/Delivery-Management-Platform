@@ -1,14 +1,15 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 
 import { ProjectModule } from '../project/project.module';
 
-import { ProjectArchiveController } from './project-archive.controller';
-import { ProjectArchiveService } from './project-archive.service';
+import { ProjectArchiveSnapshotService } from './project-archive-snapshot.service';
+import { ProjectArchiveTargetService } from './project-archive-target.service';
+import { ProjectArchiveTargetController } from './project-archive.controller';
 
 @Module({
-  imports: [ProjectModule],
-  controllers: [ProjectArchiveController],
-  providers: [ProjectArchiveService],
-  exports: [ProjectArchiveService],
+  imports: [forwardRef(() => ProjectModule)],
+  controllers: [ProjectArchiveTargetController],
+  providers: [ProjectArchiveSnapshotService, ProjectArchiveTargetService],
+  exports: [ProjectArchiveSnapshotService, ProjectArchiveTargetService],
 })
 export class ProjectArchiveModule {}

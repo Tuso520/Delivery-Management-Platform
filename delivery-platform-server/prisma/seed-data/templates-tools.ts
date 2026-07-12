@@ -1,13 +1,5 @@
 import { PrismaClient } from '@prisma/client';
 
-interface SeedTemplate {
-  templateNo: string;
-  name: string;
-  category: string;
-  fileFormat: string;
-  stageCode: string;
-}
-
 interface SeedToolCategory {
   name: string;
   description: string;
@@ -24,124 +16,7 @@ interface SeedTool {
   sortOrder: number;
 }
 
-const publishedAt = new Date('2026-06-24T00:00:00Z');
-
-export async function seedTemplatesAndTools(
-  prisma: PrismaClient,
-): Promise<void> {
-  const templates: SeedTemplate[] = [
-    {
-      templateNo: 'DC-TPL-KICKOFF',
-      name: '项目启动会纪要模板',
-      category: 'Meeting',
-      fileFormat: 'docx',
-      stageCode: '01_presale',
-    },
-    {
-      templateNo: 'DC-TPL-PLAN',
-      name: '项目实施计划排程模板',
-      category: 'Plan',
-      fileFormat: 'xlsx',
-      stageCode: '01_presale',
-    },
-    {
-      templateNo: 'DC-TPL-CABLE',
-      name: '电缆清册模板',
-      category: 'Form',
-      fileFormat: 'xlsx',
-      stageCode: '02_design',
-    },
-    {
-      templateNo: 'DC-TPL-IO-LIST',
-      name: '上位机点表模板',
-      category: 'Form',
-      fileFormat: 'xlsx',
-      stageCode: '02_design',
-    },
-    {
-      templateNo: 'DC-TPL-SOFTWARE-CONFIG',
-      name: '软件配置清单模板',
-      category: 'Checklist',
-      fileFormat: 'xlsx',
-      stageCode: '02_design',
-    },
-    {
-      templateNo: 'DC-TPL-PURCHASE',
-      name: '设备选型及报价模板',
-      category: 'Form',
-      fileFormat: 'xlsx',
-      stageCode: '03_procurement',
-    },
-    {
-      templateNo: 'DC-TPL-LOGISTICS',
-      name: '进出口资料清单模板',
-      category: 'Checklist',
-      fileFormat: 'xlsx',
-      stageCode: '03_procurement',
-    },
-    {
-      templateNo: 'DC-TPL-HSE-MEETING',
-      name: '安全晨会记录模板',
-      category: 'Record',
-      fileFormat: 'docx',
-      stageCode: '04_construction',
-    },
-    {
-      templateNo: 'DC-TPL-COMMISSIONING',
-      name: '现场调试记录模板',
-      category: 'Record',
-      fileFormat: 'xlsx',
-      stageCode: '04_construction',
-    },
-    {
-      templateNo: 'DC-TPL-ACCEPTANCE',
-      name: '项目验收资料移交清单模板',
-      category: 'Checklist',
-      fileFormat: 'xlsx',
-      stageCode: '05_acceptance',
-    },
-    {
-      templateNo: 'DC-TPL-TRAINING',
-      name: '客户培训签到与反馈模板',
-      category: 'Record',
-      fileFormat: 'docx',
-      stageCode: '05_acceptance',
-    },
-    {
-      templateNo: 'DC-TPL-REVIEW',
-      name: '项目管理复盘报告模板',
-      category: 'Report',
-      fileFormat: 'docx',
-      stageCode: '06_review',
-    },
-    {
-      templateNo: 'DC-TPL-WEEKLY',
-      name: '海外交付人员周报模板',
-      category: 'Report',
-      fileFormat: 'xlsx',
-      stageCode: '06_review',
-    },
-  ];
-
-  for (const template of templates) {
-    await prisma.documentTemplate.upsert({
-      where: { templateNo: template.templateNo },
-      create: {
-        ...template,
-        status: 'Published',
-        publishedAt,
-      },
-      update: {
-        name: template.name,
-        category: template.category,
-        fileFormat: template.fileFormat,
-        stageCode: template.stageCode,
-        status: 'Published',
-        publishedAt,
-      },
-    });
-  }
-
+export async function seedTemplatesAndTools(prisma: PrismaClient): Promise<void> {
   const toolCategories: SeedToolCategory[] = [
     {
       name: '项目启动与计划',
@@ -346,25 +221,17 @@ export async function seedTemplatesAndTools(
       select: { id: true },
     });
 
-    const category = existingCategory
-      ? await prisma.toolCategory.update({
-          where: { id: existingCategory.id },
-          data: {
-            description: toolCategory.description,
-            sortOrder: toolCategory.sortOrder,
-            status: 'Active',
-          },
-          select: { id: true },
-        })
-      : await prisma.toolCategory.create({
-          data: {
-            name: toolCategory.name,
-            description: toolCategory.description,
-            sortOrder: toolCategory.sortOrder,
-            status: 'Active',
-          },
-          select: { id: true },
-        });
+    const category =
+      existingCategory ??
+      (await prisma.toolCategory.create({
+        data: {
+          name: toolCategory.name,
+          description: toolCategory.description,
+          sortOrder: toolCategory.sortOrder,
+          status: 'Active',
+        },
+        select: { id: true },
+      }));
 
     for (const tool of toolCategory.tools) {
       const existingTool = await prisma.toolItem.findFirst({
@@ -383,12 +250,7 @@ export async function seedTemplatesAndTools(
         status: 'Active',
       };
 
-      if (existingTool) {
-        await prisma.toolItem.update({
-          where: { id: existingTool.id },
-          data,
-        });
-      } else {
+      if (!existingTool) {
         await prisma.toolItem.create({ data });
       }
     }

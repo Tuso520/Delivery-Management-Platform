@@ -28,10 +28,10 @@ const groupedMenus: MenuItem[] = [
         permissions: ['dashboard:view'],
       },
       {
-        path: '/todos',
-        name: 'Todos',
-        title: '我的待办',
-        permissions: ['todo:view'],
+        path: '/review',
+        name: 'Review',
+        title: '文件审核',
+        permissions: ['file_review:view'],
       },
     ],
   },
@@ -67,8 +67,8 @@ describe('filterMenusByPermissions', () => {
 
   it('returns the first accessible child route for a regular user', () => {
     expect(
-      findFirstAccessibleMenuPath(groupedMenus, ['todo:view']),
-    ).toBe('/todos')
+      findFirstAccessibleMenuPath(groupedMenus, ['file_review:view']),
+    ).toBe('/review')
   })
 
   it('returns the first menu route for super administrators without explicit permissions', () => {

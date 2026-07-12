@@ -7,7 +7,7 @@
 - 名称：交付管理平台。
 - 英文名：Delivery Management Platform。
 - 定位：面向软件交付中心、项目经理、专业工程师、采购、财务、HSE 和标准管理员的企业级交付管理系统。
-- 范围：项目台账、项目档案、文件审批、交付流程、检查模板、文档模板、知识库、绩效、组织权限和系统配置。
+- 范围：工作台、项目台账、项目档案、档案模板、统一文件与审核、标准库、知识库、工具中心、组织权限、系统设置和通知集成。
 - 部署：本地使用模拟服务或 Docker Compose 测试，生产使用 Git 拉取部署。
 
 ## 技术栈
@@ -28,10 +28,10 @@
 4. 文件实体存储在 MinIO，数据库只保存索引、版本、审批和预览元数据。
 5. 国家、币种、语言、项目类型、档案模板、检查模板和审批规则必须配置化。
 6. 合同查看、成本查看、文件下载、权限变更、备份下载等敏感操作必须写入操作日志。
-7. 核心业务数据默认软删除，不做物理删除。
+7. 核心业务数据默认软删除；项目物理删除仅限超级管理员，且文件、审核、财务或审计任一存在即拒绝并记录失败审计。
 8. 公共组件、Service、DTO 和工具函数优先复用，避免复制业务逻辑。
 9. TypeScript 严格模式下禁止新增无约束 `any`。
-10. 文档只维护在 `README.md`、`DEPLOYMENT.md`、`CONTRIBUTING.md`、`SECURITY.md`、`THIRD_PARTY_NOTICES.md` 和 `docs/`。
+10. 文档只维护在 `README.md`、`DEPLOYMENT.md`、`CONTRIBUTING.md`、`SECURITY.md`、`THIRD_PARTY_NOTICES.md`、`CHANGELOG.md` 和 `docs/`。
 
 ## 目录结构
 
@@ -45,10 +45,13 @@ delivery-platform-server/src/
 delivery-platform-web/src/
   api/
   components/
+  composables/
   layouts/
+  locales/
   router/
   store/
   styles/
+  types/
   utils/
   views/
 ```
@@ -60,7 +63,7 @@ delivery-platform-web/src/
 ## Arco Design 规范
 
 1. 全局只使用 `@arco-design/web-vue` 作为 UI 组件库。
-2. 表格使用 `a-table`，筛选区使用 `a-form`、`a-input`、`a-select`、`a-range-picker`。
+2. 页面表格优先使用 `BusinessTable`；声明式 `a-table-column` 不得直接放入 `a-table`。显式 `columns` 数组可直接使用 Arco Table。筛选区使用 `a-form`、`a-input`、`a-select`、`a-range-picker`。
 3. 弹窗使用 `a-modal`，抽屉使用 `a-drawer`，确认类操作使用 `Modal.confirm`。
 4. 提示使用 `Message` 或 `Notification`，不再引入旧组件库提示、弹窗和标签组件。
 5. 主布局保持工作台式密度，不做营销化视觉。
@@ -71,16 +74,19 @@ delivery-platform-web/src/
 提交前按影响范围执行：
 
 ```powershell
+pnpm --dir delivery-platform-web lint
 pnpm --dir delivery-platform-web type-check
 pnpm --dir delivery-platform-web test
 pnpm --dir delivery-platform-web build
+pnpm --filter ./delivery-platform-server lint
 pnpm --filter ./delivery-platform-server type-check
 pnpm --filter ./delivery-platform-server test
+pnpm --filter ./delivery-platform-server build
 docker compose --env-file .env.example -f docker-compose.yml config -q
 docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.prod.yml config -q
 ```
 
-涉及页面、登录、知识库、文档模板、项目台账、项目档案、文件预览或上传审批时，必须启动 `scripts/local-test-server.mjs` 或 Docker 环境做真实浏览器验证。
+涉及页面、登录、知识库、标准、项目台账、项目档案、文件预览或上传审批时，必须连接真实 NestJS、MySQL、Redis 和 MinIO 做浏览器验证。`scripts/local-test-server.mjs` 只用于页面开发，不能替代权限、数据范围或事务验收。
 
 ## Git 与部署
 
@@ -107,14 +113,21 @@ docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.p
 ## 文档优先级
 
 1. `AGENTS.md`
-2. `README.md`
-3. `docs/product.md`
-4. `docs/architecture.md`
-5. `docs/development.md`
-6. `docs/deployment.md`
-7. `docs/testing.md`
-8. `docs/security.md`
-9. `docs/open-source.md`
-10. 用户当前消息
+2. `docs/frontend-architecture-refactored.md`
+3. `docs/backend-architecture-refactored.md`
+4. `README.md`
+5. `docs/product.md`
+6. `docs/architecture.md`
+7. `docs/development.md`
+8. `docs/deployment.md`
+9. `docs/testing.md`
+10. `docs/security.md`
+11. `docs/frontend-architecture.md`
+12. `docs/frontend-business-flows.md`
+13. `docs/ui-ux.md`
+14. `docs/open-source.md`
+15. 用户当前消息
 
 如果代码与文档不一致，先按代码核实实际行为，再同步修正文档。
+
+`docs/frontend-rebuild-review.md` 是非规范性讨论稿，不参与上述事实与工程规则优先级；其中条目只有在形成正式决策并同步到对应规范或源码后才有约束力。

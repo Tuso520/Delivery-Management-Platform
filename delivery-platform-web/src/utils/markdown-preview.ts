@@ -157,7 +157,7 @@ function renderInlineMarkdown(value: string): string {
   const codeSpans: string[] = []
   const withoutCode = value.replace(/`([^`]+)`/gu, (_match, code: string) => {
     codeSpans.push(`<code>${escapeHtml(code)}</code>`)
-    return `\u0000CODE${codeSpans.length - 1}\u0000`
+    return `\uE000CODE${codeSpans.length - 1}\uE001`
   })
 
   let html = escapeHtml(withoutCode)
@@ -169,7 +169,7 @@ function renderInlineMarkdown(value: string): string {
       ? `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`
       : escapeHtml(label)
   })
-  html = html.replace(/\u0000CODE(\d+)\u0000/gu, (_match, rawIndex: string) => {
+  html = html.replace(/\uE000CODE(\d+)\uE001/gu, (_match, rawIndex: string) => {
     return codeSpans[Number(rawIndex)] ?? ''
   })
   return html

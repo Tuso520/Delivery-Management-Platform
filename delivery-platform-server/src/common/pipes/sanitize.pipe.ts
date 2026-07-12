@@ -11,19 +11,30 @@ import { PipeTransform, Injectable, ArgumentMetadata } from '@nestjs/common';
  */
 @Injectable()
 export class SanitizePipe implements PipeTransform {
-  transform(value: unknown, _metadata: ArgumentMetadata): unknown {
+  transform(value: unknown, metadata: ArgumentMetadata): unknown {
+    // File interceptors, custom decorators, path params and query DTOs may
+    // contain Buffer, streams or framework-owned objects. Sanitization is only
+    // intended for persisted JSON/form body fields.
+    if (metadata.type !== 'body') return value;
+    return this.sanitizeValue(value);
+  }
+
+  private sanitizeValue(value: unknown): unknown {
     if (typeof value === 'string') {
       return this.sanitizeString(value);
     }
 
     if (Array.isArray(value)) {
-      return value.map((item) => this.transform(item, _metadata));
+      return value.map((item) => this.sanitizeValue(item));
     }
 
     if (value !== null && typeof value === 'object') {
+      if (Buffer.isBuffer(value) || value instanceof Uint8Array || value instanceof Date) {
+        return value;
+      }
       const sanitized: Record<string, unknown> = {};
       for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
-        sanitized[key] = this.transform(val, _metadata);
+        sanitized[key] = this.sanitizeValue(val);
       }
       return sanitized;
     }

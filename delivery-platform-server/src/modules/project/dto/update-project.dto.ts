@@ -1,18 +1,32 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsString,
   IsOptional,
   IsNumber,
+  IsDateString,
+  IsInt,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
 
 export class UpdateProjectDto {
+  @ApiProperty({ description: '当前项目版本号', minimum: 1 })
+  @IsInt()
+  @Min(1)
+  revision!: number;
+
   @ApiPropertyOptional({ description: '项目名称' })
   @IsOptional()
   @IsString()
   @MaxLength(200)
   projectName?: string;
+
+  @ApiPropertyOptional({ description: '项目简称' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  shortName?: string;
 
   @ApiPropertyOptional({ description: '国家代码' })
   @IsOptional()
@@ -56,6 +70,17 @@ export class UpdateProjectDto {
   @Min(0)
   contractAmount?: number;
 
+  @ApiPropertyOptional({ description: '合同编号' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  contractNo?: string;
+
+  @ApiPropertyOptional({ description: '合同签署时间' })
+  @IsOptional()
+  @IsDateString()
+  contractSignedAt?: string;
+
   @ApiPropertyOptional({ description: '项目语言' })
   @IsOptional()
   @IsString()
@@ -92,23 +117,24 @@ export class UpdateProjectDto {
   @IsString()
   financeOwnerId?: string;
 
-  @ApiPropertyOptional({ description: '当前阶段' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(30)
-  currentStage?: string;
-
-  @ApiPropertyOptional({ description: '项目状态' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(20)
-  projectStatus?: string;
-
   @ApiPropertyOptional({ description: '风险等级' })
   @IsOptional()
   @IsString()
   @MaxLength(20)
   riskLevel?: string;
+
+  @ApiPropertyOptional({ description: '项目进度百分比' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  progressPercent?: number;
+
+  @ApiPropertyOptional({ description: '风险说明' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  riskDescription?: string;
 
   @ApiPropertyOptional({ description: '开始日期' })
   @IsOptional()
@@ -120,8 +146,8 @@ export class UpdateProjectDto {
   @IsString()
   plannedEndDate?: string;
 
-  @ApiPropertyOptional({ description: '实际结束日期' })
+  @ApiPropertyOptional({ description: '预计验收时间' })
   @IsOptional()
-  @IsString()
-  actualEndDate?: string;
+  @IsDateString()
+  expectedAcceptanceAt?: string;
 }

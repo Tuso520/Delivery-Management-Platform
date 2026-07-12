@@ -1,477 +1,562 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import type { TableColumnData } from '@arco-design/web-vue'
-import { attachmentApi } from '@/api/attachment'
-import { countryApi } from '@/api/country'
-import { knowledgeApi } from '@/api/knowledge'
-import { approvalApi } from '@/api/platform'
-import { roleApi } from '@/api/role'
-import { userApi } from '@/api/user'
-import type { Country } from '@/types/country'
-import type { KnowledgeAttachment, KnowledgeFileRevisionDiff } from '@/types/knowledge'
-import type { ApprovalStep, ApprovalTask, ApprovalTemplate } from '@/types/platform'
-import type { Role } from '@/types/role'
-import type { UserListItem } from '@/types/user'
-import { arcoPrompt } from '@/utils/arco-dialog'
-import { getApprovalBusinessLabel } from '@/utils/approval'
-import { downloadBlob } from '@/utils/blob'
-import { useFilePreview } from '@/composables/useFilePreview'
+import { useMutation, useQueryClient } from '@tanstack/vue-query'
+import { useI18n } from 'vue-i18n'
 
+import { approvalTemplateApi, type QueryApprovalTemplateParams } from '@/api/approval'
+import {
+  BusinessModal,
+  BusinessTable,
+  Can,
+  PageContainer,
+  PageToolbar,
+  SectionCard,
+  StatusBadge,
+} from '@/components/business'
+import { usePermission } from '@/composables/usePermission'
+import { useApprovalTemplatesQuery } from '@/composables/queries/useOperationsQueries'
+import { queryKeys } from '@/query/keys'
+import type {
+  ApprovalApproverType,
+  ApprovalBusinessType,
+  ApprovalStepMode,
+  ApprovalTemplate,
+  ApprovalTemplateStep,
+  SaveApprovalTemplateDto,
+} from '@/types/settings'
+import { arcoConfirm } from '@/utils/arco-dialog'
+
+interface ApprovalEditorForm {
+  templateCode: string
+  templateName: string
+  businessType: ApprovalBusinessType
+  countryCode: string
+  enabled: boolean
+  steps: ApprovalTemplateStep[]
+}
+
+const { hasPermission } = usePermission()
 const route = useRoute()
-const filePreview = useFilePreview()
-const loading = ref(false)
-const activeTab = ref(route.query.tab === 'tasks' ? 'tasks' : 'templates')
-const templates = ref<ApprovalTemplate[]>([])
-const tasks = ref<ApprovalTask[]>([])
-const roles = ref<Role[]>([])
-const users = ref<UserListItem[]>([])
-const countries = ref<Country[]>([])
+const router = useRouter()
+const queryClient = useQueryClient()
+const { t } = useI18n()
+const canManage = computed(() => hasPermission('approval_config:manage'))
 
-const dialogVisible = ref(false)
-const diffVisible = ref(false)
-const diffLoading = ref(false)
-const currentDiff = ref<KnowledgeFileRevisionDiff>()
-
-const defaultStep = (): ApprovalStep => ({
-  stepOrder: 1,
-  stepName: '负责人审核',
-  approverType: 'role',
-  approverValue: '',
+const query = reactive<QueryApprovalTemplateParams>({
+  page: Number(route.query.page) || 1,
+  pageSize: Number(route.query.pageSize) || 20,
+  keyword: typeof route.query.keyword === 'string' ? route.query.keyword : '',
 })
+const appliedQuery = ref({ ...query })
+const templatesQuery = useApprovalTemplatesQuery(appliedQuery)
+const templates = computed(() => templatesQuery.data.value?.items ?? [])
+const total = computed(() => templatesQuery.data.value?.total ?? 0)
+const pagination = computed(() => ({
+  page: query.page,
+  pageSize: query.pageSize,
+  total: total.value,
+}))
+const loading = computed(() => templatesQuery.isFetching.value)
+const loadFailed = computed(() => templatesQuery.isError.value)
 
-const form = ref({
+const editorVisible = ref(false)
+const editingId = ref('')
+const form = reactive<ApprovalEditorForm>({
   templateCode: '',
   templateName: '',
-  businessType: 'report',
+  businessType: 'PROJECT_ARCHIVE_FILE',
   countryCode: '',
-  isEnabled: true,
-  steps: [defaultStep()] as ApprovalStep[],
+  enabled: true,
+  steps: [],
 })
 
-const businessOptions = [
-  { value: 'report', label: '工作报告' },
-  { value: 'knowledge', label: '知识发布' },
-  { value: 'knowledge-file-update', label: '知识库文件更新' },
-  { value: 'checklist', label: '检查模板记录' },
-  { value: 'process_record', label: '项目过程记录' },
-  { value: 'performance', label: '绩效评分' },
-]
+const businessOptions = computed<Array<{ value: ApprovalBusinessType; label: string }>>(() =>
+  (
+    ['PROJECT_CREATE', 'PROJECT_ARCHIVE_FILE', 'STANDARD', 'KNOWLEDGE', 'ARCHIVE_TEMPLATE'] as const
+  ).map((value) => ({ value, label: t(`approvals.businessTypes.${value}`) })),
+)
 
-const templateColumns: TableColumnData[] = [
-  { title: '编码', dataIndex: 'templateCode', width: 190 },
-  { title: '名称', dataIndex: 'templateName', minWidth: 180 },
-  { title: '业务类型', dataIndex: 'businessType', slotName: 'businessType', width: 150 },
-  { title: '审批步骤', slotName: 'steps', minWidth: 260 },
-  { title: '启用', dataIndex: 'isEnabled', slotName: 'enabled', width: 90 },
-  { title: '操作', slotName: 'templateActions', width: 100, fixed: 'right' },
-]
+const approverOptions = computed<Array<{ value: ApprovalApproverType; label: string }>>(() =>
+  (['role', 'user'] as const).map((value) => ({
+    value,
+    label: t(`approvals.approverTypes.${value}`),
+  })),
+)
 
-const taskColumns: TableColumnData[] = [
-  { title: '审批类型', slotName: 'taskType', minWidth: 170 },
-  { title: '业务事项', dataIndex: 'businessTitle', minWidth: 260 },
-  { title: '业务', dataIndex: 'businessType', slotName: 'taskBusiness', width: 140 },
-  { title: '申请人', slotName: 'applicant', width: 120 },
-  { title: '当前审批人', slotName: 'approver', width: 130 },
-  { title: '步骤', dataIndex: 'currentStep', width: 80 },
-  { title: '状态', dataIndex: 'status', slotName: 'status', width: 100 },
-  { title: '创建时间', dataIndex: 'createdAt', slotName: 'createdAt', width: 170 },
-  { title: '操作', slotName: 'taskActions', width: 240, fixed: 'right' },
-]
+const modeOptions = computed<Array<{ value: ApprovalStepMode; label: string }>>(() =>
+  (['SINGLE', 'ALL_SIGN', 'ANY_N', 'PARALLEL'] as const).map((value) => ({
+    value,
+    label: t(`approvals.stepModes.${value}`),
+  })),
+)
 
-const diffColumns: TableColumnData[] = [
-  { title: '对比项', dataIndex: 'label', width: 130 },
-  { title: '原文件', dataIndex: 'before', ellipsis: true, tooltip: true },
-  { title: '新文件', dataIndex: 'after', ellipsis: true, tooltip: true },
-  { title: '结果', dataIndex: 'changed', slotName: 'changed', width: 100 },
-]
+const columns = computed<TableColumnData[]>(() => [
+  { title: t('approvals.flowName'), dataIndex: 'templateName', minWidth: 190, fixed: 'left' },
+  { title: t('approvals.flowCode'), dataIndex: 'templateCode', minWidth: 170 },
+  {
+    title: t('approvals.businessType'),
+    dataIndex: 'businessType',
+    slotName: 'businessType',
+    width: 140,
+  },
+  { title: t('approvals.country'), dataIndex: 'countryCode', slotName: 'country', width: 110 },
+  { title: t('approvals.steps'), slotName: 'steps', minWidth: 300 },
+  { title: t('approvals.enabled'), dataIndex: 'enabled', slotName: 'enabled', width: 150 },
+  { title: t('common.action'), slotName: 'actions', width: 160, fixed: 'right' },
+])
 
-async function fetchData(): Promise<void> {
-  loading.value = true
-  try {
-    const [templatePage, taskPage] = await Promise.all([
-      approvalApi.getTemplates({ page: 1, pageSize: 100 }),
-      approvalApi.getTasks({ page: 1, pageSize: 100 }),
-    ])
-    templates.value = templatePage.list
-    tasks.value = taskPage.list
+type ApprovalMutationVariables =
+  | { kind: 'save'; id?: string; data: SaveApprovalTemplateDto }
+  | { kind: 'toggle'; id: string }
+  | { kind: 'delete'; id: string }
 
-    const [roleResult, userResult, countryResult] = await Promise.allSettled([
-      roleApi.getList(),
-      userApi.getList({ page: 1, pageSize: 100, status: 'Active' }),
-      countryApi.getList({ page: 1, pageSize: 100 }),
-    ])
-    roles.value = roleResult.status === 'fulfilled' ? roleResult.value : []
-    users.value = userResult.status === 'fulfilled' ? userResult.value.list : []
-    countries.value = countryResult.status === 'fulfilled' ? countryResult.value.list : []
-  } finally {
-    loading.value = false
+const approvalMutation = useMutation({
+  mutationFn: async (variables: ApprovalMutationVariables) => {
+    switch (variables.kind) {
+      case 'save':
+        if (variables.id) await approvalTemplateApi.update(variables.id, variables.data)
+        else await approvalTemplateApi.create(variables.data)
+        return
+      case 'toggle':
+        await approvalTemplateApi.toggle(variables.id)
+        return
+      case 'delete':
+        await approvalTemplateApi.delete(variables.id)
+    }
+  },
+  retry: false,
+  onSuccess: () =>
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.settings.approvalTemplateLists(),
+    }),
+})
+const saving = computed(() => approvalMutation.isPending.value)
+
+function newStep(order: number): ApprovalTemplateStep {
+  return {
+    stepOrder: order,
+    stepName: order === 1 ? t('approvals.defaultFirstStep') : t('approvals.defaultStep', { order }),
+    mode: 'SINGLE',
+    requiredCount: 1,
+    approverType: 'role',
+    approverValues: [],
   }
 }
 
-function openTemplate(row?: ApprovalTemplate): void {
-  form.value = row
-    ? {
-        templateCode: row.templateCode,
-        templateName: row.templateName,
-        businessType: row.businessType,
-        countryCode: row.countryCode ?? '',
-        isEnabled: row.isEnabled,
-        steps: row.steps.length ? row.steps.map((step) => ({ ...step })) : [defaultStep()],
-      }
-    : {
-        templateCode: '',
-        templateName: '',
-        businessType: 'report',
-        countryCode: '',
-        isEnabled: true,
-        steps: [defaultStep()],
-      }
-  dialogVisible.value = true
+async function fetchTemplates(): Promise<void> {
+  await templatesQuery.refetch()
+}
+
+async function applyQuery(): Promise<void> {
+  appliedQuery.value = {
+    page: query.page,
+    pageSize: query.pageSize,
+    keyword: query.keyword?.trim() || '',
+  }
+  await router.replace({
+    path: route.path,
+    query: {
+      page: query.page === 1 ? undefined : String(query.page),
+      pageSize: query.pageSize === 20 ? undefined : String(query.pageSize),
+      keyword: query.keyword?.trim() || undefined,
+    },
+  })
+}
+
+function resetForm(): void {
+  Object.assign(form, {
+    templateCode: '',
+    templateName: '',
+    businessType: 'PROJECT_ARCHIVE_FILE' as const,
+    countryCode: '',
+    enabled: true,
+    steps: [newStep(1)],
+  })
+}
+
+function openCreate(): void {
+  if (!canManage.value) return
+  editingId.value = ''
+  resetForm()
+  editorVisible.value = true
+}
+
+function openEdit(template: ApprovalTemplate): void {
+  if (!canManage.value) return
+  editingId.value = template.id
+  Object.assign(form, {
+    templateCode: template.templateCode,
+    templateName: template.templateName,
+    businessType: template.businessType,
+    countryCode: template.countryCode ?? '',
+    enabled: template.enabled,
+    steps: template.steps.length
+      ? template.steps.map((step, index) => ({ ...step, stepOrder: index + 1 }))
+      : [newStep(1)],
+  })
+  editorVisible.value = true
 }
 
 function addStep(): void {
-  form.value.steps.push({
-    stepOrder: form.value.steps.length + 1,
-    stepName: `第 ${form.value.steps.length + 1} 步审核`,
-    approverType: 'role',
-    approverValue: '',
+  form.steps.push(newStep(form.steps.length + 1))
+}
+
+function removeStep(index: number): void {
+  if (form.steps.length === 1) {
+    Message.warning(t('approvals.validation.stepRequired'))
+    return
+  }
+  form.steps.splice(index, 1)
+  form.steps.forEach((step, stepIndex) => {
+    step.stepOrder = stepIndex + 1
   })
+}
+
+function validateForm(): boolean {
+  if (!form.templateCode.trim() || !form.templateName.trim()) {
+    Message.warning(t('approvals.validation.basic'))
+    return false
+  }
+  if (!form.steps.length) {
+    Message.warning(t('approvals.validation.stepRequired'))
+    return false
+  }
+  if (form.steps.some((step) => !step.stepName.trim() || !step.approverValues.length)) {
+    Message.warning(t('approvals.validation.stepComplete'))
+    return false
+  }
+  if (
+    form.steps.some(
+      (step) =>
+        (step.mode === 'SINGLE' && step.approverValues.length !== 1) ||
+        (step.mode === 'ANY_N' &&
+          (!step.requiredCount || step.requiredCount > step.approverValues.length)),
+    )
+  ) {
+    Message.warning(t('approvals.validation.modeInvalid'))
+    return false
+  }
+  return true
 }
 
 async function saveTemplate(): Promise<void> {
-  await approvalApi.saveTemplate({
-    ...form.value,
-    countryCode: form.value.countryCode || undefined,
-  })
-  Message.success('审批模板已保存')
-  dialogVisible.value = false
-  await fetchData()
-}
+  if (!canManage.value || !validateForm()) return
+  const payload: SaveApprovalTemplateDto = {
+    templateCode: form.templateCode.trim(),
+    templateName: form.templateName.trim(),
+    businessType: form.businessType,
+    countryCode: form.countryCode.trim() || undefined,
+    enabled: form.enabled,
+    steps: form.steps.map((step, index) => ({
+      stepOrder: index + 1,
+      stepName: step.stepName.trim(),
+      mode: step.mode,
+      requiredCount: step.mode === 'ANY_N' ? step.requiredCount : undefined,
+      approverType: step.approverType,
+      approverValues: step.approverValues.map((value) => value.trim()).filter(Boolean),
+    })),
+  }
 
-async function decide(task: ApprovalTask, decision: 'Approved' | 'Rejected'): Promise<void> {
   try {
-    const result = await arcoPrompt(
-      decision === 'Approved' ? '可填写审批意见' : '请填写驳回原因',
-      decision === 'Approved' ? '审批通过' : '驳回审批',
-      {
-        inputType: 'textarea',
-        inputValidator: (value) =>
-          decision === 'Rejected' && !value.trim() ? '驳回时必须填写原因' : true,
-      },
-    )
-    await approvalApi.decide(task.id, {
-      decision,
-      comment: result.value.trim() || undefined,
+    await approvalMutation.mutateAsync({
+      kind: 'save',
+      id: editingId.value || undefined,
+      data: payload,
     })
-    Message.success(decision === 'Approved' ? '审批已通过' : '审批已驳回')
-    await fetchData()
-    if (currentDiff.value?.incoming.id === task.businessId) {
-      diffVisible.value = false
-      currentDiff.value = undefined
+    if (editingId.value) {
+      Message.success(t('approvals.updated'))
+    } else {
+      Message.success(t('approvals.created'))
     }
+    editorVisible.value = false
   } catch {
-    // 用户取消审批弹窗。
+    // The shared request layer has already surfaced the failure.
   }
 }
 
-async function openDiff(task: ApprovalTask): Promise<void> {
-  if (task.businessType !== 'knowledge-file-update') {
-    Message.info('当前任务没有文件差异对比')
-    return
-  }
-
-  diffVisible.value = true
-  diffLoading.value = true
-  currentDiff.value = undefined
+async function toggleTemplate(template: ApprovalTemplate): Promise<void> {
+  if (!canManage.value) return
   try {
-    currentDiff.value = await knowledgeApi.getFileRevisionDiff(task.businessId)
-  } finally {
-    diffLoading.value = false
+    await approvalMutation.mutateAsync({ kind: 'toggle', id: template.id })
+    Message.success(template.enabled ? t('approvals.disabled') : t('approvals.enabledMessage'))
+  } catch {
+    // The shared request layer has already surfaced the failure.
   }
 }
 
-function statusColor(status: string): string {
-  if (status === 'Pending') return 'orange'
-  if (status === 'Approved') return 'green'
-  if (status === 'Rejected') return 'red'
-  return 'gray'
+function deleteTemplate(template: ApprovalTemplate): void {
+  if (!canManage.value) return
+  arcoConfirm(
+    t('approvals.deleteConfirm', { name: template.templateName }),
+    t('approvals.deleteTitle'),
+    {
+      confirmButtonText: t('common.delete'),
+      cancelButtonText: t('common.cancel'),
+      type: 'warning',
+    },
+  )
+    .then(async () => {
+      await approvalMutation.mutateAsync({ kind: 'delete', id: template.id })
+      Message.success(t('approvals.deleted'))
+    })
+    .catch(() => undefined)
 }
 
-function formatFileSize(value: string | number): string {
-  const size = Number(value)
-  if (!Number.isFinite(size)) return '-'
-  if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`
-  if (size >= 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${size} B`
+function search(): void {
+  query.page = 1
+  void applyQuery()
 }
 
-function formatDate(value?: string): string {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString('zh-CN', { hour12: false })
+function resetSearch(): void {
+  query.keyword = ''
+  query.page = 1
+  void applyQuery()
 }
 
-function previewAttachment(item: KnowledgeAttachment): void {
-  filePreview.openPreview({ source: 'attachment', id: item.id, title: item.originalName })
+function changePage(page: number): void {
+  query.page = page
+  void applyQuery()
 }
 
-async function downloadAttachment(item: KnowledgeAttachment): Promise<void> {
-  downloadBlob(await attachmentApi.getContent(item.id), item.originalName)
+function businessLabel(type: ApprovalBusinessType): string {
+  return businessOptions.value.find((option) => option.value === type)?.label ?? type
 }
 
-onMounted(fetchData)
+function approverLabel(type: ApprovalApproverType): string {
+  return approverOptions.value.find((option) => option.value === type)?.label ?? type
+}
+
+function modeLabel(mode: ApprovalStepMode): string {
+  return modeOptions.value.find((option) => option.value === mode)?.label ?? mode
+}
+
+function handleModeChange(step: ApprovalTemplateStep): void {
+  if (step.mode === 'SINGLE' && step.approverValues.length > 1) {
+    step.approverValues = step.approverValues.slice(0, 1)
+  }
+  step.requiredCount =
+    step.mode === 'ANY_N'
+      ? Math.min(Math.max(step.requiredCount ?? 1, 1), Math.max(step.approverValues.length, 1))
+      : step.mode === 'SINGLE'
+        ? 1
+        : step.approverValues.length
+}
+
+resetForm()
 </script>
 
 <template>
-  <a-spin :loading="loading" class="approval-spin">
-    <section class="approval-page">
-      <div class="page-toolbar">
-        <div>
-          <h2>审批配置</h2>
-          <p>配置业务审批模板，处理知识库文件更新等后台审批任务。</p>
-        </div>
-        <a-space>
-          <a-button @click="fetchData">刷新</a-button>
-          <a-button v-if="activeTab === 'templates'" type="primary" @click="openTemplate()">
-            新增模板
+  <PageContainer class="approval-page">
+    <PageToolbar :title="t('approvals.title')" :description="t('approvals.description')">
+      <template #actions>
+        <Can permission="approval_config:manage">
+          <a-button type="primary" @click="openCreate">
+            {{ t('approvals.create') }}
           </a-button>
-        </a-space>
-      </div>
+        </Can>
+      </template>
+    </PageToolbar>
 
-      <a-tabs v-model="activeTab" class="approval-tabs">
-        <a-tab-pane label="审批模板" name="templates" />
-        <a-tab-pane label="审批任务" name="tasks" />
-      </a-tabs>
-
-      <a-table
-        v-if="activeTab === 'templates'"
-        :columns="templateColumns"
-        :data="templates"
-        :pagination="false"
-        row-key="id"
-      >
-        <template #businessType="{ record }">
-          <a-tag>{{ getApprovalBusinessLabel(record.businessType) }}</a-tag>
-        </template>
-        <template #steps="{ record }">
-          <a-space wrap>
-            <a-tag v-for="step in record.steps" :key="`${record.id}-${step.stepOrder}`">
-              {{ step.stepOrder }}. {{ step.stepName }}
-            </a-tag>
+    <a-alert
+      v-if="!canManage"
+      class="page-alert"
+      type="info"
+      :title="t('approvals.readOnly')"
+    >
+      {{ t('approvals.readOnlyHint') }}
+    </a-alert>
+    <SectionCard class="filter-card" :bordered="false">
+      <a-form :model="query" layout="inline" @submit-success="search">
+        <a-form-item :label="t('approvals.flowName')">
+          <a-input
+            v-model="query.keyword"
+            class="keyword-input"
+            allow-clear
+            :placeholder="t('approvals.searchPlaceholder')"
+            @press-enter="search"
+          />
+        </a-form-item>
+        <a-form-item>
+          <a-space>
+            <a-button type="primary" @click="search">
+              {{ t('review.query') }}
+            </a-button>
+            <a-button @click="resetSearch">
+              {{ t('common.reset') }}
+            </a-button>
           </a-space>
-        </template>
-        <template #enabled="{ record }">
-          <a-tag :color="record.isEnabled ? 'green' : 'gray'">
-            {{ record.isEnabled ? '是' : '否' }}
-          </a-tag>
-        </template>
-        <template #templateActions="{ record }">
-          <a-button type="text" size="small" @click="openTemplate(record)">编辑</a-button>
-        </template>
-      </a-table>
+        </a-form-item>
+      </a-form>
+    </SectionCard>
 
-      <a-table
-        v-else
-        :columns="taskColumns"
-        :data="tasks"
-        :pagination="false"
-        row-key="id"
-      >
-        <template #taskType="{ record }">
-          {{ record.template?.templateName || getApprovalBusinessLabel(record.businessType) }}
-        </template>
-        <template #taskBusiness="{ record }">
-          <a-tag>{{ getApprovalBusinessLabel(record.businessType) }}</a-tag>
-        </template>
-        <template #applicant="{ record }">
-          {{ record.applicant?.realName || '-' }}
-        </template>
-        <template #approver="{ record }">
-          {{ record.approver?.realName || '-' }}
-        </template>
-        <template #status="{ record }">
-          <a-tag :color="statusColor(record.status)">{{ record.status }}</a-tag>
-        </template>
-        <template #createdAt="{ record }">
-          {{ formatDate(record.createdAt) }}
-        </template>
-        <template #taskActions="{ record }">
-          <a-space size="mini" wrap>
+    <BusinessTable
+      :loading="loading"
+      :columns="columns"
+      :data="templates"
+      :pagination="pagination"
+      :scroll="{ x: 1200 }"
+      :error="loadFailed ? t('approvals.loadFailed') : null"
+      :empty-title="t('approvals.empty')"
+      :empty-description="t('approvals.unavailable')"
+      :retry-label="t('common.retry')"
+      row-key="id"
+      class="settings-table"
+      @retry="fetchTemplates"
+      @page-change="changePage"
+    >
+      <template #businessType="{ record }">
+        <a-tag>{{ businessLabel(record.businessType) }}</a-tag>
+      </template>
+      <template #country="{ record }">
+        {{
+          record.countryCode || t('approvals.allCountries')
+        }}
+      </template>
+      <template #steps="{ record }">
+        <a-space size="mini" wrap>
+          <a-tag v-for="step in record.steps" :key="`${record.id}-${step.stepOrder}`">
+            {{ step.stepOrder }}. {{ step.stepName }}（{{ modeLabel(step.mode) }} ·
+            {{ approverLabel(step.approverType) }} · {{ step.approverValues.length }}）
+          </a-tag>
+        </a-space>
+      </template>
+      <template #enabled="{ record }">
+        <a-space size="mini">
+          <StatusBadge
+            domain="approval"
+            :status="record.enabled ? 'ENABLED' : 'DISABLED'"
+            :label="record.enabled ? t('approvals.enabled') : t('approvals.disabledStatus')"
+          />
+          <Can permission="approval_config:manage">
+            <a-switch :model-value="record.enabled" @change="toggleTemplate(record)" />
+          </Can>
+        </a-space>
+      </template>
+      <template #actions="{ record }">
+        <Can permission="approval_config:manage">
+          <a-space size="mini" :wrap="false">
+            <a-button type="text" size="small" @click="openEdit(record)">
+              {{ t('common.edit') }}
+            </a-button>
             <a-button
-              v-if="record.businessType === 'knowledge-file-update'"
               type="text"
               size="small"
-              @click="openDiff(record)"
+              status="danger"
+              @click="deleteTemplate(record)"
             >
-              差异对比
+              {{ t('common.delete') }}
             </a-button>
-            <template v-if="record.status === 'Pending'">
-              <a-button type="text" size="small" @click="decide(record, 'Approved')">
-                通过
-              </a-button>
-              <a-button type="text" size="small" status="danger" @click="decide(record, 'Rejected')">
-                驳回
-              </a-button>
-            </template>
           </a-space>
-        </template>
-      </a-table>
+        </Can>
+      </template>
+    </BusinessTable>
 
-      <a-modal
-        v-model:visible="dialogVisible"
-        title="审批模板"
-        :width="760"
-        ok-text="保存"
-        cancel-text="取消"
-        @ok="saveTemplate"
-      >
-        <a-form :model="form" layout="vertical">
-          <div class="template-form-grid">
-            <a-form-item label="模板编码" field="templateCode" required>
-              <a-input v-model="form.templateCode" />
-            </a-form-item>
-            <a-form-item label="模板名称" field="templateName" required>
-              <a-input v-model="form.templateName" />
-            </a-form-item>
-            <a-form-item label="业务类型" field="businessType" required>
-              <a-select v-model="form.businessType">
+    <BusinessModal
+      v-model:visible="editorVisible"
+      :title="editingId ? t('approvals.editTitle') : t('approvals.createTitle')"
+      :width="820"
+      :ok-loading="saving"
+      :ok-text="t('common.save')"
+      :cancel-text="t('common.cancel')"
+      @ok="saveTemplate"
+    >
+      <a-form :model="form" layout="vertical">
+        <div class="form-grid">
+          <a-form-item :label="t('approvals.flowCode')" required>
+            <a-input
+              v-model="form.templateCode"
+              :max-length="100"
+              :placeholder="t('approvals.codePlaceholder')"
+            />
+          </a-form-item>
+          <a-form-item :label="t('approvals.flowName')" required>
+            <a-input
+              v-model="form.templateName"
+              :max-length="100"
+              :placeholder="t('approvals.namePlaceholder')"
+            />
+          </a-form-item>
+          <a-form-item :label="t('approvals.businessType')" required>
+            <a-select v-model="form.businessType">
+              <a-option v-for="option in businessOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </a-option>
+            </a-select>
+          </a-form-item>
+          <a-form-item :label="t('approvals.country')">
+            <a-input
+              v-model="form.countryCode"
+              allow-clear
+              :placeholder="t('approvals.countryPlaceholder')"
+            />
+          </a-form-item>
+        </div>
+
+        <a-form-item :label="t('approvals.steps')" required>
+          <div class="steps-editor">
+            <div v-for="(step, index) in form.steps" :key="index" class="step-row">
+              <span class="step-order">{{ index + 1 }}</span>
+              <a-input
+                v-model="step.stepName"
+                :placeholder="t('approvals.stepName')"
+                :max-length="100"
+              />
+              <a-select v-model="step.approverType">
                 <a-option
-                  v-for="option in businessOptions"
+                  v-for="option in approverOptions"
                   :key="option.value"
                   :value="option.value"
                 >
                   {{ option.label }}
                 </a-option>
               </a-select>
-            </a-form-item>
-            <a-form-item label="适用国家">
-              <a-select v-model="form.countryCode" allow-clear placeholder="不限制国家">
-                <a-option
-                  v-for="country in countries"
-                  :key="country.countryCode"
-                  :value="country.countryCode"
-                >
-                  {{ country.nameZh }}
+              <a-select v-model="step.mode" @change="handleModeChange(step)">
+                <a-option v-for="option in modeOptions" :key="option.value" :value="option.value">
+                  {{ option.label }}
                 </a-option>
               </a-select>
-            </a-form-item>
-            <a-form-item label="启用">
-              <a-switch v-model="form.isEnabled" />
-            </a-form-item>
+              <a-select
+                v-model="step.approverValues"
+                multiple
+                allow-create
+                allow-clear
+                :placeholder="
+                  step.approverType === 'role'
+                    ? t('approvals.roleCodes')
+                    : t('approvals.userIds')
+                "
+                @change="handleModeChange(step)"
+              />
+              <a-input-number
+                v-if="step.mode === 'ANY_N'"
+                v-model="step.requiredCount"
+                :min="1"
+                :max="Math.max(step.approverValues.length, 1)"
+                :placeholder="t('approvals.requiredCount')"
+              />
+              <span v-else class="required-count-placeholder">
+                {{ t('approvals.requiredCountAuto') }}
+              </span>
+              <a-button type="text" status="danger" @click="removeStep(index)">
+                {{ t('common.delete') }}
+              </a-button>
+            </div>
+            <a-button class="add-step-button" @click="addStep">
+              {{
+                t('approvals.addStep')
+              }}
+            </a-button>
           </div>
-
-          <a-form-item label="审批步骤">
-            <div class="steps-editor">
-              <div v-for="(step, index) in form.steps" :key="index" class="step-row">
-                <a-input-number v-model="step.stepOrder" :min="1" />
-                <a-input v-model="step.stepName" placeholder="步骤名称" />
-                <a-select v-model="step.approverType">
-                  <a-option value="role">角色</a-option>
-                  <a-option value="user">用户</a-option>
-                </a-select>
-                <a-select v-model="step.approverValue" placeholder="选择审批人">
-                  <template v-if="step.approverType === 'role'">
-                    <a-option
-                      v-for="role in roles"
-                      :key="role.id"
-                      :value="role.roleCode"
-                    >
-                      {{ role.roleName }}
-                    </a-option>
-                  </template>
-                  <template v-else>
-                    <a-option
-                      v-for="user in users"
-                      :key="user.id"
-                      :value="user.id"
-                    >
-                      {{ user.realName }}
-                    </a-option>
-                  </template>
-                </a-select>
-                <a-button status="danger" type="text" @click="form.steps.splice(index, 1)">
-                  删除
-                </a-button>
-              </div>
-              <a-button @click="addStep">增加步骤</a-button>
-            </div>
-          </a-form-item>
-        </a-form>
-      </a-modal>
-
-      <a-modal
-        v-model:visible="diffVisible"
-        title="知识库文件更新差异对比"
-        :footer="false"
-        :width="1040"
-      >
-        <a-spin :loading="diffLoading">
-          <template v-if="currentDiff">
-            <div class="diff-header">
-              <div>
-                <span>知识条目</span>
-                <strong>{{ currentDiff.article?.title || '-' }}</strong>
-              </div>
-              <a-tag>{{ currentDiff.article?.category?.name || '知识库' }}</a-tag>
-            </div>
-
-            <div class="diff-files">
-              <div class="diff-file-card">
-                <span>原文件</span>
-                <strong>{{ currentDiff.original.originalName }}</strong>
-                <p>
-                  {{ currentDiff.original.fileExt.toUpperCase() }} /
-                  {{ formatFileSize(currentDiff.original.fileSize) }}
-                </p>
-                <a-space size="mini">
-                  <a-button type="text" @click="previewAttachment(currentDiff.original)">
-                    预览原文件
-                  </a-button>
-                  <a-button type="text" @click="downloadAttachment(currentDiff.original)">
-                    下载
-                  </a-button>
-                </a-space>
-              </div>
-              <div class="diff-file-card incoming">
-                <span>新文件</span>
-                <strong>{{ currentDiff.incoming.originalName }}</strong>
-                <p>
-                  {{ currentDiff.incoming.fileExt.toUpperCase() }} /
-                  {{ formatFileSize(currentDiff.incoming.fileSize) }}
-                </p>
-                <a-space size="mini">
-                  <a-button type="text" @click="previewAttachment(currentDiff.incoming)">
-                    预览新文件
-                  </a-button>
-                  <a-button type="text" @click="downloadAttachment(currentDiff.incoming)">
-                    下载
-                  </a-button>
-                </a-space>
-              </div>
-            </div>
-
-            <a-table
-              :columns="diffColumns"
-              :data="currentDiff.changes"
-              :pagination="false"
-              :bordered="{ cell: true }"
-              row-key="label"
-            >
-              <template #changed="{ record }">
-                <a-tag :color="record.changed ? 'orange' : 'green'">
-                  {{ record.changed ? '有变化' : '一致' }}
-                </a-tag>
-              </template>
-            </a-table>
-          </template>
-        </a-spin>
-      </a-modal>
-
-    </section>
-  </a-spin>
+        </a-form-item>
+        <a-form-item :label="t('approvals.enableTemplate')">
+          <a-switch v-model="form.enabled" />
+        </a-form-item>
+      </a-form>
+    </BusinessModal>
+  </PageContainer>
 </template>
 
 <style scoped lang="scss">
@@ -479,35 +564,20 @@ onMounted(fetchData)
   min-width: 0;
 }
 
-.approval-spin {
-  display: block;
+.page-alert,
+.filter-card {
+  margin-bottom: 12px;
 }
 
-.page-toolbar {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 18px;
-
-  h2 {
-    margin: 0;
-    color: var(--color-text-1);
-    font-size: 20px;
-  }
-
-  p {
-    margin: 6px 0 0;
-    color: var(--color-text-3);
-    font-size: 13px;
-  }
+.keyword-input {
+  width: 300px;
 }
 
-.approval-tabs {
-  margin-bottom: 14px;
+.settings-table {
+  background: var(--color-bg-2);
 }
 
-.template-form-grid {
+.form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0 16px;
@@ -516,172 +586,50 @@ onMounted(fetchData)
 .steps-editor {
   width: 100%;
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .step-row {
   display: grid;
-  grid-template-columns: 90px 1fr 120px 190px auto;
+  grid-template-columns:
+    28px minmax(130px, 1fr) 90px 110px minmax(190px, 1.2fr) minmax(100px, 0.6fr)
+    auto;
+  align-items: center;
   gap: 8px;
 }
 
-.diff-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
-
-  div {
-    display: grid;
-    gap: 4px;
-  }
-
-  span {
-    color: var(--color-text-3);
-    font-size: 12px;
-  }
-
-  strong {
-    color: var(--color-text-1);
-    font-size: 16px;
-  }
-}
-
-.diff-files {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  margin-bottom: 16px;
-}
-
-.diff-file-card {
-  display: grid;
-  gap: 8px;
-  padding: 14px;
-  border: 1px solid var(--color-border-2);
-  border-radius: 8px;
-  background: var(--color-fill-1);
-
-  &.incoming {
-    background: rgb(var(--primary-1));
-  }
-
-  span,
-  p {
-    margin: 0;
-    color: var(--color-text-3);
-    font-size: 12px;
-  }
-
-  strong {
-    overflow: hidden;
-    color: var(--color-text-1);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-}
-
-.preview-meta {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
+.required-count-placeholder {
   color: var(--color-text-3);
   font-size: 12px;
 }
 
-.image-preview {
-  width: 100%;
-  max-height: 68vh;
-  object-fit: contain;
-  border: 1px solid var(--color-border-2);
-  border-radius: 8px;
-  background: var(--color-fill-1);
+.step-order {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: rgb(var(--primary-6));
+  background: rgb(var(--primary-1));
+  font-size: 12px;
+  line-height: 24px;
+  text-align: center;
 }
 
-.pdf-preview {
-  width: 100%;
-  height: 70vh;
-  border: 1px solid var(--color-border-2);
-  border-radius: 8px;
-  background: #fff;
+.add-step-button {
+  justify-self: start;
 }
 
-.office-preview {
-  max-height: 70vh;
-  padding: 18px;
-  border: 1px solid var(--color-border-2);
-  border-radius: 8px;
-  background: #fff;
-  overflow: auto;
-}
-
-.text-preview {
-  max-height: 70vh;
-  padding: 18px;
-  border: 1px solid var(--color-border-2);
-  border-radius: 8px;
-  background: #fff;
-  overflow: auto;
-  white-space: pre-wrap;
-}
-
-.office-preview :deep(.attachment-preview) {
-  color: #1d2129;
-  line-height: 1.7;
-
-  h2 {
-    margin: 0 0 16px;
-    font-size: 20px;
-  }
-
-  h3 {
-    margin: 12px 0 8px;
-    font-size: 16px;
-  }
-
-  p {
-    margin: 0 0 10px;
-  }
-}
-
-.office-preview :deep(.preview-slide),
-.office-preview :deep(.preview-sheet) {
-  margin-bottom: 16px;
-  padding: 14px;
-  border: 1px solid #e5e6eb;
-  border-radius: 8px;
-}
-
-.office-preview :deep(.preview-table-wrap) {
-  overflow-x: auto;
-}
-
-.office-preview :deep(table) {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.office-preview :deep(td) {
-  min-width: 110px;
-  padding: 8px 10px;
-  border: 1px solid #e5e6eb;
-  font-size: 13px;
-}
-
-@media (max-width: 900px) {
-  .template-form-grid,
-  .diff-files {
-    grid-template-columns: 1fr;
-  }
-
+@media (max-width: 760px) {
+  .form-grid,
   .step-row {
     grid-template-columns: 1fr;
   }
 
-  .page-toolbar {
-    flex-direction: column;
+  .step-order {
+    display: none;
+  }
+
+  .keyword-input {
+    width: 100%;
   }
 }
 </style>

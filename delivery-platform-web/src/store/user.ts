@@ -1,29 +1,76 @@
+import { computed, ref, shallowRef } from 'vue'
 import { defineStore } from 'pinia'
-import { ref, computed, shallowRef } from 'vue'
 
 import { authApi } from '@/api/auth'
 import { useFilePreview } from '@/composables/useFilePreview'
-import { setToken, removeToken, setUserInfo, getUserInfo, getToken } from '@/utils/auth'
-import type { LoginForm, UserInfo } from '@/types/user'
+import { queryClient } from '@/query/client'
 import router from '@/router'
+import type { LoginForm, LoginResult, UserInfo, UserProfile } from '@/types/user'
+import { getToken, removeToken, setToken } from '@/utils/auth'
+
+function normalizeUser(profile: UserProfile): UserInfo {
+  const userId = profile.id ?? profile.sub
+  if (!userId) {
+    throw new Error('用户资料缺少用户标识')
+  }
+  if (!Array.isArray(profile.roles) || !Array.isArray(profile.permissions)) {
+    throw new Error('用户资料角色或权限格式错误')
+  }
+  if (
+    !profile.roles.every((role) => typeof role === 'string')
+    || !profile.permissions.every((permission) => typeof permission === 'string')
+  ) {
+    throw new Error('用户资料角色或权限格式错误')
+  }
+
+  return {
+    id: userId,
+    username: profile.username,
+    realName: profile.realName,
+    email: profile.email ?? '',
+    avatar: profile.avatar,
+    roles: profile.roles,
+    permissions: profile.permissions,
+  }
+}
 
 export const useUserStore = defineStore('user', () => {
-  const userInfo = ref<UserInfo | null>(getUserInfo())
+  const userInfo = ref<UserInfo | null>(null)
   const token = ref<string | null>(getToken())
   const profileInitialized = shallowRef(false)
+  const sessionInitialized = shallowRef(false)
+  let sessionRestorePromise: Promise<boolean> | null = null
 
-  const isLoggedIn = computed(() => !!token.value)
+  const isLoggedIn = computed(
+    () => Boolean(token.value && userInfo.value && profileInitialized.value),
+  )
+
+  const applySession = (result: LoginResult): void => {
+    if (!result.accessToken) {
+      throw new Error('登录响应缺少访问令牌')
+    }
+
+    const user = normalizeUser(result.user)
+    setToken(result.accessToken)
+    token.value = result.accessToken
+    userInfo.value = user
+    profileInitialized.value = true
+    sessionInitialized.value = true
+  }
+
+  const resetState = (): void => {
+    token.value = null
+    userInfo.value = null
+    profileInitialized.value = false
+    sessionInitialized.value = true
+    removeToken()
+    queryClient.clear()
+    useFilePreview().closePreview()
+  }
 
   const login = async (loginForm: LoginForm): Promise<void> => {
     try {
-      const result = await authApi.login(loginForm)
-      // Interceptor already unwrapped { code, message, data } → data
-      const { accessToken } = result
-      token.value = accessToken
-      setToken(accessToken)
-
-      // Fetch user profile after login
-      await fetchProfile()
+      applySession(await authApi.login(loginForm))
     } catch (error) {
       resetState()
       throw error
@@ -31,58 +78,63 @@ export const useUserStore = defineStore('user', () => {
   }
 
   const fetchProfile = async (): Promise<void> => {
-    const profile = await authApi.getProfile()
-    const userId = profile.id ?? profile.sub
-    if (!userId) {
-      throw new Error('用户资料缺少用户标识')
-    }
-    if (!Array.isArray(profile.roles) || !Array.isArray(profile.permissions)) {
-      throw new Error('用户资料角色或权限格式错误')
-    }
-    if (
-      !profile.roles.every((role) => typeof role === 'string') ||
-      !profile.permissions.every((permission) => typeof permission === 'string')
-    ) {
-      throw new Error('用户资料角色或权限格式错误')
-    }
-    // Interceptor already unwrapped → profile is the UserProfile directly
-    const user: UserInfo = {
-      id: userId,
-      username: profile.username,
-      realName: profile.realName,
-      email: profile.email ?? '',
-      avatar: profile.avatar,
-      roles: profile.roles,
-      permissions: profile.permissions,
-    }
-    userInfo.value = user
+    userInfo.value = normalizeUser(await authApi.getProfile())
+    token.value = getToken()
     profileInitialized.value = true
-    setUserInfo(user)
+    sessionInitialized.value = true
   }
 
-  const ensureProfile = async (): Promise<void> => {
-    if (!profileInitialized.value) {
-      await fetchProfile()
+  const restoreSession = (): Promise<boolean> => {
+    if (isLoggedIn.value) {
+      sessionInitialized.value = true
+      return Promise.resolve(true)
     }
+    if (sessionRestorePromise) {
+      return sessionRestorePromise
+    }
+
+    sessionRestorePromise = (async () => {
+      try {
+        applySession(await authApi.refreshToken())
+        return true
+      } catch {
+        resetState()
+        return false
+      }
+    })().finally(() => {
+      sessionRestorePromise = null
+    })
+
+    return sessionRestorePromise
+  }
+
+  const ensureSession = async (): Promise<boolean> => {
+    if (isLoggedIn.value) return true
+    if (sessionRestorePromise) return sessionRestorePromise
+
+    if (token.value) {
+      try {
+        await fetchProfile()
+        return isLoggedIn.value
+      } catch {
+        resetState()
+        return false
+      }
+    }
+
+    if (sessionInitialized.value) return false
+    return restoreSession()
   }
 
   const logout = async (): Promise<void> => {
     try {
       await authApi.logout()
     } catch {
-      // Ignore logout API errors
+      // 本地会话仍必须清理。
     } finally {
       resetState()
-      router.push('/login')
+      await router.push('/login')
     }
-  }
-
-  const resetState = (): void => {
-    token.value = null
-    userInfo.value = null
-    profileInitialized.value = false
-    removeToken()
-    useFilePreview().closePreview()
   }
 
   return {
@@ -90,9 +142,11 @@ export const useUserStore = defineStore('user', () => {
     token,
     isLoggedIn,
     profileInitialized,
+    sessionInitialized,
     login,
     fetchProfile,
-    ensureProfile,
+    restoreSession,
+    ensureSession,
     logout,
     resetState,
   }

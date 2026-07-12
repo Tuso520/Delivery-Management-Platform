@@ -1,11 +1,21 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsOptional, IsInt, MaxLength } from 'class-validator';
+import {
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export class CreateCurrencyDto {
-  @ApiProperty({ description: '币种代码', example: 'USD' })
+  @ApiProperty({ description: 'ISO 币种代码', example: 'USD' })
   @IsString()
   @IsNotEmpty()
   @MaxLength(10)
+  @Matches(/^[A-Z]{3,10}$/)
   currencyCode: string;
 
   @ApiProperty({ description: '币种名称', example: '美元' })
@@ -23,5 +33,7 @@ export class CreateCurrencyDto {
   @ApiPropertyOptional({ description: '小数位数', default: 2 })
   @IsOptional()
   @IsInt()
+  @Min(0)
+  @Max(8)
   decimalPlaces?: number;
 }

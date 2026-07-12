@@ -1,24 +1,33 @@
 ﻿<script setup lang="ts">
-import { computed, onMounted, reactive, shallowRef, useTemplateRef } from 'vue'
+import { computed, reactive, shallowRef, useTemplateRef } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { Message } from '@arco-design/web-vue'
 import type { FormInstance } from '@arco-design/web-vue'
+import { IconLock, IconRight, IconUser } from '@arco-design/web-vue/es/icon'
 import type { FormRules } from '@/types/arco'
 import { useAuth } from '@/composables/useAuth'
+import { usePublicSystemConfigQuery } from '@/composables/queries/useAdministrationQueries'
+import { getFirstAccessiblePath } from '@/router/access'
 import { useLocaleStore } from '@/store/locale'
 import type { LocaleCode } from '@/store/locale'
 import type { LoginForm } from '@/types/user'
-import { systemConfigApi } from '@/api/system'
 
 const router = useRouter()
 const route = useRoute()
-const { login } = useAuth()
+const { login, userInfo } = useAuth()
 const localeStore = useLocaleStore()
+const { t } = useI18n()
+const publicConfigQuery = usePublicSystemConfigQuery()
 
 const formRef = useTemplateRef<FormInstance>('loginFormRef')
 const loading = shallowRef(false)
-const platformName = shallowRef('交付管理平台')
-const loginSlogan = shallowRef('让交付工作保持高效、清晰、有序。')
+const platformName = computed(
+  () => publicConfigQuery.data.value?.['platform.name'] || t('app.title'),
+)
+const loginSlogan = computed(
+  () => publicConfigQuery.data.value?.['platform.login_slogan'] || t('login.slogan'),
+)
 
 const loginForm = reactive<LoginForm>({
   username: '',
@@ -26,42 +35,23 @@ const loginForm = reactive<LoginForm>({
 })
 
 const copy = computed(() => {
-  const english = localeStore.currentLocale === 'en-US'
-  return english
-    ? {
-        eyebrow: 'GLOBAL DELIVERY WORKSPACE',
-        brandTitle: 'Delivery management, kept in one clear system.',
-        brandMeta: 'Projects / Standards / Knowledge',
-        welcome: 'Welcome back',
-        introduction: 'Sign in with your organization account.',
-        username: 'Username',
-        password: 'Password',
-        usernameRequired: 'Enter your username',
-        usernameLength: 'Username must contain 2 to 50 characters',
-        passwordRequired: 'Enter your password',
-        passwordLength: 'Password must contain 6 to 100 characters',
-        submit: 'Sign in',
-        success: 'Signed in',
-        failure: 'Sign-in failed. Check your username and password.',
-        security: 'Protected organization access',
-      }
-    : {
-        eyebrow: 'GLOBAL DELIVERY WORKSPACE',
-        brandTitle: loginSlogan.value,
-        brandMeta: '项目 / 标准 / 知识',
-        welcome: '欢迎回来',
-        introduction: '使用组织账号登录交付管理平台。',
-        username: '用户名',
-        password: '密码',
-        usernameRequired: '请输入用户名',
-        usernameLength: '用户名长度为 2 到 50 个字符',
-        passwordRequired: '请输入密码',
-        passwordLength: '密码长度为 6 到 100 个字符',
-        submit: '登录',
-        success: '登录成功',
-        failure: '登录失败，请检查用户名和密码',
-        security: '企业账号安全访问',
-      }
+  return {
+    eyebrow: t('login.eyebrow'),
+    brandTitle: loginSlogan.value,
+    brandMeta: t('login.brandMeta'),
+    welcome: t('login.welcome'),
+    introduction: t('login.introduction'),
+    username: t('login.username'),
+    password: t('login.password'),
+    usernameRequired: t('login.usernameRequired'),
+    usernameLength: t('login.usernameLength'),
+    passwordRequired: t('login.passwordRequired'),
+    passwordLength: t('login.passwordLength'),
+    submit: t('login.loginBtn'),
+    success: t('login.loginSuccess'),
+    failure: t('login.loginFailed'),
+    security: t('login.security'),
+  }
 })
 
 const rules = computed<FormRules>(() => ({
@@ -79,22 +69,12 @@ function setLocale(locale: LocaleCode): void {
   localeStore.setLocale(locale)
 }
 
-onMounted(async () => {
-  try {
-    const config = await systemConfigApi.getPublic()
-    platformName.value = config['platform.name'] || platformName.value
-    loginSlogan.value = config['platform.login_slogan'] || loginSlogan.value
-  } catch {
-    // 登录不依赖公开配置接口。
-  }
-})
-
-function resolveRedirect(path?: string): string {
+function resolveRedirect(path: string | undefined, fallbackPath: string): string {
   if (!path || !path.startsWith('/') || path.startsWith('//') || /[\\\r\n]/.test(path)) {
-    return '/dashboard'
+    return fallbackPath
   }
   const resolved = router.resolve(path)
-  return resolved.name && resolved.name !== 'NotFound' ? path : '/dashboard'
+  return resolved.name && resolved.name !== 'NotFound' ? path : fallbackPath
 }
 
 async function handleLogin(): Promise<void> {
@@ -108,7 +88,11 @@ async function handleLogin(): Promise<void> {
   try {
     await login(loginForm)
     Message.success(copy.value.success)
-    await router.push(resolveRedirect(route.query.redirect as string | undefined))
+    const fallbackPath = getFirstAccessiblePath(
+      userInfo.value?.permissions ?? [],
+      userInfo.value?.roles ?? [],
+    ) ?? '/forbidden'
+    await router.push(resolveRedirect(route.query.redirect as string | undefined, fallbackPath))
   } catch {
     Message.error(copy.value.failure)
   } finally {
@@ -119,12 +103,12 @@ async function handleLogin(): Promise<void> {
 
 <template>
   <main class="login-page">
-    <section class="brand-panel" aria-label="交付管理平台">
+    <section class="brand-panel" :aria-label="t('app.title')">
       <div class="brand-top">
         <img src="@/assets/logo.svg" alt="" class="brand-logo" />
         <div class="brand-name">
           <strong>{{ platformName }}</strong>
-          <span>Delivery Management Platform</span>
+          <span>{{ t('app.title') }}</span>
         </div>
       </div>
 
@@ -142,13 +126,13 @@ async function handleLogin(): Promise<void> {
     </section>
 
     <section class="login-workspace">
-      <div class="language-switch" aria-label="Language">
+      <div class="language-switch" :aria-label="t('login.languageAria')">
         <button
           type="button"
           :class="{ active: localeStore.currentLocale === 'zh-CN' }"
           @click="setLocale('zh-CN')"
         >
-          中文
+          {{ t('shell.locale.zhCN') }}
         </button>
         <button
           type="button"
@@ -161,7 +145,7 @@ async function handleLogin(): Promise<void> {
 
       <div class="login-panel">
         <header class="login-header">
-          <span class="login-kicker">ACCOUNT ACCESS</span>
+          <span class="login-kicker">{{ t('login.accountAccess') }}</span>
           <h2>{{ copy.welcome }}</h2>
           <p>{{ copy.introduction }}</p>
         </header>
@@ -171,30 +155,35 @@ async function handleLogin(): Promise<void> {
           :model="loginForm"
           :rules="rules"
           class="login-form"
-          label-position="top"
-          @keyup.enter="handleLogin"
+          layout="vertical"
+          @submit-success="handleLogin"
         >
-          <a-form-item :label="copy.username" prop="username">
+          <a-form-item :label="copy.username" field="username">
             <a-input
               v-model="loginForm.username"
               :placeholder="copy.username"
-              :prefix-icon="'User'"
               size="large"
-              autocomplete="username"
-              clearable
-            />
+              :input-attrs="{ autocomplete: 'username' }"
+              allow-clear
+            >
+              <template #prefix>
+                <IconUser />
+              </template>
+            </a-input>
           </a-form-item>
 
-          <a-form-item :label="copy.password" prop="password">
+          <a-form-item :label="copy.password" field="password">
             <a-input
               v-model="loginForm.password"
               type="password"
               :placeholder="copy.password"
-              :prefix-icon="'Lock'"
               size="large"
-              autocomplete="current-password"
-              show-password
-            />
+              :input-attrs="{ autocomplete: 'current-password' }"
+            >
+              <template #prefix>
+                <IconLock />
+              </template>
+            </a-input>
           </a-form-item>
 
           <a-button
@@ -202,15 +191,15 @@ async function handleLogin(): Promise<void> {
             size="large"
             class="login-button"
             :loading="loading"
-            @click="handleLogin"
+            html-type="submit"
           >
             <span>{{ copy.submit }}</span>
-            <a-icon><Right /></a-icon>
+            <IconRight />
           </a-button>
         </a-form>
 
         <footer class="login-footer">
-          <a-icon><Lock /></a-icon>
+          <IconLock />
           <span>{{ copy.security }}</span>
         </footer>
       </div>

@@ -7,6 +7,7 @@
 | 依赖 | 版本 | 类型 | 许可证 |
 | --- | --- | --- | --- |
 | `@arco-design/web-vue` | `2.58.0` | 运行依赖 | MIT |
+| `@tanstack/vue-query` | `5.101.2` | 运行依赖 | MIT |
 | `@vueuse/core` | `10.11.0` | 运行依赖 | MIT |
 | `axios` | `1.18.1` | 运行依赖 | MIT |
 | `dayjs` | `1.11.21` | 运行依赖 | MIT |
@@ -19,10 +20,12 @@
 | `vue-router` | `4.3.3` | 运行依赖 | MIT |
 | `viewerjs` | `1.11.7` | 运行依赖 | MIT |
 | `@pinia/testing` | `0.1.7` | 开发依赖 | MIT |
+| `@playwright/test` | `1.61.1` | 开发依赖 | Apache-2.0 |
 | `@types/node` | `20.19.43` | 开发依赖 | MIT |
 | `@typescript-eslint/eslint-plugin` | `7.18.0` | 开发依赖 | MIT |
 | `@typescript-eslint/parser` | `7.18.0` | 开发依赖 | BSD-2-Clause |
 | `@vitejs/plugin-vue` | `5.1.4` | 开发依赖 | MIT |
+| `@vue/test-utils` | `2.4.11` | 开发依赖 | MIT |
 | `eslint` | `8.57.1` | 开发依赖 | MIT |
 | `eslint-plugin-vue` | `9.33.0` | 开发依赖 | MIT |
 | `jsdom` | `24.1.3` | 开发依赖 | MIT |

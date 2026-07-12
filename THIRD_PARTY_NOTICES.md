@@ -9,6 +9,7 @@
 | Vue | 前端框架 | MIT |
 | Vue Router | 前端路由 | MIT |
 | Pinia | 状态管理 | MIT |
+| TanStack Query for Vue | 服务端状态与请求缓存 | MIT |
 | Arco Design Vue | UI 组件库 | MIT |
 | Axios | HTTP 请求 | MIT |
 | Day.js | 日期时间处理 | MIT |
@@ -46,6 +47,8 @@
 | TypeScript | 类型系统和编译 | Apache-2.0 |
 | Vite | 前端构建工具 | MIT |
 | Vitest | 前端测试 | MIT |
+| Playwright | 真实浏览器与 API E2E | Apache-2.0 |
+| Vue Test Utils | Vue 组件测试 | MIT |
 | Jest | 后端测试 | MIT |
 | ESLint | 代码检查 | MIT |
 | Prettier | 代码格式化 | MIT |

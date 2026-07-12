@@ -7,19 +7,16 @@ function readSource(path: string): string {
 }
 
 describe('unified file preview regression', () => {
-  it('makes the compatible preview reachable after an advanced viewer failure', () => {
+  it('uses a query-backed preview session and preserves controlled download metadata', () => {
     const source = readSource('src/components/FilePreviewRouter/index.vue')
-    const failureHandler = source.slice(
-      source.indexOf("console.warn('File preview session failed; using compatible preview'"),
-      source.indexOf(
-        '} finally {',
-        source.indexOf("console.warn('File preview session failed; using compatible preview'"),
-      ),
-    )
 
-    expect(failureHandler).toContain('clearViewers()')
-    expect(failureHandler).toContain('session.value = undefined')
-    expect(failureHandler).toContain('fallbackToCompatiblePreview.value = true')
+    expect(source).toContain('const previewQuery = useQuery({')
+    expect(source).toContain('queryKeys.files.previewSession(')
+    expect(source).toContain('const session = computed(() => previewQuery.data.value)')
+    expect(source).toContain("console.warn('File preview renderer failed'")
+    expect(source).not.toContain('AttachmentPreviewPane')
+    expect(source).toContain('@click="loadPreview"')
+    expect(source).toContain('v-if="canDownload" :loading="downloading" @click="downloadOriginal"')
     expect(source).toContain("throw new Error('ONLYOFFICE is unavailable')")
     expect(source).toContain("throw new Error('ONLYOFFICE API did not initialize')")
   })

@@ -1,5 +1,17 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsBoolean } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+  ValidateNested,
+} from 'class-validator';
 
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 
@@ -15,92 +27,105 @@ export class QueryNotificationDto extends PaginationDto {
   notificationType?: string;
 }
 
-export class CreateNotificationDto {
-  @ApiProperty({ description: '用户ID' })
-  @IsString()
-  userId: string;
+export const NOTIFICATION_CHANNELS = ['IN_APP', 'FEISHU', 'WECOM'] as const;
+export type NotificationChannel = (typeof NOTIFICATION_CHANNELS)[number];
 
-  @ApiProperty({ description: '通知标题' })
-  @IsString()
-  title: string;
+export const NOTIFICATION_RECIPIENT_POLICY_TYPES = [
+  'BUSINESS_OWNER',
+  'PROJECT_MEMBERS',
+  'ROLE',
+  'USER',
+] as const;
+export type NotificationRecipientPolicyType = (typeof NOTIFICATION_RECIPIENT_POLICY_TYPES)[number];
 
-  @ApiProperty({ description: '通知内容' })
-  @IsString()
-  content: string;
+export class NotificationRecipientPolicyDto {
+  @ApiProperty({ enum: NOTIFICATION_RECIPIENT_POLICY_TYPES })
+  @IsIn(NOTIFICATION_RECIPIENT_POLICY_TYPES)
+  type: NotificationRecipientPolicyType;
 
-  @ApiProperty({ description: '通知类型' })
-  @IsString()
-  notificationType: string;
-
-  @ApiPropertyOptional({ description: '关联类型' })
+  @ApiPropertyOptional({ type: [String] })
   @IsOptional()
-  @IsString()
-  relatedType?: string;
-
-  @ApiPropertyOptional({ description: '关联ID' })
-  @IsOptional()
-  @IsString()
-  relatedId?: string;
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  @MaxLength(100, { each: true })
+  values?: string[];
 }
 
-export class CreateNotificationRuleDto {
-  @ApiProperty({ description: '规则名称' })
+export class CreateTargetNotificationRuleDto {
+  @ApiProperty()
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
   name: string;
 
-  @ApiProperty({ description: '事件类型' })
+  @ApiProperty()
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(50)
   eventType: string;
 
-  @ApiPropertyOptional({ description: '通知渠道' })
+  @ApiProperty({ enum: NOTIFICATION_CHANNELS, isArray: true })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(3)
+  @IsIn(NOTIFICATION_CHANNELS, { each: true })
+  channels: NotificationChannel[];
+
+  @ApiProperty({ type: NotificationRecipientPolicyDto })
+  @ValidateNested()
+  @Type(() => NotificationRecipientPolicyDto)
+  recipientPolicy: NotificationRecipientPolicyDto;
+
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  channel?: string;
+  @MaxLength(36)
+  templateId?: string;
 
-  @ApiPropertyOptional({ description: '接收角色' })
-  @IsOptional()
-  @IsString()
-  recipientRole?: string;
-
-  @ApiPropertyOptional({ description: '通知模板' })
-  @IsOptional()
-  @IsString()
-  template?: string;
-
-  @ApiPropertyOptional({ description: '是否启用' })
+  @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
-  isEnabled?: boolean;
+  enabled?: boolean;
 }
 
-export class UpdateNotificationRuleDto {
-  @ApiPropertyOptional({ description: '规则名称' })
+export class UpdateTargetNotificationRuleDto {
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
   name?: string;
 
-  @ApiPropertyOptional({ description: '事件类型' })
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(50)
   eventType?: string;
 
-  @ApiPropertyOptional({ description: '通知渠道' })
+  @ApiPropertyOptional({ enum: NOTIFICATION_CHANNELS, isArray: true })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(3)
+  @IsIn(NOTIFICATION_CHANNELS, { each: true })
+  channels?: NotificationChannel[];
+
+  @ApiPropertyOptional({ type: NotificationRecipientPolicyDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NotificationRecipientPolicyDto)
+  recipientPolicy?: NotificationRecipientPolicyDto;
+
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  channel?: string;
+  @MaxLength(36)
+  templateId?: string;
 
-  @ApiPropertyOptional({ description: '接收角色' })
-  @IsOptional()
-  @IsString()
-  recipientRole?: string;
-
-  @ApiPropertyOptional({ description: '通知模板' })
-  @IsOptional()
-  @IsString()
-  template?: string;
-
-  @ApiPropertyOptional({ description: '是否启用' })
+  @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
-  isEnabled?: boolean;
+  enabled?: boolean;
 }

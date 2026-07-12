@@ -4,9 +4,14 @@ import {
   IsNotEmpty,
   IsOptional,
   IsNumber,
+  IsDateString,
+  IsIn,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
+
+import { PROJECT_DELIVERY_STAGES, type ProjectDeliveryStage } from '../project.constants';
 
 export class CreateProjectDto {
   @ApiProperty({ description: '项目名称' })
@@ -14,6 +19,12 @@ export class CreateProjectDto {
   @IsNotEmpty()
   @MaxLength(200)
   projectName: string;
+
+  @ApiPropertyOptional({ description: '项目简称' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  shortName?: string;
 
   @ApiProperty({ description: '国家代码', example: 'VN' })
   @IsString()
@@ -57,6 +68,17 @@ export class CreateProjectDto {
   @Min(0)
   contractAmount?: number;
 
+  @ApiPropertyOptional({ description: '合同编号' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  contractNo?: string;
+
+  @ApiPropertyOptional({ description: '合同签署时间' })
+  @IsOptional()
+  @IsDateString()
+  contractSignedAt?: string;
+
   @ApiPropertyOptional({ description: '项目语言' })
   @IsOptional()
   @IsString()
@@ -93,17 +115,29 @@ export class CreateProjectDto {
   @IsString()
   financeOwnerId?: string;
 
-  @ApiPropertyOptional({ description: '当前阶段' })
+  @ApiPropertyOptional({ description: '目标交付阶段', enum: PROJECT_DELIVERY_STAGES })
   @IsOptional()
-  @IsString()
-  @MaxLength(30)
-  currentStage?: string;
+  @IsIn(PROJECT_DELIVERY_STAGES)
+  deliveryStage?: ProjectDeliveryStage;
+
+  @ApiPropertyOptional({ description: '项目进度百分比' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  progressPercent?: number;
 
   @ApiPropertyOptional({ description: '风险等级', default: 'Low' })
   @IsOptional()
   @IsString()
   @MaxLength(20)
   riskLevel?: string;
+
+  @ApiPropertyOptional({ description: '风险说明' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  riskDescription?: string;
 
   @ApiPropertyOptional({ description: '开始日期' })
   @IsOptional()
@@ -114,4 +148,26 @@ export class CreateProjectDto {
   @IsOptional()
   @IsString()
   plannedEndDate?: string;
+
+  @ApiPropertyOptional({ description: '预计验收时间' })
+  @IsOptional()
+  @IsDateString()
+  expectedAcceptanceAt?: string;
+
+  @ApiProperty({ description: '档案模板ID（创建时解析其当前已发布版本）' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(36)
+  archiveTemplateId: string;
+
+  @ApiPropertyOptional({ description: '明确指定的当前已发布档案模板版本ID' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(36)
+  archiveTemplateVersionId?: string;
+
+  @ApiPropertyOptional({ description: '明确指定的新建项目审批模板ID' })
+  @IsOptional()
+  @IsString()
+  approvalTemplateId?: string;
 }

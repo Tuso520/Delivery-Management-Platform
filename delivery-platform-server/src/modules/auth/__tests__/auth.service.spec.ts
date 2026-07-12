@@ -1,11 +1,12 @@
-import { UnauthorizedException, NotFoundException } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import { Test, TestingModule } from '@nestjs/testing';
+import { NotFoundException, UnauthorizedException } from '@nestjs/common';
+import type { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 
-import { PrismaService } from '../../../database/prisma.service';
-import { RedisService } from '../../../database/redis.service';
+import type { PrismaService } from '../../../database/prisma.service';
+import type { RedisService } from '../../../database/redis.service';
+import type { SystemConfigService } from '../../system-config/system-config.service';
 import { AuthService } from '../auth.service';
+import type { RefreshSessionService } from '../refresh-session.service';
 
 jest.mock('bcrypt', () => ({
   compare: jest.fn(),
@@ -15,12 +16,18 @@ jest.mock('bcrypt', () => ({
 describe('AuthService', () => {
   let service: AuthService;
   let prisma: {
-    user: Record<string, jest.Mock>;
-    $transaction: jest.Mock;
+    user: { findFirst: jest.Mock; update: jest.Mock };
   };
-  let jwtService: Record<string, jest.Mock>;
-  let redisService: Record<string, jest.Mock>;
+  let jwtService: { sign: jest.Mock; decode: jest.Mock };
+  let redisService: { blacklistToken: jest.Mock };
+  let refreshSessions: {
+    issue: jest.Mock;
+    rotate: jest.Mock;
+    revoke: jest.Mock;
+    revokeAll: jest.Mock;
+  };
 
+  const refreshExpiresAt = new Date('2026-07-18T00:00:00.000Z');
   const mockUser = {
     id: 'user-1',
     username: 'testuser',
@@ -28,6 +35,7 @@ describe('AuthService', () => {
     realName: '测试用户',
     email: 'test@example.com',
     status: 'Active',
+    permissionVersion: 3,
     userRoles: [
       {
         role: {
@@ -41,108 +49,68 @@ describe('AuthService', () => {
     ],
   };
 
-  beforeEach(async () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
     prisma = {
       user: {
         findFirst: jest.fn(),
-        findUnique: jest.fn(),
-        findMany: jest.fn(),
-        create: jest.fn(),
         update: jest.fn(),
-        count: jest.fn(),
       },
-      $transaction: jest.fn(),
     };
-
     jwtService = {
       sign: jest.fn(),
       decode: jest.fn(),
     };
-
     redisService = {
       blacklistToken: jest.fn(),
     };
-
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        AuthService,
-        { provide: PrismaService, useValue: prisma },
-        { provide: JwtService, useValue: jwtService },
-        { provide: RedisService, useValue: redisService },
-      ],
-    }).compile();
-
-    service = module.get<AuthService>(AuthService);
-    jest.clearAllMocks();
+    refreshSessions = {
+      issue: jest.fn(),
+      rotate: jest.fn(),
+      revoke: jest.fn(),
+      revokeAll: jest.fn(),
+    };
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      jwtService as unknown as JwtService,
+      redisService as unknown as RedisService,
+      refreshSessions as unknown as RefreshSessionService,
+    );
   });
 
   describe('validateUser', () => {
-    it('should return user payload when credentials are valid', async () => {
+    it('returns only roles and permissions loaded through the active-role filter', async () => {
       prisma.user.findFirst.mockResolvedValue(mockUser);
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
       const result = await service.validateUser('testuser', 'password123');
 
-      expect(result.sub).toBe('user-1');
-      expect(result.username).toBe('testuser');
-      expect(result.roles).toEqual(['PROJECT_MANAGER']);
-      expect(result.permissions).toEqual(['project:view', 'project:create']);
+      expect(result).toEqual({
+        sub: 'user-1',
+        username: 'testuser',
+        realName: '测试用户',
+        email: 'test@example.com',
+        roles: ['PROJECT_MANAGER'],
+        permissions: ['project:view', 'project:create'],
+        permissionVersion: 3,
+      });
       expect(prisma.user.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { username: 'testuser', deletedAt: null },
+          select: expect.objectContaining({
+            userRoles: expect.objectContaining({
+              where: { role: { status: 'Active' } },
+            }),
+          }),
         }),
       );
     });
 
-    it('should throw UnauthorizedException when user is not found', async () => {
-      prisma.user.findFirst.mockResolvedValue(null);
-
-      await expect(service.validateUser('nonexistent', 'password123')).rejects.toThrow(
-        UnauthorizedException,
-      );
-    });
-
-    it('should throw UnauthorizedException when password is wrong', async () => {
-      prisma.user.findFirst.mockResolvedValue(mockUser);
-      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
-
-      await expect(service.validateUser('testuser', 'wrongpassword')).rejects.toThrow(
-        UnauthorizedException,
-      );
-    });
-
-    it('should throw UnauthorizedException when account is Inactive', async () => {
+    it('deduplicates permissions across active roles', async () => {
       prisma.user.findFirst.mockResolvedValue({
-        ...mockUser,
-        status: 'Inactive',
-      });
-
-      await expect(service.validateUser('testuser', 'password123')).rejects.toThrow(
-        UnauthorizedException,
-      );
-    });
-
-    it('should throw UnauthorizedException when account is Locked', async () => {
-      prisma.user.findFirst.mockResolvedValue({
-        ...mockUser,
-        status: 'Locked',
-      });
-
-      await expect(service.validateUser('testuser', 'password123')).rejects.toThrow(
-        UnauthorizedException,
-      );
-    });
-
-    it('should deduplicate permissions from multiple roles', async () => {
-      const userWithDuplicatePerms = {
         ...mockUser,
         userRoles: [
-          {
-            role: {
-              roleCode: 'PROJECT_MANAGER',
-              rolePermissions: [{ permission: { permissionCode: 'project:view' } }],
-            },
-          },
+          mockUser.userRoles[0],
           {
             role: {
               roleCode: 'DELIVERY_MANAGER',
@@ -153,31 +121,77 @@ describe('AuthService', () => {
             },
           },
         ],
-      };
-
-      prisma.user.findFirst.mockResolvedValue(userWithDuplicatePerms);
+      });
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
       const result = await service.validateUser('testuser', 'password123');
-      expect(result.permissions).toEqual(['project:view', 'user:view']);
+
+      expect(result.permissions).toEqual(['project:view', 'project:create', 'user:view']);
+    });
+
+    it('rejects missing users', async () => {
+      prisma.user.findFirst.mockResolvedValue(null);
+
+      await expect(service.validateUser('missing', 'password123')).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it('rejects inactive accounts before checking the password', async () => {
+      prisma.user.findFirst.mockResolvedValue({
+        ...mockUser,
+        status: 'Inactive',
+      });
+
+      await expect(service.validateUser('testuser', 'password123')).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(bcrypt.compare).not.toHaveBeenCalled();
+    });
+
+    it('rejects invalid passwords', async () => {
+      prisma.user.findFirst.mockResolvedValue(mockUser);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+
+      await expect(service.validateUser('testuser', 'wrong-password')).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
   });
 
-  describe('login', () => {
-    it('should return access token and user payload for valid credentials', async () => {
+  describe('login and refresh', () => {
+    it('issues a refresh session and signs the permission version into access tokens', async () => {
       prisma.user.findFirst.mockResolvedValue(mockUser);
+      prisma.user.update.mockResolvedValue({ id: 'user-1' });
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-      jwtService.sign.mockReturnValue('jwt-token-123');
-
-      const result = await service.login({
-        username: 'testuser',
-        password: 'password123',
+      refreshSessions.issue.mockResolvedValue({
+        token: 'refresh-token-1',
+        expiresAt: refreshExpiresAt,
       });
+      jwtService.sign.mockReturnValue('access-token-1');
 
-      expect(result.accessToken).toBe('jwt-token-123');
-      expect(result.user.sub).toBe('user-1');
+      const result = await service.login(
+        { username: 'testuser', password: 'password123' },
+        { deviceId: 'browser-1' },
+      );
+
+      expect(refreshSessions.issue).toHaveBeenCalledWith('user-1', {
+        deviceId: 'browser-1',
+      });
       expect(jwtService.sign).toHaveBeenCalledWith(
-        expect.objectContaining({ sub: 'user-1', username: 'testuser' }),
+        expect.objectContaining({
+          sub: 'user-1',
+          permissionVersion: 3,
+          jti: expect.any(String),
+        }),
+      );
+      expect(result).toEqual(
+        expect.objectContaining({
+          accessToken: 'access-token-1',
+          refreshToken: 'refresh-token-1',
+          refreshExpiresAt,
+          defaultRoute: '/dashboard',
+        }),
       );
       expect(prisma.user.update).toHaveBeenCalledWith({
         where: { id: 'user-1' },
@@ -185,57 +199,107 @@ describe('AuthService', () => {
       });
     });
 
-    it('should throw UnauthorizedException when credentials are invalid', async () => {
-      prisma.user.findFirst.mockResolvedValue(null);
-
-      await expect(service.login({ username: 'baduser', password: 'badpass' })).rejects.toThrow(
-        UnauthorizedException,
+    it('enforces the configured failed-login threshold without exposing credentials', async () => {
+      prisma.user.findFirst.mockResolvedValue(mockUser);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+      const policyRedis = {
+        blacklistToken: jest.fn(),
+        getSecurityCounter: jest.fn().mockResolvedValue(2),
+        incrementSecurityCounter: jest.fn().mockResolvedValue(3),
+        clearSecurityCounter: jest.fn(),
+      };
+      const systemConfig = {
+        getSettings: jest.fn().mockResolvedValue({
+          security: { sessionHours: 12, loginMaxAttempts: 3 },
+        }),
+      };
+      const policyService = new AuthService(
+        prisma as unknown as PrismaService,
+        jwtService as unknown as JwtService,
+        policyRedis as unknown as RedisService,
+        refreshSessions as unknown as RefreshSessionService,
+        systemConfig as unknown as SystemConfigService,
       );
+
+      const attempt = policyService.login(
+        { username: 'testuser', password: 'wrong-password' },
+        { ipAddress: '127.0.0.1' },
+      );
+
+      await expect(attempt).rejects.toMatchObject({ status: 429 });
+      expect(policyRedis.incrementSecurityCounter).toHaveBeenCalledWith(
+        expect.stringMatching(/^login:[a-f0-9]{64}$/),
+        900,
+      );
+      expect(refreshSessions.issue).not.toHaveBeenCalled();
+    });
+
+    it('rotates the refresh token and reloads the current active roles', async () => {
+      refreshSessions.rotate.mockResolvedValue({
+        userId: 'user-1',
+        token: 'refresh-token-2',
+        expiresAt: refreshExpiresAt,
+      });
+      prisma.user.findFirst.mockResolvedValue(mockUser);
+      jwtService.sign.mockReturnValue('access-token-2');
+
+      const result = await service.refresh('refresh-token-1', {
+        ipAddress: '127.0.0.1',
+      });
+
+      expect(refreshSessions.rotate).toHaveBeenCalledWith('refresh-token-1', {
+        ipAddress: '127.0.0.1',
+      });
+      expect(result.accessToken).toBe('access-token-2');
+      expect(result.refreshToken).toBe('refresh-token-2');
+      expect(result.user.roles).toEqual(['PROJECT_MANAGER']);
     });
   });
 
   describe('logout', () => {
-    it('should return success message', async () => {
-      const result = await service.logout('user-1');
-      expect(result).toEqual({ message: '登出成功' });
-    });
-
-    it('should blacklist a valid token until it expires', async () => {
+    it('blacklists the access token and revokes the current refresh token', async () => {
       const expiresAt = Math.floor(Date.now() / 1000) + 120;
       jwtService.decode.mockReturnValue({ jti: 'token-id', exp: expiresAt });
 
-      await service.logout('jwt-token');
+      const result = await service.logout('access-token', 'refresh-token');
 
       expect(redisService.blacklistToken).toHaveBeenCalledWith('token-id', expect.any(Number));
+      expect(refreshSessions.revoke).toHaveBeenCalledWith('refresh-token');
+      expect(result).toEqual({ message: '登出成功' });
+    });
+
+    it('revokes every refresh session during logout-all', async () => {
+      jwtService.decode.mockReturnValue(null);
+
+      await service.logoutAll('user-1', 'access-token');
+
+      expect(refreshSessions.revokeAll).toHaveBeenCalledWith('user-1');
     });
   });
 
   describe('getProfile', () => {
-    it('should return user profile with roles and permissions', async () => {
+    it('loads an active user and filters out inactive roles in the query', async () => {
       prisma.user.findFirst.mockResolvedValue(mockUser);
 
       const result = await service.getProfile('user-1');
 
-      expect(result.sub).toBe('user-1');
-      expect(result.username).toBe('testuser');
-      expect(result.roles).toEqual(['PROJECT_MANAGER']);
-      expect(result.permissions).toEqual(['project:view', 'project:create']);
+      expect(result.permissionVersion).toBe(3);
+      expect(prisma.user.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'user-1', deletedAt: null, status: 'Active' },
+          select: expect.objectContaining({
+            userRoles: expect.objectContaining({
+              where: { role: { status: 'Active' } },
+            }),
+          }),
+        }),
+      );
     });
 
-    it('should throw NotFoundException when user does not exist', async () => {
+    it('throws when the active user cannot be found', async () => {
       prisma.user.findFirst.mockResolvedValue(null);
 
-      await expect(service.getProfile('nonexistent')).rejects.toThrow(NotFoundException);
-    });
-
-    it('should return empty arrays when user has no roles', async () => {
-      const userNoRoles = { ...mockUser, userRoles: [] };
-      prisma.user.findFirst.mockResolvedValue(userNoRoles);
-
-      const result = await service.getProfile('user-1');
-
-      expect(result.roles).toEqual([]);
-      expect(result.permissions).toEqual([]);
+      await expect(service.getProfile('missing')).rejects.toThrow(NotFoundException);
     });
   });
 });

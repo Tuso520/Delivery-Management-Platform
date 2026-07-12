@@ -19,14 +19,24 @@ services:
       - --collation-server=utf8mb4_unicode_ci
       - --default-authentication-plugin=mysql_native_password
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "127.0.0.1",
+          "--protocol=tcp",
+          "-uroot",
+          "-p${MYSQL_ROOT_PASSWORD}",
+        ]
       timeout: 20s
       retries: 10
     deploy:
       resources:
         limits:
           memory: 1G
-          cpus: '1.0'
+          cpus: "1.0"
         reservations:
           memory: 256M
     networks:
@@ -49,7 +59,7 @@ services:
       resources:
         limits:
           memory: 256M
-          cpus: '0.5'
+          cpus: "0.5"
     networks:
       - delivery-network
 
@@ -74,7 +84,7 @@ services:
       resources:
         limits:
           memory: 512M
-          cpus: '1.0'
+          cpus: "1.0"
     networks:
       - delivery-network
 
@@ -109,11 +119,14 @@ services:
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
       - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN}
+      - INTEGRATION_SECRET_ENCRYPTION_KEY=${INTEGRATION_SECRET_ENCRYPTION_KEY}
       - MINIO_ENDPOINT=minio
       - MINIO_PORT=9000
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
       - MINIO_BUCKET=${MINIO_BUCKET}
+      - ONLYOFFICE_DOCS_URL=${ONLYOFFICE_DOCS_URL:-}
+      - ONLYOFFICE_JWT_SECRET=${ONLYOFFICE_JWT_SECRET:-}
       - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:8080}
     depends_on:
       mysql:
@@ -122,12 +135,76 @@ services:
         condition: service_healthy
       minio:
         condition: service_started
+      backend-migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+    networks:
+      - delivery-network
+
+  file-worker:
+    build:
+      context: ./delivery-platform-server
+      dockerfile: Dockerfile
+      args:
+        RELEASE_ID: ${RELEASE_ID:-development}
+    container_name: delivery-file-worker
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 330s
+    command: ["node", "dist/workers/file-processing.worker"]
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=mysql://${MYSQL_USER}:${MYSQL_USER_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
+      - JWT_SECRET=${JWT_SECRET}
+      - MINIO_ENDPOINT=minio
+      - MINIO_PORT=9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
+      - MINIO_BUCKET=${MINIO_BUCKET}
+      - FILE_CONVERTER_URL=${FILE_CONVERTER_URL:-}
+      - FILE_CONVERTER_TOKEN=${FILE_CONVERTER_TOKEN:-}
+      - FILE_CONVERTER_TIMEOUT_MS=${FILE_CONVERTER_TIMEOUT_MS:-120000}
+      - FILE_CONVERTER_MAX_OUTPUT_BYTES=${FILE_CONVERTER_MAX_OUTPUT_BYTES:-209715200}
+      - FILE_PROCESSING_MAX_ATTEMPTS=${FILE_PROCESSING_MAX_ATTEMPTS:-3}
+      - FILE_PROCESSING_LEASE_MS=${FILE_PROCESSING_LEASE_MS:-300000}
+      - FILE_PROCESSING_RETRY_BASE_MS=${FILE_PROCESSING_RETRY_BASE_MS:-5000}
+      - FILE_PROCESSING_RETRY_MAX_MS=${FILE_PROCESSING_RETRY_MAX_MS:-900000}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      backend-migrate:
+        condition: service_completed_successfully
+    networks:
+      - delivery-network
+
+  outbox-worker:
+    build:
+      context: ./delivery-platform-server
+      dockerfile: Dockerfile
+      args:
+        RELEASE_ID: ${RELEASE_ID:-development}
+    container_name: delivery-outbox-worker
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 75s
+    command: ["node", "dist/workers/outbox-dispatch.worker"]
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=mysql://${MYSQL_USER}:${MYSQL_USER_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
+      - INTEGRATION_SECRET_ENCRYPTION_KEY=${INTEGRATION_SECRET_ENCRYPTION_KEY}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      backend-migrate:
+        condition: service_completed_successfully
     networks:
       - delivery-network
 
@@ -143,6 +220,8 @@ services:
     environment:
       - NODE_ENV=production
       - DATABASE_URL=mysql://${MYSQL_USER}:${MYSQL_USER_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
+      - INTEGRATION_SECRET_ENCRYPTION_KEY=${INTEGRATION_SECRET_ENCRYPTION_KEY}
+      - INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME=${INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME:-admin}
       - SEED_RESET_EXISTING_USER_PASSWORDS=${SEED_RESET_EXISTING_USER_PASSWORDS:-false}
       - SEED_ADMIN_PASSWORD=${SEED_ADMIN_PASSWORD}
       - SEED_DEFAULT_PASSWORD=${SEED_DEFAULT_PASSWORD}
@@ -156,7 +235,7 @@ services:
       mysql:
         condition: service_healthy
     command: >
-      sh -c "node prisma/prepare-migrate.js && ./node_modules/.bin/prisma migrate deploy && ./node_modules/.bin/ts-node --transpile-only prisma/seed.ts"
+      sh -c "node prisma/prepare-migrate.js && ./node_modules/.bin/prisma migrate deploy && ./node_modules/.bin/ts-node --transpile-only prisma/seed.ts && ./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts --apply --actor-username=$${INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME}"
     networks:
       - delivery-network
 
@@ -174,7 +253,15 @@ services:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/health"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://127.0.0.1/health",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3

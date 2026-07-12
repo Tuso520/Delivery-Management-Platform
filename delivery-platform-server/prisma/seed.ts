@@ -1,76 +1,62 @@
 import { PrismaClient } from '@prisma/client';
-import { seedRoles } from './seed-data/roles';
-import { seedPermissions } from './seed-data/permissions';
-import { seedUsers } from './seed-data/users';
+
+import { seedArchiveTemplates } from './seed-data/archive-templates';
 import { seedCountries } from './seed-data/countries';
 import { seedCurrencies } from './seed-data/currencies';
 import { seedLanguages } from './seed-data/languages';
-import { seedArchiveTemplates } from './seed-data/archive-templates';
-import { seedChecklistTemplates } from './seed-data/checklist-templates';
-import { seedWorkflows } from './seed-data/workflow';
-import { seedKnowledge } from './seed-data/knowledge';
+import { seedPermissions } from './seed-data/permissions';
 import { seedProjects } from './seed-data/projects';
-import { seedPlatformData } from './seed-data/platform';
+import { seedRoles } from './seed-data/roles';
+import { seedTargetKnowledge } from './seed-data/target-knowledge';
+import { seedTargetPlatform } from './seed-data/target-platform';
+import { seedTargetStandards } from './seed-data/target-standards';
+import { seedUsers } from './seed-data/users';
 
 const prisma = new PrismaClient();
 
-async function main() {
-  console.log('🌱 开始填充种子数据...\n');
+async function main(): Promise<void> {
+  console.log('开始初始化目标架构种子数据...');
 
-  // 1. 权限（基础数据，先建）
-  console.log('[1/12] 创建权限...');
+  console.log('[1/11] 权限');
   await seedPermissions(prisma);
 
-  // 2. 角色 + 角色-权限关联
-  console.log('[2/12] 创建角色...');
+  console.log('[2/11] 角色');
   await seedRoles(prisma);
 
-  // 3. 用户 + 用户-角色关联
-  console.log('[3/12] 创建用户...');
+  console.log('[3/11] 用户');
   await seedUsers(prisma);
 
-  // 4. 国家
-  console.log('[4/12] 创建国家配置...');
+  console.log('[4/11] 国家');
   await seedCountries(prisma);
 
-  // 5. 币种
-  console.log('[5/12] 创建币种配置...');
+  console.log('[5/11] 币种与基准汇率');
   await seedCurrencies(prisma);
 
-  // 6. 语言
-  console.log('[6/12] 创建语言配置...');
+  console.log('[6/11] 语言');
   await seedLanguages(prisma);
 
-  // 7. 档案模板（需要在项目之前，因为项目种子会生成档案目录项）
-  console.log('[7/12] 创建档案模板...');
+  console.log('[7/11] 目标平台配置、审核配置与工具');
+  await seedTargetPlatform(prisma);
+
+  console.log('[8/11] 两级档案模板发布版');
   await seedArchiveTemplates(prisma);
 
-  // 8. 检查项模板
-  console.log('[8/12] 创建检查项模板...');
-  await seedChecklistTemplates(prisma);
+  console.log('[9/11] 统一标准库');
+  await seedTargetStandards(prisma);
 
-  // 9. 流程标准数据
-  console.log('[9/12] 创建流程标准数据...');
-  await seedWorkflows(prisma);
+  console.log('[10/11] 统一知识库');
+  await seedTargetKnowledge(prisma);
 
-  // 10. 知识库分类
-  console.log('[10/12] 创建知识库分类...');
-  await seedKnowledge(prisma);
-
-  // 11. 项目 + 项目成员 + 档案目录自动生成
-  console.log('[11/12] 创建示例项目...');
+  console.log('[11/11] 示例项目与两级档案快照');
   await seedProjects(prisma);
 
-  console.log('[12/12] 创建扩展平台数据...');
-  await seedPlatformData(prisma);
-
-  console.log('\n✅ 种子数据填充完成');
+  console.log('目标架构种子数据初始化完成。');
 }
 
 main()
-  .catch((e) => {
-    console.error('❌ 种子数据填充失败:', e);
-    process.exit(1);
+  .catch((error: unknown) => {
+    console.error('目标架构种子数据初始化失败：', error);
+    process.exitCode = 1;
   })
   .finally(async () => {
     await prisma.$disconnect();

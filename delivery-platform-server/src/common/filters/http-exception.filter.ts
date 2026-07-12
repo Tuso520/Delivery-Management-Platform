@@ -4,21 +4,34 @@ import {
   ArgumentsHost,
   HttpException,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
-import { Response } from 'express';
+import type { Response } from 'express';
+
+import {
+  REQUEST_TRACE_HEADER,
+  resolveRequestTraceId,
+  type TraceableRequest,
+} from '../utils/request-trace.util';
 
 interface ExceptionResponse {
   code: number;
   message: string;
   data: null;
   timestamp: string;
+  traceId: string;
 }
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
+  private readonly logger = new Logger(HttpExceptionFilter.name);
+
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
+    const request = ctx.getRequest<TraceableRequest>();
+    const traceId = resolveRequestTraceId(request);
+    response.setHeader(REQUEST_TRACE_HEADER, traceId);
 
     let statusCode = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = '服务器内部错误';
@@ -41,8 +54,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
           message = exception.message;
         }
       }
-    } else if (exception instanceof Error) {
-      message = exception.message;
+    } else {
+      const errorType = exception instanceof Error ? exception.name : typeof exception;
+      this.logger.error(`Unhandled request exception traceId=${traceId} errorType=${errorType}`);
     }
 
     const errorResponse: ExceptionResponse = {
@@ -50,6 +64,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       message,
       data: null,
       timestamp: new Date().toISOString(),
+      traceId,
     };
 
     response.status(statusCode).json(errorResponse);

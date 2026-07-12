@@ -8,24 +8,19 @@ export class PaginationDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  page?: number = 1;
+  page?: number;
 
   @ApiPropertyOptional({ description: '每页条数', default: 20 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  pageSize?: number = 20;
-}
-
-export interface PaginationMeta {
-  page: number;
-  pageSize: number;
-  total: number;
-  totalPages: number;
+  pageSize?: number;
 }
 
 export interface PaginatedResult<T> {
-  list: T[];
-  pagination: PaginationMeta;
+  items: T[];
+  page: number;
+  pageSize: number;
+  total: number;
 }

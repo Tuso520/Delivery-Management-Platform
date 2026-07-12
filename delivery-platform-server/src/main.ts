@@ -1,4 +1,5 @@
 import { Logger, ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { Reflector } from '@nestjs/core';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
@@ -9,26 +10,25 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { SanitizePipe } from './common/pipes/sanitize.pipe';
 import { ValidationPipe as AppValidationPipe } from './common/pipes/validation.pipe';
+import { requestTraceMiddleware } from './common/utils/request-trace.util';
 
 async function bootstrap() {
-  // Startup security checks
-  if (process.env.NODE_ENV === 'production') {
-    const jwtSecret = process.env.JWT_SECRET;
-    if (!jwtSecret || jwtSecret.length < 32) {
-      throw new Error(
-        'FATAL: JWT_SECRET must be at least 32 characters long in production. Update your .env file.',
-      );
-    }
-  }
-
   const app = await NestFactory.create(AppModule);
+  const configService = app.get(ConfigService);
+  const port = configService.getOrThrow<number>('app.port');
+  const corsOrigins = configService.getOrThrow<string[]>('app.corsOrigins');
+
+  app.enableShutdownHooks();
+
+  // Correlate the response, exception handling and audit records for one request.
+  app.use(requestTraceMiddleware);
 
   // Security headers
   app.use(helmet());
 
   // CORS
   app.enableCors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    origin: corsOrigins,
     credentials: true,
   });
 
@@ -77,7 +77,6 @@ async function bootstrap() {
   SwaggerModule.setup('api/docs', app, document);
 
   // Start server
-  const port = process.env.PORT || 3000;
   await app.listen(port);
   const logger = new Logger('Bootstrap');
   logger.log(`Application is running on: http://localhost:${port}`);

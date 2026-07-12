@@ -7,23 +7,38 @@ function readSource(path: string): string {
 }
 
 describe('platform refinement regression', () => {
-  it('keeps the dashboard in the required business order', () => {
+  it('keeps the dashboard on the five target partitions with isolated queries', () => {
     const source = readSource('src/views/dashboard/index.vue')
-    expect(source.indexOf('<PaymentOverview')).toBeLessThan(
-      source.indexOf('<StageDistribution'),
+    const api = readSource('src/api/dashboard.ts')
+    const queries = readSource('src/composables/queries/useDashboardQueries.ts')
+    expect(source.indexOf("t('dashboard.overview')")).toBeLessThan(
+      source.indexOf("t('dashboard.myTasks')"),
     )
-    expect(source.indexOf('我的项目')).toBeLessThan(
-      source.indexOf('<RecentProjects'),
+    expect(source.indexOf("t('dashboard.myTasks')")).toBeLessThan(
+      source.indexOf("t('dashboard.highRiskProjects')"),
     )
-    expect(source).not.toContain('待办事项')
+    expect(source.indexOf("t('dashboard.highRiskProjects')")).toBeLessThan(
+      source.indexOf("t('dashboard.recentProjects')"),
+    )
+    expect(source.indexOf("t('dashboard.recentProjects')")).toBeLessThan(
+      source.indexOf("t('dashboard.recentActivities')"),
+    )
+    expect(source).not.toContain('PaymentOverview')
+    expect(source).not.toContain('onMounted')
+    expect(queries.match(/useQuery\(/g)).toHaveLength(5)
+    expect(api).not.toContain('/dashboard/overview')
   })
 
-  it('keeps project records inside project archives', () => {
+  it('uses the target two-level project archive snapshot', () => {
     const router = readSource('src/router/index.ts')
     const archive = readSource('src/views/archive/index.vue')
-    expect(router).toContain("{ path: 'process-records', redirect: '/archive' }")
-    expect(archive).toContain('ProjectRecordsPanel')
-    expect(archive).toContain('上传记录')
+    const archiveApi = readSource('src/api/archive.ts')
+    expect(router).not.toContain("path: 'process-records'")
+    expect(archive).toContain('ProjectArchiveTargetFolder')
+    expect(archiveApi).toContain('archive-template-sync')
+    expect(archive).not.toContain('LEGACY_READ_ONLY')
+    expect(archive).not.toContain('migrationMode')
+    expect(archive).not.toContain('ProjectRecordsPanel')
   })
 
   it('uses the light Arco-inspired design tokens', () => {

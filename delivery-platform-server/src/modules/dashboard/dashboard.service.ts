@@ -1,549 +1,495 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { Prisma, RiskLevel } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
-export interface DashboardOverview {
-  totalProjects: number;
-  activeProjects: number;
-  highRiskProjects: number;
-  delayedProjects: number;
-  pendingReviews: number;
-  avgCompletionRate: number;
-  byStatus: { status: string; count: number }[];
-  byStage: { stage: string; count: number }[];
-  acceptedProjects: number;
-  draftProjects: number;
-  totalContractAmount: number;
-  totalPlannedPaymentAmount: number;
-  totalReceivedAmount: number;
-  outstandingPaymentAmount: number;
-  overduePaymentAmount: number;
-  overduePaymentCount: number;
-  paymentCompletionRate: number;
-  recentProjects: {
-    id: string;
-    projectCode: string;
-    projectName: string;
-    countryCode: string;
-    status: string;
-    riskLevel: string;
-    createdAt: string;
-  }[];
-}
-export interface CountryStats {
-  countryCode: string;
-  totalProjects: number;
-  activeProjects: number;
-  completionRate: number;
-}
-export interface ProjectStats {
-  projectId: string;
-  projectName: string;
-  projectCode: string;
-  status: string;
-  riskLevel: string;
-  totalArchiveItems: number;
-  completedArchiveItems: number;
-  pendingUploadItems: number;
-  reviewingItems: number;
-  rejectedItems: number;
-  totalChecklistItems: number;
-  completedChecklistItems: number;
-  pendingChecklistItems: number;
-  totalFiles: number;
-  memberCount: number;
-}
-export interface TodoItem {
-  type: 'pending_upload' | 'pending_review' | 'rejected';
-  id: string;
-  projectId: string;
-  projectName: string;
-  itemName: string;
-  stageCode: string;
-  status: string;
-  createdAt: Date;
-}
-export interface UserProject {
-  id: string;
-  projectCode: string;
-  projectName: string;
-  countryCode: string;
-  projectStatus: string;
-  riskLevel: string;
-  currentStage: string;
-  role: string;
-}
+import type { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { DataScopeService } from '../identity/data-scope/data-scope.service';
+
+import {
+  type DashboardTaskDto,
+  type HighRiskProjectDto,
+  type ProjectSummaryDto,
+  type RecentActivityDto,
+  type RecentProjectDto,
+} from './dto/dashboard-response.dto';
+
+type DashboardActor = Pick<JwtPayload, 'sub' | 'permissions' | 'roles'>;
+
+const ACTIVE_PROJECT_FILTER: Prisma.ProjectWhereInput = {
+  status: 'ACTIVE',
+  archivedAt: null,
+};
+
+const ACCEPTED_PROJECT_FILTER: Prisma.ProjectWhereInput = {
+  actualAcceptanceAt: { not: null },
+};
+
 @Injectable()
 export class DashboardService {
-  constructor(private readonly prisma: PrismaService) {}
-  async getOverview(userId: string): Promise<DashboardOverview> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: { userRoles: { include: { role: true } } },
-    });
-    const roles = user?.userRoles.map((ur) => ur.role.roleCode) ?? [];
-    const isGlobalViewer = roles.some((r) =>
-      ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'DELIVERY_MANAGER'].includes(r),
-    );
-    const projectWhere: Prisma.ProjectWhereInput = {
-      deletedAt: null,
-      ...(isGlobalViewer
-        ? {}
-        : {
-            members: { some: { userId } },
-          }),
-    };
-    const projectIds = isGlobalViewer
-      ? null
-      : (
-          await this.prisma.projectMember.findMany({
-            where: { userId },
-            select: { projectId: true },
-          })
-        ).map((m) => m.projectId);
-    const [statsRow, recentProjectsRaw] = await Promise.all([
-      this.prisma.$queryRawUnsafe<
-        Array<{
-          totalProjects: bigint;
-          activeProjects: bigint;
-          highRiskProjects: bigint;
-          delayedProjects: bigint;
-          acceptedProjects: bigint;
-          draftProjects: bigint;
-          totalContractAmount: number;
-        }>
-      >(
-        `SELECT
-          COUNT(*) as totalProjects,
-          SUM(CASE WHEN project_status = 'Active' THEN 1 ELSE 0 END) as activeProjects,
-          SUM(CASE WHEN risk_level IN ('High', 'Critical') THEN 1 ELSE 0 END) as highRiskProjects,
-          SUM(CASE WHEN project_status = 'Delayed' THEN 1 ELSE 0 END) as delayedProjects,
-          SUM(CASE WHEN project_status = 'Accepted' THEN 1 ELSE 0 END) as acceptedProjects,
-          SUM(CASE WHEN project_status = 'Draft' THEN 1 ELSE 0 END) as draftProjects,
-          COALESCE(SUM(converted_amount), 0) as totalContractAmount
-        FROM projects
-        WHERE deleted_at IS NULL${
-          isGlobalViewer
-            ? ''
-            : projectIds && projectIds.length > 0
-              ? ` AND id IN (${projectIds.map(() => '?').join(',')})`
-              : ' AND 1=0'
-        }`,
-        ...(isGlobalViewer ? [] : projectIds || []),
-      ),
-      this.prisma.project.findMany({
-        where: projectWhere,
-        select: {
-          id: true,
-          projectCode: true,
-          projectName: true,
-          countryCode: true,
-          projectStatus: true,
-          riskLevel: true,
-          createdAt: true,
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly dataScope: DataScopeService,
+  ) {}
+
+  async getProjectSummary(actor: DashboardActor): Promise<ProjectSummaryDto> {
+    const projectScope = await this.dataScope.buildProjectWhere(actor.sub);
+    const [total, active, accepted, highRisk] = await Promise.all([
+      this.prisma.project.count({ where: projectScope }),
+      this.prisma.project.count({ where: { AND: [projectScope, ACTIVE_PROJECT_FILTER] } }),
+      this.prisma.project.count({ where: { AND: [projectScope, ACCEPTED_PROJECT_FILTER] } }),
+      this.prisma.project.count({
+        where: {
+          AND: [projectScope, { riskLevel: { in: [RiskLevel.High, RiskLevel.Critical] } }],
         },
-        orderBy: { createdAt: 'desc' },
-        take: 5,
       }),
     ]);
-    const row = statsRow[0] || {
-      totalProjects: 0n,
-      activeProjects: 0n,
-      highRiskProjects: 0n,
-      delayedProjects: 0n,
-      acceptedProjects: 0n,
-      draftProjects: 0n,
-      totalContractAmount: 0,
-    };
-    const archiveItemWhere: Prisma.ProjectArchiveItemWhereInput = {
-      status: 'Reviewing',
-      ...(isGlobalViewer
-        ? {}
-        : projectIds && projectIds.length > 0
-          ? { projectId: { in: projectIds } }
-          : { projectId: { in: [] } }),
-    };
-    const archiveStatsScope: Prisma.ProjectArchiveItemWhereInput = isGlobalViewer
-      ? {}
-      : projectIds && projectIds.length > 0
-        ? { projectId: { in: projectIds } }
-        : { projectId: { in: [] } };
-    const paymentWhere: Prisma.ProjectPaymentWhereInput = {
-      deletedAt: null,
-      project: projectWhere,
-    };
-    const [
-      byStatusRaw,
-      byStageRaw,
-      pendingReviews,
-      archiveStats,
-      completedArchiveStats,
-      paymentAggregate,
-      overduePaymentAggregate,
-      overduePaymentCount,
-    ] = await Promise.all([
-      this.prisma.project.groupBy({
-        by: ['projectStatus'],
-        where: projectWhere,
-        _count: { id: true },
-      }),
-      this.prisma.project.groupBy({
-        by: ['currentStage'],
-        where: projectWhere,
-        _count: { id: true },
-      }),
-      this.prisma.projectArchiveItem.count({
-        where: archiveItemWhere,
-      }),
-      this.prisma.projectArchiveItem.groupBy({
-        by: ['projectId'],
-        where: archiveStatsScope,
-        _count: { id: true },
-      }),
-      this.prisma.projectArchiveItem.groupBy({
-        by: ['projectId'],
-        where: {
-          ...archiveStatsScope,
-          status: { in: ['Approved', 'Archived'] },
-        },
-        _count: { id: true },
-      }),
-      this.prisma.projectPayment.aggregate({
-        where: paymentWhere,
-        _sum: {
-          convertedAmount: true,
-          receivedConvertedAmount: true,
-        },
-      }),
-      this.prisma.projectPayment.aggregate({
-        where: {
-          ...paymentWhere,
-          status: 'Overdue',
-        },
-        _sum: { convertedAmount: true, receivedConvertedAmount: true },
-      }),
-      this.prisma.projectPayment.count({
-        where: { ...paymentWhere, status: 'Overdue' },
-      }),
-    ]);
-    const completedMap = new Map(
-      completedArchiveStats.map((s) => [s.projectId, s._count.id]),
-    );
-    let totalItemCount = 0;
-    let completedItemCount = 0;
-    for (const stat of archiveStats) {
-      totalItemCount += stat._count.id;
-      completedItemCount += completedMap.get(stat.projectId) || 0;
-    }
-    const avgCompletionRate =
-      totalItemCount > 0 ? Math.round((completedItemCount / totalItemCount) * 100) : 0;
-    const byStatus = byStatusRaw.map((s) => ({
-      status: s.projectStatus,
-      count: s._count.id,
-    }));
-    const totalPlannedPaymentAmount =
-      paymentAggregate._sum.convertedAmount?.toNumber() ?? 0;
-    const totalReceivedAmount =
-      paymentAggregate._sum.receivedConvertedAmount?.toNumber() ?? 0;
-    const outstandingPaymentAmount = Math.max(
-      totalPlannedPaymentAmount - totalReceivedAmount,
-      0,
-    );
-    const overduePaymentAmount = Math.max(
-      (overduePaymentAggregate._sum.convertedAmount?.toNumber() ?? 0) -
-        (overduePaymentAggregate._sum.receivedConvertedAmount?.toNumber() ?? 0),
-      0,
-    );
-    const byStage = byStageRaw.map((item) => ({
-      stage: item.currentStage ?? 'Unassigned',
-      count: item._count.id,
-    }));
-    const recentProjects = recentProjectsRaw.map((p) => ({
-      id: p.id,
-      projectCode: p.projectCode,
-      projectName: p.projectName,
-      countryCode: p.countryCode,
-      status: p.projectStatus,
-      riskLevel: p.riskLevel,
-      createdAt: p.createdAt.toISOString(),
-    }));
-    return {
-      totalProjects: Number(row.totalProjects),
-      activeProjects: Number(row.activeProjects),
-      highRiskProjects: Number(row.highRiskProjects),
-      delayedProjects: Number(row.delayedProjects),
-      pendingReviews,
-      avgCompletionRate,
-      byStatus,
-      byStage,
-      acceptedProjects: Number(row.acceptedProjects),
-      draftProjects: Number(row.draftProjects),
-      totalContractAmount: Number(row.totalContractAmount) || 0,
-      totalPlannedPaymentAmount,
-      totalReceivedAmount,
-      outstandingPaymentAmount,
-      overduePaymentAmount,
-      overduePaymentCount,
-      paymentCompletionRate:
-        totalPlannedPaymentAmount > 0
-          ? Math.round((totalReceivedAmount / totalPlannedPaymentAmount) * 100)
-          : 0,
-      recentProjects,
-    };
+
+    return { total, active, accepted, highRisk };
   }
-  async getCountryStats(countryCode: string, userId: string): Promise<CountryStats> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: { userRoles: { include: { role: true } } },
-    });
-    const roles = user?.userRoles.map((ur) => ur.role.roleCode) ?? [];
-    const isGlobalViewer = roles.some((r) =>
-      ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'DELIVERY_MANAGER'].includes(r),
-    );
-    const projectIds = isGlobalViewer
-      ? null
-      : (
-          await this.prisma.projectMember.findMany({
-            where: { userId },
-            select: { projectId: true },
-          })
-        ).map((m) => m.projectId);
-    const projectScope = {
-      deletedAt: null,
-      countryCode,
-      ...(isGlobalViewer
-        ? {}
-        : projectIds && projectIds.length > 0
-          ? { id: { in: projectIds } }
-          : { id: { in: [] } }),
+
+  async getMyTasks(actor: DashboardActor): Promise<DashboardTaskDto[]> {
+    const now = new Date();
+    const reminderThreshold = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+    const projectScope = await this.dataScope.buildProjectWhere(actor.sub);
+    const reviewVisibility: Prisma.ReviewTaskWhereInput = {
+      OR: [{ projectId: null }, { project: projectScope }],
     };
-    const archiveItemScope = isGlobalViewer
-      ? { project: { deletedAt: null, countryCode } }
-      : projectIds && projectIds.length > 0
-        ? { projectId: { in: projectIds }, project: { deletedAt: null, countryCode } }
-        : {
-            projectId: { in: [] },
-            project: { deletedAt: null, countryCode },
-          };
-    const [totalProjects, activeProjects, totalItemCount, completedItemCount] =
+    const personalProjectScope: Prisma.ProjectWhereInput = {
+      AND: [
+        projectScope,
+        {
+          OR: [
+            { members: { some: { userId: actor.sub, deletedAt: null } } },
+            { createdBy: actor.sub },
+            { salesOwnerId: actor.sub },
+            { projectManagerId: actor.sub },
+            { electricLeaderId: actor.sub },
+            { softwareLeaderId: actor.sub },
+            { purchaseOwnerId: actor.sub },
+            { financeOwnerId: actor.sub },
+          ],
+        },
+      ],
+    };
+
+    const [pendingReviews, rejectedReviews, reminderProjects, unreadNotifications] =
       await Promise.all([
-        this.prisma.project.count({ where: projectScope }),
-        this.prisma.project.count({
-          where: { ...projectScope, projectStatus: 'Active' },
-        }),
-        this.prisma.projectArchiveItem.count({ where: archiveItemScope }),
-        this.prisma.projectArchiveItem.count({
+        this.prisma.reviewTask.findMany({
           where: {
-            ...archiveItemScope,
-            status: { in: ['Approved', 'Archived', 'NotApplicable'] },
+            AND: [
+              reviewVisibility,
+              {
+                status: 'PENDING',
+                archivedAt: null,
+                steps: {
+                  some: {
+                    status: 'ACTIVE',
+                    assignees: {
+                      some: { assigneeUserId: actor.sub, status: 'PENDING' },
+                    },
+                  },
+                },
+              },
+            ],
           },
-        }),
-      ]);
-    const completionRate =
-      totalItemCount > 0
-        ? Math.round((completedItemCount / totalItemCount) * 100)
-        : 0;
-    return {
-      countryCode,
-      totalProjects,
-      activeProjects,
-      completionRate,
-    };
-  }
-  async getProjectStats(projectId: string, userId: string): Promise<ProjectStats | null> {
-    const project = await this.prisma.project.findFirst({
-      where: { id: projectId, deletedAt: null },
-    });
-    if (!project) {
-      return null;
-    }
-    await this.checkProjectAccess(projectId, userId);
-    const [
-      totalArchiveItems,
-      completedArchiveItems,
-      pendingUploadItems,
-      reviewingItems,
-      rejectedItems,
-      totalChecklistItems,
-      completedChecklistItems,
-      pendingChecklistItems,
-      totalFiles,
-      memberCount,
-    ] = await Promise.all([
-      this.prisma.projectArchiveItem.count({ where: { projectId } }),
-      this.prisma.projectArchiveItem.count({
-        where: { projectId, status: { in: ['Approved', 'Archived'] } },
-      }),
-      this.prisma.projectArchiveItem.count({
-        where: { projectId, status: 'PendingUpload' },
-      }),
-      this.prisma.projectArchiveItem.count({
-        where: { projectId, status: 'Reviewing' },
-      }),
-      this.prisma.projectArchiveItem.count({
-        where: { projectId, status: 'Rejected' },
-      }),
-      this.prisma.projectChecklistItem.count({ where: { projectId } }),
-      this.prisma.projectChecklistItem.count({
-        where: { projectId, status: { in: ['Approved', 'Closed'] } },
-      }),
-      this.prisma.projectChecklistItem.count({
-        where: { projectId, status: 'Pending' },
-      }),
-      this.prisma.file.count({ where: { projectId } }),
-      this.prisma.projectMember.count({ where: { projectId } }),
-    ]);
-    return {
-      projectId: project.id,
-      projectName: project.projectName,
-      projectCode: project.projectCode,
-      status: project.projectStatus,
-      riskLevel: project.riskLevel,
-      totalArchiveItems,
-      completedArchiveItems,
-      pendingUploadItems,
-      reviewingItems,
-      rejectedItems,
-      totalChecklistItems,
-      completedChecklistItems,
-      pendingChecklistItems,
-      totalFiles,
-      memberCount,
-    };
-  }
-  async getMyTodos(userId: string): Promise<TodoItem[]> {
-    const [pendingUploads, pendingReviews, rejectedItems] = await Promise.all([
-      this.prisma.projectArchiveItem.findMany({
-        where: {
-          responsibleUserId: userId,
-          status: 'PendingUpload',
-          project: { deletedAt: null },
-        },
-        select: {
-          id: true,
-          name: true,
-          stageCode: true,
-          status: true,
-          createdAt: true,
-          project: { select: { id: true, projectName: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 20,
-      }),
-      this.prisma.projectArchiveItem.findMany({
-        where: {
-          reviewUserId: userId,
-          status: 'Reviewing',
-          project: { deletedAt: null },
-        },
-        select: {
-          id: true,
-          name: true,
-          stageCode: true,
-          status: true,
-          createdAt: true,
-          project: { select: { id: true, projectName: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 20,
-      }),
-      this.prisma.projectArchiveItem.findMany({
-        where: {
-          responsibleUserId: userId,
-          status: 'Rejected',
-          project: { deletedAt: null },
-        },
-        select: {
-          id: true,
-          name: true,
-          stageCode: true,
-          status: true,
-          createdAt: true,
-          project: { select: { id: true, projectName: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 20,
-      }),
-    ]);
-    const todos: TodoItem[] = [
-      ...pendingUploads.map((item) => ({
-        type: 'pending_upload' as const,
-        id: item.id,
-        projectId: item.project.id,
-        projectName: item.project.projectName,
-        itemName: item.name,
-        stageCode: item.stageCode,
-        status: item.status,
-        createdAt: item.createdAt,
-      })),
-      ...pendingReviews.map((item) => ({
-        type: 'pending_review' as const,
-        id: item.id,
-        projectId: item.project.id,
-        projectName: item.project.projectName,
-        itemName: item.name,
-        stageCode: item.stageCode,
-        status: item.status,
-        createdAt: item.createdAt,
-      })),
-      ...rejectedItems.map((item) => ({
-        type: 'rejected' as const,
-        id: item.id,
-        projectId: item.project.id,
-        projectName: item.project.projectName,
-        itemName: item.name,
-        stageCode: item.stageCode,
-        status: item.status,
-        createdAt: item.createdAt,
-      })),
-    ];
-    return todos.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).slice(0, 50);
-  }
-  async getMyProjects(userId: string): Promise<UserProject[]> {
-    const memberships = await this.prisma.projectMember.findMany({
-      where: { userId, project: { deletedAt: null } },
-      select: {
-        projectRole: true,
-        project: {
           select: {
             id: true,
-            projectCode: true,
-            projectName: true,
-            countryCode: true,
-            projectStatus: true,
-            riskLevel: true,
-            currentStage: true,
+            title: true,
+            locationLabel: true,
+            sourceType: true,
+            sourceId: true,
+            projectId: true,
+            project: { select: { projectName: true } },
+            submittedAt: true,
+            dueAt: true,
           },
-        },
+          orderBy: [{ dueAt: 'asc' }, { submittedAt: 'desc' }],
+          take: 20,
+        }),
+        this.prisma.reviewTask.findMany({
+          where: {
+            AND: [
+              reviewVisibility,
+              { status: 'REJECTED', archivedAt: null, submittedBy: actor.sub },
+            ],
+          },
+          select: {
+            id: true,
+            title: true,
+            locationLabel: true,
+            sourceType: true,
+            sourceId: true,
+            projectId: true,
+            project: { select: { projectName: true } },
+            fileVersion: { select: { status: true } },
+            completedAt: true,
+            submittedAt: true,
+          },
+          orderBy: { completedAt: 'desc' },
+          take: 20,
+        }),
+        this.prisma.project.findMany({
+          where: {
+            AND: [
+              personalProjectScope,
+              { archivedAt: null },
+              {
+                OR: [
+                  { riskLevel: { in: [RiskLevel.High, RiskLevel.Critical] } },
+                  { plannedEndDate: { lte: reminderThreshold } },
+                  { expectedAcceptanceAt: { lte: reminderThreshold } },
+                ],
+              },
+              { status: { in: ['ACTIVE', 'PAUSED'] } },
+            ],
+          },
+          select: {
+            id: true,
+            projectName: true,
+            projectCode: true,
+            riskLevel: true,
+            riskDescription: true,
+            currentStage: true,
+            plannedEndDate: true,
+            expectedAcceptanceAt: true,
+            updatedAt: true,
+          },
+          orderBy: { updatedAt: 'desc' },
+          take: 15,
+        }),
+        this.prisma.notification.findMany({
+          where: { userId: actor.sub, isRead: false },
+          select: {
+            id: true,
+            title: true,
+            content: true,
+            notificationType: true,
+            relatedType: true,
+            relatedId: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 30,
+        }),
+      ]);
+
+    const actionableRejected = await this.filterActionableRejectedReviews(rejectedReviews);
+    const safeNotifications = await this.filterVisibleNotifications(
+      unreadNotifications,
+      projectScope,
+    );
+
+    const tasks: DashboardTaskDto[] = [
+      ...pendingReviews.map((task) => ({
+        id: task.id,
+        type: 'FILE_REVIEW' as const,
+        title: task.title,
+        description: task.locationLabel,
+        sourceType: task.sourceType,
+        sourceId: task.sourceId,
+        projectId: task.projectId,
+        projectName: task.project?.projectName ?? null,
+        priority: this.resolveTaskPriority(task.dueAt, now),
+        dueAt: task.dueAt?.toISOString() ?? null,
+        createdAt: task.submittedAt.toISOString(),
+      })),
+      ...actionableRejected.map((task) => ({
+        id: task.id,
+        type: 'FILE_REVISION' as const,
+        title: task.title,
+        description: task.locationLabel ?? '审核已驳回，请修改后重新提交',
+        sourceType: task.sourceType,
+        sourceId: task.sourceId,
+        projectId: task.projectId,
+        projectName: task.project?.projectName ?? null,
+        priority: 'HIGH' as const,
+        dueAt: null,
+        createdAt: (task.completedAt ?? task.submittedAt).toISOString(),
+      })),
+      ...reminderProjects.flatMap((project) => {
+        const projectTasks: DashboardTaskDto[] = [];
+        if (project.riskLevel === RiskLevel.High || project.riskLevel === RiskLevel.Critical) {
+          projectTasks.push({
+            id: `risk:${project.id}`,
+            type: 'PROJECT_RISK',
+            title: `${project.projectName}存在${project.riskLevel === RiskLevel.Critical ? '严重' : '高'}风险`,
+            description: project.riskDescription,
+            sourceType: 'PROJECT',
+            sourceId: project.id,
+            projectId: project.id,
+            projectName: project.projectName,
+            priority: project.riskLevel === RiskLevel.Critical ? 'URGENT' : 'HIGH',
+            dueAt: null,
+            createdAt: project.updatedAt.toISOString(),
+          });
+        }
+        const stageDueAt = this.earliestDate(project.plannedEndDate, project.expectedAcceptanceAt);
+        if (stageDueAt && stageDueAt <= reminderThreshold) {
+          projectTasks.push({
+            id: `stage:${project.id}`,
+            type: 'PROJECT_STAGE',
+            title: `${project.projectName}阶段节点${stageDueAt < now ? '已逾期' : '即将到期'}`,
+            description: `当前阶段：${this.requireProjectStage(project.currentStage, project.id)}`,
+            sourceType: 'PROJECT',
+            sourceId: project.id,
+            projectId: project.id,
+            projectName: project.projectName,
+            priority: stageDueAt < now ? 'URGENT' : 'HIGH',
+            dueAt: stageDueAt.toISOString(),
+            createdAt: project.updatedAt.toISOString(),
+          });
+        }
+        return projectTasks;
+      }),
+      ...safeNotifications.map((notification) => ({
+        id: notification.id,
+        type: 'SYSTEM_NOTIFICATION' as const,
+        title: notification.title,
+        description: notification.content,
+        sourceType: notification.notificationType,
+        sourceId: notification.relatedId,
+        projectId:
+          notification.relatedType?.toLowerCase() === 'project' ? notification.relatedId : null,
+        projectName: null,
+        priority: 'NORMAL' as const,
+        dueAt: null,
+        createdAt: notification.createdAt.toISOString(),
+      })),
+    ];
+
+    return tasks
+      .sort((left, right) => {
+        const priority = { URGENT: 3, HIGH: 2, NORMAL: 1 } as const;
+        return (
+          priority[right.priority] - priority[left.priority] ||
+          new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
+        );
+      })
+      .slice(0, 20);
+  }
+
+  async getHighRisks(actor: DashboardActor): Promise<HighRiskProjectDto[]> {
+    const projectScope = await this.dataScope.buildProjectWhere(actor.sub);
+    const projects = await this.prisma.project.findMany({
+      where: {
+        AND: [
+          projectScope,
+          { archivedAt: null },
+          { riskLevel: { in: [RiskLevel.High, RiskLevel.Critical] } },
+        ],
       },
-      orderBy: { project: { createdAt: 'desc' } },
+      select: {
+        id: true,
+        projectCode: true,
+        projectName: true,
+        riskLevel: true,
+        riskDescription: true,
+        currentStage: true,
+        status: true,
+        expectedAcceptanceAt: true,
+        updatedAt: true,
+      },
+      orderBy: [{ riskLevel: 'desc' }, { updatedAt: 'desc' }],
+      take: 10,
     });
-    return memberships.map((m) => ({
-      id: m.project.id,
-      projectCode: m.project.projectCode,
-      projectName: m.project.projectName,
-      countryCode: m.project.countryCode,
-      projectStatus: m.project.projectStatus,
-      riskLevel: m.project.riskLevel,
-      currentStage: m.project.currentStage ?? '',
-      role: m.projectRole,
+
+    return projects.map((project) => ({
+      id: project.id,
+      projectCode: project.projectCode,
+      projectName: project.projectName,
+      riskLevel: project.riskLevel,
+      riskDescription: project.riskDescription,
+      currentStage: this.requireProjectStage(project.currentStage, project.id),
+      status: this.requireProjectStatus(project.status, project.id),
+      expectedAcceptanceAt: project.expectedAcceptanceAt?.toISOString() ?? null,
+      updatedAt: project.updatedAt.toISOString(),
     }));
   }
-  private async checkProjectAccess(projectId: string, userId: string): Promise<void> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: { userRoles: { include: { role: true } } },
+
+  async getRecentProjects(actor: DashboardActor): Promise<RecentProjectDto[]> {
+    const projectScope = await this.dataScope.buildProjectWhere(actor.sub);
+    const projects = await this.prisma.project.findMany({
+      where: { AND: [projectScope, { archivedAt: null }] },
+      select: {
+        id: true,
+        projectCode: true,
+        projectName: true,
+        countryCode: true,
+        status: true,
+        riskLevel: true,
+        currentStage: true,
+        progressPercent: true,
+        updatedAt: true,
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 8,
     });
-    const roles = user?.userRoles.map((ur) => ur.role.roleCode) ?? [];
-    const isElevated = roles.some((r) =>
-      ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'DELIVERY_MANAGER'].includes(r),
-    );
-    if (isElevated) return;
-    const member = await this.prisma.projectMember.findUnique({
-      where: { projectId_userId: { projectId, userId } },
+
+    return projects.map((project) => ({
+      id: project.id,
+      projectCode: project.projectCode,
+      projectName: project.projectName,
+      countryCode: project.countryCode,
+      status: this.requireProjectStatus(project.status, project.id),
+      riskLevel: project.riskLevel,
+      currentStage: this.requireProjectStage(project.currentStage, project.id),
+      progressPercent: project.progressPercent?.toNumber() ?? null,
+      updatedAt: project.updatedAt.toISOString(),
+    }));
+  }
+
+  async getRecentActivities(actor: DashboardActor): Promise<RecentActivityDto[]> {
+    const candidates = await this.prisma.operationLog.findMany({
+      where: {
+        targetType: { in: ['project', 'PROJECT', 'Project'] },
+        result: 'success',
+      },
+      select: {
+        id: true,
+        module: true,
+        action: true,
+        targetId: true,
+        createdAt: true,
+        user: { select: { realName: true, username: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
     });
-    if (!member) {
-      throw new NotFoundException('项目不存在');
+    if (candidates.length === 0) return [];
+
+    const projectScope = await this.dataScope.buildProjectWhere(actor.sub);
+    const projects = await this.prisma.project.findMany({
+      where: {
+        AND: [projectScope, { id: { in: candidates.map((item) => item.targetId) } }],
+      },
+      select: { id: true, projectName: true },
+    });
+    const visibleProjects = new Map(projects.map((project) => [project.id, project.projectName]));
+
+    return candidates
+      .flatMap((activity): RecentActivityDto[] => {
+        const projectName = visibleProjects.get(activity.targetId);
+        if (!projectName) return [];
+        return [
+          {
+            id: activity.id,
+            module: activity.module,
+            action: activity.action,
+            projectId: activity.targetId,
+            projectName,
+            actorName: activity.user.realName || activity.user.username,
+            occurredAt: activity.createdAt.toISOString(),
+          },
+        ];
+      })
+      .slice(0, 10);
+  }
+
+  private async filterActionableRejectedReviews<
+    T extends {
+      sourceType: string;
+      sourceId: string;
+      fileVersion: { status: string } | null;
+    },
+  >(tasks: T[]): Promise<T[]> {
+    const sourceIds = (sourceType: string) =>
+      tasks.filter((task) => task.sourceType === sourceType).map((task) => task.sourceId);
+    const [archiveTemplateVersions, standardVersions, knowledgeVersions] = await Promise.all([
+      this.findRejectedIds('archiveTemplateVersion', sourceIds('ARCHIVE_TEMPLATE')),
+      this.findRejectedIds('standardVersion', sourceIds('STANDARD')),
+      this.findRejectedIds('knowledgeVersion', sourceIds('KNOWLEDGE')),
+    ]);
+
+    return tasks.filter((task) => {
+      if (task.sourceType === 'PROJECT_ARCHIVE') {
+        return task.fileVersion?.status === 'REJECTED';
+      }
+      if (task.sourceType === 'ARCHIVE_TEMPLATE') {
+        return archiveTemplateVersions.has(task.sourceId);
+      }
+      if (task.sourceType === 'STANDARD') return standardVersions.has(task.sourceId);
+      if (task.sourceType === 'KNOWLEDGE') return knowledgeVersions.has(task.sourceId);
+      return false;
+    });
+  }
+
+  private async findRejectedIds(
+    model: 'archiveTemplateVersion' | 'standardVersion' | 'knowledgeVersion',
+    ids: string[],
+  ): Promise<Set<string>> {
+    if (ids.length === 0) return new Set();
+    if (model === 'archiveTemplateVersion') {
+      const rows = await this.prisma.archiveTemplateVersion.findMany({
+        where: { id: { in: ids }, status: 'REJECTED' },
+        select: { id: true },
+      });
+      return new Set(rows.map(({ id }) => id));
     }
+    if (model === 'standardVersion') {
+      const rows = await this.prisma.standardVersion.findMany({
+        where: { id: { in: ids }, status: 'REJECTED' },
+        select: { id: true },
+      });
+      return new Set(rows.map(({ id }) => id));
+    }
+    const rows = await this.prisma.knowledgeVersion.findMany({
+      where: { id: { in: ids }, status: 'REJECTED' },
+      select: { id: true },
+    });
+    return new Set(rows.map(({ id }) => id));
+  }
+
+  private async filterVisibleNotifications<
+    T extends { relatedType: string | null; relatedId: string | null },
+  >(notifications: T[], projectScope: Prisma.ProjectWhereInput): Promise<T[]> {
+    const projectIds = notifications.flatMap((notification) =>
+      notification.relatedType?.toLowerCase() === 'project' && notification.relatedId
+        ? [notification.relatedId]
+        : [],
+    );
+    const visibleProjectIds =
+      projectIds.length === 0
+        ? new Set<string>()
+        : new Set(
+            (
+              await this.prisma.project.findMany({
+                where: { AND: [projectScope, { id: { in: projectIds } }] },
+                select: { id: true },
+              })
+            ).map(({ id }) => id),
+          );
+
+    return notifications.filter((notification) => {
+      const relatedType = notification.relatedType?.toLowerCase();
+      if (!relatedType || ['system', 'security', 'announcement'].includes(relatedType)) {
+        return true;
+      }
+      return (
+        relatedType === 'project' &&
+        Boolean(notification.relatedId && visibleProjectIds.has(notification.relatedId))
+      );
+    });
+  }
+
+  private resolveTaskPriority(dueAt: Date | null, now: Date): DashboardTaskDto['priority'] {
+    if (!dueAt) return 'NORMAL';
+    if (dueAt <= now) return 'URGENT';
+    return dueAt.getTime() - now.getTime() <= 24 * 60 * 60 * 1000 ? 'HIGH' : 'NORMAL';
+  }
+
+  private earliestDate(left: Date | null, right: Date | null): Date | null {
+    if (!left) return right;
+    if (!right) return left;
+    return left <= right ? left : right;
+  }
+
+  private requireProjectStatus(value: string | null, projectId: string): string {
+    if (value) return value;
+    throw new BadRequestException(`项目 ${projectId} 尚未完成目标状态迁移`);
+  }
+
+  private requireProjectStage(value: string | null, projectId: string): string {
+    if (value) return value;
+    throw new BadRequestException(`项目 ${projectId} 尚未完成目标阶段迁移`);
   }
 }

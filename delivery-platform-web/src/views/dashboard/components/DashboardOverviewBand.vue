@@ -1,18 +1,21 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 defineProps<{
   headline: string
   description: string
-  loading: boolean
-  averageCompletionLabel: string
-  activeProjectCount: number
-  projectCount: number
+  activeProjectLabel: string
+  taskLabel: string
+  riskLabel: string
 }>()
+
+const { t } = useI18n()
 </script>
 
 <template>
   <section class="overview-band">
     <div class="overview-copy">
-      <span class="overview-kicker">DELIVERY OVERVIEW</span>
+      <span class="overview-kicker">{{ t('dashboard.workspaceKicker') }}</span>
       <h2 class="overview-title">
         {{ headline }}
       </h2>
@@ -20,18 +23,18 @@ defineProps<{
         {{ description }}
       </p>
     </div>
-    <div class="overview-highlights">
+    <div class="overview-highlights" :aria-label="t('dashboard.summaryAria')">
       <div class="highlight-item">
-        <span class="highlight-label">平均完成率</span>
-        <strong class="highlight-value">{{ loading ? '--' : averageCompletionLabel }}</strong>
+        <span class="highlight-label">{{ t('dashboard.activeProjects') }}</span>
+        <strong class="highlight-value">{{ activeProjectLabel }}</strong>
       </div>
       <div class="highlight-item">
-        <span class="highlight-label">进行中项目</span>
-        <strong class="highlight-value">{{ activeProjectCount }}</strong>
+        <span class="highlight-label">{{ t('dashboard.myTasks') }}</span>
+        <strong class="highlight-value">{{ taskLabel }}</strong>
       </div>
       <div class="highlight-item">
-        <span class="highlight-label">参与项目</span>
-        <strong class="highlight-value">{{ projectCount }}</strong>
+        <span class="highlight-label">{{ t('dashboard.highRiskProjects') }}</span>
+        <strong class="highlight-value">{{ riskLabel }}</strong>
       </div>
     </div>
   </section>
@@ -47,7 +50,6 @@ defineProps<{
   margin-bottom: 18px;
   padding: 24px 28px 28px;
   border: 1px solid #e5e6eb;
-  border-radius: 0;
   background: #fff;
   overflow: hidden;
 }
@@ -71,8 +73,6 @@ defineProps<{
   font-size: 24px;
   font-weight: 680;
   line-height: 1.25;
-  letter-spacing: 0;
-  text-wrap: balance;
 }
 
 .overview-description {
@@ -87,9 +87,7 @@ defineProps<{
   display: grid;
   grid-template-columns: repeat(3, minmax(104px, 1fr));
   border: 1px solid #e5e6eb;
-  border-radius: 0;
   background: #f8faf8;
-  overflow: hidden;
 }
 
 .highlight-item {
@@ -123,7 +121,6 @@ defineProps<{
   .overview-band {
     grid-template-columns: 1fr;
   }
-
   .overview-highlights {
     width: 100%;
   }
@@ -133,19 +130,15 @@ defineProps<{
   .overview-band {
     padding: 20px;
   }
-
   .overview-title {
     font-size: 21px;
   }
-
   .overview-highlights {
     grid-template-columns: 1fr;
   }
-
   .highlight-item {
     border-right: none;
     border-bottom: 1px solid #e4e9e6;
-
     &:last-child {
       border-bottom: none;
     }

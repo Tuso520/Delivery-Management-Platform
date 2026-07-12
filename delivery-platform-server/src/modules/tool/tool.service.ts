@@ -1,207 +1,245 @@
 import {
+  BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
-  BadRequestException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
+import type { JwtPayload } from '../auth/strategies/jwt.strategy';
 
-import { CreateToolCategoryDto } from './dto/create-tool-category.dto';
-import { CreateToolItemDto } from './dto/create-tool-item.dto';
-import { UpdateToolCategoryDto } from './dto/update-tool-category.dto';
-import { UpdateToolItemDto } from './dto/update-tool-item.dto';
+import type {
+  CreateToolDefinitionDto,
+  QueryToolsDto,
+  ToolType,
+  UpdateToolDefinitionDto,
+} from './dto/tool.dto';
+
+const ACTIVE_STATUS = 'Active';
+const INACTIVE_STATUS = 'Inactive';
+
+const toolInclude = {
+  category: {
+    select: {
+      id: true,
+      name: true,
+      sortOrder: true,
+      status: true,
+    },
+  },
+} satisfies Prisma.ToolItemInclude;
+
+type ToolRecord = Prisma.ToolItemGetPayload<{ include: typeof toolInclude }>;
+
+export interface ToolDefinition {
+  id: string;
+  name: string;
+  category: string;
+  description: string | null;
+  toolType: ToolType;
+  routeOrUrl: string | null;
+  enabled: boolean;
+  sortOrder: number;
+  configuration: Prisma.JsonObject | null;
+}
 
 @Injectable()
 export class ToolService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // ========== Category CRUD ==========
-
-  async findAllCategories() {
-    return this.prisma.toolCategory.findMany({
-      where: { status: 'Active' },
-      orderBy: { sortOrder: 'asc' },
-      include: {
-        tools: {
-          where: { status: 'Active' },
-          orderBy: { sortOrder: 'asc' },
-          select: {
-            id: true,
-            name: true,
-            toolType: true,
-            sortOrder: true,
-          },
-        },
-      },
-    });
-  }
-
-  async findCategoryById(id: string) {
-    const category = await this.prisma.toolCategory.findUnique({
-      where: { id },
-      include: {
-        tools: {
-          where: { status: 'Active' },
-          orderBy: { sortOrder: 'asc' },
-        },
-      },
-    });
-
-    if (!category) {
-      throw new NotFoundException('工具分类不存在');
+  async findAll(query: QueryToolsDto, actor: JwtPayload): Promise<ToolDefinition[]> {
+    const includeDisabled = query.includeDisabled === true;
+    if (includeDisabled && !this.canManage(actor)) {
+      throw new ForbiddenException('没有查看停用工具的权限');
     }
 
-    return category;
-  }
-
-  async createCategory(dto: CreateToolCategoryDto) {
-    return this.prisma.toolCategory.create({
-      data: {
-        name: dto.name,
-        description: dto.description,
-        sortOrder: dto.sortOrder ?? 0,
-      },
-    });
-  }
-
-  async updateCategory(id: string, dto: UpdateToolCategoryDto) {
-    const existing = await this.prisma.toolCategory.findUnique({
-      where: { id },
-    });
-
-    if (!existing) {
-      throw new NotFoundException('工具分类不存在');
-    }
-
-    return this.prisma.toolCategory.update({
-      where: { id },
-      data: dto,
-    });
-  }
-
-  async deleteCategory(id: string): Promise<void> {
-    const existing = await this.prisma.toolCategory.findUnique({
-      where: { id },
-    });
-
-    if (!existing) {
-      throw new NotFoundException('工具分类不存在');
-    }
-
-    const toolCount = await this.prisma.toolItem.count({
-      where: { categoryId: id },
-    });
-
-    if (toolCount > 0) {
-      throw new BadRequestException('该分类下存在工具，无法删除');
-    }
-
-    await this.prisma.toolCategory.delete({ where: { id } });
-  }
-
-  // ========== ToolItem CRUD ==========
-
-  async findAllTools(categoryId?: string) {
-    const where: Prisma.ToolItemWhereInput = {};
-
-    if (categoryId) {
-      where.categoryId = categoryId;
-    }
-
-    return this.prisma.toolItem.findMany({
-      where,
-      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
-      include: {
+    const category = query.category?.trim();
+    const tools = await this.prisma.toolItem.findMany({
+      where: {
+        ...(includeDisabled ? {} : { status: ACTIVE_STATUS }),
         category: {
-          select: { id: true, name: true },
+          ...(includeDisabled ? {} : { status: ACTIVE_STATUS }),
+          ...(category ? { name: category } : {}),
         },
       },
+      include: toolInclude,
+      orderBy: [{ category: { sortOrder: 'asc' } }, { sortOrder: 'asc' }, { name: 'asc' }],
     });
+
+    return tools.map((tool) => this.toDefinition(tool));
   }
 
-  async findToolById(id: string) {
-    const tool = await this.prisma.toolItem.findUnique({
-      where: { id },
-      include: {
-        category: {
-          select: { id: true, name: true },
+  async create(dto: CreateToolDefinitionDto): Promise<ToolDefinition> {
+    const name = this.requiredTrimmed(dto.name, '工具名称不能为空');
+    const categoryName = this.requiredTrimmed(dto.category, '工具分类不能为空');
+    const routeOrUrl = this.optionalTrimmed(dto.routeOrUrl);
+    this.assertRoute(dto.toolType, routeOrUrl);
+
+    return this.prisma.$transaction(async (transaction) => {
+      const category = await this.ensureCategory(transaction, categoryName);
+      const tool = await transaction.toolItem.create({
+        data: {
+          categoryId: category.id,
+          name,
+          description: this.optionalTrimmed(dto.description),
+          toolType: dto.toolType.toLowerCase(),
+          url: routeOrUrl,
+          sortOrder: dto.sortOrder ?? 0,
+          status: ACTIVE_STATUS,
+          configuration: dto.configuration as Prisma.InputJsonValue | undefined,
         },
-      },
-    });
-
-    if (!tool) {
-      throw new NotFoundException('工具不存在');
-    }
-
-    return tool;
-  }
-
-  async createTool(dto: CreateToolItemDto) {
-    const category = await this.prisma.toolCategory.findUnique({
-      where: { id: dto.categoryId },
-    });
-
-    if (!category) {
-      throw new NotFoundException('工具分类不存在');
-    }
-
-    return this.prisma.toolItem.create({
-      data: {
-        categoryId: dto.categoryId,
-        name: dto.name,
-        description: dto.description,
-        toolType: dto.toolType ?? 'internal',
-        url: dto.url,
-        icon: dto.icon,
-        sortOrder: dto.sortOrder ?? 0,
-      },
-      include: {
-        category: {
-          select: { id: true, name: true },
-        },
-      },
-    });
-  }
-
-  async updateTool(id: string, dto: UpdateToolItemDto) {
-    const existing = await this.prisma.toolItem.findUnique({
-      where: { id },
-    });
-
-    if (!existing) {
-      throw new NotFoundException('工具不存在');
-    }
-
-    if (dto.categoryId) {
-      const category = await this.prisma.toolCategory.findUnique({
-        where: { id: dto.categoryId },
+        include: toolInclude,
       });
-      if (!category) {
-        throw new NotFoundException('工具分类不存在');
-      }
-    }
 
-    return this.prisma.toolItem.update({
-      where: { id },
-      data: dto,
-      include: {
-        category: {
-          select: { id: true, name: true },
-        },
-      },
+      return this.toDefinition(tool);
     });
   }
 
-  async deleteTool(id: string): Promise<void> {
+  async update(id: string, dto: UpdateToolDefinitionDto): Promise<ToolDefinition> {
     const existing = await this.prisma.toolItem.findUnique({
       where: { id },
+      include: toolInclude,
     });
-
     if (!existing) {
       throw new NotFoundException('工具不存在');
     }
 
-    await this.prisma.toolItem.delete({ where: { id } });
+    const toolType = dto.toolType ?? this.toToolType(existing.toolType);
+    const routeOrUrl =
+      dto.routeOrUrl === undefined ? existing.url : this.optionalTrimmed(dto.routeOrUrl);
+    this.assertRoute(toolType, routeOrUrl);
+
+    return this.prisma.$transaction(async (transaction) => {
+      const category = dto.category
+        ? await this.ensureCategory(
+            transaction,
+            this.requiredTrimmed(dto.category, '工具分类不能为空'),
+          )
+        : existing.category;
+      const tool = await transaction.toolItem.update({
+        where: { id },
+        data: {
+          categoryId: category.id,
+          name:
+            dto.name === undefined ? undefined : this.requiredTrimmed(dto.name, '工具名称不能为空'),
+          description:
+            dto.description === undefined ? undefined : this.optionalTrimmed(dto.description),
+          toolType: dto.toolType?.toLowerCase(),
+          url: dto.routeOrUrl === undefined ? undefined : routeOrUrl,
+          sortOrder: dto.sortOrder,
+          configuration:
+            dto.configuration === undefined
+              ? undefined
+              : (dto.configuration as Prisma.InputJsonValue),
+        },
+        include: toolInclude,
+      });
+
+      return this.toDefinition(tool);
+    });
+  }
+
+  async setEnabled(id: string, enabled: boolean): Promise<ToolDefinition> {
+    const existing = await this.prisma.toolItem.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!existing) {
+      throw new NotFoundException('工具不存在');
+    }
+
+    const tool = await this.prisma.toolItem.update({
+      where: { id },
+      data: { status: enabled ? ACTIVE_STATUS : INACTIVE_STATUS },
+      include: toolInclude,
+    });
+    return this.toDefinition(tool);
+  }
+
+  private async ensureCategory(
+    transaction: Prisma.TransactionClient,
+    name: string,
+  ): Promise<{ id: string; name: string; sortOrder: number; status: string }> {
+    const existing = await transaction.toolCategory.findFirst({
+      where: { name },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, name: true, sortOrder: true, status: true },
+    });
+    if (!existing) {
+      return transaction.toolCategory.create({
+        data: { name, status: ACTIVE_STATUS },
+        select: { id: true, name: true, sortOrder: true, status: true },
+      });
+    }
+    if (existing.status === ACTIVE_STATUS) return existing;
+
+    return transaction.toolCategory.update({
+      where: { id: existing.id },
+      data: { status: ACTIVE_STATUS },
+      select: { id: true, name: true, sortOrder: true, status: true },
+    });
+  }
+
+  private toDefinition(tool: ToolRecord): ToolDefinition {
+    return {
+      id: tool.id,
+      name: tool.name,
+      category: tool.category.name,
+      description: tool.description,
+      toolType: this.toToolType(tool.toolType),
+      routeOrUrl: tool.url,
+      enabled: tool.status === ACTIVE_STATUS,
+      sortOrder: tool.sortOrder,
+      configuration: this.toConfiguration(tool.configuration),
+    };
+  }
+
+  private toToolType(value: string): ToolType {
+    return value.toLowerCase() === 'external' ? 'EXTERNAL' : 'INTERNAL';
+  }
+
+  private toConfiguration(value: Prisma.JsonValue | null): Prisma.JsonObject | null {
+    if (value === null || Array.isArray(value) || typeof value !== 'object') {
+      return null;
+    }
+    return value;
+  }
+
+  private assertRoute(toolType: ToolType, routeOrUrl: string | null): void {
+    if (toolType === 'EXTERNAL') {
+      if (!routeOrUrl) {
+        throw new BadRequestException('外部工具必须配置访问地址');
+      }
+      try {
+        const parsed = new URL(routeOrUrl);
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+          throw new BadRequestException('外部工具仅支持 HTTP(S) 地址');
+        }
+      } catch (error) {
+        if (error instanceof BadRequestException) throw error;
+        throw new BadRequestException('外部工具访问地址无效');
+      }
+      return;
+    }
+
+    if (routeOrUrl && !routeOrUrl.startsWith('/')) {
+      throw new BadRequestException('内部工具入口必须是站内绝对路由');
+    }
+  }
+
+  private canManage(actor: JwtPayload): boolean {
+    return actor.roles.includes('SUPER_ADMIN') || actor.permissions.includes('tools:manage');
+  }
+
+  private requiredTrimmed(value: string, message: string): string {
+    const normalized = value.trim();
+    if (!normalized) throw new BadRequestException(message);
+    return normalized;
+  }
+
+  private optionalTrimmed(value?: string): string | null {
+    const normalized = value?.trim();
+    return normalized ? normalized : null;
   }
 }

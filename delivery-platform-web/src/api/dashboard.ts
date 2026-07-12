@@ -1,30 +1,32 @@
 import request from './request'
 import type {
-  DashboardOverview,
-  CountryStats,
-  ProjectStats,
-  TodoItem,
-  UserProject,
+  DashboardHighRiskProject,
+  DashboardProjectSummary,
+  DashboardRecentActivity,
+  DashboardRecentProject,
+  DashboardTask,
 } from '@/types/dashboard'
 
+const silentRequest = { silent: true } as const
+
 export const dashboardApi = {
-  getOverview() {
-    return request.get<DashboardOverview>('/dashboard/overview')
+  getProjectSummary() {
+    return request.get<DashboardProjectSummary>('/dashboard/project-summary', silentRequest)
   },
 
-  getCountryStats(countryCode: string) {
-    return request.get<CountryStats>(`/dashboard/country/${countryCode}`)
+  getMyTasks() {
+    return request.get<DashboardTask[]>('/dashboard/my-tasks', silentRequest)
   },
 
-  getProjectStats(projectId: string) {
-    return request.get<ProjectStats>(`/dashboard/project/${projectId}`)
+  getHighRisks() {
+    return request.get<DashboardHighRiskProject[]>('/dashboard/high-risks', silentRequest)
   },
 
-  getMyTodos() {
-    return request.get<TodoItem[]>('/dashboard/my-todos')
+  getRecentProjects() {
+    return request.get<DashboardRecentProject[]>('/dashboard/recent-projects', silentRequest)
   },
 
-  getMyProjects() {
-    return request.get<UserProject[]>('/dashboard/my-projects')
+  getRecentActivities() {
+    return request.get<DashboardRecentActivity[]>('/dashboard/recent-activities', silentRequest)
   },
 }

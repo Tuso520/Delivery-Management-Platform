@@ -1,103 +1,176 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { Component } from 'vue'
 import { useI18n } from 'vue-i18n'
+import {
+  IconCheck,
+  IconDesktop,
+  IconDown,
+  IconLanguage,
+  IconMenuFold,
+  IconMenuUnfold,
+  IconMoon,
+  IconSettings,
+  IconSun,
+} from '@arco-design/web-vue/es/icon'
 import type { LocaleCode } from '@/store/locale'
+import type { ThemeMode } from '@/store/app'
+import type { MenuItem } from '@/store/permission'
+import { resolveMenuIcon } from '@/utils/menu-icons'
 
-interface BreadcrumbItem {
-  path: string
-  title: string
-}
+type DropdownCommand = string | number | Record<string, unknown> | undefined
 
 const props = defineProps<{
   sidebarCollapsed: boolean
   pageTitle: string
-  pageDescription: string
-  breadcrumbs: BreadcrumbItem[]
   userName: string
   currentLocale: LocaleCode
+  themeMode: ThemeMode
+  settings: MenuItem[]
 }>()
 
 const emit = defineEmits<{
   toggleSidebar: []
+  settingSelect: [path: string]
   languageChange: [locale: LocaleCode]
+  themeChange: [theme: ThemeMode]
   logout: []
 }>()
 
+const { t } = useI18n()
 const userInitial = computed(() => props.userName.slice(0, 1) || 'U')
 const currentLocaleLabel = computed(() =>
-  props.currentLocale === 'en-US' ? 'EN' : '中文',
+  props.currentLocale === 'en-US' ? 'EN' : t('shell.locale.zhCN'),
 )
-const { t } = useI18n()
+const currentThemeIcon = computed<Component>(
+  () =>
+    ({
+      light: IconSun,
+      dark: IconMoon,
+      system: IconDesktop,
+    })[props.themeMode],
+)
 
-const locales: Array<{ code: LocaleCode; label: string }> = [
-  { code: 'zh-CN', label: '中文' },
-  { code: 'en-US', label: 'English' },
+const locales = computed<Array<{ code: LocaleCode; label: string }>>(() => [
+  { code: 'zh-CN', label: t('shell.locale.zhCN') },
+  { code: 'en-US', label: t('shell.locale.enUS') },
+])
+
+const themes: Array<{
+  value: ThemeMode
+  icon: Component
+  labelKey: string
+}> = [
+  { value: 'light', icon: IconSun, labelKey: 'shell.theme.light' },
+  { value: 'dark', icon: IconMoon, labelKey: 'shell.theme.dark' },
+  { value: 'system', icon: IconDesktop, labelKey: 'shell.theme.system' },
 ]
 
-function handleLanguageChange(command: string | number | Record<string, unknown> | undefined): void {
+function resolveMenuTitle(item: MenuItem): string {
+  return t(item.title)
+}
+
+function resolveThemeTitle(theme: (typeof themes)[number]): string {
+  return t(theme.labelKey)
+}
+
+function handleSettingSelect(command: DropdownCommand): void {
+  if (typeof command === 'string') emit('settingSelect', command)
+}
+
+function handleLanguageChange(command: DropdownCommand): void {
   if (command === 'zh-CN' || command === 'en-US') {
     emit('languageChange', command)
   }
 }
 
-function handleUserCommand(command: string | number | Record<string, unknown> | undefined): void {
-  if (command === 'logout') {
-    emit('logout')
+function handleThemeChange(command: DropdownCommand): void {
+  if (command === 'light' || command === 'dark' || command === 'system') {
+    emit('themeChange', command)
   }
+}
+
+function handleUserCommand(command: DropdownCommand): void {
+  if (command === 'logout') emit('logout')
 }
 </script>
 
 <template>
   <header class="layout-header">
     <div class="header-left">
-      <a-button
-        class="sidebar-toggle"
-        type="secondary"
-        aria-label="切换侧边栏"
-        @click="emit('toggleSidebar')"
-      >
+      <a-button class="header-icon-button" type="text" @click="emit('toggleSidebar')">
         <template #icon>
-          <component :is="sidebarCollapsed ? 'Expand' : 'Fold'" />
+          <IconMenuUnfold v-if="sidebarCollapsed" />
+          <IconMenuFold v-else />
         </template>
+        <span class="sr-only">{{ t('shell.toggleSidebar') }}</span>
       </a-button>
-      <div class="page-title-block">
-        <h1 class="page-title">{{ pageTitle }}</h1>
-        <div class="page-meta">
-          <span>{{ pageDescription }}</span>
-          <a-breadcrumb v-if="breadcrumbs.length > 1">
-            <a-breadcrumb-item v-for="item in breadcrumbs" :key="item.path">
-              {{ item.title }}
-            </a-breadcrumb-item>
-          </a-breadcrumb>
-        </div>
-      </div>
+      <h1 class="page-title">
+        {{ pageTitle }}
+      </h1>
     </div>
 
     <div class="header-right">
-      <a-dropdown trigger="click" @select="handleLanguageChange">
+      <a-dropdown trigger="click" position="br" @select="handleSettingSelect">
+        <a-button type="text" class="header-icon-button">
+          <template #icon>
+            <IconSettings />
+          </template>
+          <span class="sr-only">{{ t('shell.openSettings') }}</span>
+        </a-button>
+        <template #content>
+          <a-doption v-for="item in settings" :key="item.path" :value="item.path">
+            <component :is="resolveMenuIcon(item.icon)" class="option-icon" />
+            {{ resolveMenuTitle(item) }}
+          </a-doption>
+          <a-doption v-if="settings.length === 0" disabled>
+            {{ t('shell.noAccessibleSettings') }}
+          </a-doption>
+        </template>
+      </a-dropdown>
+
+      <a-dropdown trigger="click" position="br" @select="handleLanguageChange">
         <a-button type="text" class="header-action">
-          <template #icon><component :is="'ChatDotSquare'" /></template>
+          <template #icon>
+            <IconLanguage />
+          </template>
           <span class="header-action-text">{{ currentLocaleLabel }}</span>
         </a-button>
         <template #content>
-          <a-doption
-            v-for="locale in locales"
-            :key="locale.code"
-            :value="locale.code"
-          >
+          <a-doption v-for="locale in locales" :key="locale.code" :value="locale.code">
             {{ locale.label }}
           </a-doption>
         </template>
       </a-dropdown>
 
-      <a-dropdown trigger="click" @select="handleUserCommand">
-        <a-button type="text" class="user-action">
-          <a-avatar :size="26" class="user-avatar">{{ userInitial }}</a-avatar>
-          <span class="user-name">{{ userName }}</span>
-          <component :is="'ArrowDown'" class="arrow-icon" />
+      <a-dropdown trigger="click" position="br" @select="handleThemeChange">
+        <a-button type="text" class="header-icon-button">
+          <template #icon>
+            <component :is="currentThemeIcon" />
+          </template>
+          <span class="sr-only">{{ t('shell.theme.switch') }}</span>
         </a-button>
         <template #content>
-          <a-doption value="logout">{{ t('app.logout') }}</a-doption>
+          <a-doption v-for="theme in themes" :key="theme.value" :value="theme.value">
+            <component :is="theme.icon" class="option-icon" />
+            {{ resolveThemeTitle(theme) }}
+            <component :is="IconCheck" v-if="themeMode === theme.value" class="selected-icon" />
+          </a-doption>
+        </template>
+      </a-dropdown>
+
+      <a-dropdown trigger="click" position="br" @select="handleUserCommand">
+        <a-button type="text" class="user-action">
+          <a-avatar :size="24" class="user-avatar">
+            {{ userInitial }}
+          </a-avatar>
+          <span class="user-name">{{ userName }}</span>
+          <IconDown class="arrow-icon" />
+        </a-button>
+        <template #content>
+          <a-doption value="logout">
+            {{ t('app.logout') }}
+          </a-doption>
         </template>
       </a-dropdown>
     </div>
@@ -107,108 +180,109 @@ function handleUserCommand(command: string | number | Record<string, unknown> | 
 <style scoped lang="scss">
 .layout-header {
   width: 100%;
-  min-height: 72px;
-  height: 72px;
-  flex: 0 0 72px;
+  height: 48px;
+  min-height: 48px;
+  flex: 0 0 48px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
+  gap: 16px;
+  padding: 0 16px 0 12px;
   background: var(--color-bg-2);
   border-bottom: 1px solid var(--color-border-2);
-  padding: 0 28px;
+}
+
+.header-left,
+.header-right {
+  min-width: 0;
+  display: flex;
+  align-items: center;
 }
 
 .header-left {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: 14px;
+  gap: 8px;
 }
 
-.sidebar-toggle {
-  width: 34px;
-  height: 34px;
+.header-right {
   flex: 0 0 auto;
+  gap: 2px;
 }
 
-.page-title-block {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
+.header-icon-button,
+.header-action,
+.user-action {
+  min-width: 32px;
+  height: 32px;
+  color: var(--color-text-2);
 }
 
 .page-title {
   margin: 0;
+  overflow: hidden;
   color: var(--color-text-1);
-  font-size: 19px;
-  font-weight: 650;
-  line-height: 1.18;
-  letter-spacing: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+  text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.page-meta {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: 12px;
-  color: var(--color-text-3);
-  font-size: 12px;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  flex: 0 0 auto;
-  gap: 10px;
-}
-
-.header-action,
-.user-action {
-  min-height: 36px;
-  color: var(--color-text-2);
 }
 
 .user-action :deep(.arco-btn-content) {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .user-avatar {
   background: rgb(var(--primary-1));
   color: rgb(var(--primary-6));
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
 }
 
 .user-name {
-  max-width: 120px;
+  max-width: 112px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.arrow-icon {
+.arrow-icon,
+.option-icon,
+.selected-icon {
   width: 14px;
   height: 14px;
 }
 
+.option-icon {
+  margin-right: 8px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.selected-icon {
+  margin-left: 12px;
+  color: rgb(var(--primary-6));
+}
+
 @media (max-width: 900px) {
   .layout-header {
-    min-height: 64px;
-    height: auto;
-    padding: 12px 16px;
-  }
-
-  .page-meta {
-    display: none;
+    padding: 0 8px;
   }
 
   .header-action-text,
-  .user-name {
+  .user-name,
+  .arrow-icon {
     display: none;
   }
 }

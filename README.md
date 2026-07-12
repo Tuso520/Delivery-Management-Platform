@@ -1,22 +1,23 @@
 # 交付管理平台
 
-交付管理平台是面向软件交付中心、项目经理、专业工程师、采购、财务、HSE 和标准管理员的企业级交付过程管理系统。平台围绕项目台账、项目档案、文件审批、交付流程、检查模板、文档模板、知识库、绩效和组织权限，帮助团队把交付资料、流程标准、审批记录和项目风险统一管理起来。
+交付管理平台是面向软件交付中心、项目经理、专业工程师、采购、财务、HSE 和标准管理员的企业级交付过程管理系统。平台围绕项目概览、项目档案、统一文件审核、标准库、知识库、工具中心、组织权限和平台设置，帮助团队把交付资料、版本、审批记录和项目风险统一管理起来。
 
 ## 核心功能
 
-- 项目台账：维护项目状态、国家、项目类型、风险等级、交付阶段、合同金额和项目成员。
-- 项目档案：按交付一级流程生成档案目录，提供上传说明、文件审批、版本留痕和在线预览。
-- 标准与知识：管理知识库、文档模板、档案模板、交付流程、检查模板和工具中心。
-- 在线预览：支持 PDF、Word、Excel、PowerPoint、图片和 Markdown 的只读预览。
+- 项目概览：维护生命周期、固定交付阶段、风险、原币/折算金额、成员、验收和回款；写命令具备幂等或并发保护。
+- 项目档案：创建项目时复制已发布档案模版快照，提供两级目录、临时项、只新增同步、版本留痕和统一审核。
+- 标准与知识：交付流程、检查标准和文档模版统一进入标准库；知识支持文件、Markdown 和链接版本。
+- 在线预览：统一只读预览 Office、PDF、图片、大图、Markdown、XMind、视频和音频；CAD/Visio 等使用异步转换产物。
 - 权限体系：按角色和权限点控制菜单、按钮、接口和项目数据访问范围。
-- 部署体系：支持本地模拟测试、本地 Docker 测试和服务器 Git 拉取部署。
+- 通知集成：站内、飞书和企业微信通过 Outbox Worker 幂等投递并保留逐通道回执。
+- 部署体系：支持本地模拟、真实依赖测试和服务器 Git 拉取部署，迁移前成对备份 MySQL 与 MinIO。
 
 ## 技术栈
 
-- 前端：Vue 3、TypeScript、Vite、Pinia、Vue Router、Arco Design Vue、Axios。
+- 前端：Vue 3、TypeScript、Vite、Pinia、Vue Router、TanStack Query、Arco Design Vue、Axios。
 - 后端：NestJS 11、TypeScript、Prisma 5、MySQL 8、Redis 7、MinIO。
 - 运行环境：Docker Compose、Nginx、Node.js 20、pnpm。
-- 质量检查：TypeScript 类型检查、前端生产构建、Prisma 受保护迁移、浏览器真实验证。
+- 质量检查：TypeScript 严格类型检查、前后端测试与构建、Prisma 受保护迁移、真实 API 和浏览器验证。
 
 ## 目录结构
 
@@ -62,6 +63,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\local-docker.ps1 up -Build
 - [文档总览](docs/README.md)
 - [产品说明](docs/product.md)
 - [技术架构](docs/architecture.md)
+- [前端页面架构](docs/frontend-architecture.md)
+- [前端业务流程](docs/frontend-business-flows.md)
+- [前端重构实施规范](docs/frontend-architecture-refactored.md)
+- [后端重构实施规范](docs/backend-architecture-refactored.md)
+- [前端整体重构评审稿](docs/frontend-rebuild-review.md)
 - [开发规范](docs/development.md)
 - [部署运维](docs/deployment.md)
 - [测试验收](docs/testing.md)

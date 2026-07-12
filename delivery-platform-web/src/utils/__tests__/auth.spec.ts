@@ -1,52 +1,44 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
-  getUserInfo,
-  setUserInfo,
+  clearLegacyAuthStorage,
+  getToken,
+  removeToken,
+  setToken,
 } from '../auth'
-import type { UserInfo } from '@/types/user'
 
-const user: UserInfo = {
-  id: 'user-1',
-  username: 'admin',
-  realName: '系统管理员',
-  email: 'admin@example.com',
-  roles: ['SUPER_ADMIN'],
-  permissions: [],
-}
-
-describe('auth user cache', () => {
+describe('in-memory authentication state', () => {
   beforeEach(() => {
+    removeToken()
     localStorage.clear()
   })
 
-  it('invalidates the legacy unversioned user cache', () => {
-    localStorage.setItem('delivery_user_info', JSON.stringify(user))
+  it('keeps the access token in memory without writing localStorage', () => {
+    setToken('access-token')
 
-    expect(getUserInfo()).toBeNull()
-    expect(localStorage.getItem('delivery_user_info')).toBeNull()
+    expect(getToken()).toBe('access-token')
+    expect(localStorage.getItem('delivery_token')).toBeNull()
   })
 
-  it('round-trips the current versioned user cache', () => {
-    setUserInfo(user)
+  it('clears legacy token and user caches during startup migration', () => {
+    localStorage.setItem('delivery_token', 'legacy-token')
+    localStorage.setItem('delivery_user_info', '{"username":"legacy"}')
+    localStorage.setItem('delivery_refresh_token', 'legacy-refresh-token')
+    localStorage.setItem('lang', 'zh-CN')
 
-    expect(getUserInfo()).toEqual(user)
-    expect(JSON.parse(localStorage.getItem('delivery_user_info') ?? '{}')).toMatchObject({
-      version: 2,
-      user,
-    })
+    clearLegacyAuthStorage()
+
+    expect(localStorage.getItem('delivery_token')).toBeNull()
+    expect(localStorage.getItem('delivery_user_info')).toBeNull()
+    expect(localStorage.getItem('delivery_refresh_token')).toBeNull()
+    expect(localStorage.getItem('lang')).toBe('zh-CN')
   })
 
-  it('invalidates a cache with malformed role or permission data', () => {
-    localStorage.setItem('delivery_user_info', JSON.stringify({
-      version: 2,
-      user: {
-        ...user,
-        roles: 'SUPER_ADMIN',
-      },
-    }))
+  it('removes the in-memory token when the session ends', () => {
+    setToken('access-token')
 
-    expect(getUserInfo()).toBeNull()
-    expect(localStorage.getItem('delivery_user_info')).toBeNull()
+    removeToken()
+
+    expect(getToken()).toBeNull()
   })
 })

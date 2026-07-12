@@ -6,10 +6,10 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { enqueueDomainEvent } from '../../common/events/outbox';
 import { PrismaService } from '../../database/prisma.service';
 
 import { CreateCurrencyDto } from './dto/create-currency.dto';
-import { CreateExchangeRateDto, QueryExchangeRateDto } from './dto/create-exchange-rate.dto';
 import { UpdateCurrencyDto } from './dto/update-currency.dto';
 import { ExchangeRateProvider } from './exchange-rate.provider';
 
@@ -27,21 +27,10 @@ export class CurrencyService {
     });
   }
 
-  async findById(id: string) {
-    const currency = await this.prisma.currency.findUnique({
-      where: { id },
-    });
-
-    if (!currency) {
-      throw new NotFoundException('币种不存在');
-    }
-
-    return currency;
-  }
-
   async findByCode(code: string) {
+    const normalizedCode = code.trim().toUpperCase();
     const currency = await this.prisma.currency.findUnique({
-      where: { currencyCode: code },
+      where: { currencyCode: normalizedCode },
     });
 
     if (!currency) {
@@ -70,116 +59,51 @@ export class CurrencyService {
     });
   }
 
-  async update(id: string, dto: UpdateCurrencyDto) {
-    const currency = await this.prisma.currency.findUnique({
-      where: { id },
-    });
-
-    if (!currency) {
-      throw new NotFoundException('币种不存在');
-    }
-
+  private update(id: string, dto: UpdateCurrencyDto) {
     return this.prisma.currency.update({
       where: { id },
       data: {
         currencyName: dto.currencyName,
         currencySymbol: dto.currencySymbol,
         decimalPlaces: dto.decimalPlaces,
+        ...(dto.cnyRate !== undefined && {
+          cnyRate: dto.cnyRate,
+          rateDate: new Date(),
+          rateSource: 'manual',
+        }),
       },
     });
   }
 
-  async delete(id: string): Promise<void> {
-    const currency = await this.prisma.currency.findUnique({
-      where: { id },
-    });
+  async updateByCode(code: string, dto: UpdateCurrencyDto) {
+    const currency = await this.findByCode(code);
+    return this.update(currency.id, dto);
+  }
 
-    if (!currency) {
-      throw new NotFoundException('币种不存在');
+  async lockCurrencyRate(code: string, userId: string) {
+    const currency = await this.findByCode(code);
+    if (currency.cnyRate === null) {
+      throw new ConflictException('请先设置人民币汇率再锁定');
     }
+    return this.prisma.currency.update({
+      where: { id: currency.id },
+      data: { rateLocked: true, lockedBy: userId, lockedAt: new Date() },
+    });
+  }
 
-    await this.prisma.currency.update({
-      where: { id },
+  async unlockCurrencyRate(code: string) {
+    const currency = await this.findByCode(code);
+    return this.prisma.currency.update({
+      where: { id: currency.id },
+      data: { rateLocked: false, lockedBy: null, lockedAt: null },
+    });
+  }
+
+  async disableByCode(code: string) {
+    const currency = await this.findByCode(code);
+    return this.prisma.currency.update({
+      where: { id: currency.id },
       data: { status: 'Inactive' },
-    });
-  }
-
-  // ========== Exchange Rate Management ==========
-
-  async getRates(query: QueryExchangeRateDto) {
-    const where: Record<string, unknown> = {};
-
-    if (query.from) {
-      where.fromCurrency = query.from;
-    }
-
-    if (query.to) {
-      where.toCurrency = query.to;
-    }
-
-    return this.prisma.exchangeRate.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  async addRate(dto: CreateExchangeRateDto) {
-    const rateDate = dto.rateDate ? new Date(dto.rateDate) : new Date();
-    rateDate.setHours(0, 0, 0, 0);
-
-    // Check if both currencies exist
-    const fromCurrency = await this.prisma.currency.findUnique({
-      where: { currencyCode: dto.fromCurrency },
-    });
-    if (!fromCurrency) {
-      throw new NotFoundException(`源币种 ${dto.fromCurrency} 不存在`);
-    }
-
-    const toCurrency = await this.prisma.currency.findUnique({
-      where: { currencyCode: dto.toCurrency },
-    });
-    if (!toCurrency) {
-      throw new NotFoundException(`目标币种 ${dto.toCurrency} 不存在`);
-    }
-
-    return this.prisma.exchangeRate.create({
-      data: {
-        fromCurrency: dto.fromCurrency,
-        toCurrency: dto.toCurrency,
-        rate: dto.rate,
-        rateDate,
-        source: dto.source ?? 'manual',
-      },
-    });
-  }
-
-  async lockRate(id: string) {
-    const rate = await this.prisma.exchangeRate.findUnique({
-      where: { id },
-    });
-
-    if (!rate) {
-      throw new NotFoundException('汇率记录不存在');
-    }
-
-    return this.prisma.exchangeRate.update({
-      where: { id },
-      data: { isLocked: true },
-    });
-  }
-
-  async unlockRate(id: string) {
-    const rate = await this.prisma.exchangeRate.findUnique({
-      where: { id },
-    });
-
-    if (!rate) {
-      throw new NotFoundException('汇率记录不存在');
-    }
-
-    return this.prisma.exchangeRate.update({
-      where: { id },
-      data: { isLocked: false },
     });
   }
 
@@ -208,6 +132,12 @@ export class CurrencyService {
     let syncedCount = 0;
 
     await this.prisma.$transaction(async (tx) => {
+      if (onlineRates.baseCurrency === 'CNY') {
+        await tx.currency.updateMany({
+          where: { currencyCode: 'CNY', rateLocked: false },
+          data: { cnyRate: 1, rateDate, rateSource: onlineRates.source },
+        });
+      }
       for (const item of onlineRates.rates) {
         const directRate = new Prisma.Decimal(item.rate);
         const inverseRate = new Prisma.Decimal(1).div(directRate);
@@ -258,7 +188,29 @@ export class CurrencyService {
           });
           syncedCount += 1;
         }
+        if (onlineRates.baseCurrency === 'CNY') {
+          await tx.currency.updateMany({
+            where: { currencyCode: item.currencyCode, rateLocked: false },
+            data: {
+              cnyRate: inverseRate,
+              rateDate,
+              rateSource: onlineRates.source,
+            },
+          });
+        }
       }
+      await enqueueDomainEvent(tx, {
+        eventType: 'CurrencyRateUpdated',
+        aggregateType: 'currency',
+        aggregateId: onlineRates.baseCurrency,
+        deduplicationKey: `CurrencyRateUpdated:${onlineRates.baseCurrency}:${rateDate.toISOString()}`,
+        payload: {
+          baseCurrency: onlineRates.baseCurrency,
+          rateDate: rateDate.toISOString(),
+          source: onlineRates.source,
+          syncedCount,
+        },
+      });
     });
 
     return {

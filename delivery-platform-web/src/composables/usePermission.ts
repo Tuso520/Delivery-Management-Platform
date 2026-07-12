@@ -7,10 +7,6 @@ export function usePermission() {
     return permissionStore.hasPermission(permission)
   }
 
-  const hasRole = (role: string): boolean => {
-    return permissionStore.hasRole(role)
-  }
-
   const hasAnyPermission = (permissions: string[]): boolean => {
     return permissionStore.hasAnyPermission(permissions)
   }
@@ -21,7 +17,6 @@ export function usePermission() {
 
   return {
     hasPermission,
-    hasRole,
     hasAnyPermission,
     hasAllPermissions,
   }

@@ -1,11 +1,35 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 
-import { ReviewController, FileReviewController } from './review.controller';
-import { ReviewService } from './review.service';
+import { DataScopeModule } from '../identity/data-scope/data-scope.module';
+import { OperationLogModule } from '../operation-log/operation-log.module';
+import { ProjectModule } from '../project/project.module';
+import { SystemConfigModule } from '../system-config/system-config.module';
+
+import { ReviewBusinessService } from './review-business.service';
+import { ReviewConfigurationService } from './review-configuration.service';
+import { ReviewTaskController } from './review-task.controller';
+import { ReviewTaskService } from './review-task.service';
+import { ReviewerEligibilityService } from './reviewer-eligibility.service';
 
 @Module({
-  controllers: [ReviewController, FileReviewController],
-  providers: [ReviewService],
-  exports: [ReviewService],
+  imports: [
+    forwardRef(() => ProjectModule),
+    DataScopeModule,
+    OperationLogModule,
+    SystemConfigModule,
+  ],
+  controllers: [ReviewTaskController],
+  providers: [
+    ReviewerEligibilityService,
+    ReviewBusinessService,
+    ReviewConfigurationService,
+    ReviewTaskService,
+  ],
+  exports: [
+    ReviewerEligibilityService,
+    ReviewBusinessService,
+    ReviewConfigurationService,
+    ReviewTaskService,
+  ],
 })
 export class ReviewModule {}

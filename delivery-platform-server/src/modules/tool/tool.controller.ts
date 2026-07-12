@@ -1,147 +1,72 @@
 import {
+  Body,
   Controller,
   Get,
-  Post,
-  Put,
-  Delete,
-  Body,
-  Param,
-  Query,
-  UseGuards,
   HttpCode,
   HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiBearerAuth,
-  ApiBody,
-  ApiResponse,
-  ApiQuery,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
-import { Permissions } from '../../common/decorators/permissions.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
+import type { JwtPayload } from '../auth/strategies/jwt.strategy';
 
-import { CreateToolCategoryDto } from './dto/create-tool-category.dto';
-import { CreateToolItemDto } from './dto/create-tool-item.dto';
-import { UpdateToolCategoryDto } from './dto/update-tool-category.dto';
-import { UpdateToolItemDto } from './dto/update-tool-item.dto';
+import { CreateToolDefinitionDto, QueryToolsDto, UpdateToolDefinitionDto } from './dto/tool.dto';
 import { ToolService } from './tool.service';
-
 
 @ApiTags('Tools')
 @ApiBearerAuth('JWT-auth')
 @Controller('tools')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class ToolController {
   constructor(private readonly toolService: ToolService) {}
 
-  // ========== Category Endpoints ==========
-
-  @Get('categories')
-  @Permissions('tools:view')
-  @ApiOperation({ summary: '获取工具分类列表（含工具数量）' })
-  @ApiResponse({ status: 200, description: '分类列表' })
-  async findAllCategories() {
-    return this.toolService.findAllCategories();
+  @Get()
+  @RequirePermissions({ all: ['tools:view'] })
+  @ApiOperation({ summary: '获取工具目录' })
+  @ApiResponse({ status: 200, description: '工具定义列表' })
+  findAllTools(@Query() query: QueryToolsDto, @CurrentUser() actor: JwtPayload) {
+    return this.toolService.findAll(query, actor);
   }
 
-  @Post('categories')
-  @UseGuards(RolesGuard)
-  @Roles('DELIVERY_MANAGER', 'STANDARD_ADMIN')
-  @Permissions('tools:create')
-  @ApiOperation({ summary: '创建工具分类' })
-  @ApiBody({ type: CreateToolCategoryDto })
+  @Post()
+  @RequirePermissions({ all: ['tools:manage'] })
+  @ApiOperation({ summary: '创建工具定义' })
+  @ApiBody({ type: CreateToolDefinitionDto })
   @ApiResponse({ status: 201, description: '创建成功' })
-  async createCategory(@Body() dto: CreateToolCategoryDto) {
-    return this.toolService.createCategory(dto);
+  createTool(@Body() dto: CreateToolDefinitionDto) {
+    return this.toolService.create(dto);
   }
 
-  @Put('categories/:id')
-  @UseGuards(RolesGuard)
-  @Roles('DELIVERY_MANAGER', 'STANDARD_ADMIN')
-  @Permissions('tools:update')
-  @ApiOperation({ summary: '更新工具分类' })
-  @ApiBody({ type: UpdateToolCategoryDto })
+  @Patch(':id')
+  @RequirePermissions({ all: ['tools:manage'] })
+  @ApiOperation({ summary: '更新工具定义' })
+  @ApiBody({ type: UpdateToolDefinitionDto })
   @ApiResponse({ status: 200, description: '更新成功' })
-  @ApiResponse({ status: 404, description: '分类不存在' })
-  async updateCategory(
-    @Param('id') id: string,
-    @Body() dto: UpdateToolCategoryDto,
-  ) {
-    return this.toolService.updateCategory(id, dto);
+  updateTool(@Param('id') id: string, @Body() dto: UpdateToolDefinitionDto) {
+    return this.toolService.update(id, dto);
   }
 
-  @Delete('categories/:id')
-  @UseGuards(RolesGuard)
-  @Roles('DELIVERY_MANAGER', 'STANDARD_ADMIN')
-  @Permissions('tools:delete')
+  @Post(':id/enable')
+  @RequirePermissions({ all: ['tools:manage'] })
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '删除工具分类' })
-  @ApiResponse({ status: 200, description: '删除成功' })
-  @ApiResponse({ status: 404, description: '分类不存在' })
-  async removeCategory(@Param('id') id: string) {
-    await this.toolService.deleteCategory(id);
-    return null;
+  @ApiOperation({ summary: '启用工具' })
+  enableTool(@Param('id') id: string) {
+    return this.toolService.setEnabled(id, true);
   }
 
-  // ========== ToolItem Endpoints ==========
-
-  @Get('items')
-  @Permissions('tools:view')
-  @ApiOperation({ summary: '获取工具列表（可按分类筛选）' })
-  @ApiQuery({ name: 'categoryId', required: false, description: '工具分类ID' })
-  @ApiResponse({ status: 200, description: '工具列表' })
-  async findAllTools(@Query('categoryId') categoryId?: string) {
-    return this.toolService.findAllTools(categoryId);
-  }
-
-  @Post('items')
-  @UseGuards(RolesGuard)
-  @Roles('DELIVERY_MANAGER', 'STANDARD_ADMIN')
-  @Permissions('tools:create')
-  @ApiOperation({ summary: '创建工具' })
-  @ApiBody({ type: CreateToolItemDto })
-  @ApiResponse({ status: 201, description: '创建成功' })
-  async createTool(@Body() dto: CreateToolItemDto) {
-    return this.toolService.createTool(dto);
-  }
-
-  @Get('items/:id')
-  @Permissions('tools:view')
-  @ApiOperation({ summary: '获取工具详情' })
-  @ApiResponse({ status: 200, description: '工具详情' })
-  @ApiResponse({ status: 404, description: '工具不存在' })
-  async findTool(@Param('id') id: string) {
-    return this.toolService.findToolById(id);
-  }
-
-  @Put('items/:id')
-  @UseGuards(RolesGuard)
-  @Roles('DELIVERY_MANAGER', 'STANDARD_ADMIN')
-  @Permissions('tools:update')
-  @ApiOperation({ summary: '更新工具信息' })
-  @ApiBody({ type: UpdateToolItemDto })
-  @ApiResponse({ status: 200, description: '更新成功' })
-  @ApiResponse({ status: 404, description: '工具不存在' })
-  async updateTool(@Param('id') id: string, @Body() dto: UpdateToolItemDto) {
-    return this.toolService.updateTool(id, dto);
-  }
-
-  @Delete('items/:id')
-  @UseGuards(RolesGuard)
-  @Roles('DELIVERY_MANAGER', 'STANDARD_ADMIN')
-  @Permissions('tools:delete')
+  @Post(':id/disable')
+  @RequirePermissions({ all: ['tools:manage'] })
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '删除工具' })
-  @ApiResponse({ status: 200, description: '删除成功' })
-  @ApiResponse({ status: 404, description: '工具不存在' })
-  async removeTool(@Param('id') id: string) {
-    await this.toolService.deleteTool(id);
-    return null;
+  @ApiOperation({ summary: '停用工具' })
+  disableTool(@Param('id') id: string) {
+    return this.toolService.setEnabled(id, false);
   }
 }

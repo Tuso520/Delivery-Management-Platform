@@ -8,6 +8,7 @@ export class PermissionService {
 
   async findAll() {
     const permissions = await this.prisma.permission.findMany({
+      where: { deprecatedAt: null },
       select: {
         id: true,
         permissionCode: true,

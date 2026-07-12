@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 interface StatCard {
   title: string
@@ -12,13 +13,15 @@ defineProps<{
   cards: StatCard[]
 }>()
 
+const { t } = useI18n()
+
 function getCardStyle(color: string): Record<string, string> {
   return { '--stat-color': color }
 }
 </script>
 
 <template>
-  <section class="stat-grid" aria-label="项目关键指标">
+  <section class="stat-grid" :aria-label="t('dashboard.statsAria')">
     <article
       v-for="card in cards"
       :key="card.title"
@@ -28,9 +31,7 @@ function getCardStyle(color: string): Record<string, string> {
       <div class="stat-card-top">
         <span class="stat-title">{{ card.title }}</span>
         <span class="stat-icon-wrap">
-          <a-icon class="stat-icon" :size="21">
-            <component :is="card.icon" />
-          </a-icon>
+          <component :is="card.icon" class="stat-icon" :size="21" />
         </span>
       </div>
       <div class="stat-value">
@@ -44,9 +45,9 @@ function getCardStyle(color: string): Record<string, string> {
 <style scoped lang="scss">
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
-  margin-bottom: 18px;
+  padding: 18px;
 }
 
 .stat-card {
@@ -119,7 +120,7 @@ function getCardStyle(color: string): Record<string, string> {
   background: var(--stat-color);
 }
 
-@media (max-width: 1400px) {
+@media (max-width: 1100px) {
   .stat-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }

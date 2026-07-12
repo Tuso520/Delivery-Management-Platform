@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import type { FormInstance } from '@arco-design/web-vue'
+import { BusinessDrawer } from '@/components/business'
 import type { DepartmentNode } from '@/types/platform'
 import { userFormRules, validateArcoForm, type UserFormModel } from './form-config'
 
@@ -23,49 +24,43 @@ async function handleSubmit(): Promise<void> {
 </script>
 
 <template>
-  <a-dialog
-    v-model="visible"
+  <BusinessDrawer
+    v-model:visible="visible"
     :title="isEdit ? '编辑用户' : '创建用户'"
-    width="540px"
-    :close-on-click-modal="false"
+    size="sm"
+    :mask-closable="false"
   >
     <a-form
       ref="formRef"
       :model="formData"
       :rules="userFormRules"
-      label-width="100px"
+      auto-label-width
     >
-      <a-form-item label="用户名" prop="username">
-        <a-input v-model="formData.username" :disabled="isEdit" :maxlength="50" />
+      <a-form-item label="用户名" field="username">
+        <a-input v-model="formData.username" :disabled="isEdit" :max-length="50" />
       </a-form-item>
-      <a-form-item v-if="!isEdit" label="密码" prop="password">
-        <a-input
-          v-model="formData.password"
-          type="password"
-          show-password
-          :maxlength="100"
-        />
+      <a-form-item v-if="!isEdit" label="密码" field="password">
+        <a-input v-model="formData.password" type="password" :max-length="100" />
       </a-form-item>
-      <a-form-item label="真实姓名" prop="realName">
-        <a-input v-model="formData.realName" :maxlength="50" />
+      <a-form-item label="真实姓名" field="realName">
+        <a-input v-model="formData.realName" :max-length="50" />
       </a-form-item>
       <a-form-item label="所属部门">
         <a-tree-select
           v-model="formData.departmentId"
           :data="departments"
-          node-key="id"
-          :props="{ label: 'departmentName', children: 'children' }"
-          clearable
-          check-strictly
-          filterable
+          :field-names="{ key: 'id', title: 'departmentName', children: 'children' }"
+          allow-clear
+          tree-check-strictly
+          allow-search
           placeholder="请选择部门"
         />
       </a-form-item>
-      <a-form-item label="邮箱" prop="email">
-        <a-input v-model="formData.email" :maxlength="100" />
+      <a-form-item label="邮箱" field="email">
+        <a-input v-model="formData.email" :max-length="100" />
       </a-form-item>
-      <a-form-item label="手机号" prop="phone">
-        <a-input v-model="formData.phone" :maxlength="30" />
+      <a-form-item label="手机号" field="phone">
+        <a-input v-model="formData.phone" :max-length="30" />
       </a-form-item>
     </a-form>
     <template #footer>
@@ -76,7 +71,7 @@ async function handleSubmit(): Promise<void> {
         保存
       </a-button>
     </template>
-  </a-dialog>
+  </BusinessDrawer>
 </template>
 
 <style scoped>

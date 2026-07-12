@@ -6,13 +6,10 @@ export interface ApiResponse<T = unknown> {
 }
 
 export interface PaginatedData<T> {
-  list: T[]
-  pagination: {
-    page: number
-    pageSize: number
-    total: number
-    totalPages: number
-  }
+  items: T[]
+  page: number
+  pageSize: number
+  total: number
 }
 
 export interface PaginationParams {

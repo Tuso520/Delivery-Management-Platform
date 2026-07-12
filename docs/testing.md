@@ -1,93 +1,120 @@
 # 测试验收
 
-## 必跑检查
+## 质量门禁
 
-提交前按影响范围执行，涉及本轮登录、文件预览和部署链路时应执行完整集合：
+提交前按影响范围执行；架构、权限、文件、项目、档案、审核或部署变更必须执行完整集合：
 
 ```powershell
+pnpm --dir delivery-platform-web lint
 pnpm --dir delivery-platform-web type-check
 pnpm --dir delivery-platform-web test
 pnpm --dir delivery-platform-web build
+pnpm --filter ./delivery-platform-server lint
 pnpm --filter ./delivery-platform-server type-check
 pnpm --filter ./delivery-platform-server test
+pnpm --filter ./delivery-platform-server build
+pnpm --dir delivery-platform-server exec prisma validate
 docker compose --env-file .env.example -f docker-compose.yml config -q
 docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.prod.yml config -q
-```
-
-部署工作流还会校验测试 Compose 和部署脚本：
-
-```powershell
 docker compose --env-file .env.local.example -f docker-compose.test.yml config -q
-bash -n deploy-git.sh
 ```
 
-## 本地真实浏览器验证
+Lint 命令会修正可自动修复的格式；执行后必须重新检查工作区差异。生产构建允许报告分块体积警告，但不允许类型、测试、Lint 或构建错误。
 
-涉及登录、知识库、文档模板、项目台账、项目档案、文件预览或上传审批时，构建前端后启动本地模拟服务：
+## 真实 API E2E
+
+`delivery-platform-server/test/real-api.e2e-spec.ts` 只连接已经启动的真实 NestJS、MySQL、Redis 和 MinIO，不使用页面模拟服务。账号通过临时环境变量提供，不写入仓库：
 
 ```powershell
-pnpm --dir delivery-platform-web build
-node scripts/local-test-server.mjs
+$env:E2E_API_BASE_URL='http://127.0.0.1:3000/api/v1'
+$env:E2E_USERNAME='<测试账号>'
+$env:E2E_PASSWORD='<测试密码>'
+pnpm --filter ./delivery-platform-server test:e2e -- --runInBand
 ```
 
-默认地址为 `http://127.0.0.1:18080`。`admin / Admin@123` 和 `pm_wang / Pm@123456` 只属于该本地模拟服务，不是生产固定账号；错误账号或错误密码应返回统一的“用户名或密码错误”，不得用任意密码登录。
+该套件验证真实 HTTP 响应包装、登录、Refresh Cookie 轮换和项目扁平分页。`E2E_USERNAME`、`E2E_PASSWORD` 缺失时认证用例必须失败，不能以跳过伪装通过。
 
-浏览器回归至少覆盖：
-
-- 管理员和项目经理使用正确密码登录，旧密码、错误密码和未知账号登录失败；登录失败只出现一次明确提示。
-- 用户新增、编辑和重置密码表单按规则阻止空值、过短或超长密码；重置后只允许新密码登录。
-- 数据看板按角色展示欢迎语和重点信息。
-- 项目台账列表、关键词搜索和行操作。
-- 项目档案阶段页签、上传说明、文件详情、上传入口和审批入口。
-- 文件审核、知识库、文档模板、审批配置、培训资料和档案记录等文件入口都在当前页面打开统一弹窗，不新开预览页或浏览器标签。
-- 预览弹窗宽度接近视口宽度、内容区占满可用高度，紧凑模式不显示重复文件信息或多余留白。
-- PDF、图片、Markdown、文本、Word、Excel、PowerPoint 和视频预览；支持样例时再覆盖 XMind、音频和大图。
-- ONLYOFFICE 未配置或不可用时，Office 文件仍在同一弹窗内进入兼容只读预览；旧版二进制 Office 无法提取内容以及 CAD、Visio 未配置转换服务时，应显示明确的降级提示。
-- 文件预览和文件下载分别记录对应操作，预览内容读取不应误计为下载热度。
-- 文件审批通过、驳回和新旧文件差异对比链路。
-- 浏览器控制台无本次变更新增的运行时错误。
-
-浏览器截图、录屏、日志和临时测试产物不进入 Git。
-
-## 接口与自动化回归
-
-文件预览相关改动至少验证：
-
-- `GET /api/v1/files/:id/preview-session` 返回预览路由，但不返回 `storagePath`。
-- `GET /api/v1/files/:id/signed-content` 和 `signed-thumbnail` 只接受有效的短时令牌。
-- `GET /api/v1/files/:id/preview-content` 和 `GET /api/v1/attachments/:id/preview-content` 需要登录态和预览/下载权限，并记录预览审计。
-- Office 编辑模式只在后端权限允许且 ONLYOFFICE 配置完整时返回。
-- Markdown 原始 HTML 被转义，标题、目录、代码块和表格正常渲染。
-- `GET /api/v1/ready` 在 MySQL、Redis、MinIO 都可用时返回 `status: ready`，任一依赖失败时返回服务不可用。
-
-相关测试可以单独定位运行，但最终验收仍以完整前后端测试为准：
+前端另有真实依赖就绪冒烟；它是 API 冒烟，不是 UI E2E：
 
 ```powershell
-pnpm --filter ./delivery-platform-server test -- attachment-preview.util.spec.ts file-preview-content.spec.ts app.service.spec.ts
-pnpm --dir delivery-platform-web test -- useFilePreview.spec.ts
+$env:PLAYWRIGHT_API_BASE_URL='http://127.0.0.1:3000'
+pnpm --dir delivery-platform-web test:smoke:api
 ```
 
-## GitHub 自动部署验收
+该套件要求 `/api/v1/health` 和 `/api/v1/ready` 成功，并确认数据库、缓存和对象存储均为 `ok`。
 
-推送 `main` 后检查同一提交对应的 GitHub Actions：
+## 真实浏览器验收
 
-1. `quality` 和 `validate` 均成功后，`deploy` 才能开始。
-2. `deploy` 使用 Environment `test`，且 SSH host key 由 `DEPLOY_KNOWN_HOSTS` 固定校验。
-3. Actions 中显示的部署提交、测试服务器 `build-info.json.releaseId` 和目标 Git 提交一致。
-4. 测试服务器 `/api/v1/ready` 返回就绪，登录和统一预览关键路径完成浏览器冒烟验证。
-5. Actions 失败时保留失败事实并检查缺失的 Environment 配置、服务器诊断日志和回滚结果，不把“工作流已配置”写成“自动部署已成功”。
+涉及登录、项目、档案、审核、标准、知识、文件预览或设置时，必须把前端连接到真实 NestJS API 后使用浏览器验证。`scripts/local-test-server.mjs` 只用于页面演示和前端局部开发，不能替代权限、数据范围、事务、MinIO 和审核并发验证。
 
-## 当前自动部署验证
+至少覆盖：
 
-2026-07-10，提交 `6ee245676e5e02f98504b044fab8b1ea763fb47e` 推送到 `main` 后自动完成测试环境发布：
+- 管理员和一个受限业务角色使用真实登录、退出和重新登录流程。
+- 主导航、设置齿轮、隐藏详情深链以及无权限路由落点。
+- 项目列表实际行、筛选、分页、查看/编辑/归档；物理删除只对超级管理员显示，并有项目编码二次核验。
+- 受限角色只看到数据范围内项目，合同/折算金额等敏感字段为空，且看不到物理删除操作。
+- 项目档案两级目录、所有文件项列、上传和归档动作；模板差异同步仅新增。
+- 文件首传、同键重试、版本晋升、审核通过/驳回、审核历史和深链抽屉。
+- PDF 至少实际渲染一页；Office、图片、Markdown、XMind、音视频按环境能力验证只读路由和明确降级。
+- 标准、知识、档案模板、审核、操作日志、审批配置、通知、集成和角色权限矩阵表格有真实表头与数据行。
+- 页面没有本次变更新增的控制台错误；截图、录屏和临时日志不进入 Git。
 
-- GitHub Actions [质量检查](https://github.com/Tuso520/Delivery-Management-Platform/actions/runs/29065028580) 与 [部署](https://github.com/Tuso520/Delivery-Management-Platform/actions/runs/29065028601) 均由 `push` 事件触发，并在第一次运行成功。
-- 测试服务器 `http://1.117.73.165:18080` 的 `build-info.json.releaseId` 为 `6ee245676e5e`，服务器 Git HEAD 与目标提交完全一致。
-- `/api/v1/ready` 返回 `status: ready`，MySQL、Redis、MinIO 均为 `ok`，前后端及依赖容器均为 healthy。
-- `admin / Admin@123` 与 `pm_wang / Pm@123456` 登录成功，旧管理员密码返回 401。
-- 项目档案、文件审核、知识库和文档模板的 PDF、Word、Excel、PowerPoint、PNG 均使用站内统一弹窗；1280×720 和 1920×1080 下弹窗距视口 12px、内容区无 padding，预览不新增浏览器标签。
-- 培训及技能字典接口返回完整条目，培训记录页加载无控制台错误。
+## 数据与迁移验收
 
-## 历史验证基线
+空库和既有库都要验证：
 
-2026-07-08，版本 `1df2a618471e` 曾在 `http://42.193.176.248:8080` 完成管理员/项目经理登录、项目台账、项目档案及知识库 PDF、Word、Excel、PPT 预览验证。该历史结果不覆盖当前提交，也不能作为本轮 GitHub 自动部署成功的证据。
+1. 空库顺序应用全部 migration，执行 seed 两次，业务表计数和唯一键保持稳定。
+2. 既有库先备份 MySQL 与 MinIO，执行数据脚本 dry-run，保存报告后再 apply。
+3. 迁移 094 前后比较项目数、成员数、档案模板数、外键和无效状态计数；旧项目状态必须进入 `project_legacy_state_archive`。
+   无法识别的历史状态或阶段必须进入 `migration_exceptions` 并阻断删列，不能回填默认值伪装成功。
+4. `ProjectMember.deleted_at` 不得产生重复有效成员；软删除成员不进入数据范围。
+5. 项目最终状态只能是 `DRAFT / ACTIVE / PAUSED / COMPLETED / CANCELLED`；待审和归档分别由 ReviewTask 与 `archivedAt` 表达，阶段只能使用九个目标阶段。
+6. 档案模板聚合状态只能是 `DRAFT / IN_REVIEW / PUBLISHED / REJECTED / DISABLED`。
+7. 集成 Secret 迁移后，公开配置中不得残留明文 Secret；密钥、API 和 Outbox Worker 使用同一个加密密钥。
+8. 迁移失败不得继续启动 API 或 Worker；回滚必须成对恢复数据库和 MinIO。
+
+## 权限与数据范围矩阵
+
+权限种子覆盖 `SUPER_ADMIN`、`SYSTEM_ADMIN`、`DELIVERY_MANAGER`、`COUNTRY_MANAGER`、`PROJECT_MANAGER`、专业负责人/工程师、`PURCHASE`、`FINANCE`、`HSE`、`STANDARD_ADMIN`、`PARTNER`、`VIEWER` 和 `AUDITOR`。
+
+自动化与人工验收共同确认：
+
+- Controller 使用权限码，`SUPER_ADMIN` 只绕过权限集合，不绕过业务状态、指派、数据完整性和审计规则。
+- 项目 `ALL / DEPARTMENT / COUNTRY / OWNED / PARTICIPATED / CUSTOM` 数据范围由后端查询条件执行。
+- 财务、合同、验收和下载字段按独立权限裁剪；前端隐藏按钮不是授权依据。
+- 文件审核动作只允许当前步骤指派人执行，多人会签并发只能产生一个终态。
+- 设置只读账号落到第一个可访问设置页；无任何可访问页时进入 `/forbidden`，不清除有效会话。
+
+## 2026-07-13 本轮真实验收记录
+
+本轮在隔离临时 MySQL、Redis、MinIO 和真实 NestJS API 上完成：
+
+- 前端 lint、TypeScript 检查和生产构建通过；Vitest 40 个测试文件、173 个用例全部通过。
+- 后端 lint、TypeScript 检查和生产构建通过；Jest 63 个测试套件、369 个用例全部通过，Prisma schema 校验通过。
+- NestJS 真实 API E2E 2 个用例、Playwright 真实依赖就绪冒烟 2 个用例、Chrome 管理员/项目经理关键流程 2 个用例全部通过；三套 Docker Compose 配置解析通过。
+- 26 个 migration 顺序成功且无未完成或回滚记录；seed 连续两次成功，目标权限、项目成员、档案模板和项目计数稳定。
+- 当前隔离库包含 10 个有效项目、450 个档案文件夹、690 个基线档案项和 1 个多人会签验收临时档案项；档案项、档案文件、文件版本、审核步骤和审核指派的孤儿关联均为 0，开放迁移异常为 0。
+- 代表性旧项目升级后原状态归档、目标状态/阶段正确，旧运行时列已退出；无效目标状态和重复有效成员均为 0。
+- 项目创建幂等、revision 冲突、阶段修改、暂停、档案快照、受限角色分页和敏感字段裁剪通过。
+- 系统分页、上传扩展名/大小和登录失败次数配置在运行时生效。
+- PDF 实际写入 MinIO；`{version}` 命名规则、首个独立文件、幂等重试、预览、下载和审计通过。
+- 需审核档案文件由实际指派人通过后，ReviewTask、FileVersion、LogicalFile 和当前版本指针同时进入终态。
+- `ANY_N` 真实多人会签使用 2 名直接指派人和阈值 2 完成并发审批；两名指派人各保留一条动作，任务只生成一条去重的 `ReviewTaskApproved` 终态 Outbox 事件，文件当前版本只晋级一次。
+- File Worker 与 Outbox Worker 均连续运行且重启次数为 0；终态通知已处理，无投递目标的创建通知按契约标记 `SKIPPED`。未配置可选文件转换器时，转换任务以 `FILE_CONVERTER_NOT_CONFIGURED` 进入受控失败，不伪造预览产物。
+- QEMU 压力验收复现 Prisma `P1017` 关闭连接；认证资料和 JWT 权限重载现仅对该瞬时错误执行一次幂等读取重试，写入与事务不自动重试。修复后真实登录、Refresh 轮换和两角色 Chrome 流程复验通过。
+- 项目物理删除对有关联项目返回包含阻断计数的 409 并记录失败审计；无关联测试项目删除成功并保留成功审计。
+- 浏览器验证管理员和项目经理登录、项目、档案、审核深链、PDF Canvas、模板、日志、角色权限矩阵、标准和知识页面；项目经理只看到 7 个范围内项目，金额为空且无物理删除按钮，最终项目页控制台无警告或错误。
+
+该记录只证明本地隔离环境中的当前工作区；没有推送或共享环境部署成功记录时，不得把它表述为生产或测试服务器已发布。
+
+## GitHub 部署验收
+
+推送后以同一提交的实际结果为准：
+
+1. `quality`、`validate` 成功后才能进入 `deploy`。
+2. Environment 使用固定核验的 SSH host key，目标提交与发布包一致。
+3. 服务器 Git HEAD、`build-info.json.releaseId` 和工作流目标提交一致。
+4. `/api/v1/ready`、API E2E、浏览器关键路径和两个 Worker 状态通过。
+5. 失败时保存诊断与回滚事实；“工作流已配置”不等于“当前版本部署成功”。
+
+2026-07-10 的历史测试环境发布记录只用于追溯旧基线，不覆盖本轮整体重构。

@@ -24,9 +24,7 @@ export const userFormRules: FormRules = {
     { required: true, message: '请输入真实姓名', trigger: 'blur' },
     { maxLength: 50, message: '真实姓名最多 50 个字符', trigger: 'blur' },
   ],
-  email: [
-    { type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' },
-  ],
+  email: [{ type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' }],
 }
 
 export const passwordFormRules: FormRules = {
@@ -50,11 +48,11 @@ export async function validateArcoForm(
 
 export function getUserStatusTagType(status: string): TagType {
   const statusTypes: Record<string, TagType> = {
-    Active: 'success',
-    Inactive: 'info',
-    Locked: 'danger',
+    Active: 'green',
+    Inactive: 'gray',
+    Locked: 'red',
   }
-  return statusTypes[status] ?? 'info'
+  return statusTypes[status] ?? 'gray'
 }
 
 export function getUserStatusLabel(status: string): string {

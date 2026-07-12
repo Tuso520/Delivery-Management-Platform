@@ -7,6 +7,7 @@ import {
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
+import { ReviewerEligibilityService } from '../review/reviewer-eligibility.service';
 
 import {
   CreateDepartmentDto,
@@ -14,6 +15,23 @@ import {
   UpdateDepartmentDto,
   UpsertDictionaryItemDto,
 } from './dto/platform.dto';
+import type {
+  RoleReferencePurpose,
+  UserReferencePurpose,
+} from './dto/reference.dto';
+
+export interface UserReferenceOption {
+  id: string;
+  name: string;
+  displayName: string;
+  departmentName: string | null;
+  active: boolean;
+}
+
+const PURPOSE_ROLE_CODES: Partial<Record<UserReferencePurpose, string[]>> = {
+  'project-manager': ['PROJECT_MANAGER'],
+  'sales-owner': ['DELIVERY_MANAGER', 'COUNTRY_MANAGER'],
+};
 
 interface DepartmentTreeNode {
   id: string;
@@ -30,7 +48,10 @@ interface DepartmentTreeNode {
 
 @Injectable()
 export class ReferenceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly reviewerEligibility: ReviewerEligibilityService,
+  ) {}
 
   async findDictionaries() {
     return this.prisma.dictionaryCategory.findMany({
@@ -60,12 +81,61 @@ export class ReferenceService {
     return category;
   }
 
-  async findRoleOptions() {
+  async findRoleOptions(_purpose: RoleReferencePurpose) {
     return this.prisma.role.findMany({
       where: { status: 'Active' },
       select: { id: true, roleCode: true, roleName: true },
       orderBy: { roleName: 'asc' },
     });
+  }
+
+  async findUserOptions(
+    purpose: UserReferencePurpose,
+    projectId?: string,
+  ): Promise<UserReferenceOption[]> {
+    if (purpose === 'file-reviewer') {
+      const reviewers = await this.reviewerEligibility.findEligibleReviewers(projectId);
+      return reviewers.map((user) => ({
+        id: user.id,
+        name: user.username,
+        displayName: user.realName,
+        departmentName: user.departmentName,
+        active: true,
+      }));
+    }
+
+    const roleCodes = PURPOSE_ROLE_CODES[purpose];
+    const users = await this.prisma.user.findMany({
+      where: {
+        deletedAt: null,
+        status: 'Active',
+        ...(roleCodes && {
+          userRoles: {
+            some: {
+              role: {
+                status: 'Active',
+                roleCode: { in: roleCodes },
+              },
+            },
+          },
+        }),
+      },
+      select: {
+        id: true,
+        username: true,
+        realName: true,
+        department: { select: { departmentName: true } },
+      },
+      orderBy: [{ realName: 'asc' }, { username: 'asc' }],
+    });
+
+    return users.map((user) => ({
+      id: user.id,
+      name: user.username,
+      displayName: user.realName,
+      departmentName: user.department?.departmentName ?? null,
+      active: true,
+    }));
   }
 
   async createDictionaryCategory(dto: CreateDictionaryCategoryDto) {

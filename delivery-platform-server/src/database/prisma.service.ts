@@ -1,11 +1,24 @@
 import { Injectable, OnModuleInit, OnModuleDestroy, Global, Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaClient } from '@prisma/client';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
-  constructor() {
+  constructor(configService: ConfigService) {
     super({
-      log: process.env.NODE_ENV === 'development' ? ['query', 'info', 'warn', 'error'] : ['error'],
+      log:
+        configService.get<string>('app.nodeEnv') === 'development'
+          ? ['query', 'info', 'warn', 'error']
+          : ['error'],
+      // Prisma's 5s interactive-transaction default is too short for the
+      // atomic write paths that also create review, audit and outbox rows.
+      // Keep the transaction bounded, while allowing normal database load or
+      // cross-region latency to complete without turning a safe upload into a
+      // spurious rollback.
+      transactionOptions: {
+        maxWait: 10_000,
+        timeout: 30_000,
+      },
     });
   }
 

@@ -1,17 +1,13 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsEnum } from 'class-validator';
+import { IsIn, IsOptional, IsString } from 'class-validator';
 
 import { PaginationDto } from '../../../common/dto/pagination.dto';
-
-export enum ProjectStatusQuery {
-  Draft = 'Draft',
-  Active = 'Active',
-  Suspended = 'Suspended',
-  Delayed = 'Delayed',
-  Accepted = 'Accepted',
-  Archived = 'Archived',
-  Closed = 'Closed',
-}
+import {
+  PROJECT_LIFECYCLE_STATUSES,
+  PROJECT_SUMMARY_FILTERS,
+  type ProjectLifecycleStatus,
+  type ProjectSummaryFilter,
+} from '../project.constants';
 
 export class QueryProjectDto extends PaginationDto {
   @ApiPropertyOptional({ description: '关键词搜索(项目名称/编号)' })
@@ -19,10 +15,10 @@ export class QueryProjectDto extends PaginationDto {
   @IsString()
   keyword?: string;
 
-  @ApiPropertyOptional({ description: '项目状态', enum: ProjectStatusQuery })
+  @ApiPropertyOptional({ description: '项目生命周期状态', enum: PROJECT_LIFECYCLE_STATUSES })
   @IsOptional()
-  @IsEnum(ProjectStatusQuery)
-  projectStatus?: ProjectStatusQuery;
+  @IsIn(PROJECT_LIFECYCLE_STATUSES)
+  lifecycleStatus?: ProjectLifecycleStatus;
 
   @ApiPropertyOptional({ description: '国家代码' })
   @IsOptional()
@@ -33,4 +29,17 @@ export class QueryProjectDto extends PaginationDto {
   @IsOptional()
   @IsString()
   projectType?: string;
+
+  @ApiPropertyOptional({ enum: PROJECT_SUMMARY_FILTERS })
+  @IsOptional()
+  @IsIn(PROJECT_SUMMARY_FILTERS)
+  summaryFilter?: ProjectSummaryFilter;
+
+  @ApiPropertyOptional({
+    description: '排序规则',
+    enum: ['updatedAt:desc', 'updatedAt:asc', 'projectName:asc', 'projectName:desc'],
+  })
+  @IsOptional()
+  @IsIn(['updatedAt:desc', 'updatedAt:asc', 'projectName:asc', 'projectName:desc'])
+  sort?: string;
 }

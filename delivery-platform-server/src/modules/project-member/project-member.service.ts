@@ -22,7 +22,7 @@ export class ProjectMemberService {
     await this.projectAccess.assertProjectAccess(projectId, userId);
 
     return this.prisma.projectMember.findMany({
-      where: { projectId },
+      where: { projectId, deletedAt: null },
       select: {
         id: true,
         projectId: true,
@@ -52,31 +52,22 @@ export class ProjectMemberService {
   ) {
     await this.projectAccess.assertProjectAccess(projectId, operatorId);
 
-    const user = await this.prisma.user.findFirst({
-      where: { id: dto.userId, deletedAt: null },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.findFirst({
+        where: { id: dto.userId, deletedAt: null, status: 'Active' },
+        select: { id: true },
+      });
+      if (!user) throw new NotFoundException('用户不存在或已停用');
 
-    if (!user) {
-      throw new NotFoundException('用户不存在');
-    }
+      const existing = await tx.projectMember.findUnique({
+        where: { projectId_userId: { projectId, userId: dto.userId } },
+        select: { id: true, deletedAt: true },
+      });
+      if (existing && !existing.deletedAt) {
+        throw new ConflictException('该用户已是项目成员');
+      }
 
-    const existing = await this.prisma.projectMember.findUnique({
-      where: { projectId_userId: { projectId, userId: dto.userId } },
-    });
-
-    if (existing) {
-      throw new ConflictException('该用户已是项目成员');
-    }
-
-    const member = await this.prisma.projectMember.create({
-      data: {
-        projectId,
-        userId: dto.userId,
-        projectRole: dto.projectRole,
-        permissionLevel: dto.permissionLevel || 'Member',
-        dataScope: dto.dataScope || 'PROJECT',
-      },
-      select: {
+      const memberSelect = {
         id: true,
         projectId: true,
         userId: true,
@@ -84,22 +75,46 @@ export class ProjectMemberService {
         permissionLevel: true,
         dataScope: true,
         createdAt: true,
-      },
+      } as const;
+      const member = existing
+        ? await tx.projectMember.update({
+            where: { id: existing.id },
+            data: {
+              projectRole: dto.projectRole,
+              permissionLevel: dto.permissionLevel || 'Member',
+              dataScope: dto.dataScope || 'PROJECT',
+              deletedAt: null,
+            },
+            select: memberSelect,
+          })
+        : await tx.projectMember.create({
+            data: {
+              projectId,
+              userId: dto.userId,
+              projectRole: dto.projectRole,
+              permissionLevel: dto.permissionLevel || 'Member',
+              dataScope: dto.dataScope || 'PROJECT',
+            },
+            select: memberSelect,
+          });
+      await this.operationLog.log(
+        {
+          userId: operatorId,
+          module: 'project_member',
+          action: existing ? 'restore' : 'add',
+          targetType: 'project_member',
+          targetId: member.id,
+          afterData: {
+            projectId,
+            userId: dto.userId,
+            projectRole: member.projectRole,
+            dataScope: member.dataScope,
+          },
+        },
+        tx,
+      );
+      return member;
     });
-    await this.operationLog.log({
-      userId: operatorId,
-      module: 'project_member',
-      action: 'add',
-      targetType: 'project_member',
-      targetId: member.id,
-      afterData: {
-        projectId,
-        userId: dto.userId,
-        projectRole: member.projectRole,
-        dataScope: member.dataScope,
-      },
-    });
-    return member;
   }
 
   async removeMember(
@@ -108,29 +123,32 @@ export class ProjectMemberService {
     operatorId: string,
   ): Promise<void> {
     await this.projectAccess.assertProjectAccess(projectId, operatorId);
-    const member = await this.prisma.projectMember.findFirst({
-      where: { id: memberId, projectId },
-    });
+    await this.prisma.$transaction(async (tx) => {
+      const member = await tx.projectMember.findFirst({
+        where: { id: memberId, projectId, deletedAt: null },
+      });
+      if (!member) throw new NotFoundException('项目成员不存在');
 
-    if (!member) {
-      throw new NotFoundException('项目成员不存在');
-    }
-
-    await this.prisma.projectMember.delete({
-      where: { id: memberId },
-    });
-    await this.operationLog.log({
-      userId: operatorId,
-      module: 'project_member',
-      action: 'remove',
-      targetType: 'project_member',
-      targetId: memberId,
-      beforeData: {
-        projectId,
-        userId: member.userId,
-        projectRole: member.projectRole,
-        dataScope: member.dataScope,
-      },
+      await tx.projectMember.update({
+        where: { id: memberId },
+        data: { deletedAt: new Date() },
+      });
+      await this.operationLog.log(
+        {
+          userId: operatorId,
+          module: 'project_member',
+          action: 'remove',
+          targetType: 'project_member',
+          targetId: memberId,
+          beforeData: {
+            projectId,
+            userId: member.userId,
+            projectRole: member.projectRole,
+            dataScope: member.dataScope,
+          },
+        },
+        tx,
+      );
     });
   }
 
@@ -141,36 +159,38 @@ export class ProjectMemberService {
     operatorId: string,
   ) {
     await this.projectAccess.assertProjectAccess(projectId, operatorId);
-    const member = await this.prisma.projectMember.findFirst({
-      where: { id: memberId, projectId },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const member = await tx.projectMember.findFirst({
+        where: { id: memberId, projectId, deletedAt: null },
+      });
+      if (!member) throw new NotFoundException('项目成员不存在');
 
-    if (!member) {
-      throw new NotFoundException('项目成员不存在');
-    }
-
-    const updated = await this.prisma.projectMember.update({
-      where: { id: memberId },
-      data: { projectRole: dto.projectRole },
-      select: {
-        id: true,
-        projectId: true,
-        userId: true,
-        projectRole: true,
-        permissionLevel: true,
-        dataScope: true,
-        updatedAt: true,
-      },
+      const updated = await tx.projectMember.update({
+        where: { id: memberId },
+        data: { projectRole: dto.projectRole },
+        select: {
+          id: true,
+          projectId: true,
+          userId: true,
+          projectRole: true,
+          permissionLevel: true,
+          dataScope: true,
+          updatedAt: true,
+        },
+      });
+      await this.operationLog.log(
+        {
+          userId: operatorId,
+          module: 'project_member',
+          action: 'update_role',
+          targetType: 'project_member',
+          targetId: memberId,
+          beforeData: { projectRole: member.projectRole },
+          afterData: { projectRole: updated.projectRole },
+        },
+        tx,
+      );
+      return updated;
     });
-    await this.operationLog.log({
-      userId: operatorId,
-      module: 'project_member',
-      action: 'update_role',
-      targetType: 'project_member',
-      targetId: memberId,
-      beforeData: { projectRole: member.projectRole },
-      afterData: { projectRole: updated.projectRole },
-    });
-    return updated;
   }
 }

@@ -1,58 +1,101 @@
 import request from './request'
-import type { ArchiveTemplate, ArchiveTemplateItem } from '@/types/archive'
+import type {
+  ArchiveTemplate,
+  ArchiveTemplateVersion,
+  ArchiveTemplateVersionFolder,
+} from '@/types/archive'
 
-export interface ArchiveTemplateItemPayload {
-  parentId?: string
-  stageCode: string
-  name: string
-  secondName?: string
-  usageDescription?: string
-  isRequired?: boolean
-  isStar?: boolean
-  isSensitive?: boolean
-  needReview?: boolean
-  responsibleRole?: string
-  reviewRole?: string
-  evidenceFileTypes?: string[]
-  sortOrder?: number
+export interface CreateArchiveTemplatePayload {
+  templateCode: string
+  templateName: string
+  projectType?: string
+  countryCode?: string
+  languageCode?: string
+  version?: string
+  description?: string
+}
+
+export interface ArchiveTemplateDraftStructurePayload {
+  revision: number
+  folders: Array<{
+    stableKey: string
+    name: string
+    description?: string
+    sortOrder?: number
+    items: Array<{
+      stableKey: string
+      name: string
+      description?: string
+      required?: boolean
+      reviewRequired?: boolean
+      approvalTemplateId?: string
+      ownerRoleId?: string
+      allowMultipleFiles?: boolean
+      allowedExtensions?: string[]
+      maxFileSize?: number
+      namingRule?: string
+      sortOrder?: number
+    }>
+  }>
 }
 
 export const archiveTemplateApi = {
-  getList(params?: { projectType?: string; countryCode?: string; languageCode?: string }) {
+  getList(params?: {
+    keyword?: string
+    projectType?: string
+    countryCode?: string
+    languageCode?: string
+  }) {
     return request.get<ArchiveTemplate[]>('/archive-templates', { params })
   },
 
   getById(id: string) {
-    return request.get<ArchiveTemplate & { items: ArchiveTemplateItem[] }>(`/archive-templates/${id}`)
+    return request.get<
+      ArchiveTemplate & {
+        currentPublishedVersion?: ArchiveTemplateVersion & {
+          folders: ArchiveTemplateVersionFolder[]
+        }
+        versions: ArchiveTemplateVersion[]
+      }
+    >(`/archive-templates/${id}`)
   },
 
-  create(data: { templateCode: string; templateName: string; projectType?: string; countryCode?: string; languageCode?: string; description?: string }) {
-    return request.post<ArchiveTemplate>('/archive-templates', data)
+  create(data: CreateArchiveTemplatePayload) {
+    return request.post<
+      ArchiveTemplate & {
+        draftVersion: Pick<ArchiveTemplateVersion, 'id' | 'versionNo' | 'status'>
+      }
+    >('/archive-templates', data)
   },
 
-  update(id: string, data: Partial<{ templateName: string; projectType: string; countryCode: string; languageCode: string; version: string; status: string; description: string }>) {
-    return request.put<ArchiveTemplate>(`/archive-templates/${id}`, data)
+  getVersions(templateId: string) {
+    return request.get<ArchiveTemplateVersion[]>(`/archive-templates/${templateId}/versions`)
   },
 
-  delete(id: string) {
-    return request.delete<void>(`/archive-templates/${id}`)
+  createVersion(templateId: string, data: { versionNo?: string; sourceVersionId?: string } = {}) {
+    return request.post<ArchiveTemplateVersion>(`/archive-templates/${templateId}/versions`, data)
   },
 
-  getItems(templateId: string, tree?: boolean) {
-    return request.get<ArchiveTemplateItem[]>(`/archive-templates/${templateId}/items`, {
-      params: tree ? { tree: 'true' } : undefined,
-    })
+  getVersion(versionId: string) {
+    return request.get<
+      ArchiveTemplateVersion & {
+        folders: ArchiveTemplateVersionFolder[]
+      }
+    >(`/archive-template-versions/${versionId}`)
   },
 
-  createItem(templateId: string, data: ArchiveTemplateItemPayload) {
-    return request.post<ArchiveTemplateItem>(`/archive-templates/${templateId}/items`, data)
+  replaceDraftStructure(versionId: string, data: ArchiveTemplateDraftStructurePayload) {
+    return request.patch<ArchiveTemplateVersion>(`/archive-template-versions/${versionId}`, data)
   },
 
-  updateItem(itemId: string, data: Partial<ArchiveTemplateItemPayload>) {
-    return request.put<ArchiveTemplateItem>(`/archive-templates/items/${itemId}`, data)
+  submitReview(versionId: string, approvalTemplateId?: string) {
+    return request.post<{ id: string; status: string }>(
+      `/archive-template-versions/${versionId}/submit-review`,
+      approvalTemplateId ? { approvalTemplateId } : {},
+    )
   },
 
-  deleteItem(itemId: string) {
-    return request.delete<void>(`/archive-templates/items/${itemId}`)
+  disable(templateId: string) {
+    return request.post<ArchiveTemplate>(`/archive-templates/${templateId}/disable`)
   },
 }

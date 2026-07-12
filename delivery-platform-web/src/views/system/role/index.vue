@@ -1,21 +1,49 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
-import { arcoConfirm, arcoPrompt } from '@/utils/arco-dialog'
+import type { FormInstance } from '@arco-design/web-vue'
+import { IconPlus } from '@arco-design/web-vue/es/icon'
+import { useMutation, useQueryClient } from '@tanstack/vue-query'
+
 import { roleApi } from '@/api/role'
-import { permissionApi } from '@/api/permission'
-import type { Role, PermissionGroup, Permission } from '@/types/role'
-import type { TagType } from '@/types/ui'
+import {
+  BusinessModal,
+  BusinessTable,
+  Can,
+  PageContainer,
+  PageToolbar,
+  StatusBadge,
+} from '@/components/business'
+import {
+  usePermissionGroupsQuery,
+  useRoleDetailQuery,
+  useRolesQuery,
+} from '@/composables/queries/useAdministrationQueries'
+import { queryKeys } from '@/query/keys'
+import type {
+  AssignPermissionsDto,
+  CreateRoleDto,
+  Permission,
+  PermissionGroup,
+  Role,
+  UpdateRoleDto,
+} from '@/types/role'
+import { arcoConfirm } from '@/utils/arco-dialog'
 
-const loading = ref(false)
-const roleList = ref<Role[]>([])
-const actionLoading = ref(false)
+type RoleMutationVariables =
+  | { kind: 'create'; data: CreateRoleDto }
+  | { kind: 'update'; id: string; data: UpdateRoleDto }
+  | { kind: 'delete'; id: string }
+  | { kind: 'assignPermissions'; id: string; data: AssignPermissionsDto }
 
-// Create/Edit dialog
+const queryClient = useQueryClient()
+const roleListQuery = useRolesQuery()
+const roleList = computed<Role[]>(() => roleListQuery.data.value ?? [])
+
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const currentId = ref('')
-const formRef = ref()
+const formRef = ref<FormInstance>()
 const formData = reactive({
   roleCode: '',
   roleName: '',
@@ -33,13 +61,19 @@ const formRules = {
   ],
 }
 
-// Assign permissions dialog
 const permDialogVisible = ref(false)
 const currentRoleForPerm = ref<Role | null>(null)
-const permissionGroups = ref<PermissionGroup[]>([])
+const currentRoleId = computed(() => currentRoleForPerm.value?.id ?? '')
 const selectedPermIds = ref<string[]>([])
-const permLoading = ref(false)
-const permTreeLoading = ref(false)
+const permissionGroupsQuery = usePermissionGroupsQuery(permDialogVisible)
+const roleDetailQuery = useRoleDetailQuery(currentRoleId, permDialogVisible)
+const permissionGroups = computed<PermissionGroup[]>(() => permissionGroupsQuery.data.value ?? [])
+const permTreeLoading = computed(
+  () => permissionGroupsQuery.isFetching.value || roleDetailQuery.isFetching.value,
+)
+const permLoadFailed = computed(
+  () => permissionGroupsQuery.isError.value || roleDetailQuery.isError.value,
+)
 const actionGroups = [
   { key: 'view', label: '查看' },
   { key: 'download', label: '下载' },
@@ -47,69 +81,87 @@ const actionGroups = [
   { key: 'operate', label: '操作' },
 ] as const
 
-const fetchList = async () => {
-  loading.value = true
-  try {
-    const res = await roleApi.getList()
-    roleList.value = res
-  } catch {
-    roleList.value = []
-  } finally {
-    loading.value = false
-  }
-}
+const roleMutation = useMutation({
+  mutationFn: async (variables: RoleMutationVariables): Promise<void> => {
+    switch (variables.kind) {
+      case 'create':
+        await roleApi.create(variables.data)
+        return
+      case 'update':
+        await roleApi.update(variables.id, variables.data)
+        return
+      case 'delete':
+        await roleApi.delete(variables.id)
+        return
+      case 'assignPermissions':
+        await roleApi.assignPermissions(variables.id, variables.data)
+        return
+    }
+  },
+  retry: false,
+  onSuccess: async () => {
+    await queryClient.invalidateQueries({ queryKey: queryKeys.roles.all })
+  },
+})
 
-const openCreate = () => {
+function openCreate(): void {
   isEdit.value = false
   currentId.value = ''
-  formData.roleCode = ''
-  formData.roleName = ''
-  formData.description = ''
-  formData.status = 'Active'
+  Object.assign(formData, {
+    roleCode: '',
+    roleName: '',
+    description: '',
+    status: 'Active',
+  })
   dialogVisible.value = true
 }
 
-const openEdit = (row: Role) => {
+function openEdit(row: Role): void {
   isEdit.value = true
   currentId.value = row.id
-  formData.roleCode = row.roleCode
-  formData.roleName = row.roleName
-  formData.description = row.description ?? ''
-  formData.status = row.status
+  Object.assign(formData, {
+    roleCode: row.roleCode,
+    roleName: row.roleName,
+    description: row.description ?? '',
+    status: row.status,
+  })
   dialogVisible.value = true
 }
 
-const handleSubmit = async () => {
-  const valid = await formRef.value.validate().catch(() => false)
-  if (!valid) return
+async function handleSubmit(): Promise<void> {
+  const errors = await formRef.value?.validate()
+  if (errors) return
 
-  actionLoading.value = true
   try {
     if (isEdit.value) {
-      await roleApi.update(currentId.value, {
-        roleName: formData.roleName,
-        description: formData.description || undefined,
-        status: formData.status,
+      await roleMutation.mutateAsync({
+        kind: 'update',
+        id: currentId.value,
+        data: {
+          roleName: formData.roleName,
+          description: formData.description || undefined,
+          status: formData.status,
+        },
       })
       Message.success('更新成功')
     } else {
-      await roleApi.create({
-        roleCode: formData.roleCode,
-        roleName: formData.roleName,
-        description: formData.description || undefined,
+      await roleMutation.mutateAsync({
+        kind: 'create',
+        data: {
+          roleCode: formData.roleCode,
+          roleName: formData.roleName,
+          description: formData.description || undefined,
+        },
       })
       Message.success('创建成功')
     }
     dialogVisible.value = false
-    fetchList()
   } catch {
-    // Error handled by interceptor
-  } finally {
-    actionLoading.value = false
+    // The shared request layer has already surfaced the failure.
   }
 }
 
-const handleDelete = (row: Role) => {
+function handleDelete(row: Role): void {
   arcoConfirm(
     `确定删除角色“${row.roleName}(${row.roleCode})”吗？\n该角色下还有 ${row.userCount} 个用户关联时无法删除。`,
     '确认删除',
@@ -121,86 +173,73 @@ const handleDelete = (row: Role) => {
   )
     .then(async () => {
       try {
-        await roleApi.delete(row.id)
+        await roleMutation.mutateAsync({ kind: 'delete', id: row.id })
         Message.success('删除成功')
-        fetchList()
       } catch {
-        // Error handled by interceptor
+        // The shared request layer has already surfaced the failure.
       }
     })
-    .catch(() => {
-      // cancelled
-    })
+    .catch(() => undefined)
 }
 
-const openAssignPermissions = async (row: Role) => {
+function openAssignPermissions(row: Role): void {
   currentRoleForPerm.value = row
   selectedPermIds.value = []
   permDialogVisible.value = true
-  permLoading.value = true
-  permTreeLoading.value = true
-
-  try {
-    // Fetch permissions tree
-    const groups = await permissionApi.getAll()
-    permissionGroups.value = groups
-
-    // Fetch role detail with current permissions
-    const detail = await roleApi.getById(row.id)
-    selectedPermIds.value = detail.permissions.map((p: Permission) => p.id)
-  } catch {
-    permissionGroups.value = []
-    selectedPermIds.value = []
-  } finally {
-    permLoading.value = false
-    permTreeLoading.value = false
-  }
 }
 
-const handleAssignPermissions = async () => {
+async function handleAssignPermissions(): Promise<void> {
   if (!currentRoleForPerm.value) return
-  actionLoading.value = true
   try {
-    await roleApi.assignPermissions(currentRoleForPerm.value.id, { permissionIds: selectedPermIds.value })
+    await roleMutation.mutateAsync({
+      kind: 'assignPermissions',
+      id: currentRoleForPerm.value.id,
+      data: { permissionIds: selectedPermIds.value },
+    })
     Message.success('权限分配成功')
     permDialogVisible.value = false
-    fetchList()
   } catch {
-    // Error handled by interceptor
-  } finally {
-    actionLoading.value = false
+    // The shared request layer has already surfaced the failure.
   }
 }
 
-const handleGroupCheckAll = (group: PermissionGroup, checked: boolean) => {
+function retryPermissionData(): void {
+  void Promise.all([permissionGroupsQuery.refetch(), roleDetailQuery.refetch()])
+}
+
+function handleGroupCheckAll(group: PermissionGroup, checked: boolean): void {
   if (checked) {
     const newIds = group.permissions
-      .filter((p: Permission) => !selectedPermIds.value.includes(p.id))
-      .map((p: Permission) => p.id)
+      .filter((permission: Permission) => !selectedPermIds.value.includes(permission.id))
+      .map((permission: Permission) => permission.id)
     selectedPermIds.value.push(...newIds)
-  } else {
-    const groupIds = new Set(group.permissions.map((p: Permission) => p.id))
-    selectedPermIds.value = selectedPermIds.value.filter((id: string) => !groupIds.has(id))
+    return
   }
+  const groupIds = new Set(group.permissions.map((permission: Permission) => permission.id))
+  selectedPermIds.value = selectedPermIds.value.filter((id: string) => !groupIds.has(id))
 }
 
-const isGroupAllChecked = (group: PermissionGroup): boolean => {
-  return group.permissions.every((p: Permission) => selectedPermIds.value.includes(p.id))
+function isGroupAllChecked(group: PermissionGroup): boolean {
+  return group.permissions.every((permission: Permission) =>
+    selectedPermIds.value.includes(permission.id),
+  )
 }
 
-const isGroupIndeterminate = (group: PermissionGroup): boolean => {
-  const groupCheckedCount = group.permissions.filter((p: Permission) =>
-    selectedPermIds.value.includes(p.id),
+function isGroupIndeterminate(group: PermissionGroup): boolean {
+  const groupCheckedCount = group.permissions.filter((permission: Permission) =>
+    selectedPermIds.value.includes(permission.id),
   ).length
   return groupCheckedCount > 0 && groupCheckedCount < group.permissions.length
 }
 
-const permissionsByAction = (
+function permissionsByAction(
   group: PermissionGroup,
   actionGroup: 'view' | 'download' | 'upload' | 'operate',
-) => group.permissions.filter((permission) => permission.actionGroup === actionGroup)
+): Permission[] {
+  return group.permissions.filter((permission) => permission.actionGroup === actionGroup)
+}
 
-const resourceLabel = (resource: string): string => {
+function resourceLabel(resource: string): string {
   const map: Record<string, string> = {
     user: '用户管理',
     role: '角色管理',
@@ -208,154 +247,154 @@ const resourceLabel = (resource: string): string => {
     project: '项目管理',
     archive: '档案管理',
     file: '文件管理',
-    review: '审核管理',
-    checklist: '检查模板',
-    workflow: '工作流',
-    template: '模板管理',
+    file_review: '文件审核',
+    archive_template: '档案模版',
+    standard: '标准库',
     knowledge: '知识库',
     tools: '工具管理',
-    country: '国家配置',
     currency: '币种配置',
-    language: '语言配置',
-    notification: '通知管理',
+    settings: '设置入口',
+    notification_rule: '通知规则',
+    approval_config: '审批配置',
+    audit_log: '操作日志',
+    system_setting: '系统配置',
     dashboard: '数据看板',
-    system: '系统设置',
-    operation_log: '操作日志',
-    system_config: '系统配置',
-    process_record: '项目过程记录',
     payment: '项目回款',
-    attachment: '通用附件',
-    report: '工时与周报',
-    okr: '目标与绩效',
-    skill: '技能评估',
-    training: '培训记录',
     department: '组织架构',
-    approval: '审批配置',
     dictionary: '数据字典',
-    integration: '鎺ュ彛闆嗘垚',
+    integration: '接口集成',
   }
   return map[resource] || resource
 }
 
-const statusTagType = (status: string): TagType => {
-  return status === 'Active' ? 'success' : 'info'
-}
-
-onMounted(() => {
-  fetchList()
-})
+watch(
+  [() => permDialogVisible.value, () => roleDetailQuery.data.value],
+  ([visible, detail]) => {
+    if (visible && detail?.id === currentRoleId.value) {
+      selectedPermIds.value = detail.permissions.map((permission: Permission) => permission.id)
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
-  <div class="role-page">
-    <!-- Table -->
-    <a-card class="table-card">
-      <div class="table-header">
-        <span class="table-title">角色列表</span>
-        <a-button type="primary" @click="openCreate">
-          <a-icon><Plus /></a-icon> 创建角色
-        </a-button>
-      </div>
+  <PageContainer class="role-page">
+    <PageToolbar title="角色管理" description="维护角色定义及权限矩阵">
+      <template #actions>
+        <Can permission="role:create">
+          <a-button type="primary" @click="openCreate">
+            <template #icon>
+              <IconPlus />
+            </template>
+            创建角色
+          </a-button>
+        </Can>
+      </template>
+    </PageToolbar>
 
-      <a-table
-        v-loading="loading"
+    <a-card class="table-card">
+      <BusinessTable
         :data="roleList"
-        border
+        :loading="roleListQuery.isFetching.value"
+        :error="roleListQuery.isError.value ? '角色列表加载失败' : null"
+        empty-title="暂无角色"
+        empty-description="可通过右上角创建角色"
+        retry-label="重试"
+        bordered
         stripe
-        style="width: 100%"
+        @retry="roleListQuery.refetch()"
       >
-        <a-table-column prop="roleCode" label="角色编码" :width="160" />
-        <a-table-column prop="roleName" label="角色名称" :min-width="160" />
+        <a-table-column data-index="roleCode" title="角色编码" :width="160" />
+        <a-table-column data-index="roleName" title="角色名称" :min-width="160" />
         <a-table-column
-          prop="description"
-          label="描述"
+          data-index="description"
+          title="描述"
           :min-width="240"
-          show-overflow-tooltip
+          tooltip
         />
         <a-table-column
-          prop="userCount"
-          label="用户数"
+          data-index="userCount"
+          title="用户数"
           :width="80"
           align="center"
         />
         <a-table-column
-          prop="permissionCount"
-          label="权限数"
+          data-index="permissionCount"
+          title="权限数"
           :width="80"
           align="center"
         />
-        <a-table-column prop="status" label="状态" :width="90">
-          <template #default="{ row }">
-            <a-tag :type="statusTagType(row.status)" size="small">
-              {{ row.status === 'Active' ? '活跃' : '禁用' }}
-            </a-tag>
+        <a-table-column data-index="status" title="状态" :width="90">
+          <template #cell="{ record: row }">
+            <StatusBadge
+              domain="role"
+              :status="row.status"
+              :label="row.status === 'Active' ? '活跃' : '禁用'"
+            />
           </template>
         </a-table-column>
-        <a-table-column label="操作" :width="200" fixed="right">
-          <template #default="{ row }">
-            <a-button
-              type="primary"
-              text
-              size="small"
-              @click="openEdit(row)"
-            >
-              编辑
-            </a-button>
-            <a-button
-              type="primary"
-              text
-              size="small"
-              @click="openAssignPermissions(row)"
-            >
-              权限
-            </a-button>
-            <a-button
-              status="danger" type="secondary"
-              text
-              size="small"
-              @click="handleDelete(row)"
-            >
-              删除
-            </a-button>
+        <a-table-column title="操作" :width="200" fixed="right">
+          <template #cell="{ record: row }">
+            <a-space size="mini" :wrap="false">
+              <Can permission="role:update">
+                <a-button type="text" size="small" @click="openEdit(row)">
+                  编辑
+                </a-button>
+              </Can>
+              <Can permission="role:assign_permission">
+                <a-button type="text" size="small" @click="openAssignPermissions(row)">
+                  权限
+                </a-button>
+              </Can>
+              <Can permission="role:delete">
+                <a-button
+                  status="danger"
+                  type="text"
+                  size="small"
+                  @click="handleDelete(row)"
+                >
+                  删除
+                </a-button>
+              </Can>
+            </a-space>
           </template>
         </a-table-column>
-      </a-table>
+      </BusinessTable>
     </a-card>
 
-    <!-- Create/Edit Dialog -->
-    <a-dialog
-      v-model="dialogVisible"
+    <BusinessModal
+      v-model:visible="dialogVisible"
       :title="isEdit ? '编辑角色' : '创建角色'"
-      width="520px"
-      :close-on-click-modal="false"
+      :width="520"
+      :mask-closable="false"
     >
       <a-form
         ref="formRef"
         :model="formData"
         :rules="formRules"
-        label-width="100px"
+        auto-label-width
       >
-        <a-form-item label="角色编码" prop="roleCode">
+        <a-form-item label="角色编码" field="roleCode">
           <a-input
             v-model="formData.roleCode"
             :disabled="isEdit"
-            :maxlength="50"
+            :max-length="50"
             placeholder="例如: PROJECT_MANAGER"
           />
         </a-form-item>
-        <a-form-item label="角色名称" prop="roleName">
-          <a-input v-model="formData.roleName" :maxlength="50" placeholder="例如: 项目经理" />
+        <a-form-item label="角色名称" field="roleName">
+          <a-input v-model="formData.roleName" :max-length="50" placeholder="例如: 项目经理" />
         </a-form-item>
-        <a-form-item label="描述" prop="description">
+        <a-form-item label="描述" field="description">
           <a-textarea
             v-model="formData.description"
-
-            :rows="3"
-            :maxlength="200"
+            :auto-size="{ minRows: 3, maxRows: 3 }"
+            :max-length="200"
             placeholder="角色描述（选填）"
           />
         </a-form-item>
-        <a-form-item v-if="isEdit" label="状态" prop="status">
+        <a-form-item v-if="isEdit" label="状态" field="status">
           <a-radio-group v-model="formData.status">
             <a-radio value="Active">
               活跃
@@ -366,41 +405,51 @@ onMounted(() => {
           </a-radio-group>
         </a-form-item>
       </a-form>
-
       <template #footer>
         <a-button @click="dialogVisible = false">
           取消
         </a-button>
-        <a-button type="primary" :loading="actionLoading" @click="handleSubmit">
+        <a-button type="primary" :loading="roleMutation.isPending.value" @click="handleSubmit">
           保存
         </a-button>
       </template>
-    </a-dialog>
+    </BusinessModal>
 
-    <!-- Assign Permissions Dialog -->
-    <a-dialog
-      v-model="permDialogVisible"
+    <BusinessModal
+      v-model:visible="permDialogVisible"
       title="分配权限"
-      width="1080px"
-      :close-on-click-modal="false"
+      :width="1080"
+      :mask-closable="false"
     >
       <div v-if="currentRoleForPerm" class="perm-dialog-info">
-        为角色<strong>{{ currentRoleForPerm.roleName }}({{ currentRoleForPerm.roleCode }})</strong> 分配权限
+        为角色<strong>{{ currentRoleForPerm.roleName }}({{ currentRoleForPerm.roleCode }})</strong>
+        分配权限
       </div>
 
-      <div v-loading="permTreeLoading" class="perm-tree-container">
-        <div v-if="permissionGroups.length === 0 && !permTreeLoading" class="perm-empty">
+      <a-spin :loading="permTreeLoading" class="perm-tree-container">
+        <a-result
+          v-if="permLoadFailed"
+          status="error"
+          title="权限数据加载失败"
+          subtitle="请重试后再保存"
+        >
+          <template #extra>
+            <a-button @click="retryPermissionData">
+              重试
+            </a-button>
+          </template>
+        </a-result>
+        <div v-else-if="permissionGroups.length === 0 && !permTreeLoading" class="perm-empty">
           暂无可用权限数据
         </div>
-
-        <a-table
-          v-if="permissionGroups.length"
+        <BusinessTable
+          v-else-if="permissionGroups.length"
           :data="permissionGroups"
-          border
+          bordered
           class="permission-matrix"
         >
-          <a-table-column label="模块" :width="160" fixed="right">
-            <template #default="{ row }">
+          <a-table-column title="模块" :width="160" fixed="left">
+            <template #cell="{ record: row }">
               <a-checkbox
                 :model-value="isGroupAllChecked(row)"
                 :indeterminate="isGroupIndeterminate(row)"
@@ -413,15 +462,15 @@ onMounted(() => {
           <a-table-column
             v-for="actionGroup in actionGroups"
             :key="actionGroup.key"
-            :label="actionGroup.label"
+            :title="actionGroup.label"
             :min-width="205"
           >
-            <template #default="{ row }">
+            <template #cell="{ record: row }">
               <a-checkbox-group v-model="selectedPermIds" class="matrix-cell">
                 <a-checkbox
                   v-for="permission in permissionsByAction(row, actionGroup.key)"
                   :key="permission.id"
-                  :label="permission.id"
+                  :value="permission.id"
                   class="matrix-permission"
                 >
                   {{ permission.permissionName }}
@@ -435,26 +484,31 @@ onMounted(() => {
               </a-checkbox-group>
             </template>
           </a-table-column>
-        </a-table>
-      </div>
+        </BusinessTable>
+      </a-spin>
 
       <template #footer>
         <a-button @click="permDialogVisible = false">
           取消
         </a-button>
-        <a-button type="primary" :loading="actionLoading" @click="handleAssignPermissions">
+        <a-button
+          type="primary"
+          :loading="roleMutation.isPending.value"
+          :disabled="permLoadFailed"
+          @click="handleAssignPermissions"
+        >
           保存
         </a-button>
       </template>
-    </a-dialog>
-  </div>
+    </BusinessModal>
+  </PageContainer>
 </template>
 
 <style scoped lang="scss">
 .perm-dialog-info {
   margin-bottom: 16px;
-  font-size: 14px;
   color: #4e5969;
+  font-size: 14px;
 }
 
 .perm-tree-container {
@@ -466,10 +520,10 @@ onMounted(() => {
 }
 
 .perm-empty {
-  text-align: center;
-  color: #86909c;
   padding: 32px 0;
+  color: #86909c;
   font-size: 14px;
+  text-align: center;
 }
 
 .matrix-cell {

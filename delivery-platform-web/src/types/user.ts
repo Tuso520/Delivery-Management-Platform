@@ -15,8 +15,8 @@ export interface LoginForm {
 
 export interface LoginResult {
   accessToken: string
-  refreshToken?: string
-  expiresIn?: number
+  user: UserProfile
+  defaultRoute: string
 }
 
 export interface UserProfile {

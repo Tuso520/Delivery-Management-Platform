@@ -1,16 +1,15 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
+import { useQuery } from '@tanstack/vue-query'
+import { useI18n } from 'vue-i18n'
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import type Viewer from 'viewerjs'
 import { fileApi } from '@/api/file'
-import type { FilePreviewMode, FilePreviewSession, XmindOutlineNode } from '@/api/file'
+import type { FilePreviewSession, XmindOutlineNode } from '@/api/file'
+import { queryKeys } from '@/query/keys'
 import { downloadBlob } from '@/utils/blob'
 import { renderSafeMarkdown } from '@/utils/markdown-preview'
-
-const AttachmentPreviewPane = defineAsyncComponent(
-  () => import('@/components/AttachmentPreviewPane/index.vue'),
-)
 
 type PdfJsModule = typeof import('pdfjs-dist/legacy/build/pdf.mjs')
 type ViewerConstructor = (typeof import('viewerjs'))['default']
@@ -35,16 +34,16 @@ declare global {
 const props = withDefaults(
   defineProps<{
     fileId?: string
-    mode?: FilePreviewMode
     height?: string
     compact?: boolean
   }>(),
   {
-    mode: 'view',
+    fileId: '',
     height: '72vh',
     compact: false,
   },
 )
+const { t } = useI18n()
 
 let pdfjsLibPromise: Promise<PdfJsModule> | null = null
 let viewerConstructorPromise: Promise<ViewerConstructor> | null = null
@@ -54,9 +53,7 @@ let onlyOfficeEditor: OnlyOfficeEditor | null = null
 let openSeadragonViewer: OpenSeadragonViewer | null = null
 let pdfRenderToken = 0
 
-const loading = ref(false)
 const downloading = ref(false)
-const session = ref<FilePreviewSession>()
 const pdfContainerRef = ref<HTMLElement>()
 const imageViewerRef = ref<HTMLElement>()
 const deepZoomRef = ref<HTMLElement>()
@@ -66,11 +63,24 @@ const markdownToc = ref<Array<{ id: string; level: number; text: string }>>([])
 const mediaError = ref('')
 const pdfPageCount = ref(0)
 const pdfError = ref('')
-const fallbackToCompatiblePreview = ref(false)
+const renderError = ref('')
+
+const previewQuery = useQuery({
+  queryKey: computed(() => queryKeys.files.previewSession(props.fileId ?? '')),
+  queryFn: () => fileApi.createPreviewSession(props.fileId ?? ''),
+  enabled: computed(() => Boolean(props.fileId)),
+  staleTime: 0,
+  gcTime: 0,
+})
+const session = computed(() => previewQuery.data.value)
+const loading = computed(() => previewQuery.isFetching.value)
+const loadError = computed(() =>
+  previewQuery.isError.value ? t('filePreview.sessionFailed') : renderError.value,
+)
 
 const paneStyle = computed(() => ({ '--file-preview-height': props.height }))
 const officeElementId = computed(() => `onlyoffice-editor-${props.fileId || 'empty'}`)
-const title = computed(() => session.value?.file.originalName || '文件预览')
+const title = computed(() => session.value?.file.originalName || t('filePreview.title'))
 const route = computed(() => session.value?.route)
 const canDownload = computed(() => Boolean(session.value?.route.supportsDownload))
 const xmindHtml = computed(() => renderXmindSheets(session.value?.xmind?.sheets ?? []))
@@ -113,24 +123,22 @@ function clearViewers(): void {
 
 async function loadPreview(): Promise<void> {
   clearViewers()
-  session.value = undefined
-  fallbackToCompatiblePreview.value = false
+  renderError.value = ''
   if (!props.fileId) return
+  await previewQuery.refetch()
+}
 
-  loading.value = true
+async function renderPreview(nextSession: FilePreviewSession): Promise<void> {
+  clearViewers()
+  renderError.value = ''
+  await nextTick()
   try {
-    const nextSession = await fileApi.createPreviewSession(props.fileId, props.mode)
-    session.value = nextSession
-    await nextTick()
     await renderActiveViewer(nextSession)
   } catch (error) {
-    console.warn('File preview session failed; using compatible preview', error)
+    console.warn('File preview renderer failed', error)
     clearViewers()
-    session.value = undefined
-    fallbackToCompatiblePreview.value = true
-    Message.warning('高级预览暂不可用，已切换兼容预览')
-  } finally {
-    loading.value = false
+    renderError.value = t('filePreview.sessionFailed')
+    Message.error(t('filePreview.loadFailed'))
   }
 }
 
@@ -196,14 +204,14 @@ async function renderPdf(url: string): Promise<void> {
     if (pdf.numPages > maxPages) {
       const notice = document.createElement('div')
       notice.className = 'pdf-page-limit'
-      notice.textContent = `已渲染前 ${maxPages} 页，完整文件请下载查看。`
+      notice.textContent = t('filePreview.pageLimit', { count: maxPages })
       container.appendChild(notice)
     }
     await loadingTask.destroy()
   } catch (error) {
     if (token === pdfRenderToken) {
       console.error('PDF render failed', error)
-      pdfError.value = 'PDF 预览渲染失败，请下载后查看。'
+      pdfError.value = t('filePreview.pdfFailed')
     }
   }
 }
@@ -294,23 +302,24 @@ function resetDeepImage(): void {
 }
 
 async function downloadOriginal(): Promise<void> {
-  if (!session.value) return
+  const identifier = session.value?.file.id || props.fileId
+  if (!identifier) return
   downloading.value = true
   try {
-    const blob = await fileApi.download(session.value.file.id)
-    downloadBlob(blob, session.value.file.originalName)
+    const blob = await fileApi.download(identifier)
+    downloadBlob(blob, session.value?.file.originalName || title.value)
   } finally {
     downloading.value = false
   }
 }
 
 function handleMediaError(): void {
-  mediaError.value = '媒体文件无法播放，请下载后查看。'
+  mediaError.value = t('filePreview.mediaFailed')
 }
 
 function renderXmindSheets(sheets: Array<{ title: string; root: XmindOutlineNode }>): string {
   if (!sheets.length) {
-    return '<div class="xmind-empty">未能读取 XMind 大纲，请下载后查看。</div>'
+    return `<div class="xmind-empty">${escapeHtml(t('filePreview.xmindFailed'))}</div>`
   }
   return sheets
     .map(
@@ -340,7 +349,28 @@ function escapeHtml(value: string): string {
     .replace(/'/gu, '&#39;')
 }
 
-watch(() => [props.fileId, props.mode], loadPreview, { immediate: true })
+watch(
+  () => props.fileId,
+  () => {
+    clearViewers()
+    renderError.value = ''
+  },
+)
+
+watch(
+  () => previewQuery.data.value,
+  (nextSession) => {
+    if (nextSession) void renderPreview(nextSession)
+  },
+  { immediate: true },
+)
+
+watch(
+  () => previewQuery.isError.value,
+  (isError) => {
+    if (isError) Message.error(t('filePreview.loadFailed'))
+  },
+)
 
 onBeforeUnmount(() => {
   clearViewers()
@@ -349,17 +379,21 @@ onBeforeUnmount(() => {
 
 <template>
   <a-spin :loading="loading" class="file-preview-router" :style="paneStyle">
-    <div v-if="session" class="preview-shell" :class="{ compact: props.compact }">
+    <div v-if="session && !loadError" class="preview-shell" :class="{ compact: props.compact }">
       <header class="preview-header">
         <div class="preview-title">
           <strong>{{ title }}</strong>
           <span>{{ session.file.fileExt.toUpperCase() }} · {{ session.file.versionNo }}</span>
         </div>
         <a-space size="mini">
-          <a-tag v-if="route?.editable" color="green">可编辑</a-tag>
-          <a-tag v-else>只读</a-tag>
-          <a-button v-if="canDownload" size="mini" :loading="downloading" @click="downloadOriginal">
-            下载
+          <a-tag>{{ t('filePreview.readonly') }}</a-tag>
+          <a-button
+            v-if="canDownload"
+            size="mini"
+            :loading="downloading"
+            @click="downloadOriginal"
+          >
+            {{ t('common.download') }}
           </a-button>
         </a-space>
       </header>
@@ -367,18 +401,19 @@ onBeforeUnmount(() => {
       <main class="preview-body">
         <section v-if="route?.viewer === 'onlyoffice'" class="office-viewer">
           <div v-if="session.onlyOffice?.available" ref="officeRef" class="office-frame" />
-          <AttachmentPreviewPane
+          <a-result
             v-else
-            :attachment-id="props.fileId"
-            source="file"
-            :height="props.height"
-            compact
+            status="warning"
+            :title="t('filePreview.officeUnavailable')"
+            :subtitle="t('filePreview.officeUnavailableHint')"
           />
         </section>
 
         <section v-else-if="route?.viewer === 'pdf'" class="pdf-viewer">
           <div class="viewer-toolbar">
-            <span>{{ pdfPageCount ? `${pdfPageCount} 页` : 'PDF' }}</span>
+            <span>{{
+              pdfPageCount ? t('filePreview.pageCount', { count: pdfPageCount }) : 'PDF'
+            }}</span>
           </div>
           <div ref="pdfContainerRef" class="pdf-pages" />
           <a-empty v-if="pdfError" :description="pdfError" />
@@ -386,8 +421,10 @@ onBeforeUnmount(() => {
 
         <section v-else-if="route?.viewer === 'image'" class="image-viewer">
           <div class="viewer-toolbar">
-            <span>图片</span>
-            <a-button size="mini" @click="openImageViewer">查看</a-button>
+            <span>{{ t('filePreview.image') }}</span>
+            <a-button size="mini" @click="openImageViewer">
+              {{ t('common.view') }}
+            </a-button>
           </div>
           <div ref="imageViewerRef" class="image-stage">
             <img :src="session.urls.content" :alt="title" />
@@ -396,11 +433,21 @@ onBeforeUnmount(() => {
 
         <section v-else-if="route?.viewer === 'deep-zoom-image'" class="deep-image-viewer">
           <div class="viewer-toolbar">
-            <span>大图</span>
+            <span>{{ t('filePreview.largeImage') }}</span>
             <a-space size="mini">
-              <a-button size="mini" @click="zoomDeepImage(1.4)">放大</a-button>
-              <a-button size="mini" @click="zoomDeepImage(0.7)">缩小</a-button>
-              <a-button size="mini" @click="resetDeepImage">复位</a-button>
+              <a-button size="mini" @click="zoomDeepImage(1.4)">
+                {{
+                  t('filePreview.zoomIn')
+                }}
+              </a-button>
+              <a-button size="mini" @click="zoomDeepImage(0.7)">
+                {{
+                  t('filePreview.zoomOut')
+                }}
+              </a-button>
+              <a-button size="mini" @click="resetDeepImage">
+                {{ t('filePreview.reset') }}
+              </a-button>
             </a-space>
           </div>
           <div ref="deepZoomRef" class="deep-image-stage" />
@@ -417,9 +464,11 @@ onBeforeUnmount(() => {
               {{ item.text }}
             </a>
           </aside>
+          <!-- eslint-disable-next-line vue/no-v-html -- renderSafeMarkdown escapes and allowlists the generated markup. -->
           <article class="markdown-body" v-html="markdownHtml" />
         </section>
 
+        <!-- eslint-disable-next-line vue/no-v-html -- XMind labels are escaped before the outline markup is generated. -->
         <section v-else-if="route?.viewer === 'xmind'" class="xmind-viewer" v-html="xmindHtml" />
 
         <section v-else-if="route?.viewer === 'video'" class="media-viewer">
@@ -446,20 +495,37 @@ onBeforeUnmount(() => {
         <section v-else class="fallback-viewer">
           <a-result
             status="warning"
-            title="暂不支持在线预览"
-            :subtitle="route?.reason || '请下载后查看该文件。'"
+            :title="t('filePreview.unsupported')"
+            :subtitle="route?.reason || t('filePreview.downloadHint')"
           />
         </section>
       </main>
     </div>
-    <AttachmentPreviewPane
-      v-else-if="fallbackToCompatiblePreview && props.fileId"
-      :attachment-id="props.fileId"
-      source="file"
-      :height="props.height"
-      compact
+    <a-result
+      v-else-if="loadError && props.fileId"
+      status="error"
+      :title="t('filePreview.loadFailed')"
+      :subtitle="loadError"
+      class="preview-error"
+    >
+      <template #extra>
+        <a-space>
+          <a-button type="primary" @click="loadPreview">
+            {{ t('filePreview.retry') }}
+          </a-button>
+          <a-button v-if="canDownload" :loading="downloading" @click="downloadOriginal">
+            {{
+              t('filePreview.downloadOriginal')
+            }}
+          </a-button>
+        </a-space>
+      </template>
+    </a-result>
+    <a-empty
+      v-else-if="!loading"
+      :description="t('filePreview.selectFile')"
+      class="preview-empty"
     />
-    <a-empty v-else-if="!loading" description="请选择需要预览的文件" class="preview-empty" />
   </a-spin>
 </template>
 

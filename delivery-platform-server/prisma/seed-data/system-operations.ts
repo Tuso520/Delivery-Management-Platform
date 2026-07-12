@@ -1,143 +1,125 @@
 import { PrismaClient } from '@prisma/client';
+import { v5 as uuidv5 } from 'uuid';
+
+const TARGET_SEED_NAMESPACE = 'a34a65f4-287f-4d0c-8bda-2960aa8e31de';
+
+const systemConfigs = [
+  ['platform.name', '交付管理平台', '平台名称', 'string'],
+  ['platform.short_name', '交付平台', '平台简称', 'string'],
+  ['platform.login_slogan', '让交付工作保持高效、清晰、有序。', '登录页主文案', 'string'],
+  ['platform.default_language', 'zh-CN', '平台默认语言', 'string'],
+  ['project.default_page_size', '20', '项目列表默认每页数量', 'number'],
+  ['project.default_risk_level', 'Low', '新项目默认风险等级', 'string'],
+  ['attachment.max_size_mb', '100', '文件最大上传大小', 'number'],
+  [
+    'file.allowed_extensions',
+    'pdf,doc,docx,xls,xlsx,ppt,pptx,jpg,jpeg,png,dwg,md,mp4',
+    '平台允许上传的文件扩展名',
+    'string',
+  ],
+  ['approval.timeout_days', '3', '审核默认超时天数', 'number'],
+  ['knowledge.default_page_size', '20', '知识库默认每页数量', 'number'],
+  ['security.session_hours', '12', '登录会话有效小时', 'number'],
+  ['security.login_max_attempts', '5', '连续登录失败上限', 'number'],
+] as const;
+
+const notificationRules = [
+  {
+    key: 'review-task-created',
+    name: '审核任务提醒',
+    eventType: 'ReviewTaskCreated',
+    recipientPolicy: { type: 'ROLE', values: ['DELIVERY_MANAGER'] },
+  },
+  {
+    key: 'review-task-approved',
+    name: '审核通过提醒',
+    eventType: 'ReviewTaskApproved',
+    recipientPolicy: { type: 'BUSINESS_OWNER', values: [] },
+  },
+  {
+    key: 'review-task-rejected',
+    name: '审核驳回提醒',
+    eventType: 'ReviewTaskRejected',
+    recipientPolicy: { type: 'BUSINESS_OWNER', values: [] },
+  },
+  {
+    key: 'project-stage-changed',
+    name: '项目阶段变更提醒',
+    eventType: 'ProjectStageChanged',
+    recipientPolicy: { type: 'PROJECT_MEMBERS', values: [] },
+  },
+] as const;
+
+const integrations = [
+  {
+    provider: 'WECOM',
+    aliases: ['WECOM', 'wecom', 'WECHAT_WORK', 'wechat_work', 'enterprise_wechat'],
+    configName: '企业微信集成',
+    configValue: {
+      corpId: '',
+      agentId: '',
+      contactDepartmentId: '1',
+      testRecipient: '',
+    },
+  },
+  {
+    provider: 'FEISHU',
+    aliases: ['FEISHU', 'feishu'],
+    configName: '飞书集成',
+    configValue: {
+      appId: '',
+      contactDepartmentId: '0',
+      testRecipient: '',
+    },
+  },
+] as const;
 
 export async function seedSystemOperations(prisma: PrismaClient): Promise<void> {
-  const configs = [
-    ['platform.name', '交付管理平台', '平台名称', 'string'],
-    ['platform.short_name', '交付平台', '平台简称', 'string'],
-    ['platform.login_slogan', '让交付工作保持高效、清晰、有序。', '登录页主文案', 'string'],
-    ['platform.default_language', 'zh-CN', '平台默认语言', 'string'],
-    ['platform.default_currency', 'CNY', '平台默认折算币种', 'string'],
-    ['platform.timezone', 'Asia/Muscat', '平台默认时区', 'string'],
-    ['project.default_page_size', '20', '项目列表默认每页数量', 'number'],
-    ['project.default_risk_level', 'Low', '新项目默认风险等级', 'string'],
-    ['project.archive_auto_generate', 'true', '项目创建后自动生成档案目录', 'boolean'],
-    ['attachment.max_size_mb', '100', '通用附件最大上传大小', 'number'],
-    [
-      'file.allowed_extensions',
-      'pdf,doc,docx,xls,xlsx,ppt,pptx,jpg,jpeg,png,md,mp4',
-      '平台允许上传的文件扩展名',
-      'string',
-    ],
-    ['report.default_type', 'daily', '工作报告默认类型', 'string'],
-    ['report.reminder_hour', '17', '日报提醒小时', 'number'],
-    ['approval.timeout_days', '3', '审批默认超时天数', 'number'],
-    ['knowledge.default_page_size', '20', '知识库默认每页数量', 'number'],
-    ['security.session_hours', '12', '登录会话有效小时', 'number'],
-    ['security.login_max_attempts', '5', '连续登录失败上限', 'number'],
-    ['notification.default_channel', 'in_app', '默认通知渠道', 'string'],
-    ['currency.sync_base', 'CNY', '在线汇率同步基准币种', 'string'],
-    ['currency.sync_enabled', 'true', '启用在线汇率同步', 'boolean'],
-    ['ui.date_format', 'YYYY-MM-DD', '平台日期显示格式', 'string'],
-    ['ui.table_density', 'default', '表格默认密度', 'string'],
-  ] as const;
-  for (const [configKey, configValue, description, configType] of configs) {
+  for (const [configKey, configValue, description, configType] of systemConfigs) {
     await prisma.systemConfig.upsert({
       where: { configKey },
       create: { configKey, configValue, description, configType },
-      update: { description, configType },
+      update: {},
     });
   }
 
-  const rules = [
-    ['审批任务提醒', 'approval_pending', 'in_app', 'DELIVERY_MANAGER'],
-    ['检查整改提醒', 'checklist_rejected', 'in_app', 'PROJECT_MANAGER'],
-  ] as const;
-  for (const [name, eventType, channel, recipientRole] of rules) {
+  for (const rule of notificationRules) {
     const existing = await prisma.notificationRule.findFirst({
-      where: { name, deletedAt: null },
+      where: { name: rule.name, deletedAt: null },
       select: { id: true },
     });
-    const data = {
-      eventType,
-      channel,
-      recipientRole,
-      template: '{{title}}：{{content}}',
-      isEnabled: true,
-    };
-    if (!existing) {
-      await prisma.notificationRule.create({ data: { name, ...data } });
-    }
+    const id = existing?.id ?? uuidv5(`notification-rule:${rule.key}`, TARGET_SEED_NAMESPACE);
+    await prisma.notificationRule.upsert({
+      where: { id },
+      create: {
+        id,
+        name: rule.name,
+        eventType: rule.eventType,
+        channels: ['IN_APP'],
+        recipientPolicy: rule.recipientPolicy,
+        isEnabled: true,
+      },
+      update: {},
+    });
   }
 
-  const integrations = [
-    ['enterprise_wechat', '企业微信通知', { corpId: '', agentId: '', secret: '' }],
-    [
-      'feishu',
-      '飞书通知与审批',
-      {
-        appId: '',
-        appSecret: '',
-        webhookUrl: '',
-        encryptKey: '',
-        verificationToken: '',
-      },
-    ],
-    [
-      'email',
-      '交付通知邮箱',
-      {
-        host: '',
-        port: 465,
-        secure: true,
-        username: '',
-        password: '',
-      },
-    ],
-    ['webhook', '项目事件 Webhook', { url: '', method: 'POST', authType: 'none', token: '' }],
-  ] as const;
-  for (const [provider, configName, configValue] of integrations) {
+  for (const integration of integrations) {
     const existing = await prisma.integrationConfig.findFirst({
-      where: { provider, configName },
+      where: { provider: { in: [...integration.aliases] } },
       select: { id: true },
     });
-    if (!existing) {
-      await prisma.integrationConfig.create({
-        data: {
-          provider,
-          configName,
-          configValue,
-          isEnabled: false,
-          description: '请填写真实连接参数后启用。',
-        },
-      });
-    }
-  }
-
-  const existingLogCount = await prisma.operationLog.count();
-  if (existingLogCount === 0) {
-    const admin = await prisma.user.findUnique({
-      where: { username: 'admin' },
-      select: { id: true },
+    const id = existing?.id ?? uuidv5(`integration:${integration.provider}`, TARGET_SEED_NAMESPACE);
+    await prisma.integrationConfig.upsert({
+      where: { id },
+      create: {
+        id,
+        provider: integration.provider,
+        configName: integration.configName,
+        configValue: integration.configValue,
+        isEnabled: false,
+        description: '请填写真实连接参数后启用。',
+      },
+      update: {},
     });
-    if (admin) {
-      await prisma.operationLog.createMany({
-        data: [
-          {
-            userId: admin.id,
-            module: 'system',
-            action: 'initialize',
-            targetType: 'platform',
-            targetId: admin.id,
-            afterData: { platformName: '交付管理平台' },
-          },
-          {
-            userId: admin.id,
-            module: 'permission',
-            action: 'seed',
-            targetType: 'role',
-            targetId: admin.id,
-            afterData: { result: '角色权限初始化完成' },
-          },
-          {
-            userId: admin.id,
-            module: 'project',
-            action: 'seed',
-            targetType: 'project',
-            targetId: admin.id,
-            afterData: { result: '示例项目与成员初始化完成' },
-          },
-        ],
-      });
-    }
   }
 }

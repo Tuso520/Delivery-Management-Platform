@@ -1,12 +1,13 @@
 import { Injectable, OnModuleInit, OnModuleDestroy, Global, Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
   private client: Redis;
 
-  constructor() {
-    const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+  constructor(configService: ConfigService) {
+    const redisUrl = configService.getOrThrow<string>('redis.url');
     this.client = new Redis(redisUrl, {
       maxRetriesPerRequest: 3,
       retryStrategy(times: number) {
@@ -48,6 +49,30 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   async ping(): Promise<string> {
     return this.client.ping();
+  }
+
+  async getSecurityCounter(key: string): Promise<number> {
+    const value = await this.client.get(`security:${key}`);
+    const parsed = Number.parseInt(value ?? '0', 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  async incrementSecurityCounter(key: string, ttlSeconds: number): Promise<number> {
+    const value = await this.client.eval(
+      [
+        "local count = redis.call('INCR', KEYS[1])",
+        "if count == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end",
+        'return count',
+      ].join('\n'),
+      1,
+      `security:${key}`,
+      String(Math.max(1, ttlSeconds)),
+    );
+    return typeof value === 'number' ? value : Number(value);
+  }
+
+  async clearSecurityCounter(key: string): Promise<void> {
+    await this.client.del(`security:${key}`);
   }
 }
 

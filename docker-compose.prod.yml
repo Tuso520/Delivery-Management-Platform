@@ -25,6 +25,14 @@ services:
     extends:
       file: docker-compose.yml
       service: backend
+  file-worker:
+    extends:
+      file: docker-compose.yml
+      service: file-worker
+  outbox-worker:
+    extends:
+      file: docker-compose.yml
+      service: outbox-worker
   frontend:
     extends:
       file: docker-compose.yml

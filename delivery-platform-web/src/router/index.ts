@@ -1,144 +1,444 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
-import type { RouteRecordRaw } from 'vue-router'
+import type { RouteLocationNormalizedLoaded, RouteRecordRaw } from 'vue-router'
+
 import BasicLayout from '@/layouts/BasicLayout.vue'
 import NotFound from '@/views/NotFound.vue'
 import type { MenuItem } from '@/store/permission'
+import i18n from '@/locales'
 
-export const menuItems: MenuItem[] = [
+type NavigationSurface = 'main' | 'settings'
+
+interface ShellRouteMeta {
+  title: string
+  icon?: string
+  permissions?: string[]
+  navigationGroup?: NavigationSurface
+  menu?: boolean
+  order?: number
+  hidden?: boolean
+}
+
+function shellMeta(route: RouteRecordRaw): ShellRouteMeta {
+  return (route.meta ?? {}) as unknown as ShellRouteMeta
+}
+
+function routePath(parentPath: string, path: string): string {
+  if (path.startsWith('/')) return path
+  const base = parentPath === '/' ? '' : parentPath.replace(/\/$/u, '')
+  return `${base}/${path}`.replace(/\/+/gu, '/') || '/'
+}
+
+function routeName(route: RouteRecordRaw): string {
+  return typeof route.name === 'string' ? route.name : route.path
+}
+
+export function buildNavigationFromRoutes(
+  records: RouteRecordRaw[],
+  surface: NavigationSurface,
+): MenuItem[] {
+  return records
+    .filter((record) => shellMeta(record).navigationGroup === surface)
+    .sort((left, right) => (shellMeta(left).order ?? 0) - (shellMeta(right).order ?? 0))
+    .map((group) => {
+      const groupMeta = shellMeta(group)
+      const groupPath = routePath('/', group.path)
+      const children = (group.children ?? [])
+        .filter((child) => shellMeta(child).menu)
+        .sort((left, right) => (shellMeta(left).order ?? 0) - (shellMeta(right).order ?? 0))
+        .map((child) => {
+          const meta = shellMeta(child)
+          return {
+            path: routePath(groupPath, child.path),
+            name: routeName(child),
+            title: meta.title,
+            icon: meta.icon,
+            permissions: meta.permissions,
+          }
+        })
+
+      return {
+        path: groupPath,
+        name: routeName(group),
+        title: groupMeta.title,
+        icon: groupMeta.icon,
+        children,
+      }
+    })
+}
+
+export function resolveRouteTitle(
+  meta: RouteLocationNormalizedLoaded['meta'],
+  locale: 'zh-CN' | 'en-US',
+): string {
+  const routeMeta = meta as unknown as ShellRouteMeta
+  const key = routeMeta.title || 'menu.workspace'
+  const segments = key.split('.')
+  let message: unknown = i18n.global.getLocaleMessage(locale)
+  for (const segment of segments) {
+    if (!message || typeof message !== 'object' || !(segment in message)) return key
+    message = (message as Record<string, unknown>)[segment]
+  }
+  return typeof message === 'string' ? message : key
+}
+
+const ProjectOverviewView = () => import('@/views/project/index.vue')
+const ReviewView = () => import('@/views/review/pending.vue')
+const ArchiveTemplateView = () => import('@/views/archive/template.vue')
+const StandardView = () => import('@/views/standard/index.vue')
+const KnowledgeView = () => import('@/views/knowledge/index.vue')
+
+export const shellRoutes: RouteRecordRaw[] = [
   {
-    path: '/workspace',
+    path: 'workspace',
     name: 'WorkspaceGroup',
-    title: '工作台',
-    icon: 'Monitor',
+    redirect: '/dashboard',
+    meta: {
+      title: 'menu.workspace',
+      icon: 'Monitor',
+      navigationGroup: 'main',
+      order: 10,
+    },
     children: [
-      { path: '/dashboard', name: 'Dashboard', title: '数据看板', icon: 'DataLine', permissions: ['dashboard:view'] },
-      { path: '/todo', name: 'Todo', title: '我的待办', icon: 'BellFilled', permissions: ['todo:view'] },
+      {
+        path: '/dashboard',
+        name: 'Dashboard',
+        component: () => import('@/views/dashboard/index.vue'),
+        meta: {
+          title: 'menu.dashboard',
+          icon: 'DataLine',
+          permissions: ['dashboard:view'],
+          menu: true,
+          order: 10,
+        },
+      },
+      {
+        path: '/review',
+        name: 'Review',
+        component: ReviewView,
+        meta: {
+          title: 'menu.review',
+          icon: 'CircleCheck',
+          menu: true,
+          order: 20,
+        },
+      },
+      {
+        path: '/review/:taskId',
+        name: 'ReviewDetail',
+        component: ReviewView,
+        meta: {
+          title: 'menu.review',
+          hidden: true,
+        },
+      },
     ],
   },
   {
-    path: '/delivery',
+    path: 'delivery',
     name: 'DeliveryGroup',
-    title: '项目管理',
-    icon: 'FolderOpened',
+    redirect: '/projects',
+    meta: {
+      title: 'menu.projectGroup',
+      icon: 'FolderOpened',
+      navigationGroup: 'main',
+      order: 20,
+    },
     children: [
-      { path: '/project', name: 'Project', title: '项目台账', icon: 'Folder', permissions: ['project:view'] },
-      { path: '/archive', name: 'Archive', title: '项目档案', icon: 'Files', permissions: ['archive:view'] },
-      { path: '/review', name: 'Review', title: '文件审核', icon: 'CircleCheck', permissions: ['file:review'] },
-      { path: '/report', name: 'Report', title: '工时与日报', icon: 'EditPen', permissions: ['report:view'] },
-      { path: '/retrospective', name: 'Retrospective', title: '项目复盘', icon: 'Refresh', permissions: ['retrospective:view'] },
+      {
+        path: '/projects',
+        name: 'Project',
+        component: ProjectOverviewView,
+        meta: {
+          title: 'routes.projectOverview',
+          icon: 'Folder',
+          permissions: ['project:view'],
+          menu: true,
+          order: 10,
+        },
+      },
+      {
+        path: '/projects/create',
+        name: 'ProjectCreate',
+        component: ProjectOverviewView,
+        meta: {
+          title: 'routes.projectCreate',
+          permissions: ['project:create'],
+          hidden: true,
+        },
+      },
+      {
+        path: '/projects/:projectId/edit',
+        name: 'ProjectEdit',
+        component: ProjectOverviewView,
+        meta: {
+          title: 'routes.projectEdit',
+          permissions: ['project:update'],
+          hidden: true,
+        },
+      },
+      {
+        path: '/projects/:projectId',
+        name: 'ProjectDetail',
+        component: ProjectOverviewView,
+        meta: {
+          title: 'routes.projectDetail',
+          permissions: ['project:view'],
+          hidden: true,
+        },
+      },
+      {
+        path: '/archive',
+        name: 'Archive',
+        component: () => import('@/views/archive/index.vue'),
+        meta: {
+          title: 'menu.archive',
+          icon: 'Files',
+          permissions: ['archive:view'],
+          menu: true,
+          order: 20,
+        },
+      },
+      {
+        path: '/archive-template',
+        name: 'ArchiveTemplate',
+        component: ArchiveTemplateView,
+        meta: {
+          title: 'menu.archiveTemplate',
+          icon: 'Collection',
+          permissions: ['archive_template:view'],
+          menu: true,
+          order: 30,
+        },
+      },
+      {
+        path: '/archive-templates/:templateId',
+        name: 'ArchiveTemplateDetail',
+        component: ArchiveTemplateView,
+        meta: {
+          title: 'menu.archiveTemplate',
+          permissions: ['archive_template:view'],
+          hidden: true,
+        },
+      },
     ],
   },
   {
-    path: '/knowledge-center',
+    path: 'standards-knowledge',
     name: 'KnowledgeGroup',
-    title: '标准与知识',
-    icon: 'Reading',
+    redirect: '/standards',
+    meta: {
+      title: 'menu.standardKnowledge',
+      icon: 'Reading',
+      navigationGroup: 'main',
+      order: 30,
+    },
     children: [
-      { path: '/workflow', name: 'Workflow', title: '交付流程', icon: 'Share', permissions: ['workflow:view'] },
-      { path: '/checklist', name: 'Checklist', title: '检查模板', icon: 'List', permissions: ['checklist:view'] },
-      { path: '/archive-template', name: 'ArchiveTemplate', title: '档案模板', icon: 'Collection', permissions: ['archive_template:view'] },
-      { path: '/template', name: 'Template', title: '文档模板', icon: 'CopyDocument', permissions: ['template:view'] },
-      { path: '/knowledge', name: 'Knowledge', title: '知识库', icon: 'Notebook', permissions: ['knowledge:view'] },
-      { path: '/tools', name: 'Tools', title: '工具中心', icon: 'Tools', permissions: ['tools:view'] },
-      { path: '/training', name: 'Training', title: '培训记录', icon: 'School', permissions: ['training:view'] },
+      {
+        path: '/standards',
+        name: 'Standard',
+        component: StandardView,
+        meta: {
+          title: 'menu.standard',
+          icon: 'CopyDocument',
+          permissions: ['standard:view'],
+          menu: true,
+          order: 10,
+        },
+      },
+      {
+        path: '/standards/:id([A-Za-z0-9_-]*[0-9_-][A-Za-z0-9_-]*)',
+        name: 'StandardDetail',
+        component: StandardView,
+        meta: {
+          title: 'menu.standard',
+          permissions: ['standard:view'],
+          hidden: true,
+        },
+      },
+      {
+        path: '/knowledge',
+        name: 'Knowledge',
+        component: KnowledgeView,
+        meta: {
+          title: 'menu.knowledge',
+          icon: 'Notebook',
+          permissions: ['knowledge:view'],
+          menu: true,
+          order: 20,
+        },
+      },
+      {
+        path: '/knowledge/:id([A-Za-z0-9_-]*[0-9_-][A-Za-z0-9_-]*)',
+        name: 'KnowledgeDetail',
+        component: KnowledgeView,
+        meta: {
+          title: 'menu.knowledge',
+          permissions: ['knowledge:view'],
+          hidden: true,
+        },
+      },
+      {
+        path: '/tools',
+        name: 'Tools',
+        component: () => import('@/views/tools/index.vue'),
+        meta: {
+          title: 'menu.tools',
+          icon: 'Tools',
+          permissions: ['tools:view'],
+          menu: true,
+          order: 30,
+        },
+      },
     ],
   },
   {
-    path: '/performance',
-    name: 'PerformanceGroup',
-    title: '绩效与团队',
-    icon: 'TrendCharts',
+    path: 'settings',
+    name: 'SettingsGroup',
+    redirect: '/settings/currency',
+    meta: {
+      title: 'routes.settings',
+      icon: 'Setting',
+      navigationGroup: 'settings',
+      order: 10,
+    },
     children: [
-      { path: '/okr', name: 'Okr', title: '目标与绩效', icon: 'Aim', permissions: ['okr:view'] },
-      { path: '/skills', name: 'Skills', title: '技能评估', icon: 'Medal', permissions: ['skill:view'] },
+      {
+        path: 'currency',
+        name: 'Currency',
+        component: () => import('@/views/currency/index.vue'),
+        meta: {
+          title: 'menu.systemCurrency',
+          icon: 'Coin',
+          permissions: ['currency:view', 'currency:manage'],
+          menu: true,
+          order: 10,
+        },
+      },
+      {
+        path: 'notifications',
+        name: 'Notifications',
+        component: () => import('@/views/system/notification.vue'),
+        meta: {
+          title: 'menu.systemNotification',
+          icon: 'Bell',
+          permissions: ['notification_rule:view', 'notification_rule:manage'],
+          menu: true,
+          order: 20,
+        },
+      },
+      {
+        path: 'approvals',
+        name: 'Approvals',
+        component: () => import('@/views/system/approvals.vue'),
+        meta: {
+          title: 'menu.systemApproval',
+          icon: 'Finished',
+          permissions: ['approval_config:view', 'approval_config:manage'],
+          menu: true,
+          order: 30,
+        },
+      },
+      {
+        path: 'logs',
+        name: 'Logs',
+        component: () => import('@/views/system/logs.vue'),
+        meta: {
+          title: 'menu.systemLogs',
+          icon: 'Tickets',
+          permissions: ['audit_log:view'],
+          menu: true,
+          order: 40,
+        },
+      },
+      {
+        path: 'system',
+        name: 'SystemConfig',
+        component: () => import('@/views/system/config.vue'),
+        meta: {
+          title: 'menu.systemConfig',
+          icon: 'Operation',
+          permissions: ['system_setting:view', 'system_setting:manage'],
+          menu: true,
+          order: 50,
+        },
+      },
+      {
+        path: 'integrations',
+        name: 'Integrations',
+        component: () => import('@/views/system/integrations.vue'),
+        meta: {
+          title: 'menu.systemIntegration',
+          icon: 'Link',
+          permissions: ['integration:view', 'integration:manage'],
+          menu: true,
+          order: 60,
+        },
+      },
     ],
   },
+
+  // 组织与权限仍是目标后台能力，但不进入主导航。
   {
-    path: '/organization',
-    name: 'OrganizationGroup',
-    title: '组织与权限',
-    icon: 'Connection',
-    children: [
-      { path: '/organization/departments', name: 'Departments', title: '组织架构', icon: 'Share', permissions: ['department:view'] },
-      { path: '/organization/users', name: 'Users', title: '用户管理', icon: 'User', permissions: ['user:view'] },
-      { path: '/organization/roles', name: 'Roles', title: '角色权限', icon: 'Avatar', permissions: ['role:view'] },
-    ],
+    path: 'organization/departments',
+    name: 'Departments',
+    component: () => import('@/views/organization/departments.vue'),
+    meta: { title: 'routes.departments', permissions: ['department:view'], hidden: true },
   },
   {
-    path: '/operations',
-    name: 'OperationsGroup',
-    title: '系统设置',
-    icon: 'Setting',
-    children: [
-      { path: '/global/country', name: 'Country', title: '国家配置', icon: 'Flag', permissions: ['country:view'] },
-      { path: '/global/currency', name: 'Currency', title: '币种与汇率', icon: 'Coin', permissions: ['currency:view'] },
-      { path: '/global/language', name: 'Language', title: '语言与翻译', icon: 'ChatDotSquare', permissions: ['language:view'] },
-      { path: '/operations/notification', name: 'Notifications', title: '通知规则', icon: 'Bell', permissions: ['notification:view'] },
-      { path: '/operations/approval', name: 'Approvals', title: '审批配置', icon: 'Finished', permissions: ['approval:view'] },
-      { path: '/operations/logs', name: 'Logs', title: '操作日志', icon: 'Tickets', permissions: ['system:view_log'] },
-      { path: '/operations/config', name: 'SystemConfig', title: '系统参数', icon: 'Operation', permissions: ['system:manage_config'] },
-      { path: '/operations/storage', name: 'Storage', title: '存储备份', icon: 'Box', permissions: ['system:view_storage', 'system:manage_backup'] },
-      { path: '/operations/integrations', name: 'Integrations', title: '接口集成', icon: 'Link', permissions: ['integration:manage'] },
-    ],
+    path: 'organization/users',
+    name: 'Users',
+    component: () => import('@/views/system/user/index.vue'),
+    meta: { title: 'routes.users', permissions: ['user:view'], hidden: true },
+  },
+  {
+    path: 'organization/roles',
+    name: 'Roles',
+    component: () => import('@/views/system/role/index.vue'),
+    meta: { title: 'routes.roles', permissions: ['role:view'], hidden: true },
+  },
+  {
+    path: '/forbidden',
+    name: 'Forbidden',
+    component: () => import('./PermissionDeniedView.vue'),
+    meta: { title: 'shell.noAccessibleMenu', hidden: true },
   },
 ]
 
-const children: RouteRecordRaw[] = [
-  { path: 'dashboard', name: 'Dashboard', component: () => import('@/views/dashboard/index.vue'), meta: { title: '数据看板', permissions: ['dashboard:view'] } },
-  { path: 'todo', name: 'Todo', component: () => import('@/views/todo/index.vue'), meta: { title: '我的待办', permissions: ['todo:view'] } },
-  { path: 'project', name: 'Project', component: () => import('@/views/project/index.vue'), meta: { title: '项目台账', permissions: ['project:view'] } },
-  { path: 'project/create', name: 'ProjectCreate', component: () => import('@/views/project/create.vue'), meta: { title: '创建项目', hidden: true, permissions: ['project:create'] } },
-  { path: 'project/detail/:id', name: 'ProjectDetail', component: () => import('@/views/project/detail.vue'), meta: { title: '项目详情', hidden: true, permissions: ['project:view'] } },
-  { path: 'project/edit/:id', name: 'ProjectEdit', component: () => import('@/views/project/create.vue'), meta: { title: '编辑项目', hidden: true, permissions: ['project:update'] } },
-  { path: 'archive', name: 'Archive', component: () => import('@/views/archive/index.vue'), meta: { title: '项目档案', permissions: ['archive:view'] } },
-  { path: 'process-records', redirect: '/archive' },
-  { path: 'review', name: 'Review', component: () => import('@/views/review/pending.vue'), meta: { title: '文件审核', permissions: ['file:review'] } },
-  { path: 'report', name: 'Report', component: () => import('@/views/report/index.vue'), meta: { title: '工时与日报', permissions: ['report:view'] } },
-  { path: 'report/create', name: 'ReportCreate', component: () => import('@/views/report/create.vue'), meta: { title: '撰写报告', hidden: true, permissions: ['report:create'] } },
-  { path: 'report/detail/:id', name: 'ReportDetail', component: () => import('@/views/report/detail.vue'), meta: { title: '报告详情', hidden: true, permissions: ['report:view'] } },
-  { path: 'retrospective', name: 'Retrospective', component: () => import('@/views/project/retrospective.vue'), meta: { title: '项目复盘', permissions: ['retrospective:view'] } },
-  { path: 'workflow', name: 'Workflow', component: () => import('@/views/workflow/index.vue'), meta: { title: '交付流程', permissions: ['workflow:view'] } },
-  { path: 'workflow/detail/:id', name: 'WorkflowDetail', component: () => import('@/views/workflow/detail.vue'), meta: { title: '流程文档详情', hidden: true, permissions: ['workflow:view'] } },
-  { path: 'checklist', name: 'Checklist', component: () => import('@/views/checklist/template/index.vue'), meta: { title: '检查模板', permissions: ['checklist:view'] } },
-  { path: 'checklist/template/:id', name: 'ChecklistTemplateDetail', component: () => import('@/views/checklist/template/template-detail.vue'), meta: { title: '模板检查项', hidden: true, permissions: ['checklist:view'] } },
-  { path: 'archive-template', name: 'ArchiveTemplate', component: () => import('@/views/archive/template.vue'), meta: { title: '档案模板', permissions: ['archive_template:view'] } },
-  { path: 'template', name: 'Template', component: () => import('@/views/template/index.vue'), meta: { title: '文档模板', permissions: ['template:view'] } },
-  { path: 'template/create', name: 'TemplateCreate', component: () => import('@/views/template/detail.vue'), meta: { title: '创建模板', hidden: true, permissions: ['template:create'] } },
-  { path: 'template/:id', name: 'TemplateDetail', component: () => import('@/views/template/detail.vue'), meta: { title: '模板详情', hidden: true, permissions: ['template:view'] } },
-  { path: 'knowledge', name: 'Knowledge', component: () => import('@/views/knowledge/index.vue'), meta: { title: '知识库', permissions: ['knowledge:view'] } },
-  { path: 'knowledge/create', name: 'KnowledgeCreate', component: () => import('@/views/knowledge/article.vue'), meta: { title: '创建知识条目', hidden: true, permissions: ['knowledge:create'] } },
-  { path: 'knowledge/:id', name: 'KnowledgeArticle', component: () => import('@/views/knowledge/article.vue'), meta: { title: '知识条目详情', hidden: true, permissions: ['knowledge:view'] } },
-  { path: 'tools', name: 'Tools', component: () => import('@/views/tools/index.vue'), meta: { title: '工具中心', permissions: ['tools:view'] } },
-  { path: 'okr', name: 'Okr', component: () => import('@/views/okr/index.vue'), meta: { title: 'OKR目标', permissions: ['okr:view'] } },
-  { path: 'okr/edit', name: 'OkrEdit', component: () => import('@/views/okr/edit.vue'), meta: { title: '编辑目标', hidden: true, permissions: ['okr:create'] } },
-  { path: 'okr/scoring', name: 'OkrScoring', component: () => import('@/views/okr/scoring.vue'), meta: { title: '目标评分', hidden: true, permissions: ['okr:score'] } },
-  { path: 'skills', name: 'Skills', component: () => import('@/views/workforce/skills.vue'), meta: { title: '技能评估', permissions: ['skill:view'] } },
-  { path: 'training', name: 'Training', component: () => import('@/views/workforce/training.vue'), meta: { title: '培训记录', permissions: ['training:view'] } },
-  { path: 'global/country', name: 'Country', component: () => import('@/views/country/index.vue'), meta: { title: '国家配置', permissions: ['country:view'] } },
-  { path: 'global/currency', name: 'Currency', component: () => import('@/views/currency/index.vue'), meta: { title: '币种与汇率', permissions: ['currency:view'] } },
-  { path: 'global/language', name: 'Language', component: () => import('@/views/language/index.vue'), meta: { title: '语言与翻译', permissions: ['language:view'] } },
-  { path: 'organization/departments', name: 'Departments', component: () => import('@/views/organization/departments.vue'), meta: { title: '组织架构', permissions: ['department:view'] } },
-  { path: 'organization/users', name: 'Users', component: () => import('@/views/system/user/index.vue'), meta: { title: '用户管理', permissions: ['user:view'] } },
-  { path: 'organization/roles', name: 'Roles', component: () => import('@/views/system/role/index.vue'), meta: { title: '角色权限', permissions: ['role:view'] } },
-  { path: 'operations/notification', name: 'Notifications', component: () => import('@/views/system/notification.vue'), meta: { title: '通知规则', permissions: ['notification:view'] } },
-  { path: 'operations/approval', name: 'Approvals', component: () => import('@/views/system/approvals.vue'), meta: { title: '审批配置', permissions: ['approval:view'] } },
-  { path: 'operations/logs', name: 'Logs', component: () => import('@/views/system/logs.vue'), meta: { title: '操作日志', permissions: ['system:view_log'] } },
-  { path: 'operations/config', name: 'SystemConfig', component: () => import('@/views/system/config.vue'), meta: { title: '系统参数', permissions: ['system:manage_config'] } },
-  { path: 'operations/storage', name: 'Storage', component: () => import('@/views/system/storage.vue'), meta: { title: '存储备份', permissions: ['system:view_storage', 'system:manage_backup'] } },
-  { path: 'operations/integrations', name: 'Integrations', component: () => import('@/views/system/integrations.vue'), meta: { title: '接口集成', permissions: ['integration:manage'] } },
-  { path: 'system/integrations', redirect: '/operations/integrations', meta: { hidden: true } },
-]
+export const menuItems = buildNavigationFromRoutes(shellRoutes, 'main')
+export const settingItems = buildNavigationFromRoutes(shellRoutes, 'settings')[0]?.children ?? []
 
 export const routes: RouteRecordRaw[] = [
-  { path: '/login', name: 'Login', component: () => import('@/views/login/index.vue'), meta: { title: '登录', hidden: true } },
-  { path: '/', component: BasicLayout, redirect: '/dashboard', children },
-  { path: '/:pathMatch(.*)*', name: 'NotFound', component: NotFound, meta: { title: '404', hidden: true } },
+  {
+    path: '/login',
+    name: 'Login',
+    component: () => import('@/views/login/index.vue'),
+    meta: { title: 'routes.login', hidden: true },
+  },
+  {
+    path: '/',
+    component: BasicLayout,
+    redirect: '/dashboard',
+    children: shellRoutes,
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'NotFound',
+    component: NotFound,
+    meta: { title: 'routes.notFound', hidden: true },
+  },
 ]
 
 const router = createRouter({
   history: createWebHashHistory(),
   routes,
   scrollBehavior: () => ({ left: 0, top: 0 }),
+})
+
+router.afterEach((to) => {
+  const locale = window.localStorage.getItem('lang') === 'en-US' ? 'en-US' : 'zh-CN'
+  const title = resolveRouteTitle(to.meta, locale)
+  const platformTitle = resolveRouteTitle({ title: 'app.title' }, locale)
+  document.title = title ? `${title} - ${platformTitle}` : platformTitle
 })
 
 export default router

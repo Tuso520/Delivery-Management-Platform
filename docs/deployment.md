@@ -23,7 +23,7 @@ BRANCH=main bash deploy-git.sh deploy
 1. `quality`：安装前后端依赖，执行后端类型检查、测试、构建，以及前端类型检查、测试、构建。
 2. `validate`：校验本地、默认和生产 Compose 组合，并对 `deploy-git.sh` 执行 shell 语法检查。
 3. `deploy`：仅当前两项都通过时进入 Environment `test`，固定目标提交，使用 SSH 上传发布包并调用服务器上的 `deploy-git.sh`。
-4. 部署脚本备份 MySQL、MinIO 和环境快照，执行受控迁移，重建应用容器，并检查后端就绪状态、前端响应和发布版本号；失败时保存诊断信息并尝试回滚到上一提交。
+4. 部署脚本备份 MySQL、MinIO 和环境快照，执行受控迁移，重建 API、File Worker、Outbox Worker 和前端容器，并检查依赖就绪状态、Worker 运行状态、前端响应和发布版本号；失败时保存诊断信息并尝试回滚到上一提交。
 
 工作流已具备上述逻辑不等于自动部署已经跑通。首次启用或凭据变更后，必须以 GitHub Actions 中对应提交的 `quality`、`validate`、`deploy` 三个作业均成功，以及测试服务器版本核对结果为准。
 
@@ -94,6 +94,33 @@ backups/git-deploy/YYYYMMDD_HHMMSS-<release-id>/
 - 种子脚本必须幂等，禁止截断或清空业务表。
 - 生产环境必须显式配置种子账号密码；除非确实要重置已有种子账号密码，否则不要启用 `SEED_RESET_EXISTING_USER_PASSWORDS`。
 
+默认 Compose 的 `backend-migrate` 是启动门禁，固定执行：
+
+```text
+prepare-migrate → prisma migrate deploy → 幂等 seed → 集成 Secret apply
+```
+
+`backend`、`file-worker` 和 `outbox-worker` 都等待该容器成功；任何一步失败都不得启动业务流量。API、Outbox Worker 和迁移容器必须使用同一个 `INTEGRATION_SECRET_ENCRYPTION_KEY`，迁移审计账号由 `INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME` 指定且必须处于启用状态。File Worker 不持有集成 Secret。
+
+### 整体重构既有库升级
+
+`prisma migrate deploy` 只负责 schema 迁移，不能替代目标数据审计。首次从旧架构升级时，必须先停止旧 API 和两个 Worker，在同一维护窗口执行 schema 门禁与以下脚本；`MIGRATION_ACTOR_ID` 必须是有效启用用户：
+
+```bash
+pnpm --filter ./delivery-platform-server prisma:audit-archive-migration
+pnpm --filter ./delivery-platform-server prisma:migrate-target-content
+pnpm --filter ./delivery-platform-server prisma:migrate-target-content -- --apply --actor-user-id="$MIGRATION_ACTOR_ID"
+pnpm --filter ./delivery-platform-server prisma:migrate-target-foundation
+pnpm --filter ./delivery-platform-server prisma:migrate-target-foundation -- --apply --actor-user-id="$MIGRATION_ACTOR_ID"
+pnpm --filter ./delivery-platform-server prisma:migrate-target-foundation -- --verify --strict
+pnpm --filter ./delivery-platform-server prisma:migrate-integration-secrets
+pnpm --filter ./delivery-platform-server prisma:migrate-integration-secrets -- --apply --actor-user-id="$MIGRATION_ACTOR_ID"
+```
+
+若通过 Compose 执行发布，最后两条 Secret 命令已经由 `backend-migrate` 使用 `INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME` 执行；人工命令只用于保存 dry-run 报告或非 Compose 环境，不得对不同密钥重复 apply。若不存在旧标准/知识或旧集成配置，dry-run 会报告 0 项，仍应保存报告。加密密钥不得复用 JWT、数据库或 MinIO 密钥。完成后再运行一次幂等 seed、比较业务表计数并完成 strict verify，之后才启动 API 和 Worker。
+
+迁移 094 删除旧项目运行时列前会将原状态写入 `project_legacy_state_archive` 并执行状态 preflight；出现异常必须中止，禁止绕过校验手工删列。旧业务表只读保留，不要在常规发布中物理删除。
+
 ## 健康与就绪检查
 
 ```bash
@@ -106,6 +133,14 @@ docker compose ps
 - `/api/v1/health` 只确认后端进程能够响应。
 - `/api/v1/ready` 会检查 MySQL、Redis 和 MinIO；任一依赖不可用时返回非成功状态。部署脚本以该就绪接口作为后端切换后的门禁。
 - `build-info.json.releaseId`、容器的 `RELEASE_ID` 和目标 Git 提交的前 12 位必须一致。
+- `file-worker` 与 `outbox-worker` 必须处于 running；检查不得只覆盖 `backend` 和 `frontend`。File Worker 停止会使复杂预览长期停在处理中，Outbox Worker 停止会使通知停在待投递。
+
+## 异步 Worker
+
+- File Worker 执行缩略图、大图、CAD/Visio、XMind 和视频处理；通过数据库租约领取任务，支持租约回收、指数退避和最大尝试次数。
+- `FILE_CONVERTER_URL` 为空时，需要转换的格式返回 `FILE_CONVERTER_NOT_CONFIGURED`，不会伪装为预览成功。转换服务必须限制输出大小并使用独立 Token。
+- Outbox Worker 解析通知规则并投递站内、飞书和企业微信，按事件/用户/通道记录 `NotificationDelivery`。缺少身份/配置是 `SKIPPED`，暂时错误重试，达到上限进入 `DEAD`。
+- 发布切换前停止两个 Worker；schema、目标数据与 Secret 迁移完成后先启动 API，再启动 Worker。回滚前同样先停 Worker。
 
 ## 文件预览环境
 
@@ -119,14 +154,14 @@ ONLYOFFICE_JWT_SECRET=<与 ONLYOFFICE Docs 一致的 JWT 密钥，如启用 JWT>
 PUBLIC_API_BASE_URL=https://delivery-platform.example.com
 ```
 
-- 配置 `ONLYOFFICE_DOCS_URL` 和 `PUBLIC_API_BASE_URL` 后，文件中心可按后端权限返回 ONLYOFFICE 查看或编辑会话。
-- 未配置 ONLYOFFICE、ONLYOFFICE 不可用或高级预览会话创建失败时，Office 文件会在同一弹窗内切换到兼容只读预览，由后端提取 DOCX、XLSX、PPTX 内容并生成文档、表格或幻灯片视图。
-- 旧版 DOC、XLS、PPT 仅在能安全提取出可读内容时提供兼容预览；无法解析的二进制旧格式会提示下载查看。
-- 文件中心预览会话还支持 XMind、视频和音频；通用附件兼容预览支持 PDF、图片、Markdown/文本、Office 和视频。CAD、Visio 或未命中对应渲染器的格式保持明确的降级提示。
+- 配置 `ONLYOFFICE_DOCS_URL`、`ONLYOFFICE_JWT_SECRET` 和可回调的公共 API 地址后，Office 只返回签名只读会话；全平台没有编辑模式、编辑按钮或保存回调。
+- 未配置 ONLYOFFICE 或会话不可用时明确提示下载原文件，不恢复旧附件 HTML 兼容预览。
+- PDF、图片、大图、Markdown、XMind、视频和音频使用统一只读 Viewer。CAD/Visio/不受浏览器支持的视频只有转换产物为 `READY` 时才能预览；处理中和失败均返回显式状态。
+- MinIO bucket/key 只在服务端保存；浏览器获得短时签名 URL。预览与下载分别审计，读取预览内容不计为下载。
 
 ## 最近一次自动部署记录
 
-2026-07-10，提交 `6ee245676e5e02f98504b044fab8b1ea763fb47e` 推送到 `main` 后，GitHub Actions 通过 Environment `test` 自动部署到 `http://1.117.73.165:18080`。质量检查和部署工作流均在第一次运行成功，服务器 Git HEAD、`build-info.json.releaseId` 和目标提交一致；`/api/v1/ready`、账号登录、统一文件预览与培训页面复验通过。部署脚本生成备份 `backups/git-deploy/20260710_104429-6ee245676e5e`，上一成功版本记录为 `3244cfabca4c8119ce08cd3acb3b8c3a375c4dc8`。
+2026-07-10，提交 `6ee245676e5e02f98504b044fab8b1ea763fb47e` 推送到 `main` 后，GitHub Actions 通过 Environment `test` 自动部署到共享测试环境；环境地址不在仓库文档记录。质量检查和部署工作流均在第一次运行成功，服务器 Git HEAD、`build-info.json.releaseId` 和目标提交一致；`/api/v1/ready`、账号登录、统一文件预览与培训页面复验通过。部署脚本生成备份 `backups/git-deploy/20260710_104429-6ee245676e5e`，上一成功版本记录为 `3244cfabca4c8119ce08cd3acb3b8c3a375c4dc8`。
 
 ## 历史人工部署记录
 

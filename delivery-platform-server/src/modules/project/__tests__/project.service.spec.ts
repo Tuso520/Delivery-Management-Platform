@@ -1,31 +1,50 @@
 import {
-  NotFoundException,
+  BadRequestException,
+  ConflictException,
   ForbiddenException,
+  NotFoundException,
 } from '@nestjs/common';
-import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 
-import { PrismaService } from '../../../database/prisma.service';
-import { CreateProjectDto } from '../dto/create-project.dto';
-import { ProjectStatusQuery } from '../dto/query-project.dto';
-import { ProjectAccessService } from '../project-access.service';
+import type { PrismaService } from '../../../database/prisma.service';
+import type { JwtPayload } from '../../auth/strategies/jwt.strategy';
+import type { ProjectArchiveSnapshotService } from '../../project-archive/project-archive-snapshot.service';
+import type { ReviewConfigurationService } from '../../review/review-configuration.service';
+import type { ReviewTaskService } from '../../review/review-task.service';
+import type { SystemConfigService } from '../../system-config/system-config.service';
+import type { CreateProjectDto } from '../dto/create-project.dto';
+import type { ProjectAccessService } from '../project-access.service';
+import { hashProjectCreateRequest } from '../project-create-idempotency';
 import { ProjectService } from '../project.service';
 
-
 describe('ProjectService', () => {
-  let service: ProjectService;
-  let prisma: {
-    user: Record<string, jest.Mock>;
-    project: Record<string, jest.Mock>;
-    projectMember: Record<string, jest.Mock>;
-    exchangeRate: Record<string, jest.Mock>;
-    $transaction: jest.Mock;
+  const archiveTemplateId = 'archive-template-1';
+  const idempotencyKey = 'project-create-key-0001';
+  const publicActor: Pick<JwtPayload, 'sub' | 'permissions' | 'roles'> = {
+    sub: 'user-1',
+    roles: ['PROJECT_MANAGER'],
+    permissions: ['project:view'],
   };
-
+  const financialActor: Pick<JwtPayload, 'sub' | 'permissions' | 'roles'> = {
+    ...publicActor,
+    permissions: ['project:view', 'project:view_financial'],
+  };
+  const sensitiveActor: Pick<JwtPayload, 'sub' | 'permissions' | 'roles'> = {
+    ...publicActor,
+    permissions: [
+      'project:view',
+      'project:view_financial',
+      'project:view_contract',
+      'project:view_acceptance',
+      'project:stage:update',
+      'project:update',
+    ],
+  };
   const mockProject = {
     id: 'project-1',
     projectCode: 'VN-AC-2026-001',
     projectName: '测试项目',
+    shortName: '测试',
     countryCode: 'VN',
     city: '河内',
     customerName: '测试客户',
@@ -33,430 +52,920 @@ describe('ProjectService', () => {
     contractCurrency: 'USD',
     baseCurrency: 'CNY',
     contractAmount: new Prisma.Decimal(100000),
+    exchangeRate: new Prisma.Decimal(7.2),
+    convertedAmount: new Prisma.Decimal(720000),
+    exchangeRateDate: new Date('2026-06-24T00:00:00Z'),
+    exchangeRateSource: 'CentralBank',
     projectLanguage: 'zh-CN',
-    currentStage: 'Initiation',
-    projectStatus: 'Draft',
+    salesOwnerId: null,
+    status: 'ACTIVE',
+    currentStage: 'CONSTRUCTION',
+    progressPercent: new Prisma.Decimal(40),
     riskLevel: 'Low',
+    riskDescription: null,
+    contractNo: 'CT-001',
+    contractSignedAt: new Date('2026-06-20'),
     startDate: new Date('2026-07-01'),
     plannedEndDate: new Date('2026-12-31'),
     actualEndDate: null,
-    createdBy: null,
+    expectedAcceptanceAt: new Date('2026-12-20'),
+    actualAcceptanceAt: null,
+    archivedAt: null,
+    revision: 1,
+    createdBy: 'user-1',
     createdAt: new Date('2026-06-22'),
     updatedAt: new Date('2026-06-22'),
     deletedAt: null,
-    members: [
-      {
-        id: 'member-1',
-        userId: 'user-1',
-        projectRole: 'ProjectManager',
-        user: {
-          id: 'user-1',
-          realName: '管理员',
-          username: 'admin',
-        },
-      },
-    ],
+    members: [],
   };
 
-  beforeEach(async () => {
+  let service: ProjectService;
+  let prisma: {
+    project: Record<string, jest.Mock>;
+    projectMember: Record<string, jest.Mock>;
+    projectArchiveFile: Record<string, jest.Mock>;
+    file: Record<string, jest.Mock>;
+    reviewTask: Record<string, jest.Mock>;
+    projectPayment: Record<string, jest.Mock>;
+    exchangeRate: Record<string, jest.Mock>;
+    country: Record<string, jest.Mock>;
+    operationLog: Record<string, jest.Mock>;
+    outboxEvent: Record<string, jest.Mock>;
+    approvalTemplate: Record<string, jest.Mock>;
+    $transaction: jest.Mock;
+  };
+  let projectAccess: {
+    buildProjectWhere: jest.Mock;
+    assertProjectAccess: jest.Mock;
+  };
+  let projectArchiveSnapshot: {
+    createProjectSnapshot: jest.Mock;
+  };
+  let reviewConfiguration: { resolve: jest.Mock };
+  let reviewTasks: {
+    prepareTask: jest.Mock;
+    createPreparedTask: jest.Mock;
+    logPreparedTaskCreated: jest.Mock;
+  };
+  let systemConfig: {
+    getDefaultProjectRiskLevel: jest.Mock;
+    getDefaultProjectPageSize: jest.Mock;
+  };
+
+  beforeEach(() => {
     prisma = {
-      user: {
-        findUnique: jest.fn(),
-        findFirst: jest.fn(),
-      },
       project: {
         findMany: jest.fn(),
         findFirst: jest.fn(),
+        findUnique: jest.fn().mockResolvedValue(null),
+        findUniqueOrThrow: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        delete: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         count: jest.fn(),
       },
-      projectMember: {
-        findUnique: jest.fn(),
+      projectMember: { upsert: jest.fn() },
+      projectArchiveFile: { count: jest.fn().mockResolvedValue(0) },
+      file: { count: jest.fn().mockResolvedValue(0) },
+      reviewTask: { count: jest.fn().mockResolvedValue(0) },
+      projectPayment: { count: jest.fn().mockResolvedValue(0) },
+      exchangeRate: { findFirst: jest.fn() },
+      country: {
+        findMany: jest.fn().mockResolvedValue([{ countryCode: 'VN', nameZh: '越南' }]),
       },
-      exchangeRate: {
-        findFirst: jest.fn(),
-      },
+      operationLog: { create: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+      outboxEvent: { create: jest.fn() },
+      approvalTemplate: { findMany: jest.fn().mockResolvedValue([]) },
       $transaction: jest.fn(),
     };
-
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        ProjectService,
-        ProjectAccessService,
-        { provide: PrismaService, useValue: prisma },
-      ],
-    }).compile();
-
-    service = module.get<ProjectService>(ProjectService);
-    jest.clearAllMocks();
+    prisma.$transaction.mockImplementation(
+      async (operation: (client: typeof prisma) => Promise<unknown>) => operation(prisma),
+    );
+    projectAccess = {
+      buildProjectWhere: jest.fn().mockResolvedValue({ deletedAt: null }),
+      assertProjectAccess: jest.fn().mockResolvedValue(undefined),
+    };
+    projectArchiveSnapshot = {
+      createProjectSnapshot: jest.fn().mockResolvedValue({
+        templateId: 'template-1',
+        templateVersionId: 'template-version-1',
+        source: 'PUBLISHED_VERSION',
+        folderCount: 2,
+        itemCount: 8,
+      }),
+    };
+    reviewConfiguration = { resolve: jest.fn() };
+    reviewTasks = {
+      prepareTask: jest.fn(),
+      createPreparedTask: jest.fn(),
+      logPreparedTaskCreated: jest.fn(),
+    };
+    systemConfig = {
+      getDefaultProjectRiskLevel: jest.fn().mockResolvedValue('Low'),
+      getDefaultProjectPageSize: jest.fn().mockResolvedValue(20),
+    };
+    service = new ProjectService(
+      prisma as unknown as PrismaService,
+      projectAccess as unknown as ProjectAccessService,
+      projectArchiveSnapshot as unknown as ProjectArchiveSnapshotService,
+      reviewConfiguration as unknown as ReviewConfigurationService,
+      reviewTasks as unknown as ReviewTaskService,
+      systemConfig as unknown as SystemConfigService,
+    );
   });
 
-  describe('findAll', () => {
-    it('should return paginated projects', async () => {
-      prisma.project.count.mockResolvedValue(1);
-      prisma.project.findMany.mockResolvedValue([mockProject]);
+  it('applies data scope and nulls every financial field without permission', async () => {
+    prisma.project.count.mockResolvedValue(1);
+    prisma.project.findMany.mockResolvedValue([mockProject]);
 
-      const result = await service.findAll({ page: 1, pageSize: 20 });
+    const result = await service.findAll({ page: 1, pageSize: 20 }, publicActor);
 
-      expect(result.list).toHaveLength(1);
-      expect(result.list[0].projectCode).toBe('VN-AC-2026-001');
-      expect(result.pagination.total).toBe(1);
-      expect(result.pagination.totalPages).toBe(1);
-    });
-
-    it('should filter by keyword in projectName and projectCode', async () => {
-      prisma.project.count.mockResolvedValue(1);
-      prisma.project.findMany.mockResolvedValue([mockProject]);
-
-      await service.findAll({ keyword: '测试' });
-
-      expect(prisma.project.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            OR: [
-              { projectName: { contains: '测试' } },
-              { projectCode: { contains: '测试' } },
-            ],
-          }),
-        }),
-      );
-    });
-
-    it('should filter by projectStatus', async () => {
-      prisma.project.count.mockResolvedValue(0);
-      prisma.project.findMany.mockResolvedValue([]);
-
-      await service.findAll({ projectStatus: ProjectStatusQuery.Active });
-
-      expect(prisma.project.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            projectStatus: 'Active',
-          }),
-        }),
-      );
-    });
-
-    it('should filter by countryCode', async () => {
-      prisma.project.count.mockResolvedValue(1);
-      prisma.project.findMany.mockResolvedValue([mockProject]);
-
-      await service.findAll({ countryCode: 'VN' });
-
-      expect(prisma.project.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            countryCode: 'VN',
-          }),
-        }),
-      );
-    });
-
-    it('should return empty list when no projects match', async () => {
-      prisma.project.count.mockResolvedValue(0);
-      prisma.project.findMany.mockResolvedValue([]);
-
-      const result = await service.findAll({ keyword: 'nonexistent' });
-
-      expect(result.list).toEqual([]);
-      expect(result.pagination.total).toBe(0);
-    });
+    expect(projectAccess.buildProjectWhere).toHaveBeenCalledWith('user-1');
+    expect(result).toEqual(expect.objectContaining({ page: 1, pageSize: 20, total: 1 }));
+    expect(result).not.toHaveProperty('list');
+    expect(result).not.toHaveProperty('pagination');
+    expect(result).not.toHaveProperty('totalPages');
+    expect(result.items[0]).toEqual(
+      expect.objectContaining({
+        status: 'ACTIVE',
+        currentStage: 'CONSTRUCTION',
+        countryName: '越南',
+        contractCurrency: null,
+        baseCurrency: null,
+        contractAmount: null,
+        exchangeRate: null,
+        convertedAmount: null,
+        exchangeRateDate: null,
+        exchangeRateSource: null,
+      }),
+    );
+    expect(result.items[0]).not.toHaveProperty('projectStatus');
   });
 
-  describe('create', () => {
-    const createDto: CreateProjectDto = {
+  it('returns normalized financial fields with project:view_financial', async () => {
+    prisma.project.count.mockResolvedValue(1);
+    prisma.project.findMany.mockResolvedValue([mockProject]);
+
+    const result = await service.findAll({}, financialActor);
+
+    expect(result.items[0]).toEqual(
+      expect.objectContaining({
+        contractCurrency: 'USD',
+        baseCurrency: 'CNY',
+        contractAmount: 100000,
+        exchangeRate: 7.2,
+        convertedAmount: 720000,
+      }),
+    );
+  });
+
+  it('separately exposes contract and acceptance fields with their permissions', async () => {
+    prisma.project.findFirst.mockResolvedValue(mockProject);
+
+    const result = await service.findById('project-1', sensitiveActor);
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        contractNo: 'CT-001',
+        contractSignedAt: new Date('2026-06-20'),
+        expectedAcceptanceAt: new Date('2026-12-20'),
+        actualAcceptanceAt: null,
+        acceptanceTimeType: 'EXPECTED',
+        progressPercent: 40,
+      }),
+    );
+  });
+
+  it('combines search and status filters with the scoped query', async () => {
+    projectAccess.buildProjectWhere.mockResolvedValue({
+      deletedAt: null,
+      members: { some: { userId: 'user-1' } },
+    });
+    prisma.project.count.mockResolvedValue(0);
+    prisma.project.findMany.mockResolvedValue([]);
+
+    await service.findAll({ keyword: 'AC', lifecycleStatus: 'ACTIVE' }, publicActor);
+
+    expect(prisma.project.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          AND: [
+            {
+              deletedAt: null,
+              members: { some: { userId: 'user-1' } },
+            },
+            {
+              OR: [
+                { projectName: { contains: 'AC' } },
+                { projectCode: { contains: 'AC' } },
+                { customerName: { contains: 'AC' } },
+              ],
+            },
+            { status: 'ACTIVE' },
+          ],
+        },
+      }),
+    );
+  });
+
+  it('checks data scope and nulls finance in project detail', async () => {
+    prisma.project.findFirst.mockResolvedValue(mockProject);
+
+    const result = await service.findById('project-1', publicActor);
+
+    expect(projectAccess.buildProjectWhere).toHaveBeenCalledWith('user-1');
+    expect(result.contractAmount).toBeNull();
+  });
+
+  it('returns 404 when a project does not exist', async () => {
+    prisma.project.findFirst.mockResolvedValue(null);
+
+    await expect(service.findById('missing', publicActor)).rejects.toThrow(NotFoundException);
+  });
+
+  it('creates the project and leadership membership without a review task when unconfigured', async () => {
+    const dto: CreateProjectDto = {
       projectName: '新项目',
       countryCode: 'VN',
-      customerName: 'AC客户',
-      projectType: 'Network',
-      contractCurrency: 'USD',
-      baseCurrency: 'CNY',
-      contractAmount: 50000,
-      currentStage: 'Initiation',
-      riskLevel: 'Low',
-      startDate: '2026-08-01',
-      plannedEndDate: '2027-01-31',
+      archiveTemplateId,
+      projectManagerId: 'manager-1',
     };
+    prisma.project.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(mockProject);
+    prisma.project.create.mockResolvedValue(mockProject);
+    prisma.projectMember.upsert.mockResolvedValue({});
 
-    it('should generate projectCode and create project', async () => {
-      const rateDate = new Date('2026-06-24T00:00:00Z');
-      prisma.project.findFirst
-        .mockResolvedValueOnce(null)  // No previous project with same prefix
-        .mockResolvedValueOnce(mockProject); // Duplicate for update call
-      prisma.exchangeRate.findFirst.mockResolvedValue({
-        rate: new Prisma.Decimal(7.2),
-        rateDate,
-        source: 'CentralBank',
-      });
-      prisma.project.create.mockResolvedValue(mockProject);
+    const result = await service.create(dto, publicActor, idempotencyKey);
 
-      const result = await service.create(createDto);
-
-      expect(result.projectCode).toBeDefined();
-      expect(prisma.project.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            projectName: '新项目',
-            countryCode: 'VN',
-            projectStatus: 'Draft',
-            exchangeRate: new Prisma.Decimal(7.2),
-            convertedAmount: new Prisma.Decimal(360000),
-            exchangeRateDate: rateDate,
-            exchangeRateSource: 'CentralBank',
-          }),
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(result.revision).toBe(1);
+    expect(prisma.project.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          projectName: '新项目',
+          createdBy: 'user-1',
+          status: 'ACTIVE',
+          createIdempotencyKey: idempotencyKey,
+          createRequestHash: expect.stringMatching(/^[a-f0-9]{64}$/),
         }),
-      );
-    });
-
-    it('should increment projectCode sequence', async () => {
-      prisma.project.findFirst
-        .mockResolvedValueOnce({
-          projectCode: 'AC-VN-2026-001',
-        })
-        .mockResolvedValueOnce(mockProject);
-      prisma.project.create.mockResolvedValue(mockProject);
-
-      // Generate the project code
-      const projectCode = await service.generateProjectCode('VN', 'AC');
-      expect(projectCode).toBe('VN-AC-2026-002');
-    });
-
-    it('should generate first project code when no previous projects', async () => {
-      prisma.project.findFirst.mockResolvedValue(null);
-
-      const projectCode = await service.generateProjectCode('VN', 'XX');
-      expect(projectCode).toBe('VN-XX-2026-001');
-    });
-
-    it('should use XX for customer code when no customer name', async () => {
-      prisma.project.findFirst
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(mockProject);
-      prisma.project.create.mockResolvedValue(mockProject);
-
-      await service.create({
-        projectName: '无名项目',
-        countryCode: 'TH',
-      });
-
-      expect(prisma.project.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            projectCode: expect.stringContaining('TH-XX-'),
-          }),
-        }),
-      );
-    });
-  });
-
-  describe('findById', () => {
-    it('should return project with members', async () => {
-      const projectWithIncludes = {
-        ...mockProject,
-        members: [
-          {
-            id: 'member-1',
-            userId: 'user-1',
-            projectRole: 'ProjectManager',
-            user: {
-              id: 'user-1',
-              username: 'admin',
-              realName: '管理员',
-              email: 'admin@test.com',
-            },
+      }),
+    );
+    expect(prisma.projectMember.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          projectId_userId: {
+            projectId: 'project-1',
+            userId: 'manager-1',
           },
-        ],
-      };
-
-      prisma.project.findFirst.mockResolvedValue(projectWithIncludes);
-      // Mock checkProjectAccess (elevated role bypasses check)
-      prisma.user.findUnique.mockResolvedValue({
-        id: 'user-1',
-        userRoles: [
-          {
-            role: { roleCode: 'SUPER_ADMIN' },
-          },
-        ],
-      });
-
-      const result = await service.findById('project-1', 'user-1');
-
-      expect(result.id).toBe('project-1');
-      expect(result.members).toHaveLength(1);
-      expect(result.members[0].projectRole).toBe('ProjectManager');
-    });
-
-    it('should throw NotFoundException when project does not exist', async () => {
-      prisma.project.findFirst.mockResolvedValue(null);
-
-      await expect(service.findById('nonexistent')).rejects.toThrow(
-        NotFoundException,
-      );
-    });
-
-    it('should allow access for project members', async () => {
-      prisma.project.findFirst.mockResolvedValue(mockProject);
-      // User is not elevated but is a project member
-      prisma.user.findUnique.mockResolvedValue({
-        id: 'user-2',
-        userRoles: [{ role: { roleCode: 'PROJECT_MANAGER' } }],
-      });
-      prisma.projectMember.findUnique.mockResolvedValue({
-        projectId: 'project-1',
-        userId: 'user-2',
-      });
-
-      const result = await service.findById('project-1', 'user-2');
-      expect(result).toBeDefined();
-    });
-
-    it('should deny access for non-members without elevated role', async () => {
-      prisma.project.findFirst.mockResolvedValue(mockProject);
-      // User is not elevated and not a member
-      prisma.user.findUnique.mockResolvedValue({
-        id: 'outsider',
-        userRoles: [{ role: { roleCode: 'PROJECT_MANAGER' } }],
-      });
-      prisma.projectMember.findUnique.mockResolvedValue(null);
-
-      await expect(
-        service.findById('project-1', 'outsider'),
-      ).rejects.toThrow(ForbiddenException);
-    });
-  });
-
-  describe('softDelete', () => {
-    it('should set deletedAt on existing project', async () => {
-      prisma.project.findFirst.mockResolvedValue(mockProject);
-      prisma.user.findUnique.mockResolvedValue({
-        id: 'admin',
-        userRoles: [{ role: { roleCode: 'SUPER_ADMIN' } }],
-      });
-      prisma.project.update.mockResolvedValue({
-        ...mockProject,
-        deletedAt: new Date(),
-      });
-
-      await service.softDelete('project-1', 'admin');
-
-      expect(prisma.project.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: 'project-1' },
-          data: { deletedAt: expect.any(Date) },
+        },
+      }),
+    );
+    expect(projectArchiveSnapshot.createProjectSnapshot).toHaveBeenCalledWith(
+      prisma,
+      'project-1',
+      expect.objectContaining({ countryCode: 'VN' }),
+    );
+    expect(reviewConfiguration.resolve).not.toHaveBeenCalled();
+    expect(reviewTasks.prepareTask).not.toHaveBeenCalled();
+    expect(reviewTasks.createPreparedTask).not.toHaveBeenCalled();
+    expect(prisma.operationLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        afterData: expect.objectContaining({
+          lifecycleStatus: 'ACTIVE',
+          reviewTaskId: null,
         }),
-      );
-    });
-
-    it('should throw NotFoundException for non-existent project', async () => {
-      prisma.project.findFirst.mockResolvedValue(null);
-
-      await expect(service.softDelete('nonexistent')).rejects.toThrow(
-        NotFoundException,
-      );
+      }),
     });
   });
 
-  describe('checkProjectAccess', () => {
-    const accessService = () =>
-      service as unknown as {
-        checkProjectAccess(projectId: string, userId: string): Promise<void>;
-      };
-
-    it('should allow access for SUPER_ADMIN', async () => {
-      prisma.project.findFirst.mockResolvedValue(mockProject);
-      prisma.user.findUnique.mockResolvedValue({
-        id: 'admin',
-        userRoles: [{ role: { roleCode: 'SUPER_ADMIN' } }],
-      });
-
-      // The result should not throw
-      await expect(
-        accessService().checkProjectAccess('project-1', 'admin'),
-      ).resolves.toBeUndefined();
+  it('returns the same project for the same actor, key and canonical request payload', async () => {
+    const originalDto: CreateProjectDto = {
+      projectName: '幂等项目',
+      countryCode: 'VN',
+      archiveTemplateId,
+    };
+    prisma.project.findUnique.mockResolvedValue({
+      id: 'project-1',
+      createdBy: 'user-1',
+      createRequestHash: hashProjectCreateRequest(originalDto),
     });
+    prisma.project.findFirst.mockResolvedValue(mockProject);
 
-    it('should allow access for SYSTEM_ADMIN', async () => {
-      prisma.project.findFirst.mockResolvedValue(mockProject);
-      prisma.user.findUnique.mockResolvedValue({
-        id: 'sysadmin',
-        userRoles: [{ role: { roleCode: 'SYSTEM_ADMIN' } }],
-      });
+    const result = await service.create(
+      {
+        archiveTemplateId,
+        countryCode: 'VN',
+        projectName: '幂等项目',
+      },
+      publicActor,
+      idempotencyKey,
+    );
 
-      await expect(
-        accessService().checkProjectAccess('project-1', 'sysadmin'),
-      ).resolves.toBeUndefined();
-    });
-
-    it('should allow access for DELIVERY_MANAGER', async () => {
-      prisma.project.findFirst.mockResolvedValue(mockProject);
-      prisma.user.findUnique.mockResolvedValue({
-        id: 'dm',
-        userRoles: [{ role: { roleCode: 'DELIVERY_MANAGER' } }],
-      });
-
-      await expect(
-        accessService().checkProjectAccess('project-1', 'dm'),
-      ).resolves.toBeUndefined();
-    });
-
-    it('should allow access when user is a project member', async () => {
-      prisma.project.findFirst.mockResolvedValue(mockProject);
-      prisma.user.findUnique.mockResolvedValue({
-        id: 'member',
-        userRoles: [{ role: { roleCode: 'PROJECT_MANAGER' } }],
-      });
-      prisma.projectMember.findUnique.mockResolvedValue({
-        projectId: 'project-1',
-        userId: 'member',
-      });
-
-      await expect(
-        accessService().checkProjectAccess('project-1', 'member'),
-      ).resolves.toBeUndefined();
-    });
-
-    it('should deny access when user is not a member and not elevated', async () => {
-      prisma.project.findFirst.mockResolvedValue(mockProject);
-      prisma.user.findUnique.mockResolvedValue({
-        id: 'outsider',
-        userRoles: [{ role: { roleCode: 'PROJECT_MANAGER' } }],
-      });
-      prisma.projectMember.findUnique.mockResolvedValue(null);
-
-      await expect(
-        accessService().checkProjectAccess('project-1', 'outsider'),
-      ).rejects.toThrow(ForbiddenException);
-    });
+    expect(result.id).toBe('project-1');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.project.create).not.toHaveBeenCalled();
   });
 
-  describe('update', () => {
-    it('should update project fields', async () => {
-      prisma.project.findFirst.mockResolvedValue(mockProject);
-      prisma.user.findUnique.mockResolvedValue({
-        id: 'admin',
-        userRoles: [{ role: { roleCode: 'SUPER_ADMIN' } }],
-      });
-      prisma.project.update.mockResolvedValue({
-        ...mockProject,
+  it('uses the configured default risk level when the create request omits it', async () => {
+    systemConfig.getDefaultProjectRiskLevel.mockResolvedValue('High');
+    prisma.project.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(mockProject);
+    prisma.project.create.mockResolvedValue(mockProject);
+
+    await service.create(
+      { projectName: '默认风险项目', countryCode: 'VN', archiveTemplateId },
+      publicActor,
+      idempotencyKey,
+    );
+
+    expect(systemConfig.getDefaultProjectRiskLevel).toHaveBeenCalledTimes(1);
+    expect(prisma.project.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ riskLevel: 'High' }),
+      }),
+    );
+  });
+
+  it('rejects reuse of a project create key with a different payload', async () => {
+    prisma.project.findUnique.mockResolvedValue({
+      id: 'project-1',
+      createdBy: 'user-1',
+      createRequestHash: hashProjectCreateRequest({
+        projectName: '原项目',
+        countryCode: 'VN',
+        archiveTemplateId,
+      }),
+    });
+
+    await expect(
+      service.create(
+        { projectName: '另一个项目', countryCode: 'VN', archiveTemplateId },
+        publicActor,
+        idempotencyKey,
+      ),
+    ).rejects.toThrow(ConflictException);
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects reuse of a project create key by a different actor', async () => {
+    const dto: CreateProjectDto = {
+      projectName: '幂等项目',
+      countryCode: 'VN',
+      archiveTemplateId,
+    };
+    prisma.project.findUnique.mockResolvedValue({
+      id: 'project-1',
+      createdBy: 'another-user',
+      createRequestHash: hashProjectCreateRequest(dto),
+    });
+
+    await expect(service.create(dto, publicActor, idempotencyKey)).rejects.toThrow(
+      ConflictException,
+    );
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('converges a concurrent P2002 create race to the committed project', async () => {
+    const dto: CreateProjectDto = {
+      projectName: '并发项目',
+      countryCode: 'VN',
+      archiveTemplateId,
+    };
+    prisma.project.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      id: 'project-1',
+      createdBy: 'user-1',
+      createRequestHash: hashProjectCreateRequest(dto),
+    });
+    prisma.project.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(mockProject);
+    prisma.$transaction.mockRejectedValue({ code: 'P2002' });
+
+    const result = await service.create(dto, publicActor, idempotencyKey);
+
+    expect(result.id).toBe('project-1');
+    expect(prisma.project.findUnique).toHaveBeenCalledTimes(2);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not swallow an unrelated unique constraint conflict', async () => {
+    const uniqueError = { code: 'P2002', meta: { target: ['project_code'] } };
+    prisma.project.findUnique.mockResolvedValue(null);
+    prisma.project.findFirst.mockResolvedValue(null);
+    prisma.$transaction.mockRejectedValue(uniqueError);
+
+    await expect(
+      service.create(
+        { projectName: '冲突项目', countryCode: 'VN', archiveTemplateId },
+        publicActor,
+        idempotencyKey,
+      ),
+    ).rejects.toBe(uniqueError);
+  });
+
+  it('creates a configured project review task in the same transaction while keeping the project draft', async () => {
+    const preparedReview = {
+      input: {
+        sourceType: 'PROJECT_CREATE',
+        sourceId: 'generated-project-id',
+        title: '新建项目：需审批项目',
+      },
+      normalizedSteps: [
+        {
+          mode: 'SINGLE',
+          requiredCount: 1,
+          assigneeUserIds: ['reviewer-1'],
+        },
+      ],
+      submittedAt: new Date('2026-07-11T00:00:00.000Z'),
+    };
+    prisma.project.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(mockProject);
+    prisma.project.create.mockResolvedValue(mockProject);
+    prisma.approvalTemplate.findMany.mockResolvedValue([
+      { id: 'approval-template-vn', countryCode: 'VN' },
+      { id: 'approval-template-global', countryCode: null },
+    ]);
+    reviewConfiguration.resolve.mockResolvedValue({
+      approvalTemplateId: 'approval-template-vn',
+      approvalTemplateVersion: '2026-07-11T00:00:00.000Z',
+      snapshot: { id: 'approval-template-vn' },
+      reviewMode: 'SINGLE',
+      steps: [{ mode: 'SINGLE', assigneeUserIds: ['reviewer-1'] }],
+    });
+    reviewTasks.prepareTask.mockResolvedValue(preparedReview);
+    reviewTasks.createPreparedTask.mockResolvedValue('review-task-1');
+
+    await service.create(
+      { projectName: '需审批项目', countryCode: 'VN', archiveTemplateId },
+      publicActor,
+      idempotencyKey,
+    );
+
+    expect(reviewConfiguration.resolve).toHaveBeenCalledWith('approval-template-vn', 'user-1');
+    expect(reviewTasks.prepareTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceType: 'PROJECT_CREATE',
+        projectId: expect.any(String),
+        submittedBy: 'user-1',
+        approvalTemplateId: 'approval-template-vn',
+      }),
+    );
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.project.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'DRAFT',
+        }),
+      }),
+    );
+    expect(projectArchiveSnapshot.createProjectSnapshot).toHaveBeenCalledWith(
+      prisma,
+      'project-1',
+      expect.any(Object),
+    );
+    expect(reviewTasks.createPreparedTask).toHaveBeenCalledWith(prisma, preparedReview);
+    expect(prisma.operationLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'create',
+        afterData: expect.objectContaining({ reviewTaskId: 'review-task-1' }),
+      }),
+    });
+    expect(prisma.operationLog.create).toHaveBeenCalledTimes(1);
+    expect(reviewTasks.logPreparedTaskCreated).not.toHaveBeenCalled();
+  });
+
+  it('rejects an explicit approval template with a mismatched business type before writes', async () => {
+    prisma.project.findFirst.mockResolvedValue(null);
+    prisma.approvalTemplate.findMany.mockResolvedValue([]);
+
+    await expect(
+      service.create(
+        {
+          projectName: '新项目',
+          countryCode: 'VN',
+          archiveTemplateId,
+          approvalTemplateId: 'standard-approval-template',
+        },
+        publicActor,
+        idempotencyKey,
+      ),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(prisma.approvalTemplate.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: 'standard-approval-template',
+          businessType: 'PROJECT_CREATE',
+          isEnabled: true,
+          deletedAt: null,
+        }),
+      }),
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.project.create).not.toHaveBeenCalled();
+  });
+
+  it('propagates membership failure from the project transaction', async () => {
+    prisma.project.findFirst.mockResolvedValue(null);
+    prisma.project.create.mockResolvedValue(mockProject);
+    prisma.projectMember.upsert.mockRejectedValue(new Error('member write failed'));
+
+    await expect(
+      service.create(
+        {
+          projectName: '新项目',
+          countryCode: 'VN',
+          archiveTemplateId,
+          projectManagerId: 'manager-1',
+        },
+        publicActor,
+        idempotencyKey,
+      ),
+    ).rejects.toThrow('member write failed');
+  });
+
+  it('propagates archive snapshot failure from the project transaction', async () => {
+    prisma.project.findFirst.mockResolvedValue(null);
+    prisma.project.create.mockResolvedValue(mockProject);
+    prisma.projectMember.upsert.mockResolvedValue({});
+    projectArchiveSnapshot.createProjectSnapshot.mockRejectedValue(
+      new Error('archive snapshot failed'),
+    );
+
+    await expect(
+      service.create(
+        {
+          projectName: '新项目',
+          countryCode: 'VN',
+          archiveTemplateId,
+        },
+        publicActor,
+        idempotencyKey,
+      ),
+    ).rejects.toThrow('archive snapshot failed');
+    expect(prisma.operationLog.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects financial writes without financial permission', async () => {
+    await expect(
+      service.create(
+        {
+          projectName: '新项目',
+          countryCode: 'VN',
+          archiveTemplateId,
+          contractCurrency: 'USD',
+          baseCurrency: 'CNY',
+          contractAmount: 100,
+        },
+        publicActor,
+        idempotencyKey,
+      ),
+    ).rejects.toThrow(ForbiddenException);
+    expect(prisma.project.create).not.toHaveBeenCalled();
+  });
+
+  it('updates a project after a scoped authorization check', async () => {
+    prisma.project.findFirst.mockResolvedValue(mockProject);
+    prisma.project.findUniqueOrThrow.mockResolvedValue({
+      ...mockProject,
+      projectName: '更新后的项目',
+      revision: 2,
+    });
+    prisma.project.findFirst.mockResolvedValueOnce(mockProject).mockResolvedValueOnce({
+      ...mockProject,
+      projectName: '更新后的项目',
+      revision: 2,
+    });
+
+    const result = await service.update(
+      'project-1',
+      { revision: 1, projectName: '更新后的项目' },
+      publicActor,
+    );
+
+    expect(projectAccess.buildProjectWhere).toHaveBeenCalledWith('user-1');
+    expect(result.projectName).toBe('更新后的项目');
+    expect(result.contractAmount).toBeNull();
+    expect(prisma.project.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'project-1',
+        deletedAt: null,
+        revision: 1,
+        updatedAt: mockProject.updatedAt,
+      },
+      data: expect.objectContaining({
         projectName: '更新后的项目',
+        revision: { increment: 1 },
+      }),
+    });
+    expect(prisma.operationLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'update',
+        beforeData: expect.objectContaining({ revision: 1 }),
+        afterData: expect.objectContaining({ revision: 2 }),
+      }),
+    });
+  });
+
+  it('rejects a stale revision before an ordinary project edit', async () => {
+    prisma.project.findFirst.mockResolvedValue({ ...mockProject, revision: 2 });
+
+    await expect(
+      service.update('project-1', { revision: 1, projectName: '过期编辑' }, publicActor),
+    ).rejects.toThrow(ConflictException);
+
+    expect(prisma.project.updateMany).not.toHaveBeenCalled();
+    expect(prisma.operationLog.create).not.toHaveBeenCalled();
+  });
+
+  it('physically deletes an empty project only for a super administrator and audits it', async () => {
+    const adminActor = { ...publicActor, roles: ['SUPER_ADMIN'], permissions: ['project:delete'] };
+    prisma.project.findUnique.mockResolvedValue(mockProject);
+
+    await service.purge('project-1', adminActor);
+
+    expect(prisma.project.delete).toHaveBeenCalledWith({ where: { id: 'project-1' } });
+    expect(prisma.operationLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        userId: 'user-1',
+        action: 'purge',
+        targetId: 'project-1',
+        result: 'success',
+      }),
+    });
+  });
+
+  it('blocks physical deletion when protected records exist and audits the rejection', async () => {
+    const adminActor = { ...publicActor, roles: ['SUPER_ADMIN'], permissions: ['project:delete'] };
+    prisma.project.findUnique.mockResolvedValue(mockProject);
+    prisma.projectArchiveFile.count.mockResolvedValue(2);
+    prisma.reviewTask.count.mockResolvedValue(1);
+
+    await expect(service.purge('project-1', adminActor)).rejects.toThrow(ConflictException);
+
+    expect(prisma.project.delete).not.toHaveBeenCalled();
+    expect(prisma.operationLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'purge',
+        result: 'failure',
+        errorReason: expect.stringContaining('文件 2 条'),
+      }),
+    });
+  });
+
+  it('rejects physical deletion for non-super-administrators', async () => {
+    await expect(service.purge('project-1', publicActor)).rejects.toThrow(ForbiddenException);
+    expect(prisma.project.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('generates the next project code sequence', async () => {
+    prisma.project.findFirst.mockResolvedValue({
+      projectCode: 'VN-AC-2026-009',
+    });
+
+    await expect(service.generateProjectCode('VN', 'AC')).resolves.toBe('VN-AC-2026-010');
+  });
+
+  it('audits an authorized financial detail read with request metadata', async () => {
+    prisma.project.findFirst.mockResolvedValue(mockProject);
+
+    await service.findById('project-1', financialActor, {
+      ipAddress: '10.0.0.1',
+      userAgent: 'browser',
+    });
+
+    expect(prisma.operationLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        userId: 'user-1',
+        action: 'view_financial',
+        targetId: 'project-1',
+        ipAddress: '10.0.0.1',
+        userAgent: 'browser',
+        result: 'success',
+      }),
+    });
+  });
+
+  it('returns project summary counts inside the same data scope', async () => {
+    prisma.project.count
+      .mockResolvedValueOnce(8)
+      .mockResolvedValueOnce(4)
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(1);
+
+    await expect(service.getSummary(publicActor)).resolves.toEqual({
+      total: 8,
+      active: 4,
+      accepted: 2,
+      highRisk: 1,
+    });
+    expect(projectAccess.buildProjectWhere).toHaveBeenCalledWith('user-1');
+    expect(prisma.project.count).toHaveBeenNthCalledWith(2, {
+      where: {
+        AND: [{ deletedAt: null }, { status: 'ACTIVE', archivedAt: null }],
+      },
+    });
+  });
+
+  it('requires a reason when moving the delivery stage backwards', async () => {
+    prisma.project.findFirst.mockResolvedValue({
+      id: 'project-1',
+      currentStage: 'CONSTRUCTION',
+      revision: 1,
+    });
+
+    await expect(
+      service.updateStage('project-1', { revision: 1, targetStage: 'DEEPENING' }, sensitiveActor),
+    ).rejects.toThrow('项目阶段回退必须填写原因');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('updates stage and audit log atomically', async () => {
+    prisma.project.findFirst
+      .mockResolvedValueOnce({
+        id: 'project-1',
+        currentStage: 'CONSTRUCTION',
+        revision: 1,
+      })
+      .mockResolvedValueOnce(mockProject);
+
+    await service.updateStage(
+      'project-1',
+      { revision: 1, targetStage: 'TESTING', reason: '现场已进入测试' },
+      sensitiveActor,
+    );
+
+    expect(prisma.project.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'project-1',
+        deletedAt: null,
+        revision: 1,
+        currentStage: 'CONSTRUCTION',
+      },
+      data: {
+        currentStage: 'TESTING',
+        revision: { increment: 1 },
+      },
+    });
+    expect(prisma.operationLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'stage_update',
+        beforeData: { stage: 'CONSTRUCTION', revision: 1 },
+        afterData: {
+          stage: 'TESTING',
+          revision: 2,
+          reason: '现场已进入测试',
+        },
+      }),
+    });
+  });
+
+  it('rejects a concurrent stage update when the CAS no longer matches', async () => {
+    prisma.project.findFirst.mockResolvedValue({
+      id: 'project-1',
+      currentStage: 'CONSTRUCTION',
+      revision: 1,
+    });
+    prisma.project.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      service.updateStage('project-1', { revision: 1, targetStage: 'TESTING' }, sensitiveActor),
+    ).rejects.toThrow(ConflictException);
+
+    expect(prisma.operationLog.create).not.toHaveBeenCalled();
+    expect(prisma.outboxEvent.create).not.toHaveBeenCalled();
+  });
+
+  it('uses a dedicated status command without writing the retired status column', async () => {
+    prisma.project.findFirst
+      .mockResolvedValueOnce({
+        id: 'project-1',
+        status: 'ACTIVE',
+        archivedAt: null,
+        revision: 1,
+      })
+      .mockResolvedValueOnce(mockProject);
+
+    await service.changeStatus(
+      'project-1',
+      'pause',
+      { revision: 1, reason: '等待客户确认' },
+      sensitiveActor,
+    );
+
+    expect(prisma.project.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'project-1',
+        deletedAt: null,
+        revision: 1,
+        status: 'ACTIVE',
+        archivedAt: null,
+      },
+      data: {
+        status: 'PAUSED',
+        revision: { increment: 1 },
+      },
+    });
+    expect(prisma.operationLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'pause',
+        beforeData: expect.objectContaining({ lifecycleStatus: 'ACTIVE' }),
+        afterData: expect.objectContaining({
+          lifecycleStatus: 'PAUSED',
+          reason: '等待客户确认',
+        }),
+      }),
+    });
+  });
+
+  it('rejects a stale revision before executing a status command', async () => {
+    prisma.project.findFirst.mockResolvedValue({
+      id: 'project-1',
+      status: 'ACTIVE',
+      archivedAt: null,
+      revision: 2,
+    });
+
+    await expect(
+      service.changeStatus('project-1', 'pause', { revision: 1 }, sensitiveActor),
+    ).rejects.toThrow(ConflictException);
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('records actual acceptance only through the dedicated command', async () => {
+    prisma.project.findFirst
+      .mockResolvedValueOnce({
+        id: 'project-1',
+        expectedAcceptanceAt: new Date('2026-12-20'),
+        actualAcceptanceAt: null,
+        status: 'ACTIVE',
+        revision: 1,
+      })
+      .mockResolvedValueOnce({
+        ...mockProject,
+        status: 'COMPLETED',
+        actualAcceptanceAt: new Date('2026-12-18'),
       });
 
-      const result = await service.update(
+    const result = await service.updateAcceptance(
+      'project-1',
+      {
+        revision: 1,
+        actualAcceptanceAt: '2026-12-18T00:00:00.000Z',
+        reason: '客户签署验收单',
+      },
+      sensitiveActor,
+    );
+
+    expect(prisma.project.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'project-1',
+        deletedAt: null,
+        revision: 1,
+        status: 'ACTIVE',
+        expectedAcceptanceAt: new Date('2026-12-20'),
+        actualAcceptanceAt: null,
+      },
+      data: {
+        expectedAcceptanceAt: new Date('2026-12-20'),
+        actualAcceptanceAt: new Date('2026-12-18T00:00:00.000Z'),
+        revision: { increment: 1 },
+        status: 'COMPLETED',
+      },
+    });
+    expect(prisma.operationLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'acceptance_update',
+        afterData: expect.objectContaining({
+          reason: '客户签署验收单',
+        }),
+      }),
+    });
+    expect(result.acceptanceTimeType).toBe('ACTUAL');
+  });
+
+  it('rejects a concurrent acceptance update when the CAS no longer matches', async () => {
+    prisma.project.findFirst.mockResolvedValue({
+      id: 'project-1',
+      expectedAcceptanceAt: new Date('2026-12-20'),
+      actualAcceptanceAt: null,
+      status: 'ACTIVE',
+      revision: 1,
+    });
+    prisma.project.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      service.updateAcceptance(
         'project-1',
-        { projectName: '更新后的项目' },
-        'admin',
-      );
+        {
+          revision: 1,
+          actualAcceptanceAt: '2026-12-18T00:00:00.000Z',
+        },
+        sensitiveActor,
+      ),
+    ).rejects.toThrow(ConflictException);
 
-      expect(result.projectName).toBe('更新后的项目');
-    });
-
-    it('should throw NotFoundException for non-existent project', async () => {
-      prisma.project.findFirst.mockResolvedValue(null);
-
-      await expect(
-        service.update('nonexistent', { projectName: '新名称' }),
-      ).rejects.toThrow(NotFoundException);
-    });
+    expect(prisma.operationLog.create).not.toHaveBeenCalled();
+    expect(prisma.outboxEvent.create).not.toHaveBeenCalled();
   });
 });

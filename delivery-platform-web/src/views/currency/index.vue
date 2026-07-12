@@ -1,362 +1,435 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { Message } from '@arco-design/web-vue'
-import type { TableColumnData } from '@arco-design/web-vue'
-import dayjs from 'dayjs'
+import { useMutation, useQueryClient } from '@tanstack/vue-query'
+import { useI18n } from 'vue-i18n'
+
 import { currencyApi } from '@/api/currency'
-import type { CreateCurrencyDto, CreateExchangeRateDto, Currency, ExchangeRate } from '@/types/currency'
+import {
+  BusinessModal,
+  BusinessTable,
+  Can,
+  PageContainer,
+  PageToolbar,
+  StatusBadge,
+} from '@/components/business'
+import { useCurrenciesQuery } from '@/composables/queries/useAdministrationQueries'
+import { usePermission } from '@/composables/usePermission'
+import { queryKeys } from '@/query/keys'
+import type {
+  CreateCurrencyDto,
+  Currency,
+  CurrencyRateSyncResult,
+  UpdateCurrencyDto,
+} from '@/types/currency'
 import { arcoConfirm } from '@/utils/arco-dialog'
 
-const activeTab = ref('currency')
+type CurrencySaveVariables =
+  | { kind: 'create'; data: CreateCurrencyDto }
+  | { kind: 'update'; code: string; data: UpdateCurrencyDto }
 
-const loading = ref(false)
-const currencyList = ref<Currency[]>([])
-const dialogVisible = ref(false)
-const isEdit = ref(false)
-const currentId = ref('')
-const formData = reactive({
+interface CurrencyLockVariables {
+  code: string
+  currentlyLocked: boolean
+}
+
+const queryClient = useQueryClient()
+const { hasPermission } = usePermission()
+const { t, locale } = useI18n()
+const canManage = computed(() => hasPermission('currency:manage'))
+const currenciesQuery = useCurrenciesQuery()
+const currencies = computed<Currency[]>(() => currenciesQuery.data.value ?? [])
+const syncResult = ref<CurrencyRateSyncResult>()
+
+const editorVisible = ref(false)
+const editingCode = ref('')
+const form = reactive({
   currencyCode: '',
   currencyName: '',
   currencySymbol: '',
   decimalPlaces: 2,
+  cnyRate: undefined as number | undefined,
 })
 
-const rateLoading = ref(false)
-const rateList = ref<ExchangeRate[]>([])
-const rateDialogVisible = ref(false)
-const syncLoading = ref(false)
-const lastSync = ref<{ rateDate: string; syncedCount: number }>()
-const rateForm = reactive<CreateExchangeRateDto>({
-  fromCurrency: '',
-  toCurrency: '',
-  rate: 0,
-  rateDate: '',
-  source: 'manual',
+async function invalidateCurrencies(): Promise<void> {
+  await queryClient.invalidateQueries({ queryKey: queryKeys.currencies.all })
+}
+
+const saveCurrencyMutation = useMutation({
+  mutationFn: (variables: CurrencySaveVariables) =>
+    variables.kind === 'create'
+      ? currencyApi.create(variables.data)
+      : currencyApi.updateByCode(variables.code, variables.data),
+  retry: false,
+  onSuccess: invalidateCurrencies,
 })
 
-const currencyColumns: TableColumnData[] = [
-  { title: '币种代码', dataIndex: 'currencyCode', width: 120 },
-  { title: '币种名称', dataIndex: 'currencyName', minWidth: 160 },
-  { title: '符号', dataIndex: 'currencySymbol', slotName: 'symbol', width: 100 },
-  { title: '小数位数', dataIndex: 'decimalPlaces', width: 110 },
-  { title: '状态', dataIndex: 'status', slotName: 'status', width: 100 },
-  { title: '操作', slotName: 'actions', width: 160, fixed: 'right' },
-]
+const syncRatesMutation = useMutation({
+  mutationFn: currencyApi.syncRates,
+  retry: false,
+  onSuccess: invalidateCurrencies,
+})
 
-const rateColumns: TableColumnData[] = [
-  { title: '源币种', dataIndex: 'fromCurrency', width: 110 },
-  { title: '目标币种', dataIndex: 'toCurrency', width: 120 },
-  { title: '汇率', dataIndex: 'rate', minWidth: 150 },
-  { title: '汇率日期', dataIndex: 'rateDate', slotName: 'rateDate', width: 140 },
-  { title: '来源', dataIndex: 'source', slotName: 'source', width: 130 },
-  { title: '锁定状态', dataIndex: 'isLocked', slotName: 'lockStatus', width: 120 },
-  { title: '操作', slotName: 'rateActions', width: 160, fixed: 'right' },
-]
+const rateLockMutation = useMutation({
+  mutationFn: (variables: CurrencyLockVariables) =>
+    variables.currentlyLocked
+      ? currencyApi.unlockRate(variables.code)
+      : currencyApi.lockRate(variables.code),
+  retry: false,
+  onSuccess: invalidateCurrencies,
+})
 
-async function fetchCurrencies(): Promise<void> {
-  loading.value = true
-  try {
-    currencyList.value = await currencyApi.getList()
-  } finally {
-    loading.value = false
-  }
-}
+const disableCurrencyMutation = useMutation({
+  mutationFn: currencyApi.disable,
+  retry: false,
+  onSuccess: invalidateCurrencies,
+})
 
-async function fetchRates(): Promise<void> {
-  rateLoading.value = true
-  try {
-    rateList.value = await currencyApi.getExchangeRates()
-  } finally {
-    rateLoading.value = false
-  }
-}
-
-function openCreate(): void {
-  isEdit.value = false
-  currentId.value = ''
-  Object.assign(formData, {
+function resetForm(): void {
+  Object.assign(form, {
     currencyCode: '',
     currencyName: '',
     currencySymbol: '',
     decimalPlaces: 2,
+    cnyRate: undefined,
   })
-  dialogVisible.value = true
+}
+
+function openCreate(): void {
+  if (!canManage.value) return
+  editingCode.value = ''
+  resetForm()
+  editorVisible.value = true
 }
 
 function openEdit(row: Currency): void {
-  isEdit.value = true
-  currentId.value = row.id
-  formData.currencyCode = row.currencyCode
-  formData.currencyName = row.currencyName
-  formData.currencySymbol = row.currencySymbol ?? ''
-  formData.decimalPlaces = row.decimalPlaces
-  dialogVisible.value = true
-}
-
-async function handleSubmit(): Promise<void> {
-  if (!formData.currencyCode.trim()) {
-    Message.warning('请输入币种代码')
-    return
-  }
-  if (!formData.currencyName.trim()) {
-    Message.warning('请输入币种名称')
-    return
-  }
-
-  const payload: CreateCurrencyDto = {
-    currencyCode: formData.currencyCode.trim().toUpperCase(),
-    currencyName: formData.currencyName.trim(),
-    currencySymbol: formData.currencySymbol.trim() || undefined,
-    decimalPlaces: formData.decimalPlaces,
-  }
-
-  if (isEdit.value) {
-    await currencyApi.update(currentId.value, payload)
-    Message.success('更新成功')
-  } else {
-    await currencyApi.create(payload)
-    Message.success('创建成功')
-  }
-  dialogVisible.value = false
-  await fetchCurrencies()
-}
-
-function handleDelete(row: Currency): void {
-  arcoConfirm(`确认禁用币种“${row.currencyName}”？`, '确认禁用', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning',
-  }).then(async () => {
-    await currencyApi.delete(row.id)
-    Message.success('禁用成功')
-    await fetchCurrencies()
-  }).catch(() => {
-    // 用户取消。
+  if (!canManage.value) return
+  editingCode.value = row.currencyCode
+  Object.assign(form, {
+    currencyCode: row.currencyCode,
+    currencyName: row.currencyName,
+    currencySymbol: row.currencySymbol ?? '',
+    decimalPlaces: row.decimalPlaces,
+    cnyRate: row.cnyRate === null ? undefined : Number(row.cnyRate),
   })
+  editorVisible.value = true
 }
 
-function openAddRate(): void {
-  rateForm.fromCurrency = ''
-  rateForm.toCurrency = ''
-  rateForm.rate = 0
-  rateForm.rateDate = ''
-  rateForm.source = 'manual'
-  rateDialogVisible.value = true
-}
-
-async function handleRateSubmit(): Promise<void> {
-  if (!rateForm.fromCurrency || !rateForm.toCurrency || !rateForm.rate) {
-    Message.warning('请填写完整的汇率信息')
+async function saveCurrency(): Promise<void> {
+  if (!canManage.value) return
+  const code = form.currencyCode.trim().toUpperCase()
+  const name = form.currencyName.trim()
+  if (!/^[A-Z]{3,10}$/u.test(code)) {
+    Message.warning(t('currency.validation.code'))
     return
   }
-  await currencyApi.addExchangeRate(rateForm)
-  Message.success('汇率添加成功')
-  rateDialogVisible.value = false
-  await fetchRates()
-}
+  if (!name) {
+    Message.warning(t('currency.validation.name'))
+    return
+  }
 
-async function handleLockRate(row: ExchangeRate): Promise<void> {
-  await currencyApi.lockExchangeRate(row.id)
-  Message.success('锁定成功')
-  await fetchRates()
-}
-
-async function handleUnlockRate(row: ExchangeRate): Promise<void> {
-  await currencyApi.unlockExchangeRate(row.id)
-  Message.success('解锁成功')
-  await fetchRates()
-}
-
-async function handleSyncRates(): Promise<void> {
-  syncLoading.value = true
   try {
-    lastSync.value = await currencyApi.syncExchangeRates('CNY')
-    Message.success(`已同步 ${lastSync.value.syncedCount} 条在线汇率`)
-    await fetchRates()
-  } finally {
-    syncLoading.value = false
+    if (editingCode.value) {
+      await saveCurrencyMutation.mutateAsync({
+        kind: 'update',
+        code: editingCode.value,
+        data: {
+          currencyName: name,
+          currencySymbol: form.currencySymbol.trim(),
+          decimalPlaces: form.decimalPlaces,
+          ...(form.cnyRate !== undefined ? { cnyRate: form.cnyRate } : {}),
+        },
+      })
+      Message.success(t('currency.updated'))
+    } else {
+      await saveCurrencyMutation.mutateAsync({
+        kind: 'create',
+        data: {
+          currencyCode: code,
+          currencyName: name,
+          currencySymbol: form.currencySymbol.trim() || undefined,
+          decimalPlaces: form.decimalPlaces,
+        },
+      })
+      Message.success(t('currency.created'))
+    }
+    editorVisible.value = false
+  } catch {
+    // The shared request layer has already surfaced the failure.
   }
 }
 
-function sourceLabel(source: string): string {
-  const labels: Record<string, string> = {
-    manual: '人工维护',
-    boc: '中国银行',
-    project_locked: '项目锁定',
+async function syncRates(): Promise<void> {
+  if (!canManage.value) return
+  try {
+    syncResult.value = await syncRatesMutation.mutateAsync()
+    Message.success(t('currency.syncSuccess', { count: syncResult.value.syncedCount }))
+  } catch {
+    // The shared request layer has already surfaced the failure.
   }
-  return labels[source] ?? source
 }
 
-onMounted(() => {
-  fetchCurrencies()
-  fetchRates()
-})
+function toggleRateLock(row: Currency): void {
+  if (!canManage.value) return
+  const nextAction = row.rateLocked ? t('currency.unlock') : t('currency.lock')
+  arcoConfirm(
+    t('currency.lockConfirm', { action: nextAction, code: row.currencyCode }),
+    t('currency.lockTitle', { action: nextAction }),
+    {
+      confirmButtonText: nextAction,
+      cancelButtonText: t('common.cancel'),
+      type: 'warning',
+    },
+  )
+    .then(async () => {
+      try {
+        await rateLockMutation.mutateAsync({
+          code: row.currencyCode,
+          currentlyLocked: row.rateLocked,
+        })
+        Message.success(t('currency.lockSuccess', { action: nextAction }))
+      } catch {
+        // The shared request layer has already surfaced the failure.
+      }
+    })
+    .catch(() => undefined)
+}
+
+function disableCurrency(row: Currency): void {
+  if (!canManage.value || row.status !== 'Active') return
+  arcoConfirm(
+    t('currency.disableConfirm', { code: row.currencyCode }),
+    t('currency.disableTitle', { name: row.currencyName }),
+    {
+      confirmButtonText: t('currency.confirmDisable'),
+      cancelButtonText: t('common.cancel'),
+      type: 'warning',
+    },
+  )
+    .then(async () => {
+      try {
+        await disableCurrencyMutation.mutateAsync(row.currencyCode)
+        Message.success(t('currency.disabled'))
+      } catch {
+        // The shared request layer has already surfaced the failure.
+      }
+    })
+    .catch(() => undefined)
+}
+
+function formatRate(value: Currency['cnyRate']): string {
+  if (value === null || value === undefined || value === '') return '—'
+  const numeric = Number(value)
+  return Number.isFinite(numeric)
+    ? numeric.toLocaleString(locale.value, { maximumFractionDigits: 8 })
+    : '—'
+}
+
+function formatDate(value: string | null): string {
+  if (!value) return '—'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(locale.value)
+}
+
+function sourceLabel(source: string | null): string {
+  if (!source) return '—'
+  const normalized = source.toLowerCase()
+  return ['manual', 'boc', 'online'].includes(normalized)
+    ? t(`currency.sources.${normalized}`)
+    : source
+}
 </script>
 
 <template>
-  <section class="currency-page">
-    <a-tabs v-model="activeTab">
-      <a-tab-pane label="币种管理" name="currency">
-        <a-card class="table-card">
-          <template #title>币种列表</template>
-          <template #extra>
-            <a-button type="primary" @click="openCreate">新增币种</a-button>
-          </template>
+  <PageContainer class="resource-page currency-page">
+    <PageToolbar :title="t('currency.title')" :description="t('currency.description')">
+      <template #actions>
+        <Can permission="currency:manage">
+          <a-space>
+            <a-button :loading="syncRatesMutation.isPending.value" @click="syncRates">
+              {{ t('currency.sync') }}
+            </a-button>
+            <a-button type="primary" @click="openCreate">
+              {{ t('currency.create') }}
+            </a-button>
+          </a-space>
+        </Can>
+      </template>
+    </PageToolbar>
 
-          <a-table
-            :loading="loading"
-            :columns="currencyColumns"
-            :data="currencyList"
-            row-key="id"
-            :pagination="false"
-          >
-            <template #symbol="{ record }">
-              {{ record.currencySymbol || '-' }}
-            </template>
-            <template #status="{ record }">
-              <a-tag :color="record.status === 'Active' ? 'green' : 'gray'">
-                {{ record.status === 'Active' ? '启用' : '禁用' }}
-              </a-tag>
-            </template>
-            <template #actions="{ record }">
-              <a-space size="mini">
-                <a-button type="text" size="small" @click="openEdit(record)">编辑</a-button>
-                <a-button type="text" size="small" status="danger" @click="handleDelete(record)">
-                  禁用
-                </a-button>
-              </a-space>
-            </template>
-          </a-table>
-        </a-card>
-      </a-tab-pane>
+    <a-alert
+      v-if="!canManage"
+      class="page-alert"
+      type="info"
+      :title="t('currency.readOnly')"
+    >
+      {{ t('currency.readOnlyHint') }}
+    </a-alert>
+    <a-alert
+      v-else-if="syncResult"
+      class="page-alert"
+      type="success"
+      :title="t('currency.syncSummary', { count: syncResult.syncedCount })"
+      closable
+      @close="syncResult = undefined"
+    >
+      {{ formatDate(syncResult.rateDate) }} · {{ sourceLabel(syncResult.source) }}
+    </a-alert>
 
-      <a-tab-pane label="汇率管理" name="rate">
-        <a-card class="table-card">
-          <template #title>汇率列表</template>
-          <template #extra>
-            <a-space>
-              <a-button :loading="syncLoading" @click="handleSyncRates">在线同步</a-button>
-              <a-button type="primary" @click="openAddRate">手工添加</a-button>
-            </a-space>
-          </template>
-
-          <a-alert
-            v-if="lastSync"
-            class="sync-alert"
-            type="success"
-            :title="`最近同步：${new Date(lastSync.rateDate).toLocaleDateString()}，${lastSync.syncedCount} 条`"
+    <BusinessTable
+      :data="currencies"
+      :loading="currenciesQuery.isFetching.value"
+      :error="currenciesQuery.isError.value ? t('currency.loadFailed') : null"
+      :empty-title="t('currency.empty')"
+      :empty-description="t('currency.unavailable')"
+      :retry-label="t('common.retry')"
+      row-key="id"
+      class="settings-table"
+      @retry="currenciesQuery.refetch()"
+    >
+      <a-table-column
+        :title="t('currency.columns.code')"
+        data-index="currencyCode"
+        :width="110"
+        fixed="left"
+      />
+      <a-table-column
+        :title="t('currency.columns.name')"
+        data-index="currencyName"
+        :min-width="140"
+      />
+      <a-table-column :title="t('currency.columns.symbol')" :width="86">
+        <template #cell="{ record }">
+          {{ record.currencySymbol || '—' }}
+        </template>
+      </a-table-column>
+      <a-table-column
+        :title="t('currency.columns.decimalPlaces')"
+        data-index="decimalPlaces"
+        :width="96"
+      />
+      <a-table-column :title="t('common.status')" :width="86">
+        <template #cell="{ record }">
+          <StatusBadge
+            domain="currency"
+            :status="record.status"
+            :label="record.status === 'Active' ? t('currency.active') : t('currency.inactive')"
           />
-
-          <a-table
-            :loading="rateLoading"
-            :columns="rateColumns"
-            :data="rateList"
-            row-key="id"
-            :pagination="false"
-          >
-            <template #rateDate="{ record }">
-              {{ dayjs(record.rateDate).format('YYYY-MM-DD') }}
-            </template>
-            <template #source="{ record }">
-              {{ sourceLabel(record.source) }}
-            </template>
-            <template #lockStatus="{ record }">
-              <a-tag :color="record.isLocked ? 'orange' : 'green'">
-                {{ record.isLocked ? '已锁定' : '未锁定' }}
-              </a-tag>
-            </template>
-            <template #rateActions="{ record }">
-              <a-button
-                v-if="!record.isLocked"
-                type="text"
-                size="small"
-                @click="handleLockRate(record)"
-              >
-                锁定
+        </template>
+      </a-table-column>
+      <a-table-column :title="t('currency.columns.rate')" :width="150">
+        <template #cell="{ record }">
+          {{ formatRate(record.cnyRate) }}
+        </template>
+      </a-table-column>
+      <a-table-column :title="t('currency.columns.rateDate')" :width="120">
+        <template #cell="{ record }">
+          {{ formatDate(record.rateDate) }}
+        </template>
+      </a-table-column>
+      <a-table-column :title="t('currency.columns.rateSource')" :width="120">
+        <template #cell="{ record }">
+          {{ sourceLabel(record.rateSource) }}
+        </template>
+      </a-table-column>
+      <a-table-column :title="t('currency.columns.lockStatus')" :width="110">
+        <template #cell="{ record }">
+          <a-tag :color="record.rateLocked ? 'orange' : 'green'">
+            {{ record.rateLocked ? t('currency.locked') : t('currency.unlocked') }}
+          </a-tag>
+        </template>
+      </a-table-column>
+      <a-table-column :title="t('common.action')" :width="210" fixed="right">
+        <template #cell="{ record }">
+          <Can permission="currency:manage">
+            <a-space size="mini" :wrap="false">
+              <a-button type="text" size="small" @click="openEdit(record)">
+                {{ t('common.edit') }}
               </a-button>
               <a-button
-                v-else
                 type="text"
                 size="small"
-                @click="handleUnlockRate(record)"
+                :disabled="record.cnyRate == null"
+                @click="toggleRateLock(record)"
               >
-                解锁
+                {{ record.rateLocked ? t('currency.unlock') : t('currency.lock') }}
               </a-button>
+              <a-button
+                type="text"
+                size="small"
+                status="danger"
+                :disabled="record.status !== 'Active'"
+                @click="disableCurrency(record)"
+              >
+                {{ t('currency.inactive') }}
+              </a-button>
+            </a-space>
+          </Can>
+        </template>
+      </a-table-column>
+    </BusinessTable>
+
+    <BusinessModal
+      v-model:visible="editorVisible"
+      :title="editingCode ? t('currency.editTitle') : t('currency.createTitle')"
+      :width="560"
+      :mask-closable="false"
+    >
+      <a-form :model="form" layout="vertical">
+        <div class="form-grid">
+          <a-form-item :label="t('currency.columns.code')" required>
+            <a-input
+              v-model="form.currencyCode"
+              :disabled="Boolean(editingCode)"
+              :placeholder="t('currency.codePlaceholder')"
+              :max-length="10"
+            />
+          </a-form-item>
+          <a-form-item :label="t('currency.columns.name')" required>
+            <a-input
+              v-model="form.currencyName"
+              :placeholder="t('currency.namePlaceholder')"
+              :max-length="50"
+            />
+          </a-form-item>
+          <a-form-item :label="t('currency.columns.symbol')">
+            <a-input
+              v-model="form.currencySymbol"
+              :placeholder="t('currency.symbolPlaceholder')"
+              :max-length="10"
+            />
+          </a-form-item>
+          <a-form-item :label="t('currency.columns.decimalPlaces')">
+            <a-input-number v-model="form.decimalPlaces" :min="0" :max="6" />
+          </a-form-item>
+          <a-form-item v-if="editingCode" :label="t('currency.columns.rate')" class="full-row">
+            <a-input-number
+              v-model="form.cnyRate"
+              :min="0.00000001"
+              :precision="8"
+              :disabled="currencies.find((item) => item.currencyCode === editingCode)?.rateLocked"
+              :placeholder="t('currency.ratePlaceholder')"
+            />
+            <template #extra>
+              {{ t('currency.rateLockedHint') }}
             </template>
-          </a-table>
-        </a-card>
-      </a-tab-pane>
-    </a-tabs>
-
-    <a-modal
-      v-model:visible="dialogVisible"
-      :title="isEdit ? '编辑币种' : '新增币种'"
-      ok-text="保存"
-      cancel-text="取消"
-      @ok="handleSubmit"
-    >
-      <a-form :model="formData" layout="vertical">
-        <a-form-item label="币种代码" required>
-          <a-input v-model="formData.currencyCode" :disabled="isEdit" placeholder="例如 CNY" />
-        </a-form-item>
-        <a-form-item label="币种名称" required>
-          <a-input v-model="formData.currencyName" placeholder="例如 人民币" />
-        </a-form-item>
-        <a-form-item label="币种符号">
-          <a-input v-model="formData.currencySymbol" placeholder="例如 ¥" />
-        </a-form-item>
-        <a-form-item label="小数位数">
-          <a-input-number v-model="formData.decimalPlaces" :min="0" :max="6" />
-        </a-form-item>
+          </a-form-item>
+        </div>
       </a-form>
-    </a-modal>
-
-    <a-modal
-      v-model:visible="rateDialogVisible"
-      title="添加汇率"
-      ok-text="保存"
-      cancel-text="取消"
-      @ok="handleRateSubmit"
-    >
-      <a-form :model="rateForm" layout="vertical">
-        <a-form-item label="源币种" required>
-          <a-select v-model="rateForm.fromCurrency" placeholder="选择源币种">
-            <a-option
-              v-for="currency in currencyList"
-              :key="currency.currencyCode"
-              :value="currency.currencyCode"
-            >
-              {{ currency.currencyCode }} - {{ currency.currencyName }}
-            </a-option>
-          </a-select>
-        </a-form-item>
-        <a-form-item label="目标币种" required>
-          <a-select v-model="rateForm.toCurrency" placeholder="选择目标币种">
-            <a-option
-              v-for="currency in currencyList"
-              :key="currency.currencyCode"
-              :value="currency.currencyCode"
-            >
-              {{ currency.currencyCode }} - {{ currency.currencyName }}
-            </a-option>
-          </a-select>
-        </a-form-item>
-        <a-form-item label="汇率" required>
-          <a-input-number v-model="rateForm.rate" :min="0" :precision="6" />
-        </a-form-item>
-        <a-form-item label="汇率日期">
-          <a-date-picker v-model="rateForm.rateDate" placeholder="选择日期" />
-        </a-form-item>
-        <a-form-item label="来源">
-          <a-select v-model="rateForm.source">
-            <a-option value="manual">人工维护</a-option>
-            <a-option value="boc">中国银行</a-option>
-            <a-option value="project_locked">项目锁定</a-option>
-          </a-select>
-        </a-form-item>
-      </a-form>
-    </a-modal>
-  </section>
+      <template #footer>
+        <a-button @click="editorVisible = false">
+          {{ t('common.cancel') }}
+        </a-button>
+        <a-button
+          type="primary"
+          :loading="saveCurrencyMutation.isPending.value"
+          @click="saveCurrency"
+        >
+          {{ t('common.save') }}
+        </a-button>
+      </template>
+    </BusinessModal>
+  </PageContainer>
 </template>
 
 <style scoped lang="scss">
@@ -364,11 +437,27 @@ onMounted(() => {
   min-width: 0;
 }
 
-.table-card {
-  border-radius: 8px;
+.settings-table {
+  background: var(--color-bg-2);
 }
 
-.sync-alert {
-  margin-bottom: 14px;
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+}
+
+.full-row {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 720px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .full-row {
+    grid-column: auto;
+  }
 }
 </style>

@@ -21,6 +21,9 @@ jobs:
       - name: 安装后端依赖
         working-directory: delivery-platform-server
         run: pnpm install --frozen-lockfile
+      - name: 后端代码检查
+        working-directory: delivery-platform-server
+        run: pnpm lint && git diff --exit-code
       - name: 后端类型检查
         working-directory: delivery-platform-server
         run: pnpm prisma:generate && pnpm type-check
@@ -33,6 +36,9 @@ jobs:
       - name: 安装前端依赖
         working-directory: delivery-platform-web
         run: pnpm install --frozen-lockfile
+      - name: 前端代码检查
+        working-directory: delivery-platform-web
+        run: pnpm lint && git diff --exit-code
       - name: 前端类型检查
         working-directory: delivery-platform-web
         run: pnpm type-check

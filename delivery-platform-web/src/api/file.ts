@@ -1,15 +1,4 @@
 import request from './request'
-import type { AxiosProgressEvent } from 'axios'
-import type { AttachmentPreview } from './attachment'
-import type { UploadedFile } from '@/types/file'
-
-export interface UploadProgressEvent {
-  percent: number
-  loaded: number
-  total: number
-}
-
-export type FilePreviewMode = 'view' | 'edit'
 
 export type FilePreviewViewer =
   | 'onlyoffice'
@@ -37,8 +26,8 @@ export interface FilePreviewRoute {
     | 'video'
     | 'audio'
     | 'unsupported'
-  mode: FilePreviewMode
-  editable: boolean
+  mode: 'view'
+  editable: false
   readonly: boolean
   supportsDownload: boolean
   reason?: string
@@ -89,52 +78,127 @@ export interface FilePreviewSession {
   }
 }
 
+interface UnifiedFilePreviewSession {
+  fileId: string
+  fileName: string
+  mimeType: string
+  extension: string
+  viewerType:
+    | 'ONLYOFFICE_VIEW'
+    | 'PDF'
+    | 'IMAGE'
+    | 'LARGE_IMAGE'
+    | 'MARKDOWN'
+    | 'CAD_CONVERTED'
+    | 'VISIO_CONVERTED'
+    | 'XMIND'
+    | 'VIDEO'
+    | 'AUDIO'
+    | 'UNSUPPORTED'
+  previewUrl: string
+  availability: {
+    state: 'READY' | 'PROCESSING' | 'UNAVAILABLE'
+    reason?: string
+    errorCode?: string | null
+  }
+  downloadAllowed: boolean
+  metadata: {
+    version: string
+    size: string | number
+    checksum?: string | null
+    readOnly: true
+  }
+  processingStatus: Array<{
+    id: string
+    type: string
+    status: string
+    progress: number
+    attempts: number
+    availableAt: string
+    errorCode?: string | null
+    errorMessage?: string | null
+  }>
+  onlyOffice?: {
+    available: boolean
+    docsUrl?: string
+    reason?: string
+    config?: Record<string, unknown>
+  }
+  xmind?: {
+    sheets: XmindOutlineSheet[]
+  }
+}
+
+function normalizeUnifiedPreviewSession(session: UnifiedFilePreviewSession): FilePreviewSession {
+  const viewerMap: Record<
+    UnifiedFilePreviewSession['viewerType'],
+    { viewer: FilePreviewViewer; category: FilePreviewRoute['category']; reason?: string }
+  > = {
+    ONLYOFFICE_VIEW: {
+      viewer: session.onlyOffice?.available ? 'onlyoffice' : 'unavailable',
+      category: 'office',
+      reason: session.onlyOffice?.reason || 'Office 在线预览未配置，请下载原文件查看。',
+    },
+    PDF: { viewer: 'pdf', category: 'pdf' },
+    IMAGE: { viewer: 'image', category: 'image' },
+    LARGE_IMAGE: { viewer: 'deep-zoom-image', category: 'image' },
+    MARKDOWN: { viewer: 'markdown', category: 'markdown' },
+    CAD_CONVERTED: {
+      viewer: 'pdf',
+      category: 'cad',
+    },
+    VISIO_CONVERTED: {
+      viewer: 'pdf',
+      category: 'visio',
+    },
+    XMIND: { viewer: 'xmind', category: 'xmind' },
+    VIDEO: { viewer: 'video', category: 'video' },
+    AUDIO: { viewer: 'audio', category: 'audio' },
+    UNSUPPORTED: {
+      viewer: 'unavailable',
+      category: 'unsupported',
+      reason: '该文件类型暂不支持在线预览。',
+    },
+  }
+  const matched = viewerMap[session.viewerType]
+  const available = session.availability.state === 'READY'
+  return {
+    file: {
+      id: session.fileId,
+      projectId: '',
+      archiveItemId: null,
+      fileName: session.fileName,
+      originalName: session.fileName,
+      fileExt: session.extension,
+      fileSize: String(session.metadata.size),
+      mimeType: session.mimeType,
+      versionNo: session.metadata.version,
+      isCurrent: true,
+      fileStatus: 'APPROVED',
+      updatedAt: new Date().toISOString(),
+    },
+    route: {
+      viewer: available ? matched.viewer : 'unavailable',
+      category: matched.category,
+      mode: 'view',
+      editable: false,
+      readonly: true,
+      supportsDownload: session.downloadAllowed,
+      reason: available ? matched.reason : session.availability.reason,
+    },
+    urls: {
+      content: session.previewUrl,
+      download: `/api/v1/files/${session.fileId}/download`,
+    },
+    signed: {
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    },
+    onlyOffice: session.onlyOffice,
+    xmind: session.xmind,
+  }
+}
+
 export const fileApi = {
-  /**
-   * 上传文件
-   */
-  upload(
-    projectId: string,
-    archiveItemId: string | undefined,
-    file: File,
-    remark?: string,
-    onProgress?: (event: UploadProgressEvent) => void,
-  ) {
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('projectId', projectId)
-    if (archiveItemId) {
-      formData.append('archiveItemId', archiveItemId)
-    }
-    if (remark) {
-      formData.append('remark', remark)
-    }
-
-    return request.post<UploadedFile>('/files/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      onUploadProgress: (event: AxiosProgressEvent) => {
-        if (!onProgress) {
-          return
-        }
-
-        const total = event.total ?? file.size
-        const percent = total > 0 ? Math.round((event.loaded / total) * 100) : 0
-        onProgress({
-          percent,
-          loaded: event.loaded,
-          total,
-        })
-      },
-    })
-  },
-
-  /**
-   * 获取文件详情
-   */
-  getById(id: string) {
-    return request.get<UploadedFile>(`/files/${id}`)
-  },
-
   /**
    * 下载私有文件
    */
@@ -145,54 +209,10 @@ export const fileApi = {
     })
   },
 
-  /**
-   * 生成短时有效的在线预览链接
-   */
-  createPreviewLink(id: string) {
-    return request.post<{ url: string; expiresAt: string }>(`/files/${id}/preview-link`)
-  },
-
-  /**
-   * 获取在线预览结构化内容
-   */
-  getPreview(id: string) {
-    return request.get<AttachmentPreview>(`/files/${id}/preview`, {
+  async createPreviewSession(id: string) {
+    const session = await request.get<UnifiedFilePreviewSession>(`/files/${id}/preview-session`, {
       timeout: 120000,
     })
-  },
-
-  getPreviewContent(id: string) {
-    return request.get<Blob>(`/files/${id}/preview-content`, {
-      responseType: 'blob',
-      timeout: 120000,
-    })
-  },
-
-  createPreviewSession(id: string, mode: FilePreviewMode = 'view') {
-    return request.get<FilePreviewSession>(`/files/${id}/preview-session`, {
-      params: { mode },
-      timeout: 120000,
-    })
-  },
-
-  /**
-   * 删除文件（软删除）
-   */
-  delete(id: string) {
-    return request.delete<void>(`/files/${id}`)
-  },
-
-  /**
-   * 设置文件为当前版本
-   */
-  setCurrentVersion(id: string) {
-    return request.post<UploadedFile>(`/files/${id}/set-current`)
-  },
-
-  /**
-   * 获取档案目录项下的所有文件
-   */
-  getArchiveFiles(archiveItemId: string) {
-    return request.get<UploadedFile[]>(`/archive-items/${archiveItemId}/files`)
+    return normalizeUnifiedPreviewSession(session)
   },
 }

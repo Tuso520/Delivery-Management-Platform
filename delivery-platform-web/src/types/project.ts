@@ -1,33 +1,80 @@
+export const PROJECT_LIFECYCLE_STATUSES = [
+  'DRAFT',
+  'ACTIVE',
+  'PAUSED',
+  'COMPLETED',
+  'CANCELLED',
+] as const
+
+export type ProjectLifecycleStatus = (typeof PROJECT_LIFECYCLE_STATUSES)[number]
+
+export const PROJECT_DELIVERY_STAGES = [
+  'STARTUP',
+  'DEEPENING',
+  'PROCUREMENT',
+  'CONSTRUCTION',
+  'COMMISSIONING',
+  'TESTING',
+  'INTERNAL_ACCEPTANCE',
+  'EXTERNAL_ACCEPTANCE',
+  'WARRANTY',
+] as const
+
+export type ProjectDeliveryStage = (typeof PROJECT_DELIVERY_STAGES)[number]
+
+export const PROJECT_SUMMARY_FILTERS = ['ALL', 'ACTIVE', 'ACCEPTED', 'HIGH_RISK'] as const
+
+export type ProjectSummaryFilter = (typeof PROJECT_SUMMARY_FILTERS)[number]
+
+export type ProjectSort =
+  | 'updatedAt:desc'
+  | 'updatedAt:asc'
+  | 'projectName:asc'
+  | 'projectName:desc'
+
+export type AcceptanceTimeType = 'ACTUAL' | 'EXPECTED' | 'NONE'
+
 export interface Project {
   id: string
+  revision: number
   projectCode: string
   projectName: string
+  shortName?: string | null
   countryCode: string
-  city?: string
-  customerName?: string
-  projectType?: string
-  contractCurrency?: string
-  baseCurrency?: string
-  contractAmount?: number
-  exchangeRate?: number
-  convertedAmount?: number
-  exchangeRateDate?: string
-  exchangeRateSource?: string
-  projectLanguage?: string
-  salesOwnerId?: string
-  projectManagerId?: string
-  electricLeaderId?: string
-  softwareLeaderId?: string
-  purchaseOwnerId?: string
-  financeOwnerId?: string
-  currentStage?: string
-  projectStatus: string
+  countryName?: string | null
+  city?: string | null
+  customerName?: string | null
+  projectType?: string | null
+  contractCurrency?: string | null
+  baseCurrency?: string | null
+  contractAmount?: number | null
+  exchangeRate?: number | null
+  convertedAmount?: number | null
+  exchangeRateDate?: string | null
+  exchangeRateSource?: string | null
+  contractNo?: string | null
+  contractSignedAt?: string | null
+  projectLanguage?: string | null
+  salesOwnerId?: string | null
+  projectManagerId?: string | null
+  electricLeaderId?: string | null
+  softwareLeaderId?: string | null
+  purchaseOwnerId?: string | null
+  financeOwnerId?: string | null
+  currentStage: ProjectDeliveryStage
+  status: ProjectLifecycleStatus
+  progressPercent?: number | null
   riskLevel: string
+  riskDescription?: string | null
   startDate?: string
   plannedEndDate?: string
   actualEndDate?: string
-  createdBy?: string
-  deletedAt?: string
+  expectedAcceptanceAt?: string | null
+  actualAcceptanceAt?: string | null
+  acceptanceTimeType?: AcceptanceTimeType
+  archivedAt?: string | null
+  createdBy?: string | null
+  deletedAt?: string | null
   createdAt: string
   updatedAt: string
   members?: ProjectMember[]
@@ -35,13 +82,13 @@ export interface Project {
 
 export interface ProjectMember {
   id: string
-  projectId: string
+  projectId?: string
   userId: string
   projectRole: string
-  permissionLevel: string
-  dataScope: string
-  createdAt: string
-  updatedAt: string
+  permissionLevel?: string
+  dataScope?: string
+  createdAt?: string
+  updatedAt?: string
   user?: {
     id: string
     username: string
@@ -50,30 +97,26 @@ export interface ProjectMember {
   }
 }
 
-export interface CreateProjectDto {
-  projectName: string
-  countryCode: string
-  city?: string
-  customerName?: string
-  projectType?: string
-  contractCurrency?: string
-  baseCurrency?: string
-  contractAmount?: number
-  projectLanguage?: string
-  salesOwnerId?: string
-  projectManagerId?: string
-  electricLeaderId?: string
-  softwareLeaderId?: string
-  purchaseOwnerId?: string
-  financeOwnerId?: string
-  currentStage?: string
-  riskLevel?: string
-  startDate?: string
-  plannedEndDate?: string
+export interface ProjectSummary {
+  total: number
+  active: number
+  accepted: number
+  highRisk: number
 }
 
-export interface UpdateProjectDto {
+export type ProjectUserReferencePurpose = 'project-member' | 'project-manager' | 'sales-owner'
+
+export interface ProjectUserReferenceOption {
+  id: string
+  name: string
+  displayName: string
+  departmentName: string | null
+  active: boolean
+}
+
+interface ProjectCommonWriteFields {
   projectName?: string
+  shortName?: string
   countryCode?: string
   city?: string
   customerName?: string
@@ -81,6 +124,8 @@ export interface UpdateProjectDto {
   contractCurrency?: string
   baseCurrency?: string
   contractAmount?: number
+  contractNo?: string
+  contractSignedAt?: string
   projectLanguage?: string
   salesOwnerId?: string
   projectManagerId?: string
@@ -88,106 +133,109 @@ export interface UpdateProjectDto {
   softwareLeaderId?: string
   purchaseOwnerId?: string
   financeOwnerId?: string
-  currentStage?: string
-  projectStatus?: string
+  progressPercent?: number
   riskLevel?: string
+  riskDescription?: string
   startDate?: string
   plannedEndDate?: string
-  actualEndDate?: string
+}
+
+export interface CreateProjectDto extends ProjectCommonWriteFields {
+  projectName: string
+  countryCode: string
+  archiveTemplateId: string
+  deliveryStage?: ProjectDeliveryStage
+  expectedAcceptanceAt?: string
+  archiveTemplateVersionId?: string
+  approvalTemplateId?: string
+}
+
+/**
+ * Ordinary editable fields. Stage, status, and acceptance data use dedicated commands.
+ */
+export interface UpdateProjectDto extends ProjectCommonWriteFields {
+  revision: number
 }
 
 export interface QueryProjectDto {
   page: number
   pageSize: number
   keyword?: string
-  projectStatus?: string
-  countryCode?: string
-  projectType?: string
+  summaryFilter?: ProjectSummaryFilter
+  sort?: ProjectSort
 }
 
-export const PROJECT_STATUS_OPTIONS = [
-  { value: 'Draft', label: '草稿' },
-  { value: 'Active', label: '进行中' },
-  { value: 'Suspended', label: '暂停' },
-  { value: 'Delayed', label: '延期' },
-  { value: 'Accepted', label: '已验收' },
-  { value: 'Archived', label: '已归档' },
-  { value: 'Closed', label: '已关闭' },
+export interface UpdateProjectStageDto {
+  revision: number
+  targetStage: ProjectDeliveryStage
+  reason?: string
+}
+
+export interface UpdateProjectAcceptanceDto {
+  revision: number
+  expectedAcceptanceAt?: string
+  actualAcceptanceAt?: string
+  reason?: string
+}
+
+export interface ProjectStatusActionDto {
+  revision: number
+  reason?: string
+}
+
+export type ProjectStatusCommand =
+  | 'pause'
+  | 'resume'
+  | 'complete'
+  | 'cancel'
+  | 'archive'
+  | 'restore'
+
+export const PROJECT_STATUS_OPTIONS: ReadonlyArray<{
+  value: ProjectLifecycleStatus
+  label: string
+}> = [
+  { value: 'DRAFT', label: 'status.DRAFT' },
+  { value: 'ACTIVE', label: 'status.ACTIVE' },
+  { value: 'PAUSED', label: 'status.PAUSED' },
+  { value: 'COMPLETED', label: 'status.COMPLETED' },
+  { value: 'CANCELLED', label: 'status.CANCELLED' },
 ]
 
 export const RISK_LEVEL_OPTIONS = [
-  { value: 'Low', label: '低' },
-  { value: 'Medium', label: '中' },
-  { value: 'High', label: '高' },
-  { value: 'Critical', label: '严重' },
+  { value: 'Low', label: 'risk.Low' },
+  { value: 'Medium', label: 'risk.Medium' },
+  { value: 'High', label: 'risk.High' },
+  { value: 'Critical', label: 'risk.Critical' },
 ]
 
-export const PROJECT_TYPE_OPTIONS = [
-  { value: '冷站节能', label: '冷站节能' },
-  { value: '空压节能', label: '空压节能' },
-  { value: 'FMCS', label: 'FMCS' },
-  { value: 'ESL', label: 'ESL' },
-  { value: '电气工程', label: '电气工程' },
-  { value: '软件工程', label: '软件工程' },
-  { value: '集成项目', label: '集成项目' },
-  { value: '运维服务', label: '运维服务' },
-  { value: '其他', label: '其他' },
-]
-
-export const COUNTRY_OPTIONS = [
-  { value: 'CN', label: '中国' },
-  { value: 'VN', label: '越南' },
-  { value: 'TH', label: '泰国' },
-  { value: 'MY', label: '马来西亚' },
-  { value: 'ID', label: '印度尼西亚' },
-  { value: 'SG', label: '新加坡' },
-  { value: 'OM', label: '阿曼' },
-  { value: 'AE', label: '阿联酋' },
-]
-
-export const CURRENCY_OPTIONS = [
-  { value: 'CNY', label: '人民币' },
-  { value: 'USD', label: '美元' },
-  { value: 'EUR', label: '欧元' },
-  { value: 'VND', label: '越南盾' },
-  { value: 'THB', label: '泰铢' },
-  { value: 'MYR', label: '林吉特' },
-  { value: 'IDR', label: '印尼盾' },
-  { value: 'SGD', label: '新加坡元' },
-  { value: 'OMR', label: '阿曼里亚尔' },
-]
-
-export const LANGUAGE_OPTIONS = [
-  { value: 'zh-CN', label: '简体中文' },
-  { value: 'en-US', label: 'English' },
-  { value: 'vi-VN', label: 'Tiếng Việt' },
-  { value: 'th-TH', label: 'ไทย' },
-  { value: 'ms-MY', label: 'Bahasa Melayu' },
-  { value: 'id-ID', label: 'Bahasa Indonesia' },
-]
-
-export const STAGE_OPTIONS = [
-  { value: '01_sale', label: '售前与合同' },
-  { value: '02_design', label: '深化方案' },
-  { value: '03_procurement', label: '采购与生产' },
-  { value: '04_construction', label: '施工与调试' },
-  { value: '05_acceptance', label: '验收与移交' },
-  { value: '06_review', label: '收尾与复盘' },
-  { value: '07_misc', label: '其他杂项' },
+export const STAGE_OPTIONS: ReadonlyArray<{
+  value: ProjectDeliveryStage
+  label: string
+}> = [
+  { value: 'STARTUP', label: 'stage.STARTUP' },
+  { value: 'DEEPENING', label: 'stage.DEEPENING' },
+  { value: 'PROCUREMENT', label: 'stage.PROCUREMENT' },
+  { value: 'CONSTRUCTION', label: 'stage.CONSTRUCTION' },
+  { value: 'COMMISSIONING', label: 'stage.COMMISSIONING' },
+  { value: 'TESTING', label: 'stage.TESTING' },
+  { value: 'INTERNAL_ACCEPTANCE', label: 'stage.INTERNAL_ACCEPTANCE' },
+  { value: 'EXTERNAL_ACCEPTANCE', label: 'stage.EXTERNAL_ACCEPTANCE' },
+  { value: 'WARRANTY', label: 'stage.WARRANTY' },
 ]
 
 export const PROJECT_ROLE_OPTIONS = [
-  { value: 'SALES_OWNER', label: '销售负责人' },
-  { value: 'PROJECT_MANAGER', label: '项目经理' },
-  { value: 'DELIVERY_MANAGER', label: '交付经理' },
-  { value: 'COUNTRY_MANAGER', label: '国家负责人' },
-  { value: 'ELEC_LEADER', label: '电气负责人' },
-  { value: 'ELEC_ENGINEER', label: '电气工程师' },
-  { value: 'SOFTWARE_LEADER', label: '软件负责人' },
-  { value: 'SOFTWARE_ENGINEER', label: '软件工程师' },
-  { value: 'PURCHASE', label: '采购人员' },
-  { value: 'FINANCE', label: '财务人员' },
-  { value: 'HSE', label: '安全人员' },
-  { value: 'QUALITY_MANAGER', label: '质量管理员' },
-  { value: 'MEMBER', label: '项目成员' },
+  { value: 'SALES_OWNER', label: 'projects.roles.SALES_OWNER' },
+  { value: 'PROJECT_MANAGER', label: 'projects.roles.PROJECT_MANAGER' },
+  { value: 'DELIVERY_MANAGER', label: 'projects.roles.DELIVERY_MANAGER' },
+  { value: 'COUNTRY_MANAGER', label: 'projects.roles.COUNTRY_MANAGER' },
+  { value: 'ELEC_LEADER', label: 'projects.roles.ELEC_LEADER' },
+  { value: 'ELEC_ENGINEER', label: 'projects.roles.ELEC_ENGINEER' },
+  { value: 'SOFTWARE_LEADER', label: 'projects.roles.SOFTWARE_LEADER' },
+  { value: 'SOFTWARE_ENGINEER', label: 'projects.roles.SOFTWARE_ENGINEER' },
+  { value: 'PURCHASE', label: 'projects.roles.PURCHASE' },
+  { value: 'FINANCE', label: 'projects.roles.FINANCE' },
+  { value: 'HSE', label: 'projects.roles.HSE' },
+  { value: 'QUALITY_MANAGER', label: 'projects.roles.QUALITY_MANAGER' },
+  { value: 'MEMBER', label: 'projects.roles.MEMBER' },
 ]

@@ -1,31 +1,63 @@
 <script setup lang="ts">
-import { computed, ref, reactive, onMounted } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import type { FormInstance } from '@arco-design/web-vue'
-import { arcoConfirm, arcoPrompt } from '@/utils/arco-dialog'
-import { departmentApi } from '@/api/platform'
+import { IconPlus } from '@arco-design/web-vue/es/icon'
+import { useMutation, useQueryClient } from '@tanstack/vue-query'
+
 import { userApi } from '@/api/user'
+import {
+  BusinessModal,
+  BusinessTable,
+  Can,
+  PageContainer,
+  PageToolbar,
+  StatusBadge,
+} from '@/components/business'
+import {
+  useDepartmentsQuery,
+  useRolesQuery,
+  useUsersQuery,
+} from '@/composables/queries/useAdministrationQueries'
+import { queryKeys } from '@/query/keys'
 import type { DepartmentNode } from '@/types/platform'
-import type { UserListItem, UserRoleItem, QueryUserParams } from '@/types/user'
+import type {
+  AssignRolesDto,
+  CreateUserDto,
+  QueryUserParams,
+  ResetPasswordDto,
+  UpdateUserDto,
+  UserListItem,
+  UserRoleItem,
+} from '@/types/user'
+import { arcoConfirm } from '@/utils/arco-dialog'
 import {
   getUserStatusLabel as statusLabel,
-  getUserStatusTagType as statusTagType,
   passwordFormRules as pwdFormRules,
   validateArcoForm,
   type UserFormModel,
 } from './form-config'
 import UserFormDialog from './UserFormDialog.vue'
-const loading = ref(false)
-const userList = ref<UserListItem[]>([])
-const departmentTree = ref<DepartmentNode[]>([])
-const total = ref(0)
+
+type UserMutationVariables =
+  | { kind: 'create'; data: CreateUserDto }
+  | { kind: 'update'; id: string; data: UpdateUserDto }
+  | { kind: 'delete' | 'disable' | 'enable'; id: string }
+  | { kind: 'assignRoles'; id: string; data: AssignRolesDto }
+  | { kind: 'resetPassword'; id: string; data: ResetPasswordDto }
+
+const queryClient = useQueryClient()
+const filters = reactive({ keyword: '', status: '', departmentId: '' })
 const queryParams = reactive<QueryUserParams>({
   page: 1,
   pageSize: 20,
   keyword: '',
   status: '',
+  departmentId: '',
 })
-const actionLoading = ref(false)
+const userListQuery = useUsersQuery(() => ({ ...queryParams }))
+const departmentsQuery = useDepartmentsQuery()
+
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const currentId = ref('')
@@ -37,15 +69,26 @@ const formData = reactive<UserFormModel>({
   phone: '',
   departmentId: '',
 })
+
 const roleDialogVisible = ref(false)
 const currentUserForRole = ref<UserListItem | null>(null)
-const roleList = ref<Array<{ id: string; roleCode: string; roleName: string }>>([])
 const selectedRoleIds = ref<string[]>([])
-const roleLoading = ref(false)
+const rolesQuery = useRolesQuery(roleDialogVisible)
+
 const pwdDialogVisible = ref(false)
-const currentUserForPwd = ref<string>('')
+const currentUserForPwd = ref('')
 const pwdFormData = reactive({ newPassword: '' })
 const pwdFormRef = ref<FormInstance>()
+
+const userList = computed<UserListItem[]>(() => userListQuery.data.value?.items ?? [])
+const total = computed(() => userListQuery.data.value?.total ?? 0)
+const departmentTree = computed<DepartmentNode[]>(() => departmentsQuery.data.value ?? [])
+const roleList = computed(() => rolesQuery.data.value ?? [])
+const pagination = computed(() => ({
+  page: queryParams.page ?? 1,
+  pageSize: queryParams.pageSize ?? 20,
+  total: total.value,
+}))
 const departmentNames = computed(() => {
   const result = new Map<string, string>()
   const collect = (nodes: DepartmentNode[]): void => {
@@ -57,87 +100,126 @@ const departmentNames = computed(() => {
   collect(departmentTree.value)
   return result
 })
-const fetchList = async () => {
-  loading.value = true
-  try {
-    const res = await userApi.getList(queryParams)
-    userList.value = res.list
-    total.value = res.pagination.total
-  } catch {
-    userList.value = []
-  } finally {
-    loading.value = false
-  }
-}
-const handleSearch = () => {
+
+const userMutation = useMutation({
+  mutationFn: async (variables: UserMutationVariables): Promise<void> => {
+    switch (variables.kind) {
+      case 'create':
+        await userApi.create(variables.data)
+        return
+      case 'update':
+        await userApi.update(variables.id, variables.data)
+        return
+      case 'delete':
+        await userApi.delete(variables.id)
+        return
+      case 'disable':
+        await userApi.disable(variables.id)
+        return
+      case 'enable':
+        await userApi.enable(variables.id)
+        return
+      case 'assignRoles':
+        await userApi.assignRoles(variables.id, variables.data)
+        return
+      case 'resetPassword':
+        await userApi.resetPassword(variables.id, variables.data)
+        return
+    }
+  },
+  retry: false,
+  onSuccess: async (_, variables) => {
+    const invalidations = [queryClient.invalidateQueries({ queryKey: queryKeys.users.lists() })]
+    if (variables.kind === 'assignRoles' || variables.kind === 'delete') {
+      invalidations.push(queryClient.invalidateQueries({ queryKey: queryKeys.roles.list() }))
+    }
+    await Promise.all(invalidations)
+  },
+})
+
+function handleSearch(): void {
+  queryParams.keyword = filters.keyword.trim()
+  queryParams.status = filters.status
+  queryParams.departmentId = filters.departmentId
   queryParams.page = 1
-  fetchList()
 }
-const handleReset = () => {
-  queryParams.keyword = ''
-  queryParams.status = ''
-  queryParams.departmentId = ''
-  queryParams.page = 1
-  fetchList()
+
+function handleReset(): void {
+  filters.keyword = ''
+  filters.status = ''
+  filters.departmentId = ''
+  handleSearch()
 }
-const handlePageChange = (page: number) => {
+
+function handlePageChange(page: number): void {
   queryParams.page = page
-  fetchList()
 }
-const handleSizeChange = (size: number) => {
-  queryParams.pageSize = size
+
+function handleSizeChange(pageSize: number): void {
+  queryParams.pageSize = pageSize
   queryParams.page = 1
-  fetchList()
 }
-const openCreate = () => {
+
+function openCreate(): void {
   isEdit.value = false
   currentId.value = ''
-  formData.username = ''
-  formData.password = ''
-  formData.realName = ''
-  formData.email = ''
-  formData.phone = ''
-  formData.departmentId = ''
+  Object.assign(formData, {
+    username: '',
+    password: '',
+    realName: '',
+    email: '',
+    phone: '',
+    departmentId: '',
+  })
   dialogVisible.value = true
 }
-const openEdit = (row: UserListItem) => {
+
+function openEdit(row: UserListItem): void {
   isEdit.value = true
   currentId.value = row.id
-  formData.username = row.username
-  formData.password = ''
-  formData.realName = row.realName
-  formData.email = row.email ?? ''
-  formData.phone = row.phone ?? ''
-  formData.departmentId = row.departmentId ?? ''
+  Object.assign(formData, {
+    username: row.username,
+    password: '',
+    realName: row.realName,
+    email: row.email ?? '',
+    phone: row.phone ?? '',
+    departmentId: row.departmentId ?? '',
+  })
   dialogVisible.value = true
 }
-const handleSubmit = async () => {
-  actionLoading.value = true
+
+async function handleSubmit(): Promise<void> {
+  const data: UpdateUserDto = {
+    realName: formData.realName,
+    email: formData.email || undefined,
+    phone: formData.phone || undefined,
+    departmentId: formData.departmentId || undefined,
+  }
   try {
-    const payload = {
-      realName: formData.realName,
-      email: formData.email || undefined,
-      phone: formData.phone || undefined,
-      departmentId: formData.departmentId || undefined,
-    }
     if (isEdit.value) {
-      await userApi.update(currentId.value, payload)
+      await userMutation.mutateAsync({ kind: 'update', id: currentId.value, data })
       Message.success('更新成功')
     } else {
-      await userApi.create({
-        username: formData.username,
-        password: formData.password,
-        ...payload,
+      await userMutation.mutateAsync({
+        kind: 'create',
+        data: {
+          username: formData.username,
+          password: formData.password,
+          realName: formData.realName,
+          email: formData.email || undefined,
+          phone: formData.phone || undefined,
+          departmentId: formData.departmentId || undefined,
+        },
       })
       Message.success('创建成功')
     }
     dialogVisible.value = false
-    fetchList()
-  } catch { return } finally {
-    actionLoading.value = false
+  } catch {
+    // The shared request layer has already surfaced the failure.
   }
 }
-const handleDelete = (row: UserListItem) => {
+
+function handleDelete(row: UserListItem): void {
   arcoConfirm(
     `确定删除用户“${row.realName}(${row.username})”吗？删除后该用户将被禁用且不可恢复。`,
     '确认删除',
@@ -149,121 +231,124 @@ const handleDelete = (row: UserListItem) => {
   )
     .then(async () => {
       try {
-        await userApi.delete(row.id)
+        await userMutation.mutateAsync({ kind: 'delete', id: row.id })
         Message.success('删除成功')
-        fetchList()
-      } catch { return }
+      } catch {
+        // The shared request layer has already surfaced the failure.
+      }
     })
-    .catch(() => {
-    })
+    .catch(() => undefined)
 }
-const handleDisable = (row: UserListItem) => {
-  arcoConfirm(
-    `确定禁用用户 "${row.realName}(${row.username})" 吗？`,
-    '确认禁用',
-    {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning',
-    },
-  )
+
+function handleDisable(row: UserListItem): void {
+  arcoConfirm(`确定禁用用户 "${row.realName}(${row.username})" 吗？`, '确认禁用', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning',
+  })
     .then(async () => {
       try {
-        await userApi.disable(row.id)
+        await userMutation.mutateAsync({ kind: 'disable', id: row.id })
         Message.success('禁用成功')
-        fetchList()
-      } catch { return }
+      } catch {
+        // The shared request layer has already surfaced the failure.
+      }
     })
-    .catch(() => {
-    })
+    .catch(() => undefined)
 }
-const handleEnable = (row: UserListItem) => {
-  arcoConfirm(
-    `确定启用用户 "${row.realName}(${row.username})" 吗？`,
-    '确认启用',
-    {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'info',
-    },
-  )
+
+function handleEnable(row: UserListItem): void {
+  arcoConfirm(`确定启用用户 "${row.realName}(${row.username})" 吗？`, '确认启用', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'info',
+  })
     .then(async () => {
       try {
-        await userApi.enable(row.id)
+        await userMutation.mutateAsync({ kind: 'enable', id: row.id })
         Message.success('启用成功')
-        fetchList()
-      } catch { return }
+      } catch {
+        // The shared request layer has already surfaced the failure.
+      }
     })
-    .catch(() => {
-    })
+    .catch(() => undefined)
 }
-const openAssignRoles = async (row: UserListItem) => {
+
+function openAssignRoles(row: UserListItem): void {
   currentUserForRole.value = row
-  selectedRoleIds.value = row.roles.map((r: UserRoleItem) => r.id)
-  roleLoading.value = true
-  try {
-    const roles = await userApi.getAllRoles()
-    roleList.value = roles
-  } catch {
-    roleList.value = []
-  } finally {
-    roleLoading.value = false
-  }
+  selectedRoleIds.value = row.roles.map((role: UserRoleItem) => role.id)
   roleDialogVisible.value = true
 }
-const handleAssignRoles = async () => {
+
+async function handleAssignRoles(): Promise<void> {
   if (!currentUserForRole.value) return
-  actionLoading.value = true
   try {
-    await userApi.assignRoles(currentUserForRole.value.id, { roleIds: selectedRoleIds.value })
+    await userMutation.mutateAsync({
+      kind: 'assignRoles',
+      id: currentUserForRole.value.id,
+      data: { roleIds: selectedRoleIds.value },
+    })
     Message.success('角色分配成功')
     roleDialogVisible.value = false
-    fetchList()
-  } catch { return } finally {
-    actionLoading.value = false
+  } catch {
+    // The shared request layer has already surfaced the failure.
   }
 }
-const openResetPassword = (row: UserListItem) => {
+
+function openResetPassword(row: UserListItem): void {
   currentUserForPwd.value = row.id
   pwdFormData.newPassword = ''
   pwdDialogVisible.value = true
 }
-const handleResetPassword = async () => {
-  if (!await validateArcoForm(pwdFormRef.value)) return
-  actionLoading.value = true
+
+async function handleResetPassword(): Promise<void> {
+  if (!(await validateArcoForm(pwdFormRef.value))) return
   try {
-    await userApi.resetPassword(currentUserForPwd.value, { newPassword: pwdFormData.newPassword })
+    await userMutation.mutateAsync({
+      kind: 'resetPassword',
+      id: currentUserForPwd.value,
+      data: { newPassword: pwdFormData.newPassword },
+    })
     Message.success('密码重置成功')
     pwdDialogVisible.value = false
-  } catch { return } finally {
-    actionLoading.value = false
+  } catch {
+    // The shared request layer has already surfaced the failure.
   }
 }
-onMounted(async () => {
-  departmentTree.value = await departmentApi.getTree()
-  await fetchList()
-})
 </script>
+
 <template>
-  <div class="user-page">
+  <PageContainer class="user-page">
+    <PageToolbar title="用户管理" description="维护用户资料、状态及角色授权">
+      <template #actions>
+        <Can permission="user:create">
+          <a-button type="primary" @click="openCreate">
+            <template #icon>
+              <IconPlus />
+            </template>
+            创建用户
+          </a-button>
+        </Can>
+      </template>
+    </PageToolbar>
+
     <a-card class="search-card">
-      <a-form :model="queryParams" inline>
+      <a-form :model="filters" layout="inline">
         <a-form-item label="关键词">
           <a-input
-            v-model="queryParams.keyword"
+            v-model="filters.keyword"
             placeholder="用户名/真实姓名/邮箱"
-            clearable
+            allow-clear
             style="width: 220px"
-            @keyup.enter="handleSearch"
+            @press-enter="handleSearch"
           />
         </a-form-item>
         <a-form-item label="状态">
           <a-select
-            v-model="queryParams.status"
+            v-model="filters.status"
             placeholder="全部"
-            clearable
+            allow-clear
             style="width: 120px"
-            @change="handleSearch"
           >
             <a-option label="活跃" value="Active" />
             <a-option label="禁用" value="Inactive" />
@@ -272,57 +357,60 @@ onMounted(async () => {
         </a-form-item>
         <a-form-item label="部门">
           <a-tree-select
-            v-model="queryParams.departmentId"
+            v-model="filters.departmentId"
             :data="departmentTree"
-            node-key="id"
-            :props="{ label: 'departmentName', children: 'children' }"
-            clearable
-            check-strictly
-            filterable
+            :field-names="{ key: 'id', title: 'departmentName', children: 'children' }"
+            :loading="departmentsQuery.isFetching.value"
+            allow-clear
+            tree-check-strictly
+            allow-search
             style="width: 180px"
-            @change="handleSearch"
           />
         </a-form-item>
         <a-form-item>
-          <a-button type="primary" @click="handleSearch">
-            查询
-          </a-button>
-          <a-button @click="handleReset">
-            重置
-          </a-button>
+          <a-space>
+            <a-button type="primary" @click="handleSearch">
+              查询
+            </a-button>
+            <a-button @click="handleReset">
+              重置
+            </a-button>
+          </a-space>
         </a-form-item>
       </a-form>
     </a-card>
+
     <a-card class="table-card">
-      <div class="table-header">
-        <span class="table-title">用户列表</span>
-        <a-button type="primary" @click="openCreate">
-          <a-icon><Plus /></a-icon> 创建用户
-        </a-button>
-      </div>
-      <a-table
-        v-loading="loading"
+      <BusinessTable
         :data="userList"
-        border
+        :loading="userListQuery.isFetching.value"
+        :error="userListQuery.isError.value ? '用户列表加载失败' : null"
+        empty-title="暂无用户"
+        empty-description="可通过右上角创建用户"
+        retry-label="重试"
+        :pagination="pagination"
+        bordered
         stripe
-        style="width: 100%"
+        @retry="userListQuery.refetch()"
+        @page-change="handlePageChange"
+        @page-size-change="handleSizeChange"
       >
-        <a-table-column prop="username" label="用户名" :width="140" />
-        <a-table-column prop="realName" label="真实姓名" :width="120" />
+        <a-table-column data-index="username" title="用户名" :width="140" />
+        <a-table-column data-index="realName" title="真实姓名" :width="120" />
         <a-table-column
-          prop="email"
-          label="邮箱"
+          data-index="email"
+          title="邮箱"
           :min-width="180"
-          show-overflow-tooltip
+          tooltip
         />
-        <a-table-column prop="phone" label="手机号" :width="140" />
-        <a-table-column label="部门" :width="140">
-          <template #default="{ row }">
-            {{ row.departmentId ? departmentNames.get(row.departmentId) : '未分配 '}}
+        <a-table-column data-index="phone" title="手机号" :width="140" />
+        <a-table-column title="部门" :width="140">
+          <template #cell="{ record: row }">
+            {{ row.departmentId ? departmentNames.get(row.departmentId) : '未分配' }}
           </template>
         </a-table-column>
-        <a-table-column label="角色" :width="180">
-          <template #default="{ row }">
+        <a-table-column title="角色" :width="180">
+          <template #cell="{ record: row }">
             <template v-if="row.roles.length > 0">
               <a-tag
                 v-for="role in row.roles"
@@ -337,141 +425,133 @@ onMounted(async () => {
             <span v-else class="no-role">未分配</span>
           </template>
         </a-table-column>
-        <a-table-column prop="status" label="状态" :width="90">
-          <template #default="{ row }">
-            <a-tag :type="statusTagType(row.status)" size="small">
-              {{ statusLabel(row.status) }}
-            </a-tag>
+        <a-table-column data-index="status" title="状态" :width="90">
+          <template #cell="{ record: row }">
+            <StatusBadge domain="user" :status="row.status" :label="statusLabel(row.status)" />
           </template>
         </a-table-column>
-        <a-table-column prop="lastLoginAt" label="最后登录" :width="170">
-          <template #default="{ row }">
-            <span>{{ row.lastLoginAt ? new Date(row.lastLoginAt).toLocaleString('zh-CN') : '-' }}</span>
+        <a-table-column data-index="lastLoginAt" title="最后登录" :width="170">
+          <template #cell="{ record: row }">
+            {{ row.lastLoginAt ? new Date(row.lastLoginAt).toLocaleString('zh-CN') : '-' }}
           </template>
         </a-table-column>
-        <a-table-column label="操作" :width="280" fixed="right">
-          <template #default="{ row }">
-            <a-button
-              type="primary"
-              text
-              size="small"
-              @click="openEdit(row)"
-            >
-              编辑
-            </a-button>
-            <a-button
-              type="primary"
-              text
-              size="small"
-              @click="openAssignRoles(row)"
-            >
-              角色
-            </a-button>
-            <a-button
-              type="primary"
-              text
-              size="small"
-              @click="openResetPassword(row)"
-            >
-              重置密码
-            </a-button>
-            <a-button
-              v-if="row.status === 'Active'"
-              status="warning" type="secondary"
-              text
-              size="small"
-              @click="handleDisable(row)"
-            >
-              禁用
-            </a-button>
-            <a-button
-              v-if="row.status === 'Inactive'"
-              status="success" type="secondary"
-              text
-              size="small"
-              @click="handleEnable(row)"
-            >
-              启用
-            </a-button>
-            <a-button
-              status="danger" type="secondary"
-              text
-              size="small"
-              @click="handleDelete(row)"
-            >
-              删除
-            </a-button>
+        <a-table-column title="操作" :width="300" fixed="right">
+          <template #cell="{ record: row }">
+            <a-space size="mini" :wrap="false">
+              <Can permission="user:update">
+                <a-button type="text" size="small" @click="openEdit(row)">
+                  编辑
+                </a-button>
+              </Can>
+              <Can permission="user:assign_role">
+                <a-button type="text" size="small" @click="openAssignRoles(row)">
+                  角色
+                </a-button>
+              </Can>
+              <Can permission="user:reset_password">
+                <a-button type="text" size="small" @click="openResetPassword(row)">
+                  重置密码
+                </a-button>
+              </Can>
+              <Can permission="user:disable">
+                <a-button
+                  v-if="row.status === 'Active'"
+                  status="warning"
+                  type="text"
+                  size="small"
+                  @click="handleDisable(row)"
+                >
+                  禁用
+                </a-button>
+                <a-button
+                  v-else-if="row.status === 'Inactive'"
+                  status="success"
+                  type="text"
+                  size="small"
+                  @click="handleEnable(row)"
+                >
+                  启用
+                </a-button>
+              </Can>
+              <Can permission="user:delete">
+                <a-button
+                  status="danger"
+                  type="text"
+                  size="small"
+                  @click="handleDelete(row)"
+                >
+                  删除
+                </a-button>
+              </Can>
+            </a-space>
           </template>
         </a-table-column>
-      </a-table>
-      <div class="pagination-wrapper">
-        <a-pagination
-          v-model:current-page="queryParams.page!"
-          v-model:page-size="queryParams.pageSize!"
-          :page-sizes="[10, 20, 50, 100]"
-          :total="total"
-          layout="total, sizes, prev, pager, next, jumper"
-          @size-change="handleSizeChange"
-          @current-change="handlePageChange"
-        />
-      </div>
+      </BusinessTable>
     </a-card>
+
     <UserFormDialog
       v-model:visible="dialogVisible"
       v-model:form-data="formData"
       :is-edit="isEdit"
-      :loading="actionLoading"
+      :loading="userMutation.isPending.value"
       :departments="departmentTree"
       @submit="handleSubmit"
     />
-    <a-dialog
-      v-model="roleDialogVisible"
+
+    <BusinessModal
+      v-model:visible="roleDialogVisible"
       title="分配角色"
-      width="500px"
-      :close-on-click-modal="false"
+      :width="500"
+      :mask-closable="false"
     >
       <div v-if="currentUserForRole" class="role-dialog-info">
-        为用户 <strong>{{ currentUserForRole.realName }}({{ currentUserForRole.username }})</strong> 分配角色
+        为用户
+        <strong>{{ currentUserForRole.realName }}({{ currentUserForRole.username }})</strong>
+        分配角色
       </div>
-      <a-checkbox-group v-model="selectedRoleIds" v-loading="roleLoading" class="role-checkbox-group">
-        <a-checkbox
-          v-for="role in roleList"
-          :key="role.id"
-          :label="role.id"
-          :value="role.id"
-          border
-        >
-          {{ role.roleName }}
-          <span class="role-code-hint">({{ role.roleCode }})</span>
-        </a-checkbox>
-      </a-checkbox-group>
+      <a-spin :loading="rolesQuery.isFetching.value">
+        <a-alert v-if="rolesQuery.isError.value" type="error">
+          角色列表加载失败，请重试。
+        </a-alert>
+        <a-checkbox-group v-else v-model="selectedRoleIds" class="role-checkbox-group">
+          <a-checkbox v-for="role in roleList" :key="role.id" :value="role.id">
+            {{ role.roleName }}
+            <span class="role-code-hint">({{ role.roleCode }})</span>
+          </a-checkbox>
+        </a-checkbox-group>
+      </a-spin>
       <template #footer>
         <a-button @click="roleDialogVisible = false">
           取消
         </a-button>
-        <a-button type="primary" :loading="actionLoading" @click="handleAssignRoles">
+        <a-button
+          type="primary"
+          :loading="userMutation.isPending.value"
+          :disabled="rolesQuery.isError.value"
+          @click="handleAssignRoles"
+        >
           保存
         </a-button>
       </template>
-    </a-dialog>
-    <a-dialog
-      v-model="pwdDialogVisible"
+    </BusinessModal>
+
+    <BusinessModal
+      v-model:visible="pwdDialogVisible"
       title="重置密码"
-      width="420px"
-      :close-on-click-modal="false"
+      :width="420"
+      :mask-closable="false"
     >
       <a-form
         ref="pwdFormRef"
         :model="pwdFormData"
         :rules="pwdFormRules"
-        label-width="100px"
+        auto-label-width
       >
-        <a-form-item label="新密码" prop="newPassword">
+        <a-form-item label="新密码" field="newPassword">
           <a-input
             v-model="pwdFormData.newPassword"
             type="password"
-            show-password
-            :maxlength="100"
+            :max-length="100"
             placeholder="请输入新密码"
           />
         </a-form-item>
@@ -480,11 +560,16 @@ onMounted(async () => {
         <a-button @click="pwdDialogVisible = false">
           取消
         </a-button>
-        <a-button type="primary" :loading="actionLoading" @click="handleResetPassword">
+        <a-button
+          type="primary"
+          :loading="userMutation.isPending.value"
+          @click="handleResetPassword"
+        >
           确定
         </a-button>
       </template>
-    </a-dialog>
-  </div>
+    </BusinessModal>
+  </PageContainer>
 </template>
+
 <style scoped lang="scss" src="./index.scss"></style>

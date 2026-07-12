@@ -1,5 +1,13 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsInt, MaxLength } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsInt,
+  IsNumber,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export class UpdateCurrencyDto {
   @ApiPropertyOptional({ description: '币种名称', example: '美元' })
@@ -17,5 +25,13 @@ export class UpdateCurrencyDto {
   @ApiPropertyOptional({ description: '小数位数', default: 2 })
   @IsOptional()
   @IsInt()
+  @Min(0)
+  @Max(8)
   decimalPlaces?: number;
+
+  @ApiPropertyOptional({ description: '该币种折算为人民币的汇率' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0.00000001)
+  cnyRate?: number;
 }

@@ -1,630 +1,653 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Message } from '@arco-design/web-vue'
-import { departmentApi, referenceApi, systemOperationsApi } from '@/api/platform'
+import type { TableColumnData } from '@arco-design/web-vue'
+import { useMutation, useQueryClient } from '@tanstack/vue-query'
+import { useI18n } from 'vue-i18n'
+
+import { integrationApi } from '@/api/integration'
+import {
+  BusinessDrawer,
+  BusinessModal,
+  BusinessTable,
+  Can,
+  PageContainer,
+  PageToolbar,
+  StatusBadge,
+} from '@/components/business'
+import {
+  useIntegrationLogsQuery,
+  useIntegrationsQuery,
+} from '@/composables/queries/useOperationsQueries'
+import { usePermission } from '@/composables/usePermission'
+import { queryKeys } from '@/query/keys'
 import type {
-  DepartmentNode,
-  ExternalContactCandidate,
+  IntegrationActionResult,
   IntegrationConfig,
-  RoleOption,
-} from '@/types/platform'
+  IntegrationProvider,
+  IntegrationSyncLog,
+} from '@/types/settings'
+import {
+  buildIntegrationUpdate,
+  emptyIntegrationForm,
+  hasConfiguredSecret,
+  hydrateIntegrationForm,
+  type IntegrationEditorForm,
+} from './integration-form'
 
-interface ProviderOption {
-  value: string
+interface IntegrationRow {
+  provider: IntegrationProvider
   label: string
+  config?: IntegrationConfig
 }
 
-const loading = ref(false)
-const records = ref<IntegrationConfig[]>([])
-const dialogVisible = ref(false)
-const editingId = ref('')
-const candidatesVisible = ref(false)
-const candidatesLoading = ref(false)
-const selectedIntegration = ref<IntegrationConfig>()
-const candidates = ref<ExternalContactCandidate[]>([])
-const roleOptions = ref<RoleOption[]>([])
-const departmentOptions = ref<Array<{ value: string; label: string }>>([])
-const approveVisible = ref(false)
-const approving = ref(false)
-const approvingCandidate = ref<ExternalContactCandidate>()
+type IntegrationAction = 'test' | 'sync' | 'notification'
 
-const form = ref({
-  provider: 'enterprise_wechat',
-  configName: '',
-  isEnabled: false,
-  description: '',
+const { hasPermission } = usePermission()
+const queryClient = useQueryClient()
+const { t, locale } = useI18n()
+const canManage = computed(() => hasPermission('integration:manage'))
+
+const providerOptions = computed<Array<{ provider: IntegrationProvider; label: string }>>(() => [
+  { provider: 'FEISHU', label: t('integrations.providers.FEISHU') },
+  { provider: 'WECOM', label: t('integrations.providers.WECOM') },
+])
+
+const editorVisible = ref(false)
+const editingProvider = ref<IntegrationProvider>('FEISHU')
+const form = ref<IntegrationEditorForm>(
+  emptyIntegrationForm('FEISHU', t('integrations.defaultNames.FEISHU')),
+)
+
+const logsVisible = ref(false)
+const logsProvider = ref<IntegrationProvider>('FEISHU')
+const logsPage = ref(1)
+const integrationsQuery = useIntegrationsQuery()
+const integrationLogsQuery = useIntegrationLogsQuery(
+  logsProvider,
+  computed(() => ({ page: logsPage.value, pageSize: 20 })),
+  logsVisible,
+)
+const configs = computed<IntegrationConfig[]>(() => integrationsQuery.data.value ?? [])
+const logs = computed<IntegrationSyncLog[]>(() => integrationLogsQuery.data.value?.items ?? [])
+const logsTotal = computed(() => integrationLogsQuery.data.value?.total ?? 0)
+const logsPagination = computed(() => ({
+  page: logsPage.value,
+  pageSize: 20,
+  total: logsTotal.value,
+}))
+const loading = computed(() => integrationsQuery.isFetching.value)
+const loadFailed = computed(() => integrationsQuery.isError.value)
+const logsLoading = computed(() => integrationLogsQuery.isFetching.value)
+
+const rows = computed<IntegrationRow[]>(() =>
+  providerOptions.value.map((option) => ({
+    ...option,
+    config: configs.value.find((config) => config.provider === option.provider),
+  })),
+)
+
+const selectedConfig = computed(() =>
+  configs.value.find((config) => config.provider === editingProvider.value),
+)
+
+const columns = computed<TableColumnData[]>(() => [
+  { title: t('integrations.columns.provider'), dataIndex: 'label', width: 130, fixed: 'left' },
+  { title: t('integrations.columns.configName'), slotName: 'configName', minWidth: 180 },
+  { title: t('integrations.columns.capabilities'), slotName: 'capabilities', minWidth: 180 },
+  { title: t('integrations.columns.credentials'), slotName: 'credentials', minWidth: 180 },
+  { title: t('integrations.columns.enabled'), slotName: 'enabled', width: 110 },
+  { title: t('integrations.columns.updatedAt'), slotName: 'updatedAt', width: 170 },
+  { title: t('common.action'), slotName: 'actions', width: 370, fixed: 'right' },
+])
+
+const logColumns = computed<TableColumnData[]>(() => [
+  {
+    title: t('integrations.columns.startedAt'),
+    dataIndex: 'startedAt',
+    slotName: 'startedAt',
+    width: 170,
+  },
+  { title: t('integrations.columns.action'), dataIndex: 'action', slotName: 'action', width: 130 },
+  { title: t('integrations.columns.result'), dataIndex: 'status', slotName: 'status', width: 90 },
+  { title: t('integrations.columns.requester'), slotName: 'requester', width: 120 },
+  { title: t('integrations.columns.summary'), slotName: 'summary', minWidth: 280 },
+])
+
+const saveIntegrationMutation = useMutation({
+  mutationFn: ({
+    provider,
+    data,
+  }: {
+    provider: IntegrationProvider
+    data: Parameters<typeof integrationApi.update>[1]
+  }) => integrationApi.update(provider, data),
+  retry: false,
+  onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.settings.integrations() }),
 })
-const config = ref({
-  corpId: '',
-  agentId: '',
-  secret: '',
-  appId: '',
-  appSecret: '',
-  encryptKey: '',
-  verificationToken: '',
-  webhookUrl: '',
-  host: '',
-  port: 465,
-  secure: true,
-  username: '',
-  password: '',
-  sender: '',
-  endpoint: '',
-  region: '',
-  bucket: '',
-  accessKeyId: '',
-  accessKeySecret: '',
-  url: '',
-  method: 'POST',
-  authType: 'none',
-  token: '',
-  mockContactsText: '',
-})
-const approveForm = ref({
-  roleIds: [] as string[],
-  departmentId: '',
-  positionsText: '',
-  username: '',
-  comment: '',
-})
 
-const providerOptions: ProviderOption[] = [
-  { value: 'enterprise_wechat', label: '企业微信' },
-  { value: 'feishu', label: '飞书' },
-  { value: 'email', label: '邮件 SMTP' },
-  { value: 'aliyun_oss', label: '阿里云 OSS' },
-  { value: 'webhook', label: 'Webhook' },
-]
-
-const peopleProviders = new Set(['enterprise_wechat', 'feishu'])
-const selectedProviderLabel = computed(() => providerLabel(form.value.provider))
-
-function providerLabel(provider: string): string {
-  return providerOptions.find((item) => item.value === provider)?.label || provider
-}
-
-function isPeopleProvider(row: IntegrationConfig | { provider: string }): boolean {
-  return peopleProviders.has(row.provider)
-}
-
-async function fetchRecords(): Promise<void> {
-  loading.value = true
-  try {
-    records.value = await systemOperationsApi.getIntegrations()
-  } finally {
-    loading.value = false
-  }
-}
-
-async function loadSelectorOptions(): Promise<void> {
-  const [roles, departments] = await Promise.all([
-    referenceApi.getRoleOptions(),
-    departmentApi.getTree(),
-  ])
-  roleOptions.value = roles
-  departmentOptions.value = flattenDepartments(departments)
-}
-
-function flattenDepartments(
-  nodes: DepartmentNode[],
-  prefix = '',
-): Array<{ value: string; label: string }> {
-  return nodes.flatMap((node) => {
-    const label = prefix ? `${prefix} / ${node.departmentName}` : node.departmentName
-    return [
-      { value: node.id, label },
-      ...flattenDepartments(node.children || [], label),
-    ]
-  })
-}
-
-function openEditor(row?: IntegrationConfig): void {
-  editingId.value = row?.id ?? ''
-  form.value = {
-    provider: row?.provider ?? 'enterprise_wechat',
-    configName: row?.configName ?? '',
-    isEnabled: row?.isEnabled ?? false,
-    description: row?.description ?? '',
-  }
-  const value = row?.configValue ?? {}
-  config.value = {
-    corpId: String(value.corpId ?? ''),
-    agentId: String(value.agentId ?? ''),
-    secret: String(value.secret ?? ''),
-    appId: String(value.appId ?? ''),
-    appSecret: String(value.appSecret ?? ''),
-    encryptKey: String(value.encryptKey ?? ''),
-    verificationToken: String(value.verificationToken ?? ''),
-    webhookUrl: String(value.webhookUrl ?? ''),
-    host: String(value.host ?? ''),
-    port: Number(value.port ?? 465),
-    secure: Boolean(value.secure ?? true),
-    username: String(value.username ?? ''),
-    password: String(value.password ?? ''),
-    sender: String(value.sender ?? ''),
-    endpoint: String(value.endpoint ?? ''),
-    region: String(value.region ?? ''),
-    bucket: String(value.bucket ?? ''),
-    accessKeyId: String(value.accessKeyId ?? ''),
-    accessKeySecret: String(value.accessKeySecret ?? ''),
-    url: String(value.url ?? ''),
-    method: String(value.method ?? 'POST'),
-    authType: String(value.authType ?? 'none'),
-    token: String(value.token ?? ''),
-    mockContactsText: Array.isArray(value.mockContacts)
-      ? JSON.stringify(value.mockContacts, null, 2)
-      : '',
-  }
-  dialogVisible.value = true
-}
-
-function parseMockContacts(): Record<string, unknown>[] | undefined {
-  const text = config.value.mockContactsText.trim()
-  if (!text) return undefined
-  const parsed = JSON.parse(text)
-  if (!Array.isArray(parsed)) {
-    throw new Error('mockContacts must be an array')
-  }
-  return parsed as Record<string, unknown>[]
-}
-
-function buildPeopleConfig(): Record<string, unknown> {
-  const mockContacts = parseMockContacts()
-  if (form.value.provider === 'enterprise_wechat') {
-    return {
-      corpId: config.value.corpId,
-      agentId: config.value.agentId,
-      secret: config.value.secret,
-      webhookUrl: config.value.webhookUrl,
-      mockContacts,
-    }
-  }
-  return {
-    appId: config.value.appId,
-    appSecret: config.value.appSecret,
-    webhookUrl: config.value.webhookUrl,
-    encryptKey: config.value.encryptKey,
-    verificationToken: config.value.verificationToken,
-    mockContacts,
-  }
-}
-
-function buildConfig(): Record<string, unknown> {
-  if (isPeopleProvider(form.value)) return buildPeopleConfig()
-  if (form.value.provider === 'email') {
-    return {
-      host: config.value.host,
-      port: config.value.port,
-      secure: config.value.secure,
-      username: config.value.username,
-      password: config.value.password,
-      sender: config.value.sender,
-    }
-  }
-  if (form.value.provider === 'aliyun_oss') {
-    return {
-      endpoint: config.value.endpoint,
-      region: config.value.region,
-      bucket: config.value.bucket,
-      accessKeyId: config.value.accessKeyId,
-      accessKeySecret: config.value.accessKeySecret,
-    }
-  }
-  return {
-    url: config.value.url,
-    method: config.value.method,
-    authType: config.value.authType,
-    token: config.value.authType === 'none' ? '' : config.value.token,
-  }
-}
-
-async function save(): Promise<void> {
-  let payload: Record<string, unknown>
-  try {
-    payload = { ...form.value, configValue: buildConfig() }
-  } catch {
-    Message.error('人员同步样例必须是 JSON 数组')
-    return
-  }
-
-  try {
-    if (editingId.value) {
-      await systemOperationsApi.updateIntegration(editingId.value, payload)
-    } else {
-      await systemOperationsApi.createIntegration(payload)
-    }
-    Message.success('接口配置已保存')
-    dialogVisible.value = false
-    await fetchRecords()
-  } catch {
-    Message.error('保存失败')
-  }
-}
-
-async function toggle(row: IntegrationConfig): Promise<void> {
-  await systemOperationsApi.toggleIntegration(row.id, !row.isEnabled)
-  Message.success(row.isEnabled ? '接口已停用' : '接口已启用')
-  await fetchRecords()
-}
-
-async function syncUsers(row: IntegrationConfig): Promise<void> {
-  if (!row.isEnabled) {
-    Message.warning('请先启用该集成配置')
-    return
-  }
-  const result = await systemOperationsApi.syncExternalContacts(row.id)
-  Message.success(`已同步 ${result.total} 人，新增 ${result.created} 人，刷新 ${result.refreshed} 人`)
-  await openCandidates(row)
-}
-
-async function openCandidates(row: IntegrationConfig): Promise<void> {
-  selectedIntegration.value = row
-  candidatesVisible.value = true
-  candidatesLoading.value = true
-  try {
-    await loadSelectorOptions()
-    candidates.value = await systemOperationsApi.getExternalContacts(row.id)
-  } finally {
-    candidatesLoading.value = false
-  }
-}
-
-function openApprove(row: ExternalContactCandidate): void {
-  approvingCandidate.value = row
-  approveForm.value = {
-    roleIds: [],
-    departmentId: '',
-    positionsText: row.positionNames?.join('、') || '',
-    username: `${row.provider}_${row.externalUserId}`.replace(/[^a-zA-Z0-9_.-]+/g, '_'),
-    comment: '',
-  }
-  approveVisible.value = true
-}
-
-async function approveCandidate(): Promise<void> {
-  const integrationId = selectedIntegration.value?.id
-  const candidateId = approvingCandidate.value?.id
-  if (!integrationId || !candidateId) return
-  if (!approveForm.value.roleIds.length) {
-    Message.warning('请选择至少一个岗位角色')
-    return
-  }
-  approving.value = true
-  try {
-    await systemOperationsApi.approveExternalContact(integrationId, candidateId, {
-      roleIds: approveForm.value.roleIds,
-      departmentId: approveForm.value.departmentId || undefined,
-      positions: approveForm.value.positionsText
-        .split(/[、,，/]/)
-        .map((item) => item.trim())
-        .filter(Boolean),
-      username: approveForm.value.username || undefined,
-      comment: approveForm.value.comment || undefined,
+const integrationActionMutation = useMutation({
+  mutationFn: ({
+    provider,
+    action,
+  }: {
+    provider: IntegrationProvider
+    action: IntegrationAction
+  }) => {
+    if (action === 'test') return integrationApi.test(provider)
+    if (action === 'sync') return integrationApi.syncContacts(provider)
+    return integrationApi.testNotification(provider)
+  },
+  retry: false,
+  onSuccess: async (_, variables) => {
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.settings.integrationLogLists(variables.provider),
     })
-    Message.success('人员接入审批已通过')
-    approveVisible.value = false
-    candidates.value = await systemOperationsApi.getExternalContacts(integrationId)
-  } finally {
-    approving.value = false
+  },
+})
+const saving = computed(() => saveIntegrationMutation.isPending.value)
+const actionLoading = computed(() => {
+  if (!integrationActionMutation.isPending.value) return ''
+  const variables = integrationActionMutation.variables.value
+  return variables ? actionKey(variables.provider, variables.action) : ''
+})
+
+async function fetchConfigs(): Promise<void> {
+  await integrationsQuery.refetch()
+}
+
+function openEditor(row: IntegrationRow): void {
+  if (!canManage.value) return
+  editingProvider.value = row.provider
+  form.value = hydrateIntegrationForm(
+    row.provider,
+    row.config,
+    t(`integrations.defaultNames.${row.provider}`),
+  )
+  editorVisible.value = true
+}
+
+function requiredCredentialMissing(): boolean {
+  const config = selectedConfig.value
+  if (!form.value.isEnabled) return false
+  if (editingProvider.value === 'FEISHU') {
+    return (
+      !form.value.appId.trim() ||
+      (!hasConfiguredSecret(config, 'appSecret') && !form.value.appSecret.trim())
+    )
+  }
+  return (
+    !form.value.corpId.trim() ||
+    !form.value.agentId.trim() ||
+    (!hasConfiguredSecret(config, 'secret') && !form.value.secret.trim())
+  )
+}
+
+async function saveIntegration(): Promise<void> {
+  if (!canManage.value) return
+  if (!form.value.configName.trim()) {
+    Message.warning(t('integrations.validation.name'))
+    return
+  }
+  if (requiredCredentialMissing()) {
+    Message.warning(t('integrations.validation.credentials'))
+    return
+  }
+
+  try {
+    await saveIntegrationMutation.mutateAsync({
+      provider: editingProvider.value,
+      data: buildIntegrationUpdate(editingProvider.value, form.value),
+    })
+    Message.success(t('integrations.saved'))
+    editorVisible.value = false
+  } catch {
+    // The shared request layer has already surfaced the failure.
   }
 }
 
-async function rejectCandidate(row: ExternalContactCandidate): Promise<void> {
-  const integrationId = selectedIntegration.value?.id
-  if (!integrationId) return
-  await systemOperationsApi.rejectExternalContact(integrationId, row.id, {
-    comment: '接入信息不符合当前审批要求',
-  })
-  Message.success('已驳回该人员接入')
-  candidates.value = await systemOperationsApi.getExternalContacts(integrationId)
+function actionKey(provider: IntegrationProvider, action: IntegrationAction): string {
+  return `${provider}:${action}`
 }
 
-function statusLabel(status: string): string {
-  const map: Record<string, string> = {
-    Pending: '待审批',
-    Approved: '已通过',
-    Rejected: '已驳回',
+async function runAction(row: IntegrationRow, action: IntegrationAction): Promise<void> {
+  if (!canManage.value || !row.config) return
+  try {
+    const result: IntegrationActionResult = await integrationActionMutation.mutateAsync({
+      provider: row.provider,
+      action,
+    })
+
+    if (result.success === false) {
+      Message.error(redactText(result.errorReason) || t('integrations.operationFailed'))
+      return
+    }
+    if (action === 'sync') {
+      Message.success(
+        t('integrations.syncSuccess', {
+          added: result.added ?? result.created ?? 0,
+          updated: result.updated ?? 0,
+          conflicts: result.conflicts ?? 0,
+        }),
+      )
+    } else {
+      Message.success(
+        action === 'test'
+          ? t('integrations.connectionSuccess')
+          : t('integrations.notificationSuccess'),
+      )
+    }
+  } catch {
+    // The shared request layer has already surfaced the failure.
   }
-  return map[status] || status
 }
 
-function statusColor(status: string): string {
-  const map: Record<string, string> = {
-    Pending: 'orange',
-    Approved: 'green',
-    Rejected: 'red',
+async function openLogs(row: IntegrationRow): Promise<void> {
+  logsProvider.value = row.provider
+  logsPage.value = 1
+  logsVisible.value = true
+  await integrationLogsQuery.refetch()
+}
+
+function changeLogPage(page: number): void {
+  logsPage.value = page
+}
+
+function providerLabel(provider: IntegrationProvider): string {
+  return providerOptions.value.find((option) => option.provider === provider)?.label ?? provider
+}
+
+function capabilityLabel(capability: string): string {
+  return ['CONTACT_SYNC', 'NOTIFICATION'].includes(capability)
+    ? t(`integrations.capabilities.${capability}`)
+    : capability
+}
+
+function hasPrimarySecret(row: IntegrationRow): boolean {
+  return row.provider === 'FEISHU'
+    ? hasConfiguredSecret(row.config, 'appSecret')
+    : hasConfiguredSecret(row.config, 'secret')
+}
+
+function formatDate(value?: string | null): string {
+  if (!value) return '—'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(locale.value, { hour12: false })
+}
+
+function logActionLabel(action: IntegrationSyncLog['action']): string {
+  return t(`integrations.actions.${action}`)
+}
+
+function safeSummary(log: IntegrationSyncLog): string {
+  if (log.errorReason) return redactText(log.errorReason)
+  if (!log.summary) return '—'
+  try {
+    return redactText(
+      JSON.stringify(log.summary, (key, value: unknown) =>
+        /secret|password|token|credential|authorization/iu.test(key) ? '******' : value,
+      ),
+    )
+  } catch {
+    return t('integrations.summaryUnavailable')
   }
-  return map[status] || 'blue'
 }
 
-onMounted(fetchRecords)
+function redactText(value?: string | null): string {
+  if (!value) return ''
+  return value
+    .replace(
+      /(password|secret|token|api.?key|access.?key|authorization)\s*[=:]\s*[^\s,;]+/giu,
+      '$1=******',
+    )
+    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/giu, 'Bearer ******')
+}
 </script>
 
 <template>
-  <section class="resource-page integration-page">
-    <div class="page-toolbar">
-      <div>
-        <h2>接口集成</h2>
-        <p>维护飞书、企业微信、邮件、对象存储和 Webhook；飞书/企业微信支持人员同步与接入审批。</p>
-      </div>
-      <a-button type="primary" @click="openEditor()">
-        新增集成
-      </a-button>
-    </div>
+  <PageContainer class="integration-page">
+    <PageToolbar :title="t('integrations.title')" :description="t('integrations.description')">
+      <template #actions>
+        <a-button :loading="loading" @click="fetchConfigs">
+          {{
+            t('integrations.refresh')
+          }}
+        </a-button>
+      </template>
+    </PageToolbar>
 
-    <a-table
-      :loading="loading"
-      :data="records"
-      :pagination="false"
-      border
-      stripe
-      class="integration-table"
-      :scroll="{ x: 1328 }"
+    <a-alert
+      v-if="!canManage"
+      class="page-alert"
+      type="info"
+      :title="t('integrations.readOnly')"
     >
-      <a-table-column label="服务商" :width="150">
-        <template #default="{ row }">
-          {{ providerLabel(row.provider) }}
-        </template>
-      </a-table-column>
-      <a-table-column prop="configName" label="配置名称" :width="190" show-overflow-tooltip />
-      <a-table-column prop="description" label="说明" :width="230" show-overflow-tooltip />
-      <a-table-column label="配置摘要" :width="420">
-        <template #default="{ row }">
-          <code>{{ JSON.stringify(row.configValue) }}</code>
-        </template>
-      </a-table-column>
-      <a-table-column label="启用" :width="88" align="center">
-        <template #default="{ row }">
-          <a-switch :model-value="row.isEnabled" @change="toggle(row)" />
-        </template>
-      </a-table-column>
-      <a-table-column label="操作" :width="250" fixed="right">
-        <template #default="{ row }">
-          <a-space size="mini" :wrap="false">
-            <a-button type="text" size="mini" @click="openEditor(row)">编辑</a-button>
-            <a-button
-              v-if="isPeopleProvider(row)"
-              type="text"
-              size="mini"
-              @click="syncUsers(row)"
-            >
-              同步人员
-            </a-button>
-            <a-button
-              v-if="isPeopleProvider(row)"
-              type="text"
-              size="mini"
-              @click="openCandidates(row)"
-            >
-              接入审批
-            </a-button>
-          </a-space>
-        </template>
-      </a-table-column>
-    </a-table>
+      {{ t('integrations.readOnlyHint') }}
+    </a-alert>
+    <a-alert class="page-alert" type="warning" :title="t('integrations.secretWarning')">
+      {{ t('integrations.secretWarningHint') }}
+    </a-alert>
 
-    <a-modal
-      v-model:visible="dialogVisible"
-      title="接口配置"
-      :width="760"
-      ok-text="保存"
-      cancel-text="取消"
-      @ok="save"
+    <BusinessTable
+      :loading="loading"
+      :columns="columns"
+      :data="rows"
+      :scroll="{ x: 1180 }"
+      :error="loadFailed ? t('integrations.loadFailed') : null"
+      :empty-title="t('integrations.empty')"
+      :empty-description="t('integrations.unavailable')"
+      :retry-label="t('common.retry')"
+      row-key="provider"
+      class="settings-table"
+      @retry="fetchConfigs"
+    >
+      <template #configName="{ record }">
+        <div class="name-cell">
+          <strong>
+            {{
+              record.config?.configName ||
+                t('integrations.notConfiguredName', { provider: record.label })
+            }}
+          </strong>
+          <span>{{ record.config?.description || '—' }}</span>
+        </div>
+      </template>
+      <template #capabilities="{ record }">
+        <a-space size="mini" wrap>
+          <a-tag
+            v-for="capability in record.config?.capabilities || ['CONTACT_SYNC', 'NOTIFICATION']"
+            :key="capability"
+          >
+            {{ capabilityLabel(capability) }}
+          </a-tag>
+        </a-space>
+      </template>
+      <template #credentials="{ record }">
+        <StatusBadge
+          domain="integration"
+          :status="hasPrimarySecret(record) ? 'CONFIGURED' : 'MISSING'"
+          :label="
+            hasPrimarySecret(record)
+              ? t('integrations.credentialConfigured')
+              : t('integrations.credentialMissing')
+          "
+        />
+      </template>
+      <template #enabled="{ record }">
+        <StatusBadge
+          domain="integration"
+          :status="record.config?.isEnabled ? 'ENABLED' : 'DISABLED'"
+          :label="
+            record.config?.isEnabled
+              ? t('integrations.enabledStatus')
+              : t('integrations.disabledStatus')
+          "
+        />
+      </template>
+      <template #updatedAt="{ record }">
+        {{ formatDate(record.config?.updatedAt) }}
+      </template>
+      <template #actions="{ record }">
+        <a-space size="mini" :wrap="false">
+          <Can permission="integration:manage">
+            <a-space size="mini" :wrap="false">
+              <a-button type="text" size="small" @click="openEditor(record)">
+                {{ record.config ? t('common.edit') : t('integrations.configure') }}
+              </a-button>
+              <a-button
+                type="text"
+                size="small"
+                :disabled="!record.config?.isEnabled"
+                :loading="actionLoading === actionKey(record.provider, 'test')"
+                @click="runAction(record, 'test')"
+              >
+                {{ t('integrations.testConnection') }}
+              </a-button>
+              <a-button
+                type="text"
+                size="small"
+                :disabled="!record.config?.isEnabled"
+                :loading="actionLoading === actionKey(record.provider, 'sync')"
+                @click="runAction(record, 'sync')"
+              >
+                {{ t('integrations.syncContacts') }}
+              </a-button>
+              <a-button
+                type="text"
+                size="small"
+                :disabled="!record.config?.isEnabled"
+                :loading="actionLoading === actionKey(record.provider, 'notification')"
+                @click="runAction(record, 'notification')"
+              >
+                {{ t('integrations.testNotification') }}
+              </a-button>
+            </a-space>
+          </Can>
+          <a-button type="text" size="small" @click="openLogs(record)">
+            {{ t('integrations.syncLogs') }}
+          </a-button>
+        </a-space>
+      </template>
+    </BusinessTable>
+
+    <BusinessModal
+      v-model:visible="editorVisible"
+      :title="t('integrations.editorTitle', { provider: providerLabel(editingProvider) })"
+      :width="720"
+      :ok-loading="saving"
+      :ok-text="t('common.save')"
+      :cancel-text="t('common.cancel')"
+      @ok="saveIntegration"
     >
       <a-form :model="form" layout="vertical">
-        <a-grid :cols="2" :col-gap="12" :row-gap="8">
-          <a-grid-item>
-            <a-form-item label="服务商">
-              <a-select v-model="form.provider">
-                <a-option
-                  v-for="item in providerOptions"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </a-select>
-            </a-form-item>
-          </a-grid-item>
-          <a-grid-item>
-            <a-form-item label="配置名称">
-              <a-input v-model="form.configName" :placeholder="`${selectedProviderLabel} 接入配置`" />
-            </a-form-item>
-          </a-grid-item>
-        </a-grid>
+        <div class="form-grid">
+          <a-form-item :label="t('integrations.columns.configName')" required>
+            <a-input v-model="form.configName" :max-length="100" />
+          </a-form-item>
+          <a-form-item :label="t('integrations.enabled')">
+            <a-switch v-model="form.isEnabled" />
+          </a-form-item>
+        </div>
 
-        <template v-if="form.provider === 'enterprise_wechat'">
-          <a-grid :cols="2" :col-gap="12" :row-gap="8">
-            <a-grid-item><a-form-item label="企业 ID"><a-input v-model="config.corpId" /></a-form-item></a-grid-item>
-            <a-grid-item><a-form-item label="应用 AgentId"><a-input v-model="config.agentId" /></a-form-item></a-grid-item>
-            <a-grid-item><a-form-item label="应用 Secret"><a-input v-model="config.secret" type="password" show-password /></a-form-item></a-grid-item>
-            <a-grid-item><a-form-item label="群机器人"><a-input v-model="config.webhookUrl" placeholder="可选 Webhook URL" /></a-form-item></a-grid-item>
-          </a-grid>
-        </template>
-        <template v-else-if="form.provider === 'feishu'">
-          <a-grid :cols="2" :col-gap="12" :row-gap="8">
-            <a-grid-item><a-form-item label="App ID"><a-input v-model="config.appId" /></a-form-item></a-grid-item>
-            <a-grid-item><a-form-item label="App Secret"><a-input v-model="config.appSecret" type="password" show-password /></a-form-item></a-grid-item>
-            <a-grid-item><a-form-item label="机器人地址"><a-input v-model="config.webhookUrl" placeholder="飞书群机器人 Webhook" /></a-form-item></a-grid-item>
-            <a-grid-item><a-form-item label="Encrypt Key"><a-input v-model="config.encryptKey" type="password" show-password /></a-form-item></a-grid-item>
-            <a-grid-item><a-form-item label="校验 Token"><a-input v-model="config.verificationToken" type="password" show-password /></a-form-item></a-grid-item>
-          </a-grid>
-        </template>
-        <template v-else-if="form.provider === 'email'">
-          <a-grid :cols="2" :col-gap="12" :row-gap="8">
-            <a-grid-item><a-form-item label="SMTP 主机"><a-input v-model="config.host" placeholder="smtp.example.com" /></a-form-item></a-grid-item>
-            <a-grid-item><a-form-item label="端口"><a-input-number v-model="config.port" :min="1" :max="65535" /></a-form-item></a-grid-item>
-            <a-grid-item><a-form-item label="用户名"><a-input v-model="config.username" /></a-form-item></a-grid-item>
-            <a-grid-item><a-form-item label="密码"><a-input v-model="config.password" type="password" show-password /></a-form-item></a-grid-item>
-            <a-grid-item><a-form-item label="发件人"><a-input v-model="config.sender" placeholder="交付中心 <delivery@example.com>" /></a-form-item></a-grid-item>
-            <a-grid-item><a-form-item label="SSL/TLS"><a-switch v-model="config.secure" /></a-form-item></a-grid-item>
-          </a-grid>
-        </template>
-        <template v-else-if="form.provider === 'aliyun_oss'">
-          <a-grid :cols="2" :col-gap="12" :row-gap="8">
-            <a-grid-item><a-form-item label="Endpoint"><a-input v-model="config.endpoint" /></a-form-item></a-grid-item>
-            <a-grid-item><a-form-item label="Region"><a-input v-model="config.region" /></a-form-item></a-grid-item>
-            <a-grid-item><a-form-item label="Bucket"><a-input v-model="config.bucket" /></a-form-item></a-grid-item>
-            <a-grid-item><a-form-item label="AccessKey ID"><a-input v-model="config.accessKeyId" /></a-form-item></a-grid-item>
-            <a-grid-item><a-form-item label="AccessKey Secret"><a-input v-model="config.accessKeySecret" type="password" show-password /></a-form-item></a-grid-item>
-          </a-grid>
+        <template v-if="editingProvider === 'FEISHU'">
+          <div class="form-grid">
+            <a-form-item :label="t('integrations.appId')" required>
+              <a-input v-model="form.appId" :max-length="200" />
+            </a-form-item>
+            <a-form-item :label="t('integrations.appSecretField')" required>
+              <a-input
+                v-model="form.appSecret"
+                type="password"
+                :placeholder="t('integrations.replaceSecretPlaceholder')"
+              />
+              <template #extra>
+                {{
+                  hasConfiguredSecret(selectedConfig, 'appSecret')
+                    ? t('integrations.configuredReplaceHint')
+                    : t('integrations.notConfiguredHint')
+                }}
+              </template>
+            </a-form-item>
+            <a-form-item :label="t('integrations.webhook')">
+              <a-input
+                v-model="form.webhookUrl"
+                type="password"
+                :placeholder="t('integrations.replaceSecretPlaceholder')"
+              />
+              <template #extra>
+                {{
+                  hasConfiguredSecret(selectedConfig, 'webhookUrl')
+                    ? t('integrations.configuredReplaceHint')
+                    : t('integrations.webhookOptionalHint')
+                }}
+              </template>
+            </a-form-item>
+            <a-form-item :label="t('integrations.verificationToken')">
+              <a-input
+                v-model="form.verificationToken"
+                type="password"
+                :placeholder="t('integrations.replaceSecretPlaceholder')"
+              />
+              <template #extra>
+                {{
+                  hasConfiguredSecret(selectedConfig, 'verificationToken')
+                    ? t('integrations.configuredReplaceHint')
+                    : t('integrations.notConfiguredHint')
+                }}
+              </template>
+            </a-form-item>
+            <a-form-item :label="t('integrations.encryptKey')">
+              <a-input
+                v-model="form.encryptKey"
+                type="password"
+                :placeholder="t('integrations.replaceSecretPlaceholder')"
+              />
+              <template #extra>
+                {{
+                  hasConfiguredSecret(selectedConfig, 'encryptKey')
+                    ? t('integrations.configuredReplaceHint')
+                    : t('integrations.notConfiguredHint')
+                }}
+              </template>
+            </a-form-item>
+          </div>
         </template>
         <template v-else>
-          <a-grid :cols="2" :col-gap="12" :row-gap="8">
-            <a-grid-item><a-form-item label="请求地址"><a-input v-model="config.url" placeholder="https://..." /></a-form-item></a-grid-item>
-            <a-grid-item><a-form-item label="请求方法"><a-segmented v-model="config.method" :options="['POST', 'PUT', 'PATCH']" /></a-form-item></a-grid-item>
-            <a-grid-item><a-form-item label="鉴权方式"><a-select v-model="config.authType"><a-option label="无鉴权" value="none" /><a-option label="Bearer Token" value="bearer" /><a-option label="签名密钥" value="signature" /></a-select></a-form-item></a-grid-item>
-            <a-grid-item v-if="config.authType !== 'none'"><a-form-item label="凭据"><a-input v-model="config.token" type="password" show-password /></a-form-item></a-grid-item>
-          </a-grid>
+          <div class="form-grid">
+            <a-form-item :label="t('integrations.corpId')" required>
+              <a-input v-model="form.corpId" :max-length="200" />
+            </a-form-item>
+            <a-form-item :label="t('integrations.agentId')" required>
+              <a-input v-model="form.agentId" :max-length="30" />
+            </a-form-item>
+            <a-form-item :label="t('integrations.appSecret')" required>
+              <a-input
+                v-model="form.secret"
+                type="password"
+                :placeholder="t('integrations.replaceSecretPlaceholder')"
+              />
+              <template #extra>
+                {{
+                  hasConfiguredSecret(selectedConfig, 'secret')
+                    ? t('integrations.configuredReplaceHint')
+                    : t('integrations.notConfiguredHint')
+                }}
+              </template>
+            </a-form-item>
+          </div>
         </template>
 
-        <a-form-item v-if="isPeopleProvider(form)" label="人员同步样例 JSON">
+        <div class="form-grid">
+          <a-form-item :label="t('integrations.departmentId')">
+            <a-input
+              v-model="form.contactDepartmentId"
+              :placeholder="t('integrations.departmentPlaceholder')"
+            />
+          </a-form-item>
+          <a-form-item :label="t('integrations.testRecipient')">
+            <a-input
+              v-model="form.testRecipient"
+              :placeholder="t('integrations.testRecipientPlaceholder')"
+            />
+          </a-form-item>
+        </div>
+        <a-form-item :label="t('integrations.descriptionLabel')">
           <a-textarea
-            v-model="config.mockContactsText"
-            placeholder='可选。格式：[{"externalUserId":"u001","realName":"张三","phone":"138...","email":"a@b.com","departmentName":"交付中心","positionNames":["项目经理"]}]'
-            :auto-size="{ minRows: 3, maxRows: 6 }"
+            v-model="form.description"
+            :auto-size="{ minRows: 2, maxRows: 4 }"
+            :max-length="200"
           />
         </a-form-item>
-        <a-form-item label="说明">
-          <a-input v-model="form.description" />
-        </a-form-item>
-        <a-form-item label="启用">
-          <a-switch v-model="form.isEnabled" />
-        </a-form-item>
       </a-form>
-    </a-modal>
+    </BusinessModal>
 
-    <a-modal
-      v-model:visible="candidatesVisible"
-      :title="`${providerLabel(selectedIntegration?.provider || '')} 人员接入审批`"
-      :width="1080"
+    <BusinessDrawer
+      v-model:visible="logsVisible"
+      :title="t('integrations.logsTitle', { provider: providerLabel(logsProvider) })"
+      :width="760"
       :footer="false"
     >
-      <a-table
-        :loading="candidatesLoading"
-        :data="candidates"
-        :pagination="false"
+      <BusinessTable
+        :loading="logsLoading"
+        :columns="logColumns"
+        :data="logs"
+        :pagination="logsPagination"
+        :scroll="{ x: 760 }"
         row-key="id"
-        border
-        stripe
-        class="candidate-table"
-        :scroll="{ x: 980 }"
+        :error="integrationLogsQuery.isError.value ? t('integrations.logsLoadFailed') : null"
+        :empty-title="t('integrations.logsEmpty')"
+        :retry-label="t('common.retry')"
+        @retry="integrationLogsQuery.refetch()"
+        @page-change="changeLogPage"
       >
-        <a-table-column label="姓名" :width="120">
-          <template #default="{ row }"><strong>{{ row.realName }}</strong></template>
-        </a-table-column>
-        <a-table-column label="电话" :width="130"><template #default="{ row }">{{ row.phone || '-' }}</template></a-table-column>
-        <a-table-column label="邮箱" :min-width="180"><template #default="{ row }">{{ row.email || '-' }}</template></a-table-column>
-        <a-table-column label="部门" :width="130"><template #default="{ row }">{{ row.departmentName || '-' }}</template></a-table-column>
-        <a-table-column label="岗位" :min-width="160">
-          <template #default="{ row }">{{ row.positionNames?.join('、') || '-' }}</template>
-        </a-table-column>
-        <a-table-column label="状态" :width="92" align="center">
-          <template #default="{ row }">
-            <a-tag :color="statusColor(row.status)" size="small">{{ statusLabel(row.status) }}</a-tag>
-          </template>
-        </a-table-column>
-        <a-table-column label="平台账号" :width="120">
-          <template #default="{ row }">{{ row.approvedUser?.realName || '-' }}</template>
-        </a-table-column>
-        <a-table-column label="操作" :width="132" fixed="right">
-          <template #default="{ row }">
-            <a-space v-if="row.status === 'Pending'" size="mini" :wrap="false">
-              <a-button type="primary" size="mini" @click="openApprove(row)">通过</a-button>
-              <a-button status="danger" size="mini" @click="rejectCandidate(row)">驳回</a-button>
-            </a-space>
-            <span v-else class="muted-text">已处理</span>
-          </template>
-        </a-table-column>
-      </a-table>
-    </a-modal>
-
-    <a-modal
-      v-model:visible="approveVisible"
-      title="人员接入审批"
-      :width="620"
-      :confirm-loading="approving"
-      ok-text="审批通过"
-      cancel-text="取消"
-      @ok="approveCandidate"
-    >
-      <a-form :model="approveForm" layout="vertical">
-        <a-grid :cols="2" :col-gap="12" :row-gap="8">
-          <a-grid-item>
-            <a-form-item label="平台用户名">
-              <a-input v-model="approveForm.username" />
-            </a-form-item>
-          </a-grid-item>
-          <a-grid-item>
-            <a-form-item label="归属部门">
-              <a-select v-model="approveForm.departmentId" allow-clear filterable placeholder="可选">
-                <a-option
-                  v-for="item in departmentOptions"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </a-select>
-            </a-form-item>
-          </a-grid-item>
-        </a-grid>
-        <a-form-item label="岗位角色">
-          <a-select
-            v-model="approveForm.roleIds"
-            multiple
-            allow-clear
-            filterable
-            placeholder="可多选，用于平台权限"
-          >
-            <a-option
-              v-for="role in roleOptions"
-              :key="role.id"
-              :label="`${role.roleName} (${role.roleCode})`"
-              :value="role.id"
-            />
-          </a-select>
-        </a-form-item>
-        <a-form-item label="岗位名称">
-          <a-input v-model="approveForm.positionsText" placeholder="多个岗位用顿号或逗号分隔" />
-        </a-form-item>
-        <a-form-item label="审批意见">
-          <a-textarea v-model="approveForm.comment" :auto-size="{ minRows: 2, maxRows: 4 }" />
-        </a-form-item>
-      </a-form>
-    </a-modal>
-  </section>
+        <template #startedAt="{ record }">
+          {{ formatDate(record.startedAt) }}
+        </template>
+        <template #action="{ record }">
+          {{ logActionLabel(record.action) }}
+        </template>
+        <template #status="{ record }">
+          <StatusBadge
+            domain="integration"
+            :status="record.status"
+            :label="
+              record.status === 'SUCCESS' ? t('integrations.success') : t('integrations.failure')
+            "
+          />
+        </template>
+        <template #requester="{ record }">
+          {{ record.requester?.realName || record.requester?.username || '—' }}
+        </template>
+        <template #summary="{ record }">
+          <span class="log-summary" :title="safeSummary(record)">{{ safeSummary(record) }}</span>
+        </template>
+      </BusinessTable>
+    </BusinessDrawer>
+  </PageContainer>
 </template>
 
 <style scoped lang="scss">
 .integration-page {
-  min-height: 0;
+  min-width: 0;
 }
 
-.integration-table,
-.candidate-table {
-  border-radius: 0;
+.page-alert {
+  margin-bottom: 12px;
+}
+
+.settings-table {
+  background: var(--color-bg-2);
+}
+
+.name-cell {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.name-cell strong,
+.name-cell span,
+.log-summary {
   overflow: hidden;
-}
-
-.integration-table :deep(.arco-table-th),
-.integration-table :deep(.arco-table-cell),
-.candidate-table :deep(.arco-table-th),
-.candidate-table :deep(.arco-table-cell) {
-  padding: 8px 10px;
-  font-size: 12px;
-}
-
-code {
-  display: block;
-  max-width: 100%;
-  overflow: hidden;
-  color: #4e5969;
-  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.muted-text {
+.name-cell span,
+.log-summary {
   color: var(--color-text-3);
   font-size: 12px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+}
+
+@media (max-width: 720px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

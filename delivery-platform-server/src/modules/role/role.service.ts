@@ -12,6 +12,8 @@ import { AssignPermissionsDto } from './dto/assign-permissions.dto';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 
+const ROLE_STATUSES = new Set(['Active', 'Inactive']);
+
 @Injectable()
 export class RoleService {
   constructor(
@@ -32,7 +34,9 @@ export class RoleService {
         _count: {
           select: {
             userRoles: true,
-            rolePermissions: true,
+            rolePermissions: {
+              where: { permission: { deprecatedAt: null } },
+            },
           },
         },
       },
@@ -64,6 +68,7 @@ export class RoleService {
         createdAt: true,
         updatedAt: true,
         rolePermissions: {
+          where: { permission: { deprecatedAt: null } },
           select: {
             permission: {
               select: {
@@ -118,30 +123,47 @@ export class RoleService {
   }
 
   async update(id: string, dto: UpdateRoleDto) {
-    const role = await this.prisma.role.findUnique({ where: { id } });
-
-    if (!role) {
-      throw new NotFoundException('角色不存在');
+    if (dto.status !== undefined && !ROLE_STATUSES.has(dto.status)) {
+      throw new BadRequestException('角色状态只能是 Active 或 Inactive');
     }
 
-    const updated = await this.prisma.role.update({
-      where: { id },
-      data: {
-        roleName: dto.roleName,
-        description: dto.description,
-        status: dto.status,
-      },
-      select: {
-        id: true,
-        roleCode: true,
-        roleName: true,
-        description: true,
-        status: true,
-        updatedAt: true,
-      },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const role = await tx.role.findUnique({ where: { id } });
 
-    return updated;
+      if (!role) {
+        throw new NotFoundException('角色不存在');
+      }
+
+      const statusChanged = dto.status !== undefined && dto.status !== role.status;
+      const updated = await tx.role.update({
+        where: { id },
+        data: {
+          roleName: dto.roleName,
+          description: dto.description,
+          status: dto.status,
+        },
+        select: {
+          id: true,
+          roleCode: true,
+          roleName: true,
+          description: true,
+          status: true,
+          updatedAt: true,
+        },
+      });
+
+      if (statusChanged) {
+        await tx.user.updateMany({
+          where: {
+            deletedAt: null,
+            userRoles: { some: { roleId: id } },
+          },
+          data: { permissionVersion: { increment: 1 } },
+        });
+      }
+
+      return updated;
+    });
   }
 
   async delete(id: string): Promise<void> {
@@ -160,47 +182,76 @@ export class RoleService {
       throw new BadRequestException('该角色下还有用户，无法删除。请先移除用户关联');
     }
 
-    await this.prisma.rolePermission.deleteMany({ where: { roleId: id } });
-    await this.prisma.role.delete({ where: { id } });
+    await this.prisma.role.update({
+      where: { id },
+      data: { status: 'Inactive' },
+    });
   }
 
-  async assignPermissions(
-    roleId: string,
-    dto: AssignPermissionsDto,
-    operatorId: string,
-  ) {
-    const role = await this.prisma.role.findUnique({ where: { id: roleId } });
-
-    if (!role) {
-      throw new NotFoundException('角色不存在');
+  async assignPermissions(roleId: string, dto: AssignPermissionsDto, operatorId: string) {
+    const permissionIds = [...new Set(dto.permissionIds)];
+    if (permissionIds.length !== dto.permissionIds.length) {
+      throw new BadRequestException('权限列表中存在重复项');
     }
 
-    // Use transaction to atomically replace permissions
     await this.prisma.$transaction(async (tx) => {
-      // Remove existing permissions
-      await tx.rolePermission.deleteMany({
-        where: { roleId },
+      const role = await tx.role.findUnique({
+        where: { id: roleId },
+        select: {
+          id: true,
+          rolePermissions: {
+            where: { permission: { deprecatedAt: null } },
+            select: { permissionId: true },
+          },
+        },
       });
+      if (!role) {
+        throw new NotFoundException('角色不存在');
+      }
 
-      // Create new permission assignments
-      if (dto.permissionIds.length > 0) {
-        const permissionAssignments = dto.permissionIds.map((permissionId) => ({
-          roleId,
-          permissionId,
-        }));
+      const permissions = await tx.permission.findMany({
+        where: { id: { in: permissionIds }, deprecatedAt: null },
+        select: { id: true },
+      });
+      if (permissions.length !== permissionIds.length) {
+        throw new BadRequestException('权限不存在');
+      }
 
-        await tx.rolePermission.createMany({
-          data: permissionAssignments,
+      const existingIds = role.rolePermissions.map(({ permissionId }) => permissionId);
+      const permissionsChanged =
+        existingIds.length !== permissionIds.length ||
+        permissionIds.some((permissionId) => !existingIds.includes(permissionId));
+      if (permissionsChanged) {
+        if (existingIds.length > 0) {
+          await tx.rolePermission.deleteMany({
+            where: { roleId, permissionId: { in: existingIds } },
+          });
+        }
+        if (permissionIds.length > 0) {
+          await tx.rolePermission.createMany({
+            data: permissionIds.map((permissionId) => ({ roleId, permissionId })),
+          });
+        }
+        await tx.user.updateMany({
+          where: {
+            deletedAt: null,
+            userRoles: { some: { roleId } },
+          },
+          data: { permissionVersion: { increment: 1 } },
         });
       }
-    });
-    await this.operationLog.log({
-      userId: operatorId,
-      module: 'permission',
-      action: 'assign_role_permissions',
-      targetType: 'role',
-      targetId: roleId,
-      afterData: { permissionIds: dto.permissionIds },
+      await this.operationLog.log(
+        {
+          userId: operatorId,
+          module: 'permission',
+          action: 'assign_role_permissions',
+          targetType: 'role',
+          targetId: roleId,
+          beforeData: { permissionIds: existingIds },
+          afterData: { permissionIds },
+        },
+        tx,
+      );
     });
 
     return this.findById(roleId);

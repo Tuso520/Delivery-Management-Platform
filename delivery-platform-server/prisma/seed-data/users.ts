@@ -173,6 +173,7 @@ export async function seedUsers(prisma: PrismaClient): Promise<void> {
         data: {
           userId: seededUser.id,
           roleId: role.id,
+          dataScope: role.defaultDataScope,
         },
       });
     }

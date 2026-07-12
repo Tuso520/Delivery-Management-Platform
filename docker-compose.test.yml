@@ -21,7 +21,7 @@ services:
       - --collation-server=utf8mb4_unicode_ci
       - --default-authentication-plugin=mysql_native_password
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--protocol=tcp", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
       timeout: 20s
       retries: 15
@@ -91,11 +91,13 @@ services:
     container_name: delivery-local-backend-migrate
     restart: "no"
     environment:
-      NODE_ENV: production
+      NODE_ENV: development
       DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_USER_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
       SEED_DEFAULT_PASSWORD: ${SEED_DEFAULT_PASSWORD}
       SEED_RESET_EXISTING_USER_PASSWORDS: ${SEED_RESET_EXISTING_USER_PASSWORDS:-true}
+      INTEGRATION_SECRET_ENCRYPTION_KEY: ${INTEGRATION_SECRET_ENCRYPTION_KEY}
+      INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME: ${INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME:-admin}
       MINIO_ENDPOINT: minio
       MINIO_PORT: 9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
@@ -107,7 +109,7 @@ services:
       minio-init:
         condition: service_completed_successfully
     command: >
-      sh -c "node prisma/prepare-migrate.js && ./node_modules/.bin/prisma migrate deploy && ./node_modules/.bin/ts-node --transpile-only prisma/seed.ts"
+      sh -c "node prisma/prepare-migrate.js && ./node_modules/.bin/prisma migrate deploy && ./node_modules/.bin/ts-node --transpile-only prisma/seed.ts && ./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts --apply --actor-username=$${INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME}"
     networks:
       - delivery-local-network
 
@@ -123,11 +125,12 @@ services:
     ports:
       - "127.0.0.1:${BACKEND_PORT:-13000}:3000"
     environment:
-      NODE_ENV: production
+      NODE_ENV: test
       DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_USER_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      INTEGRATION_SECRET_ENCRYPTION_KEY: ${INTEGRATION_SECRET_ENCRYPTION_KEY}
       MINIO_ENDPOINT: minio
       MINIO_PORT: 9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
@@ -165,7 +168,7 @@ services:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/health"]
       interval: 15s
       timeout: 10s
       retries: 10

@@ -1,4 +1,4 @@
-import { ArchiveItemStatus, PrismaClient, Prisma } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 
 export async function seedProjects(prisma: PrismaClient) {
@@ -22,9 +22,9 @@ export async function seedProjects(prisma: PrismaClient) {
       exchangeRateSource: 'seed',
       projectLanguage: 'zh-CN',
       salesOwnerId: null,
-      projectStatus: 'Active' as const,
+      status: 'ACTIVE',
       riskLevel: 'Medium' as const,
-      currentStage: '04_construction',
+      currentStage: 'CONSTRUCTION',
       startDate: new Date('2026-01-15'),
       plannedEndDate: new Date('2026-09-30'),
     },
@@ -44,9 +44,9 @@ export async function seedProjects(prisma: PrismaClient) {
       exchangeRateSource: 'seed',
       projectLanguage: 'zh-CN',
       salesOwnerId: null,
-      projectStatus: 'Active' as const,
+      status: 'ACTIVE',
       riskLevel: 'Low' as const,
-      currentStage: '02_design',
+      currentStage: 'DEEPENING',
       startDate: new Date('2026-03-01'),
       plannedEndDate: new Date('2026-11-30'),
     },
@@ -66,9 +66,9 @@ export async function seedProjects(prisma: PrismaClient) {
       exchangeRateSource: 'seed',
       projectLanguage: 'en-US',
       salesOwnerId: null,
-      projectStatus: 'Draft' as const,
+      status: 'DRAFT',
       riskLevel: 'Low' as const,
-      currentStage: '01_presale',
+      currentStage: 'STARTUP',
       startDate: null,
       plannedEndDate: null,
     },
@@ -88,9 +88,9 @@ export async function seedProjects(prisma: PrismaClient) {
       exchangeRateSource: 'seed',
       projectLanguage: 'en-US',
       salesOwnerId: null,
-      projectStatus: 'Active' as const,
+      status: 'ACTIVE',
       riskLevel: 'High' as const,
-      currentStage: '05_acceptance',
+      currentStage: 'EXTERNAL_ACCEPTANCE',
       startDate: new Date('2025-06-01'),
       plannedEndDate: new Date('2026-06-30'),
     },
@@ -110,9 +110,9 @@ export async function seedProjects(prisma: PrismaClient) {
       exchangeRateSource: 'seed',
       projectLanguage: 'en-US',
       salesOwnerId: null,
-      projectStatus: 'Suspended' as const,
+      status: 'PAUSED',
       riskLevel: 'High' as const,
-      currentStage: '04_construction',
+      currentStage: 'CONSTRUCTION',
       startDate: new Date('2025-10-01'),
       plannedEndDate: new Date('2026-08-31'),
     },
@@ -132,9 +132,9 @@ export async function seedProjects(prisma: PrismaClient) {
       exchangeRateSource: 'seed',
       projectLanguage: 'en-US',
       salesOwnerId: null,
-      projectStatus: 'Active' as const,
+      status: 'ACTIVE',
       riskLevel: 'Medium' as const,
-      currentStage: '03_procurement',
+      currentStage: 'PROCUREMENT',
       startDate: new Date('2026-02-15'),
       plannedEndDate: new Date('2026-12-31'),
     },
@@ -154,9 +154,9 @@ export async function seedProjects(prisma: PrismaClient) {
       exchangeRateSource: 'seed',
       projectLanguage: 'en-US',
       salesOwnerId: null,
-      projectStatus: 'Accepted' as const,
+      status: 'COMPLETED',
       riskLevel: 'Low' as const,
-      currentStage: '06_review',
+      currentStage: 'WARRANTY',
       startDate: new Date('2025-01-10'),
       plannedEndDate: new Date('2026-04-30'),
       actualEndDate: new Date('2026-05-15'),
@@ -177,9 +177,9 @@ export async function seedProjects(prisma: PrismaClient) {
       exchangeRateSource: 'seed',
       projectLanguage: 'th-TH',
       salesOwnerId: null,
-      projectStatus: 'Draft' as const,
+      status: 'DRAFT',
       riskLevel: 'Medium' as const,
-      currentStage: '01_presale',
+      currentStage: 'STARTUP',
       startDate: null,
       plannedEndDate: null,
     },
@@ -199,9 +199,9 @@ export async function seedProjects(prisma: PrismaClient) {
       exchangeRateSource: 'seed',
       projectLanguage: 'vi-VN',
       salesOwnerId: null,
-      projectStatus: 'Delayed' as const,
+      status: 'ACTIVE',
       riskLevel: 'Critical' as const,
-      currentStage: '04_construction',
+      currentStage: 'CONSTRUCTION',
       startDate: new Date('2025-08-01'),
       plannedEndDate: new Date('2026-05-31'),
     },
@@ -221,9 +221,9 @@ export async function seedProjects(prisma: PrismaClient) {
       exchangeRateSource: 'seed',
       projectLanguage: 'en-US',
       salesOwnerId: null,
-      projectStatus: 'Archived' as const,
+      status: 'COMPLETED',
       riskLevel: 'Low' as const,
-      currentStage: '06_review',
+      currentStage: 'WARRANTY',
       startDate: new Date('2024-06-01'),
       plannedEndDate: new Date('2025-12-31'),
       actualEndDate: new Date('2025-11-30'),
@@ -242,140 +242,6 @@ export async function seedProjects(prisma: PrismaClient) {
     });
     createdProjects.push(project);
     console.log(`  Project "${data.projectCode}" ready (id=${project.id})`);
-  }
-
-  const cleanProjectUpdates: Record<string, Prisma.ProjectUpdateManyMutationInput> = {
-    'VN-LG-2026-001': {
-      projectName: '越南海防 LG 冷站节能项目',
-      city: '海防',
-      customerName: 'LG Electronics Vietnam',
-      projectType: '冷站节能',
-      projectLanguage: 'zh-CN',
-      projectStatus: 'Active',
-      riskLevel: 'Medium',
-      currentStage: '04_construction',
-    },
-    'TH-PTT-2026-001': {
-      projectName: '泰国罗勇 PTT 空压节能项目',
-      city: '罗勇',
-      customerName: 'PTT Public Company Limited',
-      projectType: '空压节能',
-      projectLanguage: 'zh-CN',
-      projectStatus: 'Active',
-      riskLevel: 'Low',
-      currentStage: '02_design',
-    },
-    'SG-ESA-2026-001': {
-      projectName: '新加坡 Engie ESL 能源服务项目',
-      city: 'Singapore',
-      customerName: 'Engie Services Asia',
-      projectType: 'ESL',
-      projectLanguage: 'en-US',
-      projectStatus: 'Draft',
-      riskLevel: 'Low',
-      currentStage: '01_sale',
-    },
-    'ID-FMCS-2026-001': {
-      projectName: '印尼雅加达 FMCS 平台项目',
-      city: '雅加达',
-      customerName: 'PT FMCS Indonesia',
-      projectType: 'FMCS',
-      projectLanguage: 'en-US',
-      projectStatus: 'Active',
-      riskLevel: 'High',
-      currentStage: '05_acceptance',
-    },
-    'MY-CL-2026-001': {
-      projectName: '马来西亚吉隆坡冷站节能项目',
-      city: '吉隆坡',
-      customerName: 'Cooling Logistics Sdn Bhd',
-      projectType: '冷站节能',
-      projectLanguage: 'en-US',
-      projectStatus: 'Suspended',
-      riskLevel: 'High',
-      currentStage: '04_construction',
-    },
-    'OM-JA-2026-001': {
-      projectName: '阿曼马斯喀特空压节能项目',
-      city: '马斯喀特',
-      customerName: 'JA Engineering LLC',
-      projectType: '空压节能',
-      projectLanguage: 'en-US',
-      projectStatus: 'Active',
-      riskLevel: 'Medium',
-      currentStage: '03_procurement',
-    },
-    'AE-AB-2026-001': {
-      projectName: '阿联酋阿布扎比 FMCS 项目',
-      city: '阿布扎比',
-      customerName: 'Abu Dhabi FMCS LLC',
-      projectType: 'FMCS',
-      projectLanguage: 'en-US',
-      projectStatus: 'Accepted',
-      riskLevel: 'Low',
-      currentStage: '06_review',
-    },
-    'TH-SC-2026-002': {
-      projectName: '泰国曼谷 SCG ESL 扩建项目',
-      city: '曼谷',
-      customerName: 'SCG Cement Co Ltd',
-      projectType: 'ESL',
-      projectLanguage: 'th-TH',
-      projectStatus: 'Draft',
-      riskLevel: 'Medium',
-      currentStage: '01_sale',
-    },
-    'VN-HN-2026-002': {
-      projectName: '越南河内冷站节能改造项目',
-      city: '河内',
-      customerName: 'Hanoi Cooling Solutions JSC',
-      projectType: '冷站节能',
-      projectLanguage: 'vi-VN',
-      projectStatus: 'Delayed',
-      riskLevel: 'Critical',
-      currentStage: '04_construction',
-    },
-    'ID-JK-2026-002': {
-      projectName: '印尼雅加达冷站节能运维项目',
-      city: '雅加达',
-      customerName: 'Jakarta Chiller Services',
-      projectType: '冷站节能',
-      projectLanguage: 'en-US',
-      projectStatus: 'Archived',
-      riskLevel: 'Low',
-      currentStage: '06_review',
-    },
-  };
-
-  for (const [projectCode, data] of Object.entries(cleanProjectUpdates)) {
-    await prisma.project.updateMany({
-      where: { projectCode },
-      data,
-    });
-  }
-
-  const legacyProjectNames: Record<string, string> = {
-    'VN-LG-2026-001': '越南LG冷站节能项目',
-    'TH-PTT-2026-001': '泰国PTT空压节能项目',
-    'SG-ESA-2026-001': '新加坡ESL项目',
-    'ID-FMCS-2026-001': '印尼FMCS项目',
-    'MY-CL-2026-001': '马来西亚冷站节能项目',
-    'OM-JA-2026-001': '阿曼空压节能项目',
-    'AE-AB-2026-001': '阿联酋FMCS项目',
-    'TH-SC-2026-002': '泰国SCG ESL扩建项目',
-    'VN-HN-2026-002': '越南河内冷站节能项目',
-    'ID-JK-2026-002': '印尼雅加达冷站项目',
-  };
-  if (typeof prisma.project.updateMany === 'function') {
-    for (const data of projectData) {
-      await prisma.project.updateMany({
-        where: {
-          projectCode: data.projectCode,
-          projectName: legacyProjectNames[data.projectCode],
-        },
-        data: { projectName: data.projectName },
-      });
-    }
   }
 
   // ── Lookup users by username ──────────────────────────────────────
@@ -405,8 +271,8 @@ export async function seedProjects(prisma: PrismaClient) {
     const salesUsername = salesOwnerAssignments[project.projectCode];
     const salesOwnerId = salesUsername ? userMap.get(salesUsername) : undefined;
     if (!salesOwnerId) continue;
-    await prisma.project.update({
-      where: { id: project.id },
+    await prisma.project.updateMany({
+      where: { id: project.id, salesOwnerId: null },
       data: { salesOwnerId },
     });
   }
@@ -554,142 +420,151 @@ export async function seedProjects(prisma: PrismaClient) {
       continue;
     }
 
-    const existing = await prisma.projectMember.findUnique({
+    await prisma.projectMember.upsert({
       where: {
         projectId_userId: {
           projectId: project.id,
           userId,
         },
       },
+      create: {
+        projectId: project.id,
+        userId,
+        projectRole: assignment.projectRole,
+      },
+      update: { projectRole: assignment.projectRole, deletedAt: null },
     });
-
-    if (!existing) {
-      await prisma.projectMember.create({
-        data: {
-          projectId: project.id,
-          userId,
-          projectRole: assignment.projectRole,
-        },
-      });
-      memberCount++;
-    } else if (existing.projectRole === 'MEMBER' || assignment.projectRole === 'PROJECT_MANAGER') {
-      await prisma.projectMember.update({
-        where: { id: existing.id },
-        data: { projectRole: assignment.projectRole },
-      });
-    }
+    memberCount++;
   }
 
-  console.log(`  Created ${memberCount} project members`);
+  console.log(`  Ensured ${memberCount} project member assignments`);
 
-  // ── Auto-generate archive items (Fix 3) ───────────────────────────
-  // Create ProjectArchiveItem records from the default template's level-1 items
-  console.log('  Generating archive directory items for projects...');
-
-  const template = await prisma.archiveTemplate.findFirst({
+  console.log('  Generating target two-level archive snapshots for seeded projects...');
+  const template = await prisma.archiveTemplate.findUnique({
     where: { templateCode: 'DC-ARCH-DEFAULT' },
+    select: { id: true, currentPublishedVersionId: true },
+  });
+  if (!template?.currentPublishedVersionId) {
+    throw new Error('默认档案模板缺少已发布版本，无法生成项目档案快照');
+  }
+  const templateVersion = await prisma.archiveTemplateVersion.findUnique({
+    where: { id: template.currentPublishedVersionId },
     include: {
-      items: {
-        orderBy: [{ level: 'asc' }, { stageCode: 'asc' }, { sortOrder: 'asc' }],
+      folders: {
+        orderBy: { sortOrder: 'asc' },
+        include: { items: { orderBy: { sortOrder: 'asc' } } },
       },
     },
   });
+  if (!templateVersion) {
+    throw new Error('默认档案模板的已发布版本不存在');
+  }
+  const roleIds = Array.from(
+    new Set(
+      templateVersion.folders.flatMap((folder) =>
+        folder.items.map((item) => item.ownerRoleId).filter(Boolean),
+      ),
+    ),
+  ) as string[];
+  const roles = await prisma.role.findMany({
+    where: { id: { in: roleIds } },
+    select: { id: true, roleCode: true },
+  });
+  const roleCodeById = new Map(roles.map((role) => [role.id, role.roleCode]));
 
-  if (!template) {
-    console.warn('  WARNING: Default archive template not found — skipping archive generation');
-  } else {
-    // Role-based user assignments for archive items
-    // Map of role -> userId for member lookup
-    let totalArchiveItems = 0;
-    const projectsForArchive = await prisma.project.findMany({
-      where: { deletedAt: null },
-      select: { id: true, projectCode: true },
-      orderBy: { createdAt: 'asc' },
-    });
-
-    for (const project of projectsForArchive) {
-      // Get project members for role mapping
-      const members = await prisma.projectMember.findMany({
-        where: { projectId: project.id },
-        select: { userId: true, projectRole: true },
-      });
-
-      const memberRoleMap = new Map<string, string>();
-      for (const m of members) {
-        memberRoleMap.set(m.projectRole, m.userId);
-      }
-
-      const existingItems = await prisma.projectArchiveItem.findMany({
-        where: { projectId: project.id },
-        select: { id: true, templateItemId: true },
-      });
-      const templateIdToArchiveId = new Map(
-        existingItems.map((item) => [item.templateItemId, item.id]),
-      );
-
-      for (const templateItem of template.items) {
-        // Map template responsibleRole/reviewRole to actual user IDs from this project
-        let responsibleUserId: string | null = null;
-        let reviewUserId: string | null = null;
-
-        if (templateItem.responsibleRole) {
-          responsibleUserId = memberRoleMap.get(templateItem.responsibleRole) ?? null;
-        }
-        if (templateItem.reviewRole) {
-          reviewUserId = memberRoleMap.get(templateItem.reviewRole) ?? null;
-        }
-
-        const archiveItemData = {
-          projectId: project.id,
-          templateItemId: templateItem.id,
-          parentId: templateItem.parentId
-            ? (templateIdToArchiveId.get(templateItem.parentId) ?? null)
-            : null,
-          stageCode: templateItem.stageCode,
-          itemNo: templateItem.itemNo,
-          level: templateItem.level,
-          name: templateItem.name,
-          secondName: templateItem.secondName,
-          usageDescription: templateItem.usageDescription,
-          isRequired: templateItem.isRequired,
-          isStar: templateItem.isStar,
-          isSensitive: templateItem.isSensitive,
-          needReview: templateItem.needReview,
-          responsibleUserId,
-          reviewUserId,
-          sortOrder: templateItem.sortOrder,
-        } satisfies Prisma.ProjectArchiveItemUncheckedUpdateInput;
-
-        const existing = await prisma.projectArchiveItem.findFirst({
-          where: {
-            projectId: project.id,
-            templateItemId: templateItem.id,
-          },
-          select: { id: true },
+  for (const project of createdProjects) {
+    await prisma.$transaction(
+      async (tx) => {
+        await tx.project.updateMany({
+          where: { id: project.id, archiveTemplateId: null },
+          data: { archiveTemplateId: template.id },
         });
+        await tx.project.updateMany({
+          where: { id: project.id, archiveTemplateVersionId: null },
+          data: { archiveTemplateVersionId: templateVersion.id },
+        });
+        const projectSnapshot = await tx.project.findUnique({
+          where: { id: project.id },
+          select: { archiveTemplateId: true, archiveTemplateVersionId: true },
+        });
+        if (
+          projectSnapshot?.archiveTemplateId !== template.id ||
+          projectSnapshot.archiveTemplateVersionId !== templateVersion.id
+        ) {
+          return;
+        }
 
-        if (!existing) {
-          const created = await prisma.projectArchiveItem.create({
-            data: {
-              ...archiveItemData,
-              status: ArchiveItemStatus.NotStarted,
+        const members = await tx.projectMember.findMany({
+          where: { projectId: project.id, deletedAt: null },
+          select: { userId: true, projectRole: true },
+        });
+        const memberByRoleCode = new Map(
+          members.map((member) => [member.projectRole, member.userId]),
+        );
+
+        for (const templateFolder of templateVersion.folders) {
+          const folder = await tx.projectArchiveFolder.upsert({
+            where: {
+              projectId_sourceStableKey: {
+                projectId: project.id,
+                sourceStableKey: templateFolder.stableKey,
+              },
             },
+            create: {
+              projectId: project.id,
+              name: templateFolder.name,
+              description: templateFolder.description,
+              sortOrder: templateFolder.sortOrder,
+              sourceTemplateFolderId: templateFolder.id,
+              sourceStableKey: templateFolder.stableKey,
+            },
+            update: {},
             select: { id: true },
           });
-          templateIdToArchiveId.set(templateItem.id, created.id);
-          totalArchiveItems++;
-        } else {
-          await prisma.projectArchiveItem.update({
-            where: { id: existing.id },
-            data: archiveItemData,
-          });
-          templateIdToArchiveId.set(templateItem.id, existing.id);
-        }
-      }
-    }
 
-    console.log(
-      `  Created ${totalArchiveItems} missing archive items across ${projectsForArchive.length} projects`,
+          for (const templateItem of templateFolder.items) {
+            const ownerRoleCode = templateItem.ownerRoleId
+              ? roleCodeById.get(templateItem.ownerRoleId)
+              : undefined;
+            await tx.projectArchiveEntry.upsert({
+              where: {
+                projectId_templateVersionId_sourceStableKey: {
+                  projectId: project.id,
+                  templateVersionId: templateVersion.id,
+                  sourceStableKey: templateItem.stableKey,
+                },
+              },
+              create: {
+                projectId: project.id,
+                folderId: folder.id,
+                templateVersionId: templateVersion.id,
+                sourceTemplateItemId: templateItem.id,
+                sourceStableKey: templateItem.stableKey,
+                name: templateItem.name,
+                description: templateItem.description,
+                required: templateItem.required,
+                reviewRequired: templateItem.reviewRequired,
+                approvalTemplateId: templateItem.approvalTemplateId,
+                ownerUserId: ownerRoleCode ? (memberByRoleCode.get(ownerRoleCode) ?? null) : null,
+                ownerRoleId: templateItem.ownerRoleId,
+                allowMultipleFiles: templateItem.allowMultipleFiles,
+                allowedExtensions:
+                  templateItem.allowedExtensions === null
+                    ? Prisma.JsonNull
+                    : (templateItem.allowedExtensions as Prisma.InputJsonValue),
+                maxFileSize: templateItem.maxFileSize,
+                namingRule: templateItem.namingRule,
+                sortOrder: templateItem.sortOrder,
+              },
+              update: {},
+            });
+          }
+        }
+      },
+      {
+        maxWait: 30_000,
+        timeout: 600_000,
+      },
     );
   }
 

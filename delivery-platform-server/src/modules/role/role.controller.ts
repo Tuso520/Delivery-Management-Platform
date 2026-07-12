@@ -10,37 +10,27 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiBearerAuth,
-  ApiResponse,
-  ApiBody,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse, ApiBody } from '@nestjs/swagger';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Permissions } from '../../common/decorators/permissions.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
 
 import { AssignPermissionsDto } from './dto/assign-permissions.dto';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { RoleService } from './role.service';
 
-
 @ApiTags('Roles')
 @ApiBearerAuth('JWT-auth')
 @Controller('roles')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
-@Roles('SUPER_ADMIN', 'SYSTEM_ADMIN')
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class RoleController {
   constructor(private readonly roleService: RoleService) {}
 
   @Get()
-  @Permissions('role:view')
+  @RequirePermissions({ all: ['role:view'] })
   @ApiOperation({ summary: '获取角色列表（含用户数和权限数）' })
   @ApiResponse({
     status: 200,
@@ -71,7 +61,7 @@ export class RoleController {
   }
 
   @Post()
-  @Permissions('role:create')
+  @RequirePermissions({ all: ['role:create'] })
   @ApiOperation({ summary: '创建角色' })
   @ApiBody({ type: CreateRoleDto })
   @ApiResponse({ status: 201, description: '创建成功' })
@@ -81,7 +71,7 @@ export class RoleController {
   }
 
   @Get(':id')
-  @Permissions('role:view')
+  @RequirePermissions({ all: ['role:view'] })
   @ApiOperation({ summary: '获取角色详情（含权限列表）' })
   @ApiResponse({ status: 200, description: '角色详情' })
   @ApiResponse({ status: 404, description: '角色不存在' })
@@ -90,7 +80,7 @@ export class RoleController {
   }
 
   @Put(':id')
-  @Permissions('role:update')
+  @RequirePermissions({ all: ['role:update'] })
   @ApiOperation({ summary: '更新角色信息' })
   @ApiBody({ type: UpdateRoleDto })
   @ApiResponse({ status: 200, description: '更新成功' })
@@ -100,10 +90,10 @@ export class RoleController {
   }
 
   @Delete(':id')
-  @Permissions('role:delete')
+  @RequirePermissions({ all: ['role:delete'] })
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '删除角色' })
-  @ApiResponse({ status: 200, description: '删除成功' })
+  @ApiOperation({ summary: '停用角色（软删除）' })
+  @ApiResponse({ status: 200, description: '停用成功' })
   @ApiResponse({ status: 404, description: '角色不存在' })
   @ApiResponse({ status: 400, description: '角色下还有用户，无法删除' })
   async remove(@Param('id') id: string) {
@@ -112,7 +102,7 @@ export class RoleController {
   }
 
   @Post(':id/permissions')
-  @Permissions('role:assign_permission')
+  @RequirePermissions({ all: ['role:assign_permission'] })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '分配角色权限' })
   @ApiBody({ type: AssignPermissionsDto })

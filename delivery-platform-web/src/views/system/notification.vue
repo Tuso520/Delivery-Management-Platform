@@ -1,263 +1,523 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
-import { arcoConfirm, arcoPrompt } from '@/utils/arco-dialog'
+import type { TableColumnData } from '@arco-design/web-vue'
+import { useMutation, useQueryClient } from '@tanstack/vue-query'
+import { useI18n } from 'vue-i18n'
+
 import { notificationApi } from '@/api/notification'
-import { dictionaryApi, referenceApi } from '@/api/platform'
-import type { CreateNotificationRuleDto, UpdateNotificationRuleDto } from '@/api/notification'
-import type { NotificationRule } from '@/types/system'
-import type { DictionaryItem, RoleOption } from '@/types/platform'
+import {
+  BusinessModal,
+  BusinessTable,
+  Can,
+  PageContainer,
+  PageToolbar,
+  SectionCard,
+  StatusBadge,
+} from '@/components/business'
+import { useNotificationRulesQuery } from '@/composables/queries/useOperationsQueries'
+import { usePermission } from '@/composables/usePermission'
+import { queryKeys } from '@/query/keys'
+import type {
+  NotificationChannel,
+  NotificationRecipientPolicyType,
+  NotificationRule,
+  SaveNotificationRuleDto,
+} from '@/types/settings'
+import { arcoConfirm } from '@/utils/arco-dialog'
 
-const loading = ref(false)
-const ruleList = ref<NotificationRule[]>([])
-const dialogVisible = ref(false)
-const isEdit = ref(false)
-const editId = ref('')
+const { hasPermission } = usePermission()
+const route = useRoute()
+const router = useRouter()
+const queryClient = useQueryClient()
+const { t, locale } = useI18n()
+const canManage = computed(() => hasPermission('notification_rule:manage'))
 
-const eventTypeOptions = ref<DictionaryItem[]>([])
-const channelOptions = ref<DictionaryItem[]>([])
-const roleOptions = ref<RoleOption[]>([])
+const keyword = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
+const appliedKeyword = ref(keyword.value.trim())
+const editorVisible = ref(false)
+const editingId = ref('')
 
-const formData = ref<CreateNotificationRuleDto>({
+const form = reactive<SaveNotificationRuleDto>({
   name: '',
   eventType: '',
-  channel: 'in_app',
-  recipientRole: '',
-  template: '',
-  isEnabled: true,
+  channels: ['IN_APP'],
+  recipientPolicy: { type: 'BUSINESS_OWNER', values: [] },
+  templateId: '',
+  enabled: true,
+})
+const rulesQuery = useNotificationRulesQuery()
+const rules = computed<NotificationRule[]>(() => rulesQuery.data.value ?? [])
+const loading = computed(() => rulesQuery.isFetching.value)
+const loadFailed = computed(() => rulesQuery.isError.value)
+
+type RuleMutationVariables =
+  | { kind: 'save'; id?: string; data: SaveNotificationRuleDto }
+  | { kind: 'toggle'; id: string }
+  | { kind: 'delete'; id: string }
+
+const ruleMutation = useMutation({
+  mutationFn: async (variables: RuleMutationVariables) => {
+    switch (variables.kind) {
+      case 'save':
+        if (variables.id) await notificationApi.updateRule(variables.id, variables.data)
+        else await notificationApi.createRule(variables.data)
+        return
+      case 'toggle':
+        await notificationApi.toggleRule(variables.id)
+        return
+      case 'delete':
+        await notificationApi.deleteRule(variables.id)
+    }
+  },
+  retry: false,
+  onSuccess: () =>
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.settings.notificationRules(),
+    }),
+})
+const saving = computed(() => ruleMutation.isPending.value)
+
+const channelOptions = computed<Array<{ label: string; value: NotificationChannel }>>(() => [
+  { label: t('notifications.channelsMap.IN_APP'), value: 'IN_APP' },
+  { label: t('notifications.channelsMap.FEISHU'), value: 'FEISHU' },
+  { label: t('notifications.channelsMap.WECOM'), value: 'WECOM' },
+])
+
+const recipientOptions = computed<
+  Array<{
+    label: string
+    value: NotificationRecipientPolicyType
+  }>
+>(() => [
+  { label: t('notifications.recipients.BUSINESS_OWNER'), value: 'BUSINESS_OWNER' },
+  { label: t('notifications.recipients.PROJECT_MEMBERS'), value: 'PROJECT_MEMBERS' },
+  { label: t('notifications.recipients.ROLE'), value: 'ROLE' },
+  { label: t('notifications.recipients.USER'), value: 'USER' },
+])
+
+const columns = computed<TableColumnData[]>(() => [
+  { title: t('notifications.name'), dataIndex: 'name', minWidth: 180, fixed: 'left' },
+  { title: t('notifications.eventType'), dataIndex: 'eventType', minWidth: 150 },
+  { title: t('notifications.channels'), slotName: 'channels', minWidth: 190 },
+  { title: t('notifications.recipient'), slotName: 'recipient', minWidth: 210 },
+  {
+    title: t('notifications.template'),
+    dataIndex: 'templateId',
+    slotName: 'template',
+    minWidth: 170,
+  },
+  { title: t('notifications.enabled'), dataIndex: 'enabled', slotName: 'enabled', width: 150 },
+  { title: t('common.action'), slotName: 'actions', width: 150, fixed: 'right' },
+])
+
+const filteredRules = computed(() => {
+  const normalized = appliedKeyword.value.toLowerCase()
+  if (!normalized) return rules.value
+  return rules.value.filter(
+    (rule) =>
+      rule.name.toLowerCase().includes(normalized) ||
+      rule.eventType.toLowerCase().includes(normalized),
+  )
 })
 
-const fetchRules = async () => {
-  loading.value = true
-  try {
-    const res = await notificationApi.getRules()
-    ruleList.value = res
-  } catch {
-    ruleList.value = []
-  } finally {
-    loading.value = false
-  }
+async function fetchRules(): Promise<void> {
+  await rulesQuery.refetch()
 }
 
-const handleAdd = () => {
-  isEdit.value = false
-  editId.value = ''
-  formData.value = {
-    name: '',
-    eventType: '',
-    channel: 'in_app',
-    recipientRole: '',
-    template: '',
-    isEnabled: true,
-  }
-  dialogVisible.value = true
-}
-
-const handleEdit = (row: NotificationRule) => {
-  isEdit.value = true
-  editId.value = row.id
-  formData.value = {
-    name: row.name,
-    eventType: row.eventType,
-    channel: row.channel,
-    recipientRole: row.recipientRole || '',
-    template: row.template || '',
-    isEnabled: row.isEnabled,
-  }
-  dialogVisible.value = true
-}
-
-const handleSave = async () => {
-  if (!formData.value.name.trim()) {
-    Message.warning('规则名称不能为空')
-    return
-  }
-  try {
-    if (isEdit.value) {
-      const dto: UpdateNotificationRuleDto = { ...formData.value }
-      if (!dto.recipientRole) dto.recipientRole = undefined
-      await notificationApi.updateRule(editId.value, dto)
-      Message.success('更新成功')
-    } else {
-      const dto: CreateNotificationRuleDto = { ...formData.value }
-      if (!dto.recipientRole) dto.recipientRole = undefined
-      await notificationApi.createRule(dto)
-      Message.success('创建成功')
-    }
-    dialogVisible.value = false
-    fetchRules()
-  } catch {
-    // Error handled by interceptor
-  }
-}
-
-const handleDelete = (row: NotificationRule) => {
-  arcoConfirm(`确认删除规则 "${row.name}"？`, '确认', {
-    confirmButtonText: '删除',
-    cancelButtonText: '取消',
-    type: 'warning',
-  }).then(async () => {
-    try {
-      await notificationApi.deleteRule(row.id)
-      Message.success('删除成功')
-      fetchRules()
-    } catch {
-      // Error handled by interceptor
-    }
-  }).catch(() => {
-    // Cancelled
+async function applyKeyword(): Promise<void> {
+  appliedKeyword.value = keyword.value.trim()
+  await router.replace({
+    path: route.path,
+    query: { ...route.query, keyword: appliedKeyword.value || undefined },
   })
 }
 
-const handleToggleEnabled = async (row: NotificationRule) => {
-  try {
-    await notificationApi.updateRule(row.id, { isEnabled: !row.isEnabled })
-    Message.success(row.isEnabled ? '已禁用' : '已启用')
-    fetchRules()
-  } catch {
-    // Error handled by interceptor
+function resetKeyword(): void {
+  keyword.value = ''
+  void applyKeyword()
+}
+
+watch(
+  () => route.query.keyword,
+  (value) => {
+    const nextKeyword = typeof value === 'string' ? value : ''
+    if (nextKeyword === appliedKeyword.value) return
+    keyword.value = nextKeyword
+    appliedKeyword.value = nextKeyword
+  },
+)
+
+function resetForm(): void {
+  Object.assign(form, {
+    name: '',
+    eventType: '',
+    channels: ['IN_APP'] as NotificationChannel[],
+    recipientPolicy: { type: 'BUSINESS_OWNER' as const, values: [] },
+    templateId: '',
+    enabled: true,
+  })
+}
+
+function openCreate(): void {
+  if (!canManage.value) return
+  editingId.value = ''
+  resetForm()
+  editorVisible.value = true
+}
+
+function openEdit(rule: NotificationRule): void {
+  if (!canManage.value) return
+  editingId.value = rule.id
+  Object.assign(form, {
+    name: rule.name,
+    eventType: rule.eventType,
+    channels: [...rule.channels],
+    recipientPolicy: {
+      type: rule.recipientPolicy.type,
+      values: [...rule.recipientPolicy.values],
+    },
+    templateId: rule.templateId ?? '',
+    enabled: rule.enabled,
+  })
+  editorVisible.value = true
+}
+
+function changeRecipientType(value: unknown): void {
+  const type = recipientOptions.value.find((option) => option.value === value)?.value
+  if (!type) return
+  form.recipientPolicy.type = type
+  if (type === 'BUSINESS_OWNER' || type === 'PROJECT_MEMBERS') {
+    form.recipientPolicy.values = []
   }
 }
 
-onMounted(async () => {
-  const [events, channels, roles] = await Promise.all([
-    dictionaryApi.getByCode('notification_event'),
-    dictionaryApi.getByCode('notification_channel'),
-    referenceApi.getRoleOptions(),
-  ])
-  eventTypeOptions.value = events.items
-  channelOptions.value = channels.items
-  roleOptions.value = roles
-  await fetchRules()
-})
+async function saveRule(): Promise<void> {
+  if (!canManage.value) return
+  const name = form.name.trim()
+  const eventType = form.eventType.trim()
+  const values = form.recipientPolicy.values.map((value) => value.trim()).filter(Boolean)
+
+  if (!name || !eventType) {
+    Message.warning(t('notifications.validation.basic'))
+    return
+  }
+  if (!form.channels.length) {
+    Message.warning(t('notifications.validation.channel'))
+    return
+  }
+  if (
+    (form.recipientPolicy.type === 'ROLE' || form.recipientPolicy.type === 'USER') &&
+    !values.length
+  ) {
+    Message.warning(t('notifications.validation.recipient'))
+    return
+  }
+
+  const payload: SaveNotificationRuleDto = {
+    name,
+    eventType,
+    channels: [...form.channels],
+    recipientPolicy: { type: form.recipientPolicy.type, values },
+    templateId: form.templateId?.trim() || '',
+    enabled: form.enabled,
+  }
+
+  try {
+    await ruleMutation.mutateAsync({
+      kind: 'save',
+      id: editingId.value || undefined,
+      data: payload,
+    })
+    if (editingId.value) {
+      Message.success(t('notifications.updated'))
+    } else {
+      Message.success(t('notifications.created'))
+    }
+    editorVisible.value = false
+  } catch {
+    // The shared request layer has already surfaced the failure.
+  }
+}
+
+async function toggleRule(rule: NotificationRule): Promise<void> {
+  if (!canManage.value) return
+  try {
+    await ruleMutation.mutateAsync({ kind: 'toggle', id: rule.id })
+    Message.success(rule.enabled ? t('notifications.disabled') : t('notifications.enabledMessage'))
+  } catch {
+    // The shared request layer has already surfaced the failure.
+  }
+}
+
+function removeRule(rule: NotificationRule): void {
+  if (!canManage.value) return
+  arcoConfirm(
+    t('notifications.deleteConfirm', { name: rule.name }),
+    t('notifications.deleteTitle'),
+    {
+      confirmButtonText: t('common.delete'),
+      cancelButtonText: t('common.cancel'),
+      type: 'warning',
+    },
+  )
+    .then(async () => {
+      await ruleMutation.mutateAsync({ kind: 'delete', id: rule.id })
+      Message.success(t('notifications.deleted'))
+    })
+    .catch(() => undefined)
+}
+
+function channelLabel(channel: NotificationChannel): string {
+  return channelOptions.value.find((option) => option.value === channel)?.label ?? channel
+}
+
+function recipientLabel(rule: NotificationRule): string {
+  const label =
+    recipientOptions.value.find((option) => option.value === rule.recipientPolicy.type)?.label ??
+    rule.recipientPolicy.type
+  const separator = locale.value === 'en-US' ? ', ' : '、'
+  return rule.recipientPolicy.values.length
+    ? t('notifications.recipientValues', {
+        label,
+        values: rule.recipientPolicy.values.join(separator),
+      })
+    : label
+}
 </script>
 
 <template>
-  <div class="notification-page">
-    <a-card>
-      <template #header>
-        <div class="card-header">
-          <span class="card-title">通知规则管理</span>
-          <a-button type="primary" size="small" @click="handleAdd">
-            新增规则
+  <PageContainer class="notification-page">
+    <PageToolbar :title="t('notifications.title')" :description="t('notifications.description')">
+      <template #actions>
+        <Can permission="notification_rule:manage">
+          <a-button type="primary" @click="openCreate">
+            {{ t('notifications.create') }}
           </a-button>
-        </div>
+        </Can>
       </template>
+    </PageToolbar>
 
-      <a-table
-        v-loading="loading"
-        :data="ruleList"
-        border
-        stripe
-      >
-        <a-table-column prop="name" label="规则名称" :width="160" />
-        <a-table-column label="事件类型" :width="140">
-          <template #default="{ row }">
-            {{ eventTypeOptions.find(o => o.itemValue === row.eventType)?.itemLabel || row.eventType }}
-          </template>
-        </a-table-column>
-        <a-table-column label="通知渠道" :width="100">
-          <template #default="{ row }">
-            {{ channelOptions.find(o => o.itemValue === row.channel)?.itemLabel || row.channel }}
-          </template>
-        </a-table-column>
-        <a-table-column label="接收角色" :width="120">
-          <template #default="{ row }">
-            {{ roleOptions.find(o => o.roleCode === row.recipientRole)?.roleName || '不限 '}}
-          </template>
-        </a-table-column>
-        <a-table-column
-          prop="template"
-          label="通知模板"
-          :min-width="200"
-          show-overflow-tooltip
-        />
-        <a-table-column label="启用" :width="80">
-          <template #default="{ row }">
-            <a-switch :model-value="row.isEnabled" @change="handleToggleEnabled(row)" />
-          </template>
-        </a-table-column>
-        <a-table-column label="操作" :width="160" fixed="right">
-          <template #default="{ row }">
-            <a-button size="small" @click="handleEdit(row)">
-              编辑
-            </a-button>
-            <a-button size="small" status="danger" type="secondary" @click="handleDelete(row)">
-              删除
-            </a-button>
-          </template>
-        </a-table-column>
-      </a-table>
-
-      <a-empty v-if="ruleList.length === 0 && !loading" description="暂无通知规则" />
-    </a-card>
-
-    <!-- Edit dialog -->
-    <a-dialog
-      v-model="dialogVisible"
-      :title="isEdit ? '编辑规则' : '新增规则'"
-      width="560px"
-      :close-on-click-modal="false"
+    <a-alert
+      v-if="!canManage"
+      class="page-alert"
+      type="info"
+      :title="t('notifications.readOnly')"
     >
-      <a-form :model="{}" label-width="100px">
-        <a-form-item label="规则名称" required>
-          <a-input
-            v-model="formData.name"
-            placeholder="请输入规则名称"
-            :maxlength="100"
-            show-word-limit
-          />
-        </a-form-item>
-        <a-form-item label="事件类型" required>
-          <a-select v-model="formData.eventType" style="width: 100%">
-            <a-option
-              v-for="opt in eventTypeOptions"
-              :key="opt.id"
-              :label="opt.itemLabel"
-              :value="opt.itemValue"
-            />
-          </a-select>
-        </a-form-item>
-        <a-form-item label="通知渠道">
-          <a-select v-model="formData.channel" style="width: 100%">
-            <a-option
-              v-for="opt in channelOptions"
-              :key="opt.id"
-              :label="opt.itemLabel"
-              :value="opt.itemValue"
-            />
-          </a-select>
-        </a-form-item>
-        <a-form-item label="接收角色">
-          <a-select v-model="formData.recipientRole" style="width: 100%" clearable>
-            <a-option
-              v-for="opt in roleOptions"
-              :key="opt.id"
-              :label="opt.roleName"
-              :value="opt.roleCode"
-            />
-          </a-select>
-        </a-form-item>
-        <a-form-item label="通知模板">
-          <a-textarea
-            v-model="formData.template"
+      {{ t('notifications.readOnlyHint') }}
+    </a-alert>
+    <a-alert
+      v-if="loadFailed"
+      class="page-alert"
+      type="error"
+      :title="t('notifications.loadFailed')"
+    >
+      <template #action>
+        <a-button size="small" @click="fetchRules">
+          {{ t('common.retry') }}
+        </a-button>
+      </template>
+    </a-alert>
 
-            :rows="3"
-            placeholder="通知模板内容，支持变量"
+    <SectionCard class="filter-card" :bordered="false">
+      <a-form :model="{ keyword }" layout="inline">
+        <a-form-item :label="t('notifications.name')">
+          <a-input
+            v-model="keyword"
+            allow-clear
+            :placeholder="t('notifications.searchPlaceholder')"
+            class="keyword-input"
+            @press-enter="applyKeyword"
+            @clear="resetKeyword"
           />
         </a-form-item>
-        <a-form-item label="是否启用">
-          <a-switch v-model="formData.isEnabled" />
+        <a-form-item>
+          <a-space>
+            <a-button type="primary" @click="applyKeyword">
+              {{ t('common.search') }}
+            </a-button>
+            <a-button @click="resetKeyword">
+              {{ t('common.reset') }}
+            </a-button>
+          </a-space>
         </a-form-item>
       </a-form>
-      <template #footer>
-        <a-button @click="dialogVisible = false">
-          取消
-        </a-button>
-        <a-button type="primary" @click="handleSave">
-          保存
-        </a-button>
+    </SectionCard>
+
+    <BusinessTable
+      :loading="loading"
+      :columns="columns"
+      :data="filteredRules"
+      :scroll="{ x: 1120 }"
+      :error="loadFailed ? t('notifications.loadFailed') : null"
+      :empty-title="t('notifications.empty')"
+      :empty-description="t('notifications.unavailable')"
+      :retry-label="t('common.retry')"
+      row-key="id"
+      class="settings-table"
+      @retry="fetchRules"
+    >
+      <template #channels="{ record }">
+        <a-space size="mini" wrap>
+          <a-tag v-for="channel in record.channels" :key="channel">
+            {{ channelLabel(channel) }}
+          </a-tag>
+        </a-space>
       </template>
-    </a-dialog>
-  </div>
+      <template #recipient="{ record }">
+        <span class="ellipsis-text" :title="recipientLabel(record)">{{
+          recipientLabel(record)
+        }}</span>
+      </template>
+      <template #template="{ record }">
+        {{ record.templateId || t('notifications.defaultTemplate') }}
+      </template>
+      <template #enabled="{ record }">
+        <a-space size="mini">
+          <StatusBadge
+            domain="notification"
+            :status="record.enabled ? 'ENABLED' : 'DISABLED'"
+            :label="record.enabled ? t('notifications.enabled') : t('notifications.disabledStatus')"
+          />
+          <Can permission="notification_rule:manage">
+            <a-switch :model-value="record.enabled" @change="toggleRule(record)" />
+          </Can>
+        </a-space>
+      </template>
+      <template #actions="{ record }">
+        <Can permission="notification_rule:manage">
+          <a-space size="mini" :wrap="false">
+            <a-button type="text" size="small" @click="openEdit(record)">
+              {{ t('common.edit') }}
+            </a-button>
+            <a-button
+              type="text"
+              size="small"
+              status="danger"
+              @click="removeRule(record)"
+            >
+              {{ t('common.delete') }}
+            </a-button>
+          </a-space>
+        </Can>
+      </template>
+    </BusinessTable>
+
+    <BusinessModal
+      v-model:visible="editorVisible"
+      :title="editingId ? t('notifications.editTitle') : t('notifications.createTitle')"
+      :width="640"
+      :ok-loading="saving"
+      :ok-text="t('common.save')"
+      :cancel-text="t('common.cancel')"
+      @ok="saveRule"
+    >
+      <a-form :model="form" layout="vertical">
+        <div class="form-grid">
+          <a-form-item :label="t('notifications.name')" required>
+            <a-input
+              v-model="form.name"
+              :max-length="100"
+              :placeholder="t('notifications.namePlaceholder')"
+            />
+          </a-form-item>
+          <a-form-item :label="t('notifications.eventType')" required>
+            <a-input
+              v-model="form.eventType"
+              :max-length="100"
+              :placeholder="t('notifications.eventPlaceholder')"
+            />
+          </a-form-item>
+        </div>
+        <a-form-item :label="t('notifications.channels')" required>
+          <a-checkbox-group v-model="form.channels" :options="channelOptions" />
+        </a-form-item>
+        <div class="form-grid">
+          <a-form-item :label="t('notifications.recipientPolicy')" required>
+            <a-select :model-value="form.recipientPolicy.type" @change="changeRecipientType">
+              <a-option
+                v-for="option in recipientOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </a-option>
+            </a-select>
+          </a-form-item>
+          <a-form-item
+            v-if="form.recipientPolicy.type === 'ROLE' || form.recipientPolicy.type === 'USER'"
+            :label="
+              form.recipientPolicy.type === 'ROLE'
+                ? t('notifications.roleCode')
+                : t('notifications.userId')
+            "
+            required
+          >
+            <a-input-tag
+              v-model="form.recipientPolicy.values"
+              allow-clear
+              :placeholder="
+                form.recipientPolicy.type === 'ROLE'
+                  ? t('notifications.rolePlaceholder')
+                  : t('notifications.userPlaceholder')
+              "
+            />
+          </a-form-item>
+        </div>
+        <a-form-item :label="t('notifications.templateId')">
+          <a-input
+            v-model="form.templateId"
+            allow-clear
+            :placeholder="t('notifications.templatePlaceholder')"
+          />
+        </a-form-item>
+        <a-form-item :label="t('notifications.enableRule')">
+          <a-switch v-model="form.enabled" />
+        </a-form-item>
+      </a-form>
+    </BusinessModal>
+  </PageContainer>
 </template>
+
+<style scoped lang="scss">
+.notification-page {
+  min-width: 0;
+}
+
+.page-alert,
+.filter-card {
+  margin-bottom: 12px;
+}
+
+.keyword-input {
+  width: 300px;
+}
+
+.settings-table {
+  background: var(--color-bg-2);
+}
+
+.ellipsis-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+}
+
+@media (max-width: 720px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .keyword-input {
+    width: 100%;
+  }
+}
+</style>

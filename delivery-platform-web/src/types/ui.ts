@@ -1,1 +1,1 @@
-export type TagType = 'success' | 'warning' | 'info' | 'primary' | 'danger'
+export type TagType = 'green' | 'orange' | 'gray' | 'blue' | 'red'

@@ -7,7 +7,10 @@ export const authApi = {
    * Note: Axios 拦截器已从 {code, message, data} 中解包，直接返回 data 部分
    */
   login(data: LoginForm) {
-    return request.post<LoginResult>('/auth/login', data, { silent: true })
+    return request.post<LoginResult>('/auth/login', data, {
+      silent: true,
+      skipAuthRefresh: true,
+    })
   },
 
   logout() {
@@ -18,7 +21,10 @@ export const authApi = {
     return request.get<UserProfile>('/auth/profile')
   },
 
-  refreshToken(refreshToken: string) {
-    return request.post<LoginResult>('/auth/refresh', { refreshToken })
+  refreshToken() {
+    return request.post<LoginResult>('/auth/refresh', undefined, {
+      silent: true,
+      skipAuthRefresh: true,
+    })
   },
 }

@@ -21,36 +21,3 @@ export interface UploadedFile {
     realName: string
   }
 }
-
-export interface FileReview {
-  id: string
-  fileId: string
-  archiveItemId: string
-  reviewUserId: string
-  reviewStatus: string
-  reviewComment: string | null
-  reviewTime: string
-  createdAt: string
-  reviewer: {
-    id: string
-    realName: string
-  }
-  file: {
-    id: string
-    fileName: string
-    versionNo: string
-    project?: {
-      id: string
-      projectName: string
-      projectCode: string
-    } | null
-  }
-  archiveItem: {
-    id: string
-    name: string
-  }
-}
-
-export interface PendingReview extends FileReview {
-  // Same structure as FileReview, used for pending items in the review list
-}

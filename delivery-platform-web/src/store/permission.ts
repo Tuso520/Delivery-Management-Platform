@@ -33,10 +33,12 @@ export function filterMenusByPermissions(
       return []
     }
 
-    return [{
-      ...menu,
-      ...(menu.children ? { children: filteredChildren } : {}),
-    }]
+    return [
+      {
+        ...menu,
+        ...(menu.children ? { children: filteredChildren } : {}),
+      },
+    ]
   })
 }
 
@@ -45,11 +47,7 @@ export function findFirstAccessibleMenuPath(
   userPermissions: string[],
   userRoles: string[] = [],
 ): string | null {
-  const accessibleMenus = filterMenusByPermissions(
-    menuList,
-    userPermissions,
-    userRoles,
-  )
+  const accessibleMenus = filterMenusByPermissions(menuList, userPermissions, userRoles)
 
   const findPath = (items: MenuItem[]): string | null => {
     for (const item of items) {
@@ -69,88 +67,64 @@ export function findFirstAccessibleMenuPath(
   return findPath(accessibleMenus)
 }
 
-export function resolveActiveMenuPath(
-  menuList: MenuItem[],
-  routePath: string,
-): string {
+export function resolveActiveMenuPath(menuList: MenuItem[], routePath: string): string {
   const candidatePaths: string[] = []
 
   const collectLeafPaths = (items: MenuItem[]): void => {
     for (const item of items) {
       if (item.children?.length) {
         collectLeafPaths(item.children)
-      } else if (
-        routePath === item.path
-        || routePath.startsWith(`${item.path}/`)
-      ) {
+      } else if (routePath === item.path || routePath.startsWith(`${item.path}/`)) {
         candidatePaths.push(item.path)
       }
     }
   }
 
   collectLeafPaths(menuList)
-  return candidatePaths.sort((left, right) => right.length - left.length)[0]
-    ?? routePath
+  return candidatePaths.sort((left, right) => right.length - left.length)[0] ?? routePath
 }
 
-export const usePermissionStore = defineStore(
-  'permission',
-  () => {
-    const menus = ref<MenuItem[]>([])
-    const routes = ref<string[]>([])
+export const usePermissionStore = defineStore('permission', () => {
+  const menus = ref<MenuItem[]>([])
 
-    const hasPermission = (permission: string): boolean => {
-      if (!permission) {
-        return false
-      }
-      const userStore = useUserStore()
-      const userPermissions = userStore.userInfo?.permissions ?? []
-      const userRoles = userStore.userInfo?.roles ?? []
-      return userRoles.includes('SUPER_ADMIN') || userPermissions.includes(permission)
+  const hasPermission = (permission: string): boolean => {
+    if (!permission) {
+      return false
     }
+    const userStore = useUserStore()
+    const userPermissions = userStore.userInfo?.permissions ?? []
+    const userRoles = userStore.userInfo?.roles ?? []
+    return userRoles.includes('SUPER_ADMIN') || userPermissions.includes(permission)
+  }
 
-    const hasRole = (role: string): boolean => {
-      const userStore = useUserStore()
-      const userRoles = userStore.userInfo?.roles ?? []
-      return userRoles.includes(role)
+  const hasAnyPermission = (permissions: string[]): boolean => {
+    if (permissions.length === 0) {
+      return false
     }
+    return permissions.some((permission) => hasPermission(permission))
+  }
 
-    const hasAnyPermission = (permissions: string[]): boolean => {
-      if (permissions.length === 0) {
-        return false
-      }
-      return permissions.some((permission) => hasPermission(permission))
-    }
+  const hasAllPermissions = (permissions: string[]): boolean => {
+    return permissions.every((permission) => hasPermission(permission))
+  }
 
-    const hasAllPermissions = (permissions: string[]): boolean => {
-      return permissions.every((permission) => hasPermission(permission))
-    }
+  const filteredMenus = computed(() => {
+    const userStore = useUserStore()
+    const userPermissions = userStore.userInfo?.permissions ?? []
+    const userRoles = userStore.userInfo?.roles ?? []
+    return filterMenusByPermissions(menus.value, userPermissions, userRoles)
+  })
 
-    const filteredMenus = computed(() => {
-      const userStore = useUserStore()
-      const userPermissions = userStore.userInfo?.permissions ?? []
-      const userRoles = userStore.userInfo?.roles ?? []
-      return filterMenusByPermissions(menus.value, userPermissions, userRoles)
-    })
+  const setMenus = (menuList: MenuItem[]): void => {
+    menus.value = menuList
+  }
 
-    const setMenus = (menuList: MenuItem[]): void => {
-      menus.value = menuList
-    }
-
-    const setRoutes = (routeList: string[]): void => {
-      routes.value = routeList
-    }
-
-    return {
-      menus,
-      routes,
-      filteredMenus,
-      hasPermission,
-      hasRole,
-      hasAnyPermission,
-      hasAllPermissions,
-      setMenus,
-      setRoutes,
-    }
-  },
-)
+  return {
+    menus,
+    filteredMenus,
+    hasPermission,
+    hasAnyPermission,
+    hasAllPermissions,
+    setMenus,
+  }
+})

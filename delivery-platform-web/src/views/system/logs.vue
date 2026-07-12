@@ -1,250 +1,441 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { operationLogApi, type QueryOperationLogParams } from '@/api/system'
+import { computed, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
+import type { TableColumnData } from '@arco-design/web-vue'
+
+import type { QueryOperationLogParams } from '@/api/system'
+import {
+  BusinessDrawer,
+  BusinessTable,
+  PageContainer,
+  PageToolbar,
+  SectionCard,
+  StatusBadge,
+} from '@/components/business'
+import { useAuditLogQuery, useAuditLogsQuery } from '@/composables/queries/useOperationsQueries'
 import type { OperationLog } from '@/types/system'
-import type { TagType } from '@/types/ui'
 
-const loading = ref(false)
-const logList = ref<OperationLog[]>([])
-const total = ref(0)
-
-const queryParams = ref<QueryOperationLogParams>({
-  page: 1,
-  pageSize: 20,
-  userId: '',
-  module: '',
-  action: '',
-  targetType: '',
-  startDate: '',
-  endDate: '',
-  result: '',
+const route = useRoute()
+const router = useRouter()
+const { t, locale } = useI18n()
+const dateRange = ref<string[]>(
+  [
+    typeof route.query.startDate === 'string' ? route.query.startDate : '',
+    typeof route.query.endDate === 'string' ? route.query.endDate : '',
+  ].filter(Boolean),
+)
+const query = reactive<QueryOperationLogParams>({
+  page: Number(route.query.page) || 1,
+  pageSize: Number(route.query.pageSize) || 20,
+  keyword: typeof route.query.keyword === 'string' ? route.query.keyword : '',
+  action: typeof route.query.action === 'string' ? route.query.action : '',
 })
+const appliedQuery = ref(buildQueryParams())
 
-const moduleOptions = [
-  { value: '', label: '全部模块' },
-  { value: 'auth', label: '认证' },
-  { value: 'user', label: '用户' },
-  { value: 'role', label: '角色' },
-  { value: 'project', label: '项目' },
-  { value: 'archive', label: '档案' },
-  { value: 'file', label: '文件' },
-  { value: 'review', label: '审核' },
-  { value: 'checklist', label: '检查项' },
-  { value: 'system', label: '系统' },
-]
+const drawerVisible = ref(false)
+const selectedLogId = ref('')
+const logsQuery = useAuditLogsQuery(appliedQuery)
+const logDetailQuery = useAuditLogQuery(selectedLogId)
+const logs = computed<OperationLog[]>(() => logsQuery.data.value?.items ?? [])
+const total = computed(() => logsQuery.data.value?.total ?? 0)
+const pagination = computed(() => ({
+  page: query.page ?? 1,
+  pageSize: query.pageSize ?? 20,
+  total: total.value,
+}))
+const loading = computed(() => logsQuery.isFetching.value)
+const loadFailed = computed(() => logsQuery.isError.value)
+const detailLoading = computed(() => logDetailQuery.isFetching.value)
+const detail = computed(() => logDetailQuery.data.value)
 
-const actionOptions = [
-  { value: '', label: '全部操作' },
-  { value: 'create', label: '创建' },
-  { value: 'update', label: '更新' },
-  { value: 'delete', label: '删除' },
-  { value: 'view', label: '查看' },
-  { value: 'upload', label: '上传' },
-  { value: 'download', label: '下载' },
-  { value: 'review', label: '审核' },
-  { value: 'login', label: '登录' },
-  { value: 'export', label: '导出' },
-]
+const actionOptions = computed(() =>
+  [
+    'create',
+    'update',
+    'delete',
+    'view',
+    'preview',
+    'download',
+    'upload',
+    'approve',
+    'reject',
+    'login',
+    'sync',
+  ].map((value) => ({ value, label: t(`logs.actions.${value}`) })),
+)
 
-const resultOptions = [
-  { value: '', label: '全部结果' },
-  { value: 'success', label: '成功' },
-  { value: 'failure', label: '失败' },
-  { value: 'denied', label: '拒绝' },
-]
+const columns = computed<TableColumnData[]>(() => [
+  {
+    title: t('logs.columns.time'),
+    dataIndex: 'createdAt',
+    slotName: 'createdAt',
+    width: 176,
+    fixed: 'left',
+  },
+  { title: t('logs.columns.user'), slotName: 'user', width: 130 },
+  { title: t('logs.columns.module'), dataIndex: 'module', width: 110 },
+  { title: t('logs.columns.type'), dataIndex: 'action', slotName: 'action', width: 120 },
+  { title: t('logs.columns.target'), slotName: 'target', minWidth: 220 },
+  { title: t('logs.columns.result'), dataIndex: 'result', slotName: 'result', width: 100 },
+  { title: t('logs.columns.source'), slotName: 'source', minWidth: 220 },
+  { title: t('logs.columns.detail'), slotName: 'actions', width: 100, fixed: 'right' },
+])
 
-const targetTypeOptions = [
-  { value: '', label: '全部类型' },
-  { value: 'project', label: '项目' },
-  { value: 'user', label: '用户' },
-  { value: 'role', label: '角色' },
-  { value: 'file', label: '文件' },
-  { value: 'archive_item', label: '档案项 '},
-  { value: 'checklist_item', label: '检查项' },
-]
+function buildQueryParams(): QueryOperationLogParams {
+  return {
+    page: query.page,
+    pageSize: query.pageSize,
+    ...(query.keyword?.trim() ? { keyword: query.keyword.trim() } : {}),
+    ...(query.action ? { action: query.action } : {}),
+    ...(dateRange.value[0] ? { startDate: dateRange.value[0] } : {}),
+    ...(dateRange.value[1] ? { endDate: dateRange.value[1] } : {}),
+  }
+}
 
-const fetchLogs = async () => {
-  loading.value = true
+async function fetchLogs(): Promise<void> {
+  await logsQuery.refetch()
+}
+
+async function applyQuery(): Promise<void> {
+  appliedQuery.value = buildQueryParams()
+  await router.replace({
+    path: route.path,
+    query: {
+      page: query.page === 1 ? undefined : String(query.page),
+      pageSize: query.pageSize === 20 ? undefined : String(query.pageSize),
+      keyword: query.keyword?.trim() || undefined,
+      action: query.action || undefined,
+      startDate: dateRange.value[0] || undefined,
+      endDate: dateRange.value[1] || undefined,
+    },
+  })
+}
+
+function search(): void {
+  query.page = 1
+  void applyQuery()
+}
+
+function resetSearch(): void {
+  query.keyword = ''
+  query.action = ''
+  query.page = 1
+  dateRange.value = []
+  void applyQuery()
+}
+
+function changePage(page: number): void {
+  query.page = page
+  void applyQuery()
+}
+
+async function openDetail(row: OperationLog): Promise<void> {
+  drawerVisible.value = true
+  const isCurrent = selectedLogId.value === row.id
+  selectedLogId.value = row.id
+  if (isCurrent) await logDetailQuery.refetch()
+}
+
+function formatDate(value?: string | null): string {
+  if (!value) return '—'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(locale.value, { hour12: false })
+}
+
+function userLabel(log: OperationLog): string {
+  return log.user?.realName || log.user?.username || log.userId || t('logs.systemUser')
+}
+
+function actionLabel(action: string): string {
+  return actionOptions.value.find((option) => option.value === action)?.label ?? action
+}
+
+function resultLabel(result: string): string {
+  const normalized = result.toLowerCase()
+  return ['success', 'failure', 'failed', 'denied'].includes(normalized)
+    ? t(`logs.results.${normalized}`)
+    : result
+}
+
+function safeJson(value: unknown): string {
+  if (value === null || value === undefined) return '—'
   try {
-    const params: QueryOperationLogParams = { page: queryParams.value.page, pageSize: queryParams.value.pageSize }
-    if (queryParams.value.userId) params.userId = queryParams.value.userId
-    if (queryParams.value.module) params.module = queryParams.value.module
-    if (queryParams.value.action) params.action = queryParams.value.action
-    if (queryParams.value.targetType) params.targetType = queryParams.value.targetType
-    if (queryParams.value.startDate) params.startDate = queryParams.value.startDate
-    if (queryParams.value.endDate) params.endDate = queryParams.value.endDate
-    if (queryParams.value.result) params.result = queryParams.value.result
-
-    const res = await operationLogApi.getList(params)
-    logList.value = res.list
-    total.value = res.pagination.total
+    return redactText(
+      JSON.stringify(
+        value,
+        (key, item: unknown) => {
+          if (/secret|password|token|credential|private.?key|authorization/iu.test(key)) {
+            return '******'
+          }
+          return item
+        },
+        2,
+      ),
+    )
   } catch {
-    logList.value = []
-  } finally {
-    loading.value = false
+    return t('logs.invalidStructure')
   }
 }
 
-const handleSearch = () => {
-  queryParams.value.page = 1
-  fetchLogs()
+function redactText(value?: string | null): string {
+  if (!value) return '—'
+  return value
+    .replace(
+      /(password|secret|token|api.?key|access.?key|authorization)\s*[=:]\s*[^\s,;]+/giu,
+      '$1=******',
+    )
+    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/giu, 'Bearer ******')
 }
-
-const handleReset = () => {
-  queryParams.value = {
-    page: 1,
-    pageSize: 20,
-    userId: '',
-    module: '',
-    action: '',
-    targetType: '',
-    startDate: '',
-    endDate: '',
-    result: '',
-  }
-  fetchLogs()
-}
-
-const handlePageChange = (page: number) => {
-  queryParams.value.page = page
-  fetchLogs()
-}
-
-const resultTypeMap: Record<string, TagType> = {
-  success: 'success',
-  failure: 'danger',
-  denied: 'warning',
-}
-
-const getResultTagType = (result: string): TagType => {
-  return resultTypeMap[result] || 'info'
-}
-
-onMounted(() => {
-  fetchLogs()
-})
 </script>
 
 <template>
-  <div class="log-page">
-    <!-- Search form -->
-    <a-card class="search-card">
-      <a-form :model="queryParams" inline label-width="0">
-        <a-form-item>
-          <a-select v-model="queryParams.module" placeholder="选择模块" style="width: 120px">
-            <a-option
-              v-for="opt in moduleOptions"
-              :key="opt.value"
-              :label="opt.label"
-              :value="opt.value"
-            />
-          </a-select>
-        </a-form-item>
-        <a-form-item>
-          <a-select v-model="queryParams.action" placeholder="选择操作" style="width: 120px">
-            <a-option
-              v-for="opt in actionOptions"
-              :key="opt.value"
-              :label="opt.label"
-              :value="opt.value"
-            />
-          </a-select>
-        </a-form-item>
-        <a-form-item>
-          <a-select v-model="queryParams.targetType" placeholder="目标类型" style="width: 120px">
-            <a-option
-              v-for="opt in targetTypeOptions"
-              :key="opt.value"
-              :label="opt.label"
-              :value="opt.value"
-            />
-          </a-select>
-        </a-form-item>
-        <a-form-item>
-          <a-select v-model="queryParams.result" placeholder="操作结果" style="width: 110px">
-            <a-option
-              v-for="opt in resultOptions"
-              :key="opt.value"
-              :label="opt.label"
-              :value="opt.value"
-            />
-          </a-select>
-        </a-form-item>
-        <a-form-item>
-          <a-date-picker
-            v-model="queryParams.startDate"
-            type="date"
-            placeholder="开始日期"
-            value-format="YYYY-MM-DD"
-            style="width: 140px"
+  <PageContainer class="audit-page">
+    <PageToolbar :title="t('logs.title')" :description="t('logs.description')">
+      <template #actions>
+        <a-button :loading="loading" @click="fetchLogs">
+          {{ t('logs.refresh') }}
+        </a-button>
+      </template>
+    </PageToolbar>
+
+    <SectionCard class="filter-card" :bordered="false">
+      <a-form :model="query" layout="inline">
+        <a-form-item :label="t('logs.keyword')">
+          <a-input
+            v-model="query.keyword"
+            class="keyword-input"
+            allow-clear
+            :placeholder="t('logs.keywordPlaceholder')"
+            @press-enter="search"
           />
         </a-form-item>
-        <a-form-item>
-          <a-date-picker
-            v-model="queryParams.endDate"
-            type="date"
-            placeholder="结束日期"
-            value-format="YYYY-MM-DD"
-            style="width: 140px"
-          />
+        <a-form-item :label="t('logs.actionType')">
+          <a-select
+            v-model="query.action"
+            class="action-select"
+            allow-clear
+            :placeholder="t('logs.allActions')"
+          >
+            <a-option v-for="option in actionOptions" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </a-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item :label="t('logs.dateRange')">
+          <a-range-picker v-model="dateRange" value-format="YYYY-MM-DD" class="date-range" />
         </a-form-item>
         <a-form-item>
-          <a-button type="primary" @click="handleSearch">
-            查询
-          </a-button>
-          <a-button @click="handleReset">
-            重置
-          </a-button>
+          <a-space>
+            <a-button type="primary" @click="search">
+              {{ t('review.query') }}
+            </a-button>
+            <a-button @click="resetSearch">
+              {{ t('common.reset') }}
+            </a-button>
+          </a-space>
         </a-form-item>
       </a-form>
-    </a-card>
+    </SectionCard>
 
-    <!-- Log table -->
-    <a-card>
-      <a-table
-        v-loading="loading"
-        :data="logList"
-        border
-        stripe
-      >
-        <a-table-column label="用户" :width="120">
-          <template #default="{ row }">
-            {{ row.user?.realName || row.user?.username || row.userId }}
-          </template>
-        </a-table-column>
-        <a-table-column prop="module" label="模块" :width="80" />
-        <a-table-column prop="action" label="操作" :width="80" />
-        <a-table-column prop="targetType" label="目标类型" :width="100" />
-        <a-table-column
-          prop="targetId"
-          label="目标ID"
-          :width="200"
-          show-overflow-tooltip
+    <BusinessTable
+      :loading="loading"
+      :columns="columns"
+      :data="logs"
+      :scroll="{ x: 1180 }"
+      :pagination="pagination"
+      :error="loadFailed ? t('logs.loadFailed') : null"
+      :empty-title="t('logs.empty')"
+      :empty-description="t('logs.unavailable')"
+      :retry-label="t('common.retry')"
+      row-key="id"
+      class="settings-table"
+      @retry="fetchLogs"
+      @page-change="changePage"
+    >
+      <template #createdAt="{ record }">
+        {{ formatDate(record.createdAt) }}
+      </template>
+      <template #user="{ record }">
+        {{ userLabel(record) }}
+      </template>
+      <template #action="{ record }">
+        {{ actionLabel(record.action) }}
+      </template>
+      <template #target="{ record }">
+        <div class="target-cell">
+          <span>{{ record.targetType || '—' }}</span>
+          <code>{{ record.targetId || '—' }}</code>
+        </div>
+      </template>
+      <template #result="{ record }">
+        <StatusBadge
+          domain="log"
+          :status="record.result.toLowerCase()"
+          :label="resultLabel(record.result)"
         />
-        <a-table-column prop="ipAddress" label="IP地址" :width="140" />
-        <a-table-column label="结果" :width="80">
-          <template #default="{ row }">
-            <a-tag :type="getResultTagType(row.result)" size="small">
-              {{ row.result }}
-            </a-tag>
-          </template>
-        </a-table-column>
-        <a-table-column label="时间" :width="180">
-          <template #default="{ row }">
-            {{ row.createdAt ? new Date(row.createdAt).toLocaleString() : '' }}
-          </template>
-        </a-table-column>
-      </a-table>
+      </template>
+      <template #source="{ record }">
+        <div class="source-cell">
+          <span>{{ record.ipAddress || '—' }}</span>
+          <span class="muted ellipsis-text" :title="record.userAgent || ''">
+            {{ record.userAgent || t('logs.unknownSource') }}
+          </span>
+        </div>
+      </template>
+      <template #actions="{ record }">
+        <a-button type="text" size="small" @click="openDetail(record)">
+          {{ t('common.view') }}
+        </a-button>
+      </template>
+    </BusinessTable>
 
-      <div v-if="total > 0" class="pagination-wrapper">
-        <a-pagination
-          v-model:current-page="queryParams.page"
-          :page-size="queryParams.pageSize"
-          :total="total"
-          layout="total, prev, pager, next"
-          @current-change="handlePageChange"
-        />
-      </div>
-    </a-card>
-  </div>
+    <BusinessDrawer
+      v-model:visible="drawerVisible"
+      :title="t('logs.detail')"
+      :width="640"
+      :footer="false"
+    >
+      <a-spin :loading="detailLoading" class="detail-spin">
+        <template v-if="detail">
+          <a-descriptions :column="1" bordered size="small">
+            <a-descriptions-item :label="t('logs.columns.time')">
+              {{
+                formatDate(detail.createdAt)
+              }}
+            </a-descriptions-item>
+            <a-descriptions-item :label="t('logs.columns.user')">
+              {{
+                userLabel(detail)
+              }}
+            </a-descriptions-item>
+            <a-descriptions-item :label="t('logs.moduleType')">
+              {{ detail.module }} / {{ actionLabel(detail.action) }}
+            </a-descriptions-item>
+            <a-descriptions-item :label="t('logs.columns.target')">
+              {{ detail.targetType }} / {{ detail.targetId }}
+            </a-descriptions-item>
+            <a-descriptions-item :label="t('logs.columns.result')">
+              <StatusBadge
+                domain="log"
+                :status="detail.result.toLowerCase()"
+                :label="resultLabel(detail.result)"
+              />
+            </a-descriptions-item>
+            <a-descriptions-item label="IP">
+              {{ detail.ipAddress || '—' }}
+            </a-descriptions-item>
+            <a-descriptions-item label="User-Agent">
+              {{
+                detail.userAgent || '—'
+              }}
+            </a-descriptions-item>
+            <a-descriptions-item label="Trace ID">
+              {{ detail.traceId || '—' }}
+            </a-descriptions-item>
+            <a-descriptions-item :label="t('logs.error')">
+              {{
+                redactText(detail.errorReason)
+              }}
+            </a-descriptions-item>
+          </a-descriptions>
+
+          <section class="change-block">
+            <h3>{{ t('logs.before') }}</h3>
+            <pre>{{ safeJson(detail.beforeData) }}</pre>
+          </section>
+          <section class="change-block">
+            <h3>{{ t('logs.after') }}</h3>
+            <pre>{{ safeJson(detail.afterData) }}</pre>
+          </section>
+        </template>
+        <a-empty v-else-if="!detailLoading" :description="t('logs.detailUnavailable')" />
+      </a-spin>
+    </BusinessDrawer>
+  </PageContainer>
 </template>
+
+<style scoped lang="scss">
+.audit-page {
+  min-width: 0;
+}
+
+.filter-card {
+  margin-bottom: 12px;
+}
+
+.keyword-input {
+  width: 240px;
+}
+
+.action-select {
+  width: 150px;
+}
+
+.date-range {
+  width: 260px;
+}
+
+.settings-table {
+  background: var(--color-bg-2);
+}
+
+.target-cell,
+.source-cell {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.target-cell code,
+.muted {
+  color: var(--color-text-3);
+  font-size: 12px;
+}
+
+.ellipsis-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-spin {
+  display: block;
+  min-height: 160px;
+}
+
+.change-block {
+  margin-top: 18px;
+}
+
+.change-block h3 {
+  margin: 0 0 8px;
+  color: var(--color-text-1);
+  font-size: 14px;
+}
+
+.change-block pre {
+  max-height: 280px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--color-border-2);
+  border-radius: 6px;
+  color: var(--color-text-2);
+  background: var(--color-fill-1);
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+@media (max-width: 760px) {
+  .keyword-input,
+  .action-select,
+  .date-range {
+    width: 100%;
+  }
+}
+</style>

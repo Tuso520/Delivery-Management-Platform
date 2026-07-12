@@ -1,25 +1,21 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
 
-import { Permissions } from '../../common/decorators/permissions.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
 
 import { PermissionService } from './permission.service';
-
 
 @ApiTags('Permissions')
 @ApiBearerAuth('JWT-auth')
 @Controller('permissions')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
-@Roles('SUPER_ADMIN', 'SYSTEM_ADMIN')
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class PermissionController {
   constructor(private readonly permissionService: PermissionService) {}
 
   @Get()
-  @Permissions('permission:view')
+  @RequirePermissions({ all: ['permission:view'] })
   @ApiOperation({ summary: '获取权限列表（按资源分组）' })
   @ApiResponse({
     status: 200,

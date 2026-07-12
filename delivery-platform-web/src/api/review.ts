@@ -1,39 +1,48 @@
 import request from './request'
-import type { FileReview, PendingReview } from '@/types/file'
+import type {
+  ApproveReviewTaskDto,
+  QueryReviewTaskParams,
+  RejectReviewTaskDto,
+  ReviewHistoryEvent,
+  ReviewSummary,
+  ReviewSummaryResponse,
+  ReviewTask,
+  ReviewTaskPage,
+} from '@/types/review'
+
+export function normalizeReviewSummary(summary: ReviewSummaryResponse): ReviewSummary {
+  const pending = summary.pending ?? 0
+  return {
+    myPending: summary.myPending ?? pending,
+    allPending: summary.allPending ?? pending,
+    todayAdded: summary.todayAdded ?? 0,
+    overdue: summary.overdue ?? 0,
+  }
+}
 
 export const reviewApi = {
-  /**
-   * 获取当前用户待审核列表
-   */
-  getPending() {
-    return request.get<PendingReview[]>('/reviews/pending')
+  async getSummary(): Promise<ReviewSummary> {
+    const summary = await request.get<ReviewSummaryResponse>('/file-reviews/summary')
+    return normalizeReviewSummary(summary)
   },
 
-  /**
-   * 对文件发起审核
-   */
-  reviewFile(fileId: string, data: { comment?: string }) {
-    return request.post<FileReview>(`/files/${fileId}/review`, data)
+  getList(params: QueryReviewTaskParams) {
+    return request.get<ReviewTaskPage>('/file-reviews', { params })
   },
 
-  /**
-   * 获取文件的审核历史
-   */
-  getFileReviews(fileId: string) {
-    return request.get<FileReview[]>(`/files/${fileId}/reviews`)
+  getById(taskId: string) {
+    return request.get<ReviewTask>(`/file-reviews/${taskId}`)
   },
 
-  /**
-   * 审核通过
-   */
-  approve(fileId: string, comment?: string) {
-    return request.post<void>(`/files/${fileId}/review/approve`, { comment })
+  approve(taskId: string, data: ApproveReviewTaskDto = {}) {
+    return request.post<ReviewTask>(`/file-reviews/${taskId}/approve`, data)
   },
 
-  /**
-   * 审核驳回
-   */
-  reject(fileId: string, comment?: string) {
-    return request.post<void>(`/files/${fileId}/review/reject`, { comment })
+  reject(taskId: string, data: RejectReviewTaskDto) {
+    return request.post<ReviewTask>(`/file-reviews/${taskId}/reject`, data)
+  },
+
+  getHistory(taskId: string) {
+    return request.get<ReviewHistoryEvent[]>(`/file-reviews/${taskId}/history`)
   },
 }

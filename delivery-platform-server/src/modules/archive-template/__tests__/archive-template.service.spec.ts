@@ -1,61 +1,95 @@
-import { BadRequestException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 
 import type { PrismaService } from '../../../database/prisma.service';
 import { ArchiveTemplateService } from '../archive-template.service';
 
-describe('ArchiveTemplateService item management', () => {
-  it('creates a child item with a derived level and next item number', async () => {
-    const create = jest.fn().mockResolvedValue({ id: 'item-2' });
+describe('ArchiveTemplateService target aggregate', () => {
+  it('lists target template metadata without exposing legacy template items', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
     const prisma = {
-      archiveTemplate: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'template-1' }),
-      },
-      archiveTemplateItem: {
-        findUnique: jest.fn().mockResolvedValue({
-          id: 'item-1',
-          templateId: 'template-1',
-          level: 1,
-        }),
-        aggregate: jest.fn().mockResolvedValue({ _max: { itemNo: 8 } }),
-        create,
-      },
+      archiveTemplate: { findMany },
     } as unknown as PrismaService;
     const service = new ArchiveTemplateService(prisma);
 
-    await service.createItem('template-1', {
-      stageCode: 'Construction',
-      name: '现场照片',
-      parentId: 'item-1',
-      evidenceFileTypes: ['jpg', 'png'],
-    });
+    await service.findAll({ keyword: 'delivery' });
 
-    expect(create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        templateId: 'template-1',
-        parentId: 'item-1',
-        level: 2,
-        itemNo: 9,
-        allowedFileTypes: 'jpg,png',
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          OR: [
+            { templateCode: { contains: 'delivery' } },
+            { templateName: { contains: 'delivery' } },
+          ],
+        },
+        select: expect.objectContaining({
+          currentPublishedVersion: expect.any(Object),
+          _count: { select: { versions: true, projectSnapshots: true } },
+        }),
       }),
-    });
+    );
+    expect(findMany.mock.calls[0][0].select).not.toHaveProperty('items');
   });
 
-  it('refuses to delete an item already used by project archives', async () => {
+  it('creates a template and its initial editable version atomically', async () => {
+    const transaction = {
+      archiveTemplate: {
+        create: jest.fn().mockResolvedValue({ id: 'template-1', templateCode: 'TPL-001' }),
+      },
+      archiveTemplateVersion: {
+        create: jest.fn().mockResolvedValue({
+          id: 'version-1',
+          versionNo: 'V1.0',
+          status: 'DRAFT',
+          revision: 1,
+        }),
+      },
+    };
     const prisma = {
-      archiveTemplateItem: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'item-1' }),
-        count: jest.fn().mockResolvedValue(0),
-        delete: jest.fn(),
-      },
-      projectArchiveItem: {
-        count: jest.fn().mockResolvedValue(2),
-      },
+      archiveTemplate: { findUnique: jest.fn().mockResolvedValue(null) },
+      $transaction: jest
+        .fn()
+        .mockImplementation((callback: (client: typeof transaction) => Promise<unknown>) =>
+          callback(transaction),
+        ),
     } as unknown as PrismaService;
     const service = new ArchiveTemplateService(prisma);
 
-    await expect(service.deleteItem('item-1')).rejects.toBeInstanceOf(
-      BadRequestException,
+    const result = await service.create(
+      { templateCode: 'TPL-001', templateName: '交付档案模板' },
+      'user-1',
     );
-    expect(prisma.archiveTemplateItem.delete).not.toHaveBeenCalled();
+
+    expect(transaction.archiveTemplate.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        templateCode: 'TPL-001',
+        status: 'DRAFT',
+        createdBy: 'user-1',
+        updatedBy: 'user-1',
+      }),
+    });
+    expect(transaction.archiveTemplateVersion.create).toHaveBeenCalledWith({
+      data: {
+        templateId: 'template-1',
+        versionNo: 'V1.0',
+        status: 'DRAFT',
+        createdBy: 'user-1',
+      },
+      select: { id: true, versionNo: true, status: true, revision: true },
+    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        id: 'template-1',
+        draftVersion: expect.objectContaining({ id: 'version-1', revision: 1 }),
+      }),
+    );
+  });
+
+  it('returns not found for a missing target template', async () => {
+    const prisma = {
+      archiveTemplate: { findUnique: jest.fn().mockResolvedValue(null) },
+    } as unknown as PrismaService;
+    const service = new ArchiveTemplateService(prisma);
+
+    await expect(service.findById('missing')).rejects.toBeInstanceOf(NotFoundException);
   });
 });

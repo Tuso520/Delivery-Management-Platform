@@ -11,20 +11,12 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiBearerAuth,
-  ApiResponse,
-  ApiBody,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse, ApiBody } from '@nestjs/swagger';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Permissions } from '../../common/decorators/permissions.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
 
 import { AssignRolesDto } from './dto/assign-roles.dto';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -33,17 +25,15 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserService } from './user.service';
 
-
 @ApiTags('Users')
 @ApiBearerAuth('JWT-auth')
 @Controller('users')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
-@Roles('SUPER_ADMIN', 'SYSTEM_ADMIN')
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class UserController {
   constructor(private readonly userService: UserService) {}
 
   @Get()
-  @Permissions('user:view')
+  @RequirePermissions({ all: ['user:view'] })
   @ApiOperation({ summary: '获取用户列表（分页+搜索）' })
   @ApiResponse({
     status: 200,
@@ -53,7 +43,7 @@ export class UserController {
         code: 0,
         message: 'success',
         data: {
-          list: [
+          items: [
             {
               id: 'uuid',
               username: 'admin',
@@ -68,7 +58,9 @@ export class UserController {
               roles: [{ id: 'uuid', roleCode: 'SUPER_ADMIN', roleName: '超级管理员' }],
             },
           ],
-          pagination: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+          page: 1,
+          pageSize: 20,
+          total: 1,
         },
         timestamp: '2026-06-22T10:00:00.000Z',
       },
@@ -79,7 +71,7 @@ export class UserController {
   }
 
   @Post()
-  @Permissions('user:create')
+  @RequirePermissions({ all: ['user:create'] })
   @ApiOperation({ summary: '创建用户' })
   @ApiBody({ type: CreateUserDto })
   @ApiResponse({
@@ -109,7 +101,7 @@ export class UserController {
   }
 
   @Get(':id')
-  @Permissions('user:view')
+  @RequirePermissions({ all: ['user:view'] })
   @ApiOperation({ summary: '获取用户详情' })
   @ApiResponse({ status: 200, description: '用户详情' })
   @ApiResponse({ status: 404, description: '用户不存在' })
@@ -118,7 +110,7 @@ export class UserController {
   }
 
   @Put(':id')
-  @Permissions('user:update')
+  @RequirePermissions({ all: ['user:update'] })
   @ApiOperation({ summary: '更新用户信息' })
   @ApiBody({ type: UpdateUserDto })
   @ApiResponse({ status: 200, description: '更新成功' })
@@ -128,7 +120,7 @@ export class UserController {
   }
 
   @Delete(':id')
-  @Permissions('user:delete')
+  @RequirePermissions({ all: ['user:delete'] })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '删除用户（软删除）' })
   @ApiResponse({
@@ -150,7 +142,7 @@ export class UserController {
   }
 
   @Post(':id/roles')
-  @Permissions('user:assign_role')
+  @RequirePermissions({ all: ['user:assign_role'] })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '分配用户角色' })
   @ApiBody({ type: AssignRolesDto })
@@ -165,7 +157,7 @@ export class UserController {
   }
 
   @Post(':id/disable')
-  @Permissions('user:disable')
+  @RequirePermissions({ all: ['user:disable'] })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '禁用用户' })
   @ApiResponse({ status: 200, description: '禁用成功' })
@@ -175,7 +167,7 @@ export class UserController {
   }
 
   @Post(':id/enable')
-  @Permissions('user:disable')
+  @RequirePermissions({ all: ['user:disable'] })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '启用用户' })
   @ApiResponse({ status: 200, description: '启用成功' })
@@ -185,7 +177,7 @@ export class UserController {
   }
 
   @Post(':id/reset-password')
-  @Permissions('user:reset_password')
+  @RequirePermissions({ all: ['user:reset_password'] })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '重置用户密码' })
   @ApiBody({ type: ResetPasswordDto })

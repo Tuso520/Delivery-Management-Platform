@@ -7,19 +7,13 @@ export default registerAs('storage', () => {
 
   if (isProduction) {
     if (!accessKey) {
-      throw new Error(
-        'FATAL: MINIO_ACCESS_KEY is required in production. Update your .env file.',
-      );
+      throw new Error('FATAL: MINIO_ACCESS_KEY is required in production. Update your .env file.');
     }
     if (!secretKey) {
-      throw new Error(
-        'FATAL: MINIO_SECRET_KEY is required in production. Update your .env file.',
-      );
+      throw new Error('FATAL: MINIO_SECRET_KEY is required in production. Update your .env file.');
     }
     if (accessKey === 'minioadmin' && secretKey === 'minioadmin') {
-      throw new Error(
-        'FATAL: MinIO must not use the default credential pair in production.',
-      );
+      throw new Error('FATAL: MinIO must not use the default credential pair in production.');
     }
   }
 

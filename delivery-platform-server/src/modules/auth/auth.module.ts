@@ -6,15 +6,18 @@ import { PassportModule } from '@nestjs/passport';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 
 import { RedisModule } from '../../database/redis.service';
+import { SystemConfigModule } from '../system-config/system-config.module';
 
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { RefreshSessionService } from './refresh-session.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
     RedisModule,
+    SystemConfigModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -24,7 +27,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
           throw new Error('JWT_SECRET is not configured. Check your .env file.');
         }
         type JwtExpiresIn = NonNullable<JwtModuleOptions['signOptions']>['expiresIn'];
-        const expiresIn = (configService.get<string>('auth.jwtExpiresIn') || '24h') as JwtExpiresIn;
+        const expiresIn = (configService.get<string>('auth.jwtExpiresIn') || '15m') as JwtExpiresIn;
         return {
           secret,
           signOptions: {
@@ -43,12 +46,13 @@ import { JwtStrategy } from './strategies/jwt.strategy';
   controllers: [AuthController],
   providers: [
     AuthService,
+    RefreshSessionService,
     JwtStrategy,
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
     },
   ],
-  exports: [AuthService, JwtModule],
+  exports: [AuthService, RefreshSessionService, JwtModule],
 })
 export class AuthModule {}

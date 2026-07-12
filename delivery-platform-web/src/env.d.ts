@@ -9,9 +9,13 @@ declare module '*.vue' {
 declare module 'vue-router' {
   interface RouteMeta {
     title?: string
+    titleEn?: string
     icon?: string
     roles?: string[]
     permissions?: string[]
+    navigationGroup?: 'main' | 'settings'
+    menu?: boolean
+    order?: number
     hidden?: boolean
     keepAlive?: boolean
   }

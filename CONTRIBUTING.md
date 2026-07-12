@@ -11,11 +11,19 @@
 ## 本地校验
 
 ```powershell
-pnpm --filter ./delivery-platform-server type-check
+pnpm --dir delivery-platform-web lint
+pnpm --dir delivery-platform-web type-check
+pnpm --dir delivery-platform-web test
 pnpm --dir delivery-platform-web build
+pnpm --filter ./delivery-platform-server lint
+pnpm --filter ./delivery-platform-server type-check
+pnpm --filter ./delivery-platform-server test
+pnpm --filter ./delivery-platform-server build
+docker compose --env-file .env.example -f docker-compose.yml config -q
+docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.prod.yml config -q
 ```
 
-涉及页面、登录、上传、预览、审批或项目流程时，需要启动应用或本地模拟服务，用浏览器真实验证变更页面。
+涉及页面、登录、上传、预览、审批、标准、知识或项目流程时，必须连接真实 NestJS、MySQL、Redis 和 MinIO 执行 API 与浏览器验证；本地模拟服务只用于页面开发，不能代替权限、数据范围、事务或迁移验收。
 
 ## 提交规则
 

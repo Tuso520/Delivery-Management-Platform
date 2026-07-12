@@ -1,11 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { setActivePinia, createPinia } from 'pinia'
-import { useUserStore } from '@/store/user'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+
 import { authApi } from '@/api/auth'
 import { useFilePreview } from '@/composables/useFilePreview'
 import router from '@/router'
+import { useUserStore } from '@/store/user'
+import type { LoginResult, UserProfile } from '@/types/user'
+import { removeToken, setToken } from '@/utils/auth'
 
-// Mock the API module
 vi.mock('@/api/auth', () => ({
   authApi: {
     login: vi.fn(),
@@ -15,230 +17,153 @@ vi.mock('@/api/auth', () => ({
   },
 }))
 
-// Mock localStorage
-const localStorageMock = (() => {
-  let store: Record<string, string> = {}
-  return {
-    getItem: vi.fn((key: string) => store[key] ?? null),
-    setItem: vi.fn((key: string, value: string) => {
-      store[key] = value
-    }),
-    removeItem: vi.fn((key: string) => {
-      delete store[key]
-    }),
-    clear: vi.fn(() => {
-      store = {}
-    }),
-  }
-})()
-Object.defineProperty(global, 'localStorage', { value: localStorageMock })
-
-// Mock router
 vi.mock('@/router', () => ({
   default: {
-    push: vi.fn(),
+    push: vi.fn(() => Promise.resolve()),
   },
 }))
 
+const profile: UserProfile = {
+  sub: 'user-1',
+  username: 'admin',
+  realName: '管理员',
+  email: 'admin@test.com',
+  roles: ['SUPER_ADMIN'],
+  permissions: ['user:view', 'project:view'],
+}
+
+function sessionResult(overrides: Partial<LoginResult> = {}): LoginResult {
+  return {
+    accessToken: 'test-token-123',
+    user: profile,
+    defaultRoute: '/dashboard',
+    ...overrides,
+  }
+}
+
 describe('useUserStore', () => {
   beforeEach(() => {
+    removeToken()
+    localStorage.clear()
     setActivePinia(createPinia())
-    localStorageMock.clear()
     useFilePreview().closePreview()
     vi.clearAllMocks()
   })
 
-  describe('login', () => {
-    it('normalizes the backend sub field as the frontend user id', async () => {
-      vi.mocked(authApi.login).mockResolvedValue({ accessToken: 'token' })
-      vi.mocked(authApi.getProfile).mockResolvedValue({
-        sub: 'user-from-sub',
-        username: 'admin',
-        realName: '管理员',
-        email: 'admin@test.com',
-        roles: ['SUPER_ADMIN'],
-        permissions: ['dashboard:view'],
-      } as unknown as Awaited<ReturnType<typeof authApi.getProfile>>)
+  it('creates an in-memory session from the login response', async () => {
+    vi.mocked(authApi.login).mockResolvedValue(sessionResult())
 
-      const store = useUserStore()
-      await store.login({ username: 'admin', password: 'pass' })
+    const store = useUserStore()
+    await store.login({ username: 'admin', password: 'password123' })
 
-      expect(store.userInfo?.id).toBe('user-from-sub')
-    })
+    expect(store.token).toBe('test-token-123')
+    expect(store.userInfo?.id).toBe('user-1')
+    expect(store.userInfo?.roles).toEqual(['SUPER_ADMIN'])
+    expect(store.isLoggedIn).toBe(true)
+    expect(localStorage.getItem('delivery_token')).toBeNull()
+    expect(localStorage.getItem('delivery_user_info')).toBeNull()
+    expect(authApi.getProfile).not.toHaveBeenCalled()
+  })
 
-    it('should store token and fetch profile on successful login', async () => {
-      const mockLoginResult = { accessToken: 'test-token-123' }
-      const mockProfile = {
-        id: 'user-1',
-        username: 'admin',
-        realName: '管理员',
-        email: 'admin@test.com',
-        roles: ['SUPER_ADMIN'],
-        permissions: ['user:view', 'project:view'],
-      }
+  it('normalizes an id returned directly by the backend', async () => {
+    vi.mocked(authApi.login).mockResolvedValue(sessionResult({
+      user: { ...profile, id: 'direct-user-id', sub: undefined },
+    }))
 
-      vi.mocked(authApi.login).mockResolvedValue(mockLoginResult)
-      vi.mocked(authApi.getProfile).mockResolvedValue(mockProfile)
+    const store = useUserStore()
+    await store.login({ username: 'admin', password: 'password123' })
 
-      const store = useUserStore()
-      await store.login({ username: 'admin', password: 'password123' })
+    expect(store.userInfo?.id).toBe('direct-user-id')
+  })
 
-      expect(store.token).toBe('test-token-123')
-      expect(store.userInfo).toBeDefined()
-      expect(store.userInfo?.id).toBe('user-1')
-      expect(store.userInfo?.username).toBe('admin')
-      expect(store.userInfo?.roles).toEqual(['SUPER_ADMIN'])
-      expect(store.userInfo?.permissions).toEqual(['user:view', 'project:view'])
-      expect(localStorageMock.setItem).toHaveBeenCalledWith('delivery_token', 'test-token-123')
-    })
-
-    it('should call login and fetchProfile in sequence', async () => {
-      vi.mocked(authApi.login).mockResolvedValue({ accessToken: 'token' })
-      vi.mocked(authApi.getProfile).mockResolvedValue({
-        id: 'user-1',
-        username: 'admin',
-        realName: '管理员',
-        email: 'admin@test.com',
-        roles: [],
-        permissions: [],
-      })
-
-      const store = useUserStore()
-      await store.login({ username: 'admin', password: 'pass' })
-
-      expect(authApi.login).toHaveBeenCalledTimes(1)
-      expect(authApi.getProfile).toHaveBeenCalledTimes(1)
-    })
-
-    it('rejects malformed role data from the profile API', async () => {
-      vi.mocked(authApi.login).mockResolvedValue({ accessToken: 'token' })
-      vi.mocked(authApi.getProfile).mockResolvedValue({
-        id: 'user-1',
-        username: 'admin',
-        realName: '管理员',
-        email: 'admin@test.com',
+  it('rejects malformed role data and clears the partial session', async () => {
+    vi.mocked(authApi.login).mockResolvedValue(sessionResult({
+      user: {
+        ...profile,
         roles: 'SUPER_ADMIN',
-        permissions: [],
-      } as unknown as Awaited<ReturnType<typeof authApi.getProfile>>)
+      } as unknown as UserProfile,
+    }))
 
-      const store = useUserStore()
+    const store = useUserStore()
 
-      await expect(store.login({ username: 'admin', password: 'pass' })).rejects.toThrow(
-        '用户资料角色或权限格式错误',
-      )
-      expect(store.userInfo).toBeNull()
-      expect(store.token).toBeNull()
-    })
+    await expect(store.login({ username: 'admin', password: 'password123' })).rejects.toThrow(
+      '用户资料角色或权限格式错误',
+    )
+    expect(store.userInfo).toBeNull()
+    expect(store.token).toBeNull()
   })
 
-  describe('isLoggedIn', () => {
-    it('should return true when token exists', async () => {
-      vi.mocked(authApi.login).mockResolvedValue({ accessToken: 'token' })
-      vi.mocked(authApi.getProfile).mockResolvedValue({
-        id: 'user-1',
-        username: 'admin',
-        realName: '管理员',
-        email: 'admin@test.com',
-        roles: [],
-        permissions: [],
-      })
+  it('restores a page-load session once for concurrent callers', async () => {
+    let resolveRefresh!: (result: LoginResult) => void
+    vi.mocked(authApi.refreshToken).mockImplementation(
+      () => new Promise<LoginResult>((resolve) => {
+        resolveRefresh = resolve
+      }),
+    )
 
-      const store = useUserStore()
-      await store.login({ username: 'admin', password: 'pass' })
+    const store = useUserStore()
+    const first = store.restoreSession()
+    const second = store.ensureSession()
+    resolveRefresh(sessionResult({ accessToken: 'restored-token' }))
 
-      expect(store.isLoggedIn).toBe(true)
-    })
-
-    it('should return false when token is null', () => {
-      const store = useUserStore()
-      expect(store.isLoggedIn).toBe(false)
-    })
-
-    it('should return false after logout clears token', async () => {
-      vi.mocked(authApi.login).mockResolvedValue({ accessToken: 'token' })
-      vi.mocked(authApi.getProfile).mockResolvedValue({
-        id: 'user-1',
-        username: 'admin',
-        realName: '管理员',
-        email: 'admin@test.com',
-        roles: [],
-        permissions: [],
-      })
-      vi.mocked(authApi.logout).mockResolvedValue(undefined)
-
-      const store = useUserStore()
-      await store.login({ username: 'admin', password: 'pass' })
-      await store.logout()
-
-      expect(store.isLoggedIn).toBe(false)
-    })
+    await expect(first).resolves.toBe(true)
+    await expect(second).resolves.toBe(true)
+    expect(authApi.refreshToken).toHaveBeenCalledOnce()
+    expect(authApi.refreshToken).toHaveBeenCalledWith()
+    expect(store.token).toBe('restored-token')
+    expect(store.isLoggedIn).toBe(true)
   })
 
-  describe('logout', () => {
-    it('should clear state and redirect to login', async () => {
-      vi.mocked(authApi.login).mockResolvedValue({ accessToken: 'token' })
-      vi.mocked(authApi.getProfile).mockResolvedValue({
-        id: 'user-1',
-        username: 'admin',
-        realName: '管理员',
-        email: 'admin@test.com',
-        roles: [],
-        permissions: [],
-      })
-      vi.mocked(authApi.logout).mockResolvedValue(undefined)
+  it('marks the browser anonymous when refresh-cookie restoration fails', async () => {
+    vi.mocked(authApi.refreshToken).mockRejectedValue(new Error('unauthorized'))
 
-      const store = useUserStore()
-      await store.login({ username: 'admin', password: 'pass' })
-      await store.logout()
+    const store = useUserStore()
 
-      expect(store.token).toBeNull()
-      expect(store.userInfo).toBeNull()
-      expect(router.push).toHaveBeenCalledWith('/login')
-    })
-
-    it('should still clear state even if logout API fails', async () => {
-      vi.mocked(authApi.login).mockResolvedValue({ accessToken: 'token' })
-      vi.mocked(authApi.getProfile).mockResolvedValue({
-        id: 'user-1',
-        username: 'admin',
-        realName: '管理员',
-        email: 'admin@test.com',
-        roles: [],
-        permissions: [],
-      })
-      vi.mocked(authApi.logout).mockRejectedValue(new Error('Network error'))
-
-      const store = useUserStore()
-      await store.login({ username: 'admin', password: 'pass' })
-      await store.logout()
-
-      expect(store.token).toBeNull()
-      expect(store.userInfo).toBeNull()
-      expect(router.push).toHaveBeenCalledWith('/login')
-    })
+    await expect(store.ensureSession()).resolves.toBe(false)
+    await expect(store.ensureSession()).resolves.toBe(false)
+    expect(authApi.refreshToken).toHaveBeenCalledOnce()
+    expect(store.sessionInitialized).toBe(true)
+    expect(store.isLoggedIn).toBe(false)
   })
 
-  describe('resetState', () => {
-    it('should clear token, userInfo and an open file preview', async () => {
-      vi.mocked(authApi.login).mockResolvedValue({ accessToken: 'token' })
-      vi.mocked(authApi.getProfile).mockResolvedValue({
-        id: 'user-1',
-        username: 'admin',
-        realName: '管理员',
-        email: 'admin@test.com',
-        roles: [],
-        permissions: [],
-      })
+  it('hydrates the profile when an in-memory token already exists', async () => {
+    setToken('existing-token')
+    vi.mocked(authApi.getProfile).mockResolvedValue(profile)
 
-      const store = useUserStore()
-      await store.login({ username: 'admin', password: 'pass' })
-      const filePreview = useFilePreview()
-      filePreview.openPreview({ id: 'file-1', source: 'file' })
-      store.resetState()
+    const store = useUserStore()
 
-      expect(store.token).toBeNull()
-      expect(store.userInfo).toBeNull()
-      expect(filePreview.visible.value).toBe(false)
-    })
+    await expect(store.ensureSession()).resolves.toBe(true)
+    expect(authApi.refreshToken).not.toHaveBeenCalled()
+    expect(authApi.getProfile).toHaveBeenCalledOnce()
+    expect(store.userInfo?.id).toBe('user-1')
+  })
+
+  it('clears state and redirects even when the logout request fails', async () => {
+    vi.mocked(authApi.login).mockResolvedValue(sessionResult())
+    vi.mocked(authApi.logout).mockRejectedValue(new Error('network'))
+
+    const store = useUserStore()
+    await store.login({ username: 'admin', password: 'password123' })
+    await store.logout()
+
+    expect(store.token).toBeNull()
+    expect(store.userInfo).toBeNull()
+    expect(store.isLoggedIn).toBe(false)
+    expect(router.push).toHaveBeenCalledWith('/login')
+  })
+
+  it('closes an open file preview when the session is reset', async () => {
+    vi.mocked(authApi.login).mockResolvedValue(sessionResult())
+
+    const store = useUserStore()
+    await store.login({ username: 'admin', password: 'password123' })
+    const filePreview = useFilePreview()
+    filePreview.openPreview({ id: 'file-1' })
+
+    store.resetState()
+
+    expect(filePreview.visible.value).toBe(false)
+    expect(store.token).toBeNull()
+    expect(store.userInfo).toBeNull()
   })
 })

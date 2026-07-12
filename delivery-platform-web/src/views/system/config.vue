@@ -1,307 +1,360 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
-import type { TableColumnData } from '@arco-design/web-vue'
-import { systemConfigApi } from '@/api/system'
-import type { SystemConfig, UpsertSystemConfigDto } from '@/types/system'
+import { useMutation, useQueryClient } from '@tanstack/vue-query'
+import { useI18n } from 'vue-i18n'
 
-const loading = ref(false)
-const configList = ref<SystemConfig[]>([])
-const dialogVisible = ref(false)
-const editingKey = ref('')
-const editingValue = ref('')
-const editingDesc = ref('')
-const editingType = ref('string')
-const isNew = ref(false)
-const activeGroup = ref('platform')
+import { systemSettingsApi } from '@/api/system'
+import {
+  Can,
+  PageContainer,
+  PageToolbar,
+  SectionCard,
+  StickyActionBar,
+} from '@/components/business'
+import {
+  useSystemSettingsQuery,
+  useSystemTimeQuery,
+} from '@/composables/queries/useOperationsQueries'
+import { usePermission } from '@/composables/usePermission'
+import { queryKeys } from '@/query/keys'
+import type { SystemSettings } from '@/types/settings'
 
-const groupLabels: Record<string, string> = {
-  platform: '平台基础',
-  project: '项目管理',
-  attachment: '附件上传',
-  file: '文件规则',
-  report: '工时报告',
-  approval: '审批流程',
-  knowledge: '知识库',
-  security: '安全登录',
-  notification: '通知',
-  currency: '汇率',
-  ui: '界面显示',
+function createDefaults(): SystemSettings {
+  return {
+    project: {
+      defaultPageSize: 20,
+      defaultRiskLevel: 'Low',
+    },
+    attachment: { maxSizeMb: 100 },
+    file: {
+      allowedExtensions: [
+        'pdf',
+        'doc',
+        'docx',
+        'xls',
+        'xlsx',
+        'ppt',
+        'pptx',
+        'jpg',
+        'jpeg',
+        'png',
+        'md',
+        'mp4',
+      ],
+    },
+    approval: { timeoutDays: 3 },
+    knowledge: { defaultPageSize: 20 },
+    security: { sessionHours: 12, loginMaxAttempts: 5 },
+  }
 }
 
-const configLabelMap: Record<string, string> = {
-  'platform.name': '平台名称',
-  'platform.short_name': '平台简称',
-  'platform.login_slogan': '登录页主文案',
-  'platform.default_language': '默认语言',
-  'platform.default_currency': '默认币种',
-  'platform.timezone': '默认时区',
-  'project.default_page_size': '项目默认分页',
-  'project.default_risk_level': '项目默认风险',
-  'project.archive_auto_generate': '自动生成项目档案',
-  'attachment.max_size_mb': '附件大小上限（MB）',
-  'file.allowed_extensions': '允许上传扩展名',
-  'report.default_type': '默认报告类型',
-  'report.reminder_hour': '日报提醒小时',
-  'approval.timeout_days': '审批超时天数',
-  'knowledge.default_page_size': '知识库默认分页',
-  'security.session_hours': '登录会话时长',
-  'security.login_max_attempts': '连续登录失败上限',
-  'notification.default_channel': '默认通知渠道',
-  'currency.sync_base': '汇率同步基准币种',
-  'currency.sync_enabled': '启用在线汇率同步',
-  'ui.date_format': '日期格式',
-  'ui.table_density': '表格密度',
-}
+const { hasPermission } = usePermission()
+const queryClient = useQueryClient()
+const { t, locale } = useI18n()
+const canManage = computed(() => hasPermission('system_setting:manage'))
 
-const configTypeOptions = [
-  { value: 'string', label: '字符串' },
-  { value: 'number', label: '数字' },
-  { value: 'boolean', label: '布尔' },
-  { value: 'json', label: 'JSON' },
-]
+const settings = ref<SystemSettings>(createDefaults())
+const settingsQuery = useSystemSettingsQuery()
+const systemTimeQuery = useSystemTimeQuery()
+const systemTime = computed(() => systemTimeQuery.data.value)
+const loading = computed(() => settingsQuery.isFetching.value || systemTimeQuery.isFetching.value)
+const loadFailed = computed(() => settingsQuery.isError.value)
 
-const columns: TableColumnData[] = [
-  { title: '配置项', dataIndex: 'configKey', slotName: 'configKey', minWidth: 220 },
-  { title: '配置值', dataIndex: 'configValue', slotName: 'configValue', minWidth: 260 },
-  { title: '说明', dataIndex: 'description', minWidth: 220 },
-  { title: '类型', dataIndex: 'configType', width: 100 },
-  { title: '更新时间', dataIndex: 'updatedAt', slotName: 'updatedAt', width: 170 },
-  { title: '操作', slotName: 'actions', width: 100, fixed: 'right' },
-]
-
-const numberValue = computed({
-  get: () => Number(editingValue.value || 0),
-  set: (value: number) => {
-    editingValue.value = String(value)
+const saveSettingsMutation = useMutation({
+  mutationFn: (data: SystemSettings) => systemSettingsApi.update(data),
+  retry: false,
+  onSuccess: (saved) => {
+    queryClient.setQueryData(queryKeys.settings.system(), saved)
   },
 })
+const saving = computed(() => saveSettingsMutation.isPending.value)
 
-const booleanValue = computed({
-  get: () => editingValue.value === 'true',
-  set: (value: boolean) => {
-    editingValue.value = String(value)
-  },
-})
+async function fetchSettings(): Promise<void> {
+  await Promise.allSettled([settingsQuery.refetch(), systemTimeQuery.refetch()])
+}
 
-const configGroups = computed(() =>
-  Array.from(new Set(configList.value.map((item) => item.configKey.split('.')[0]))),
-)
+async function refreshSystemTime(): Promise<void> {
+  await systemTimeQuery.refetch()
+}
 
-const filteredConfigs = computed(() =>
-  configList.value.filter((item) => item.configKey.startsWith(`${activeGroup.value}.`)),
-)
+function normalizeExtensions(): string[] {
+  return Array.from(
+    new Set(
+      settings.value.file.allowedExtensions
+        .map((extension) => extension.trim().toLowerCase().replace(/^\./u, ''))
+        .filter((extension) => /^[a-z0-9]+$/u.test(extension)),
+    ),
+  )
+}
 
-async function fetchConfigs(): Promise<void> {
-  loading.value = true
+function validateSettings(): boolean {
+  const extensions = normalizeExtensions()
+  if (!extensions.length) {
+    Message.warning(t('systemConfig.extensionRequired'))
+    return false
+  }
+  settings.value.file.allowedExtensions = extensions
+  return true
+}
+
+async function saveSettings(): Promise<void> {
+  if (!canManage.value || !validateSettings()) return
   try {
-    configList.value = await systemConfigApi.getAll()
-    if (!configGroups.value.includes(activeGroup.value)) {
-      activeGroup.value = configGroups.value[0] || 'platform'
-    }
-  } finally {
-    loading.value = false
+    settings.value = await saveSettingsMutation.mutateAsync(settings.value)
+    Message.success(t('systemConfig.saved'))
+  } catch {
+    // The shared request layer has already surfaced the failure.
   }
 }
 
-function handleEdit(row: SystemConfig): void {
-  isNew.value = false
-  editingKey.value = row.configKey
-  editingValue.value = row.configValue
-  editingDesc.value = row.description || ''
-  editingType.value = row.configType
-  dialogVisible.value = true
-}
-
-function handleAdd(): void {
-  isNew.value = true
-  editingKey.value = ''
-  editingValue.value = ''
-  editingDesc.value = ''
-  editingType.value = 'string'
-  dialogVisible.value = true
-}
-
-async function handleSave(): Promise<void> {
-  if (!editingKey.value.trim()) {
-    Message.warning('配置键不能为空')
-    return
-  }
-
-  try {
-    if (editingType.value === 'json') {
-      JSON.parse(editingValue.value)
-    }
-    const dto: UpsertSystemConfigDto = {
-      configKey: editingKey.value.trim(),
-      configValue: editingValue.value,
-      description: editingDesc.value || undefined,
-      configType: editingType.value,
-    }
-    await systemConfigApi.upsert(editingKey.value.trim(), dto)
-    Message.success('保存成功')
-    dialogVisible.value = false
-    await fetchConfigs()
-  } catch (error) {
-    if (error instanceof SyntaxError) {
-      Message.error('请输入有效 JSON')
-    }
-  }
-}
-
-function configLabel(key: string): string {
-  return configLabelMap[key] || key
-}
-
-function formatDate(value?: string): string {
-  if (!value) return '-'
+function formatServerTime(value?: string): string {
+  if (!value) return t('systemConfig.unavailable')
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString('zh-CN', { hour12: false })
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(locale.value, { hour12: false })
 }
 
-onMounted(fetchConfigs)
+function formatOffset(value?: number): string {
+  if (value === undefined) return '—'
+  const sign = value >= 0 ? '+' : '-'
+  const absolute = Math.abs(value)
+  const hours = String(Math.floor(absolute / 60)).padStart(2, '0')
+  const minutes = String(absolute % 60).padStart(2, '0')
+  return `UTC${sign}${hours}:${minutes}`
+}
+
+watch(
+  () => settingsQuery.data.value,
+  (value) => {
+    if (value) settings.value = structuredClone(value)
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
-  <section class="config-page">
-    <a-card>
-      <template #title>平台系统配置</template>
-      <template #extra>
-        <a-space>
-          <a-button @click="fetchConfigs">刷新</a-button>
-          <a-button type="primary" @click="handleAdd">新增配置</a-button>
-        </a-space>
+  <PageContainer class="system-settings-page">
+    <PageToolbar :title="t('systemConfig.title')" :description="t('systemConfig.description')">
+      <template #actions>
+        <a-button @click="fetchSettings">
+          {{ t('common.retry') }}
+        </a-button>
       </template>
+    </PageToolbar>
 
-      <a-tabs v-model="activeGroup" class="config-tabs">
-        <a-tab-pane
-          v-for="group in configGroups"
-          :key="group"
-          :name="group"
-          :label="groupLabels[group] || group"
-        />
-      </a-tabs>
-
-      <a-table
-        :loading="loading"
-        :columns="columns"
-        :data="filteredConfigs"
-        row-key="id"
-        :pagination="false"
-      >
-        <template #configKey="{ record }">
-          <div class="config-key">
-            <strong>{{ configLabel(record.configKey) }}</strong>
-            <span>{{ record.configKey }}</span>
-          </div>
-        </template>
-        <template #configValue="{ record }">
-          <code>{{ record.configValue }}</code>
-        </template>
-        <template #updatedAt="{ record }">
-          {{ formatDate(record.updatedAt) }}
-        </template>
-        <template #actions="{ record }">
-          <a-button type="text" size="small" @click="handleEdit(record)">编辑</a-button>
-        </template>
-      </a-table>
-
-      <a-empty
-        v-if="filteredConfigs.length === 0 && !loading"
-        description="该分组暂无配置"
-        class="empty-state"
-      />
-    </a-card>
-
-    <a-modal
-      v-model:visible="dialogVisible"
-      :title="isNew ? '新增配置' : `编辑配置 - ${editingKey}`"
-      ok-text="保存"
-      cancel-text="取消"
-      @ok="handleSave"
+    <a-alert
+      v-if="!canManage"
+      class="page-alert"
+      type="info"
+      :title="t('systemConfig.readOnly')"
     >
-      <a-form :model="{ editingKey, editingValue, editingDesc, editingType }" layout="vertical">
-        <a-form-item label="配置键" required>
-          <a-input v-model="editingKey" :disabled="!isNew" placeholder="请输入配置键" />
-        </a-form-item>
-        <a-form-item label="配置值" required>
-          <a-input-number
-            v-if="editingType === 'number'"
-            v-model="numberValue"
-            class="full-input"
-          />
-          <a-switch
-            v-else-if="editingType === 'boolean'"
-            v-model="booleanValue"
-            checked-text="是"
-            unchecked-text="否"
-          />
-          <a-textarea
-            v-else-if="editingType === 'json'"
-            v-model="editingValue"
-            placeholder="请输入有效 JSON"
-            :auto-size="{ minRows: 4, maxRows: 8 }"
-          />
-          <a-input v-else v-model="editingValue" placeholder="请输入配置值" />
-        </a-form-item>
-        <a-form-item label="说明">
-          <a-input v-model="editingDesc" placeholder="请输入配置说明" />
-        </a-form-item>
-        <a-form-item label="类型">
-          <a-select v-model="editingType">
-            <a-option
-              v-for="option in configTypeOptions"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </a-option>
-          </a-select>
-        </a-form-item>
+      {{ t('systemConfig.readOnlyHint') }}
+    </a-alert>
+    <a-alert
+      v-if="loadFailed"
+      class="page-alert"
+      type="error"
+      :title="t('systemConfig.loadFailed')"
+    >
+      <template #action>
+        <a-button size="small" @click="fetchSettings">
+          {{ t('common.retry') }}
+        </a-button>
+      </template>
+    </a-alert>
+
+    <a-spin :loading="loading" class="settings-spin">
+      <a-form :model="settings" layout="vertical" :disabled="!canManage">
+        <SectionCard
+          :title="t('systemConfig.sections.project')"
+          class="settings-section"
+          :bordered="false"
+        >
+          <div class="settings-grid">
+            <a-form-item :label="t('systemConfig.projectPageSize')">
+              <a-input-number v-model="settings.project.defaultPageSize" :min="10" :max="100" />
+              <template #extra>
+                {{ t('systemConfig.range10to100') }}
+              </template>
+            </a-form-item>
+            <a-form-item :label="t('systemConfig.defaultRisk')">
+              <a-select v-model="settings.project.defaultRiskLevel">
+                <a-option value="Low">
+                  {{ t('risk.Low') }}
+                </a-option>
+                <a-option value="Medium">
+                  {{ t('risk.Medium') }}
+                </a-option>
+                <a-option value="High">
+                  {{ t('risk.High') }}
+                </a-option>
+              </a-select>
+            </a-form-item>
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          :title="t('systemConfig.sections.files')"
+          class="settings-section"
+          :bordered="false"
+        >
+          <div class="settings-grid">
+            <a-form-item :label="t('systemConfig.maxAttachmentSize')">
+              <a-input-number v-model="settings.attachment.maxSizeMb" :min="1" :max="1024" />
+              <template #extra>
+                {{ t('systemConfig.range1to1024') }}
+              </template>
+            </a-form-item>
+            <a-form-item :label="t('systemConfig.extensions')" class="wide-field">
+              <a-input-tag
+                v-model="settings.file.allowedExtensions"
+                allow-clear
+                :placeholder="t('systemConfig.extensionsPlaceholder')"
+              />
+              <template #extra>
+                {{ t('systemConfig.extensionsHint') }}
+              </template>
+            </a-form-item>
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          :title="t('systemConfig.sections.reviewKnowledge')"
+          class="settings-section"
+          :bordered="false"
+        >
+          <div class="settings-grid">
+            <a-form-item :label="t('systemConfig.approvalTimeout')">
+              <a-input-number v-model="settings.approval.timeoutDays" :min="1" :max="90" />
+              <template #extra>
+                {{ t('systemConfig.range1to90') }}
+              </template>
+            </a-form-item>
+            <a-form-item :label="t('systemConfig.knowledgePageSize')">
+              <a-input-number v-model="settings.knowledge.defaultPageSize" :min="10" :max="100" />
+              <template #extra>
+                {{ t('systemConfig.range10to100') }}
+              </template>
+            </a-form-item>
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          :title="t('systemConfig.sections.security')"
+          class="settings-section"
+          :bordered="false"
+        >
+          <div class="settings-grid">
+            <a-form-item :label="t('systemConfig.sessionHours')">
+              <a-input-number v-model="settings.security.sessionHours" :min="1" :max="720" />
+              <template #extra>
+                {{ t('systemConfig.sessionHint') }}
+              </template>
+            </a-form-item>
+            <a-form-item :label="t('systemConfig.loginAttempts')">
+              <a-input-number v-model="settings.security.loginMaxAttempts" :min="3" :max="20" />
+              <template #extra>
+                {{ t('systemConfig.attemptsHint') }}
+              </template>
+            </a-form-item>
+          </div>
+        </SectionCard>
       </a-form>
-    </a-modal>
-  </section>
+
+      <SectionCard
+        :title="t('systemConfig.sections.serverTime')"
+        class="settings-section time-section"
+        :bordered="false"
+      >
+        <template #extra>
+          <a-button size="small" @click="refreshSystemTime">
+            {{
+              t('systemConfig.refreshTime')
+            }}
+          </a-button>
+        </template>
+        <a-descriptions :column="3" size="small">
+          <a-descriptions-item :label="t('systemConfig.serverTime')">
+            {{ formatServerTime(systemTime?.serverTime) }}
+          </a-descriptions-item>
+          <a-descriptions-item :label="t('systemConfig.serverTimezone')">
+            {{ systemTime?.timezone || t('systemConfig.unavailable') }}
+          </a-descriptions-item>
+          <a-descriptions-item :label="t('systemConfig.utcOffset')">
+            {{ formatOffset(systemTime?.utcOffsetMinutes) }}
+          </a-descriptions-item>
+        </a-descriptions>
+        <p class="time-note">
+          {{ t('systemConfig.timeReadOnly') }}
+        </p>
+      </SectionCard>
+
+      <StickyActionBar
+        :message="canManage ? t('systemConfig.auditHint') : t('systemConfig.readOnlySaveHint')"
+      >
+        <template #actions>
+          <Can permission="system_setting:manage">
+            <a-button
+              type="primary"
+              :loading="saving"
+              :disabled="loadFailed"
+              @click="saveSettings"
+            >
+              {{ t('systemConfig.save') }}
+            </a-button>
+          </Can>
+        </template>
+      </StickyActionBar>
+    </a-spin>
+  </PageContainer>
 </template>
 
 <style scoped lang="scss">
-.config-page {
+.system-settings-page {
   min-width: 0;
+  padding-bottom: 8px;
 }
 
-.config-tabs {
-  margin-bottom: 14px;
+.page-alert {
+  margin-bottom: 12px;
 }
 
-.config-key {
+.settings-spin {
+  display: block;
+}
+
+.settings-section {
+  margin-bottom: 12px;
+  background: var(--color-bg-2);
+}
+
+.settings-grid {
   display: grid;
-  gap: 4px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 24px;
+}
 
-  strong {
-    color: var(--color-text-1);
+.wide-field {
+  grid-column: 1 / -1;
+}
+
+.time-note {
+  margin: 10px 0 0;
+  color: var(--color-text-3);
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .settings-grid {
+    grid-template-columns: 1fr;
   }
 
-  span {
-    color: var(--color-text-3);
-    font-size: 12px;
+  .wide-field {
+    grid-column: auto;
   }
-}
 
-code {
-  display: inline-block;
-  max-width: 100%;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: var(--color-fill-2);
-  color: var(--color-text-2);
-  word-break: break-all;
-}
-
-.full-input {
-  width: 100%;
-}
-
-.empty-state {
-  margin-top: 18px;
+  .time-section :deep(.arco-descriptions-table) {
+    min-width: 620px;
+  }
 }
 </style>

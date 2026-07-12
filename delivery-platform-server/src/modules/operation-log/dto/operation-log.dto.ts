@@ -1,10 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsOptional, IsString, MaxLength } from 'class-validator';
 
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 
 export class QueryOperationLogDto extends PaginationDto {
-  @ApiPropertyOptional({ description: '用户ID' })
+  @ApiPropertyOptional({ description: '模糊搜索模块、动作、对象或 Trace ID' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  keyword?: string;
+
+  @ApiPropertyOptional({ description: '用户 ID' })
   @IsOptional()
   @IsString()
   userId?: string;
@@ -26,22 +32,28 @@ export class QueryOperationLogDto extends PaginationDto {
 
   @ApiPropertyOptional({ description: '开始日期' })
   @IsOptional()
-  @IsString()
+  @IsDateString()
   startDate?: string;
 
   @ApiPropertyOptional({ description: '结束日期' })
   @IsOptional()
-  @IsString()
+  @IsDateString()
   endDate?: string;
 
   @ApiPropertyOptional({ description: '操作结果' })
   @IsOptional()
   @IsString()
   result?: string;
+
+  @ApiPropertyOptional({ description: 'Trace ID' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  traceId?: string;
 }
 
 export class CreateOperationLogDto {
-  @ApiProperty({ description: '用户ID' })
+  @ApiProperty({ description: '用户 ID' })
   @IsString()
   userId: string;
 
@@ -69,7 +81,7 @@ export class CreateOperationLogDto {
   @IsOptional()
   afterData?: Record<string, unknown>;
 
-  @ApiPropertyOptional({ description: 'IP地址' })
+  @ApiPropertyOptional({ description: 'IP 地址' })
   @IsOptional()
   @IsString()
   ipAddress?: string;
@@ -83,4 +95,16 @@ export class CreateOperationLogDto {
   @IsOptional()
   @IsString()
   result?: string;
+
+  @ApiPropertyOptional({ description: 'Trace ID' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  traceId?: string;
+
+  @ApiPropertyOptional({ description: '失败原因' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  errorReason?: string;
 }
