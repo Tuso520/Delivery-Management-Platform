@@ -44,6 +44,25 @@ create_complete_format_three_backup_fixture() {
   write_backup_checksums "$backup_dir"
 }
 
+create_legacy_backup_fixture() {
+  local backup_dir="$1" revision="$2" payload
+  mkdir -p "$backup_dir"
+  printf 'legacy environment snapshot\n' > "$backup_dir/env.snapshot"
+  printf '%s\n' "$revision" > "$backup_dir/git-revision.txt"
+  printf 'services: {}\n' > "$backup_dir/docker-compose.resolved.yml"
+  printf 'Project\t1\n' > "$backup_dir/table-counts.before.tsv"
+  printf 'legacy database fixture\n' | gzip -c > "$backup_dir/mysql.sql.gz"
+  payload="$(mktemp -d)"
+  printf 'legacy object fixture\n' > "$payload/object"
+  tar -czf "$backup_dir/minio.tar.gz" -C "$payload" .
+  rm -rf "$payload"
+}
+
+backup_tree_digest() {
+  local backup_dir="$1"
+  tar -cf - -C "$backup_dir" . | sha256sum | awk '{print $1}'
+}
+
 current_services() {
   printf '%s\n' mysql redis minio minio-init backend backend-migrate file-worker outbox-worker frontend
 }
@@ -1746,7 +1765,8 @@ test_prune_release_pointer_and_symlink_contracts() (
 
   if command -v ln >/dev/null 2>&1; then
     rm -f .deploy/last_successful_rev
-    if ln -s missing-current-revision .deploy/last_successful_rev 2>/dev/null; then
+    if ln -s missing-current-revision .deploy/last_successful_rev 2>/dev/null && \
+      [ -L .deploy/last_successful_rev ]; then
       if protect_release_pointer_images_for_prune >/dev/null 2>&1; then
         fail "image cleanup accepted a dangling current release pointer"
       fi
@@ -1766,13 +1786,19 @@ test_prune_rejects_symlinked_managed_parent_directories() (
   mkdir -p "$root/.git" "$external/deploy" "$external/backups"
 
   if ln -s "$external/deploy" "$root/.deploy" 2>/dev/null; then
-    if validate_prune_managed_paths >/dev/null 2>&1; then
-      fail "image cleanup accepted a symlinked .deploy parent directory"
+    if [ -L "$root/.deploy" ]; then
+      if validate_prune_managed_paths >/dev/null 2>&1; then
+        fail "image cleanup accepted a symlinked .deploy parent directory"
+      fi
     fi
-    rm -f "$root/.deploy"
+    if [ -d "$root/.deploy" ] && [ ! -L "$root/.deploy" ]; then
+      rmdir "$root/.deploy" 2>/dev/null || true
+    else
+      rm -f "$root/.deploy"
+    fi
   fi
   mkdir -p "$root/.deploy"
-  if ln -s "$external/backups" "$root/backups" 2>/dev/null; then
+  if ln -s "$external/backups" "$root/backups" 2>/dev/null && [ -L "$root/backups" ]; then
     if validate_prune_managed_paths >/dev/null 2>&1; then
       fail "image cleanup accepted a symlinked backups parent directory"
     fi
@@ -1814,10 +1840,16 @@ test_prune_backup_metadata_contracts() (
 
   if command -v ln >/dev/null 2>&1; then
     if ln -s missing-backup-root "$root/backups/git-deploy" 2>/dev/null; then
-      if protect_backup_images_for_prune >/dev/null 2>&1; then
-        fail "image cleanup accepted a dangling managed backup root"
+      if [ -L "$root/backups/git-deploy" ]; then
+        if protect_backup_images_for_prune >/dev/null 2>&1; then
+          fail "image cleanup accepted a dangling managed backup root"
+        fi
       fi
-      rm -f "$root/backups/git-deploy"
+      if [ -d "$root/backups/git-deploy" ] && [ ! -L "$root/backups/git-deploy" ]; then
+        rmdir "$root/backups/git-deploy" 2>/dev/null || true
+      else
+        rm -f "$root/backups/git-deploy"
+      fi
     fi
   fi
 
@@ -1875,6 +1907,133 @@ test_prune_backup_metadata_contracts() (
   printf 'malformed-eof-row' >> "$backup/retained-images.tsv"
   if validate_retained_runtime_images "$backup" >/dev/null 2>&1; then
     fail "image cleanup ignored a malformed retained image row without a trailing newline"
+  fi
+)
+
+test_prune_legacy_and_incomplete_backup_protection_contracts() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  local root backup incomplete revision before after exact_mode
+  local exact_backend exact_frontend older_backend unrelated_image
+  root="$(mktemp -d)"
+  trap 'rm -rf "$root"' EXIT
+  backup="$root/backups/git-deploy/legacy"
+  incomplete="$root/backups/git-deploy/incomplete-v3"
+  revision="$(printf 'a%.0s' {1..40})"
+  exact_backend="sha256:$(printf '1%.0s' {1..64})"
+  exact_frontend="sha256:$(printf '2%.0s' {1..64})"
+  older_backend="sha256:$(printf '3%.0s' {1..64})"
+  unrelated_image="sha256:$(printf '4%.0s' {1..64})"
+  create_legacy_backup_fixture "$backup" "$revision"
+  APP_DIR="$root"
+  mkdir -p "$root/.deploy"
+  PRUNE_PROTECTED_IMAGES_FILE="$root/protected-images"
+  PRUNE_INVENTORY_SCRATCH_FILE="$root/inventory"
+  : > "$PRUNE_PROTECTED_IMAGES_FILE"
+  : > "$PRUNE_INVENTORY_SCRATCH_FILE"
+  exact_mode="YES"
+
+  git() {
+    if [ "$1" = "cat-file" ] && [ "$2" = "-e" ]; then
+      return 0
+    fi
+    fail "unexpected Git call while protecting a legacy backup: $*"
+  }
+  docker() {
+    if [ "$1" = "image" ] && [ "$2" = "ls" ]; then
+      printf '%s\n' "$exact_backend" "$exact_frontend" "$older_backend" "$unrelated_image"
+      return 0
+    fi
+    if [ "$1" = "image" ] && [ "$2" = "inspect" ]; then
+      case "$3" in
+        "$exact_backend")
+          if [ "$exact_mode" = "YES" ]; then
+            printf '%s\tdelivery-platform-backend\taaaaaaaaaaaa\n' "$exact_backend"
+          else
+            printf '%s\tdelivery-platform-backend\tbbbbbbbbbbbb\n' "$exact_backend"
+          fi
+          ;;
+        "$exact_frontend")
+          if [ "$exact_mode" = "YES" ]; then
+            printf '%s\tdelivery-platform-frontend\taaaaaaaaaaaa\n' "$exact_frontend"
+          else
+            printf '%s\tdelivery-platform-frontend\tbbbbbbbbbbbb\n' "$exact_frontend"
+          fi
+          ;;
+        "$older_backend")
+          printf '%s\tdelivery-platform-backend\tcccccccccccc\n' "$older_backend"
+          ;;
+        "$unrelated_image")
+          printf '%s\tthird-party-image\t1.0.0\n' "$unrelated_image"
+          ;;
+        *) return 1 ;;
+      esac
+      return 0
+    fi
+    if [ "$1" = "image" ] && [ "$2" = "rm" ]; then
+      fail "legacy backup validation attempted to delete an image"
+    fi
+    fail "unexpected Docker call while protecting a legacy backup: $*"
+  }
+
+  before="$(backup_tree_digest "$backup")"
+  protect_backup_images_for_prune || fail "known legacy backup was not accepted as a read-only archive"
+  grep -Fxq "$exact_backend" "$PRUNE_PROTECTED_IMAGES_FILE" || fail "legacy backend image was not protected"
+  grep -Fxq "$exact_frontend" "$PRUNE_PROTECTED_IMAGES_FILE" || fail "legacy frontend image was not protected"
+  if grep -Fxq "$older_backend" "$PRUNE_PROTECTED_IMAGES_FILE"; then
+    fail "exact legacy image binding unnecessarily protected every historical backend image"
+  fi
+  if grep -Fxq "$unrelated_image" "$PRUNE_PROTECTED_IMAGES_FILE"; then
+    fail "legacy image binding protected an unrelated image"
+  fi
+  after="$(backup_tree_digest "$backup")"
+  [ "$before" = "$after" ] || fail "legacy backup bytes changed during image protection"
+
+  : > "$PRUNE_PROTECTED_IMAGES_FILE"
+  exact_mode="NO"
+  protect_backup_images_for_prune || fail "legacy backup fallback protection failed"
+  for image in "$exact_backend" "$exact_frontend" "$older_backend"; do
+    grep -Fxq "$image" "$PRUNE_PROTECTED_IMAGES_FILE" || \
+      fail "legacy fallback did not protect every Delivery Platform image"
+  done
+  if grep -Fxq "$unrelated_image" "$PRUNE_PROTECTED_IMAGES_FILE"; then
+    fail "legacy fallback protected an unrelated image"
+  fi
+
+  mkdir -p "$incomplete"
+  printf 'partial archive\n' > "$incomplete/minio.tar.gz.part"
+  : > "$PRUNE_PROTECTED_IMAGES_FILE"
+  protect_backup_images_for_prune || fail "markerless incomplete backup blocked conservative image cleanup"
+  for image in "$exact_backend" "$exact_frontend" "$older_backend"; do
+    grep -Fxq "$image" "$PRUNE_PROTECTED_IMAGES_FILE" || \
+      fail "incomplete backup did not conservatively protect every Delivery Platform image"
+  done
+
+  rm -rf "$incomplete"
+  printf 'broken gzip\n' > "$backup/mysql.sql.gz"
+  if protect_backup_images_for_prune >/dev/null 2>&1; then
+    fail "image cleanup accepted a corrupt legacy database archive"
+  fi
+
+  create_legacy_backup_fixture "$backup" "$revision"
+  printf 'broken tar\n' > "$backup/minio.tar.gz"
+  if protect_backup_images_for_prune >/dev/null 2>&1; then
+    fail "image cleanup accepted a corrupt legacy MinIO archive"
+  fi
+
+  create_legacy_backup_fixture "$backup" invalid-revision
+  if protect_backup_images_for_prune >/dev/null 2>&1; then
+    fail "image cleanup accepted an invalid legacy revision"
+  fi
+
+  if command -v ln >/dev/null 2>&1; then
+    create_legacy_backup_fixture "$backup" "$revision"
+    rm -f "$backup/env.snapshot"
+    if ln -s outside "$backup/env.snapshot" 2>/dev/null && [ -L "$backup/env.snapshot" ]; then
+      if protect_backup_images_for_prune >/dev/null 2>&1; then
+        fail "image cleanup accepted a symbolic link in a legacy backup"
+      fi
+    fi
   fi
 )
 
@@ -2181,6 +2340,7 @@ test_prune_missing_current_pointer_fails_before_image_delete
 test_prune_release_pointer_and_symlink_contracts
 test_prune_rejects_symlinked_managed_parent_directories
 test_prune_backup_metadata_contracts
+test_prune_legacy_and_incomplete_backup_protection_contracts
 test_prune_removes_only_unreferenced_unprotected_images
 test_prune_removes_arbitrarily_deep_unprotected_image_chain
 test_failure_rollback_order

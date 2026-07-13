@@ -2155,6 +2155,149 @@ verify_backup_prune_metadata_checksums() {
   done
 }
 
+backup_tree_contains_only_regular_files() (
+  local backup="$1" entry
+  shopt -s dotglob nullglob
+  for entry in "$backup"/*; do
+    if [ ! -f "$entry" ] || [ -L "$entry" ]; then
+      warn "refusing image cleanup because an unpublished backup contains an unsafe entry: ${backup##*/}"
+      return 1
+    fi
+  done
+)
+
+legacy_backup_structure_is_known() (
+  local backup="$1" artifact entry name
+  local -a required=(
+    env.snapshot
+    git-revision.txt
+    docker-compose.resolved.yml
+    table-counts.before.tsv
+    mysql.sql.gz
+  )
+  shopt -s dotglob nullglob
+  for artifact in "${required[@]}"; do
+    [ -f "$backup/$artifact" ] && [ ! -L "$backup/$artifact" ] || return 1
+  done
+  for entry in "$backup"/*; do
+    [ -f "$entry" ] && [ ! -L "$entry" ] || return 1
+    name="${entry##*/}"
+    case "$name" in
+      env.snapshot|git-revision.txt|docker-compose.resolved.yml|table-counts.before.tsv|\
+      table-counts.after.tsv|mysql.sql.gz|minio.tar.gz) ;;
+      *) return 1 ;;
+    esac
+  done
+)
+
+protect_all_platform_images_for_prune() {
+  local inventory image_id identity actual_id title version extra protected_count=0
+  local -a image_ids=()
+  inventory="$(docker image ls --no-trunc --quiet | sort -u)" || return 1
+  mapfile -t image_ids <<< "$inventory" || return 1
+  for image_id in "${image_ids[@]}"; do
+    [ -n "$image_id" ] || continue
+    [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+    identity="$(image_identity "$image_id")" || return 1
+    IFS=$'\t' read -r actual_id title version extra <<< "$identity"
+    [ "$actual_id" = "$image_id" ] && [ -z "$extra" ] || return 1
+    case "$title" in
+      delivery-platform-backend|delivery-platform-frontend)
+        append_prune_protected_image "$image_id" || return 1
+        protected_count=$((protected_count + 1))
+        ;;
+    esac
+  done
+  [ "$protected_count" -gt 0 ] || {
+    warn "refusing image cleanup because no Delivery Platform runtime image can protect an unpublished backup"
+    return 1
+  }
+}
+
+protect_legacy_backup_images_for_prune() {
+  local backup="$1" revision runtime_id inventory image_id identity actual_id title version extra
+  local backend_matches=0 frontend_matches=0
+  local -a image_ids=() platform_ids=() exact_ids=()
+  legacy_backup_structure_is_known "$backup" || return 2
+  gzip -t "$backup/mysql.sql.gz" || {
+    warn "refusing image cleanup because a legacy database archive is invalid: ${backup##*/}"
+    return 1
+  }
+  if [ -e "$backup/minio.tar.gz" ] || [ -L "$backup/minio.tar.gz" ]; then
+    if [ ! -f "$backup/minio.tar.gz" ] || [ -L "$backup/minio.tar.gz" ] || \
+      ! tar -tzf "$backup/minio.tar.gz" >/dev/null; then
+      warn "refusing image cleanup because a legacy MinIO archive is invalid: ${backup##*/}"
+      return 1
+    fi
+  fi
+  revision="$(read_single_line_file "$backup/git-revision.txt")" || {
+    warn "refusing image cleanup because a legacy backup revision is invalid: ${backup##*/}"
+    return 1
+  }
+  [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || {
+    warn "refusing image cleanup because a legacy backup revision is not a commit id: ${backup##*/}"
+    return 1
+  }
+  runtime_id="${revision:0:12}"
+  inventory="$(docker image ls --no-trunc --quiet | sort -u)" || return 1
+  mapfile -t image_ids <<< "$inventory" || return 1
+  for image_id in "${image_ids[@]}"; do
+    [ -n "$image_id" ] || continue
+    [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+    identity="$(image_identity "$image_id")" || return 1
+    IFS=$'\t' read -r actual_id title version extra <<< "$identity"
+    [ "$actual_id" = "$image_id" ] && [ -z "$extra" ] || return 1
+    case "$title" in
+      delivery-platform-backend)
+        platform_ids+=("$image_id")
+        if [ "$version" = "$runtime_id" ]; then
+          exact_ids+=("$image_id")
+          backend_matches=$((backend_matches + 1))
+        fi
+        ;;
+      delivery-platform-frontend)
+        platform_ids+=("$image_id")
+        if [ "$version" = "$runtime_id" ]; then
+          exact_ids+=("$image_id")
+          frontend_matches=$((frontend_matches + 1))
+        fi
+        ;;
+    esac
+  done
+  if git cat-file -e "${revision}^{commit}" 2>/dev/null && \
+    [ "$backend_matches" -gt 0 ] && [ "$frontend_matches" -gt 0 ]; then
+    for image_id in "${exact_ids[@]}"; do
+      append_prune_protected_image "$image_id" || return 1
+    done
+    warn "protecting best-effort runtime images for read-only legacy backup: ${backup##*/}"
+    return 0
+  fi
+  warn "legacy backup has no complete immutable runtime binding; protecting every Delivery Platform image: ${backup##*/}"
+  [ "${#platform_ids[@]}" -gt 0 ] || return 1
+  for image_id in "${platform_ids[@]}"; do
+    append_prune_protected_image "$image_id" || return 1
+  done
+}
+
+protect_markerless_backup_images_for_prune() {
+  local backup="$1" status
+  backup_tree_contains_only_regular_files "$backup" || return 1
+  if protect_legacy_backup_images_for_prune "$backup"; then
+    return 0
+  else
+    status="$?"
+  fi
+  case "$status" in
+    0) return 0 ;;
+    1) return 1 ;;
+    2)
+      warn "unpublished or incomplete backup is retained read-only; protecting every Delivery Platform image: ${backup##*/}"
+      protect_all_platform_images_for_prune
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 protect_backup_images_for_prune() {
   local backup_root candidate canonical format service tag image_id title version extra
   if [ -L "$APP_DIR/backups/git-deploy" ]; then
@@ -2181,6 +2324,14 @@ protect_backup_images_for_prune() {
       warn "refusing image cleanup because a backup resolves outside the managed root"
       return 1
     }
+    if [ ! -e "$canonical/backup-format-version" ]; then
+      [ ! -L "$canonical/backup-format-version" ] || {
+        warn "refusing image cleanup because a backup format marker is an unsafe symbolic link: ${canonical##*/}"
+        return 1
+      }
+      protect_markerless_backup_images_for_prune "$canonical" || return 1
+      continue
+    fi
     verify_backup_prune_metadata_checksums "$canonical" || return 1
     format="$(read_single_line_file "$canonical/backup-format-version")" || {
       warn "refusing image cleanup because a backup format marker is invalid: ${canonical##*/}"
@@ -2275,10 +2426,12 @@ manual_prune_unused_images() {
   detect_compose
   require_command awk
   require_command find
+  require_command gzip
   require_command grep
   require_command mktemp
   require_command sha256sum
   require_command sort
+  require_command tar
   require_command tr
   require_command wc
   source_env
