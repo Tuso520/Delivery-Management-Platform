@@ -2328,7 +2328,7 @@ append_prune_protected_image() {
 }
 
 protect_container_images_for_prune() {
-  local container_id image_id
+  local container_id image_id image_ref referenced_image_id
   local -a container_ids=()
   docker ps --all --quiet > "$PRUNE_INVENTORY_SCRATCH_FILE" || return 1
   mapfile -t container_ids < "$PRUNE_INVENTORY_SCRATCH_FILE" || return 1
@@ -2336,6 +2336,17 @@ protect_container_images_for_prune() {
     [ -n "$container_id" ] || continue
     image_id="$(docker inspect "$container_id" --format '{{.Image}}')" || return 1
     append_prune_protected_image "$image_id" || return 1
+    # Some Docker versions expose a manifest/config image id through .Image while
+    # `docker image ls` reports the id resolved from the container's original
+    # image reference. Protect both identities so an active mysql/redis/minio
+    # image can never become a cleanup candidate.
+    image_ref="$(docker inspect "$container_id" --format '{{.Config.Image}}')" || return 1
+    [ -n "$image_ref" ] || continue
+    referenced_image_id="$(
+      docker image inspect "$image_ref" --format '{{.Id}}' 2>/dev/null || true
+    )"
+    [ -n "$referenced_image_id" ] || continue
+    append_prune_protected_image "$referenced_image_id" || return 1
   done
 }
 
@@ -2629,6 +2640,28 @@ collect_prune_protected_images() {
   sort -u -o "$PRUNE_PROTECTED_IMAGES_FILE" "$PRUNE_PROTECTED_IMAGES_FILE" || return 1
 }
 
+protect_builder_base_images_for_prune() {
+  local image_id tag
+  local -a tags=()
+  while IFS= read -r image_id; do
+    [ -n "$image_id" ] || continue
+    tags=()
+    mapfile -t tags < <(
+      docker image inspect "$image_id" --format '{{range .RepoTags}}{{println .}}{{end}}' 2>/dev/null || true
+    )
+    for tag in "${tags[@]}"; do
+      case "$tag" in
+        node:*|docker/dockerfile:*|docker/buildx-bin:*|moby/buildkit:*|buildkit:*)
+          append_prune_protected_image "$image_id" || return 1
+          log "skipping build/base image during cleanup: $tag"
+          break
+          ;;
+      esac
+    done
+  done < "$PRUNE_CANDIDATE_IMAGES_FILE"
+  sort -u -o "$PRUNE_PROTECTED_IMAGES_FILE" "$PRUNE_PROTECTED_IMAGES_FILE" || return 1
+}
+
 validate_prune_managed_paths() {
   local app_root child path canonical
   app_root="$(cd "$APP_DIR" && pwd -P)" || return 1
@@ -2658,17 +2691,49 @@ validate_prune_managed_paths() {
 }
 
 remove_unprotected_image_without_force() {
-  local image_id="$1" tag
+  local image_id="$1" tag failure
   local -a tags=()
   mapfile -t tags < <(
     docker image inspect "$image_id" --format '{{range .RepoTags}}{{println .}}{{end}}' 2>/dev/null || true
   )
   for tag in "${tags[@]}"; do
     [ -n "$tag" ] && [ "$tag" != "<none>:<none>" ] || continue
-    docker image rm "$tag" >/dev/null || return 1
+    failure="$(docker image rm "$tag" 2>&1 >/dev/null)" || {
+      case "$failure" in
+        *"No such image"*)
+          warn "image disappeared while cleanup was in progress: $tag"
+          continue
+          ;;
+        *"image is being used by"*|*"image is used by"*)
+          warn "Docker retained image referenced by a container: $tag"
+          append_prune_protected_image "$image_id" || return 1
+          return 0
+          ;;
+        *)
+          warn "Docker could not remove an unreferenced image without force: $tag"
+          return 1
+          ;;
+      esac
+    }
   done
   if docker image inspect "$image_id" >/dev/null 2>&1; then
-    docker image rm "$image_id" >/dev/null || return 1
+    failure="$(docker image rm "$image_id" 2>&1 >/dev/null)" || {
+      case "$failure" in
+        *"No such image"*)
+          warn "image disappeared while cleanup was in progress: $image_id"
+          return 0
+          ;;
+        *"image is being used by"*|*"image is used by"*)
+          warn "Docker retained image referenced by a container: $image_id"
+          append_prune_protected_image "$image_id" || return 1
+          return 0
+          ;;
+        *)
+          warn "Docker could not remove an unreferenced image without force: $image_id"
+          return 1
+          ;;
+      esac
+    }
   fi
 }
 
@@ -2733,6 +2798,9 @@ manual_prune_unused_images() {
   done
   protected_count="$(wc -l < "$PRUNE_PROTECTED_IMAGES_FILE" | tr -d '[:space:]')"
   candidate_count="$(wc -l < "$PRUNE_CANDIDATE_IMAGES_FILE" | tr -d '[:space:]')"
+  protect_builder_base_images_for_prune || \
+    err "Docker build/base images could not be classified; no image was deleted"
+  protected_count="$(wc -l < "$PRUNE_PROTECTED_IMAGES_FILE" | tr -d '[:space:]')"
   log "image cleanup inventory: total=$candidate_count protected=$protected_count"
 
   # Repeat non-forced removal while the candidate count decreases. This handles
@@ -2755,10 +2823,15 @@ manual_prune_unused_images() {
     [ "$remaining_count" -eq 0 ] && break
     [ "$remaining_count" -lt "$remaining_before" ] || break
   done
+  log "Docker images after unused-image cleanup"
+  docker image ls || warn "Docker image inventory could not be printed after cleanup"
+  log "Docker containers after unused-image cleanup"
+  docker ps || warn "Docker container inventory could not be printed after cleanup"
   log "Docker disk usage after unused-image cleanup"
   docker_system_df_with_timeout || \
     warn "Docker disk usage timed out or failed after cleanup; candidate verification remains authoritative"
-  [ "$remaining_count" -eq 0 ] || err "Docker retained $remaining_count unprotected images; cleanup stopped without forcing deletion"
+  [ "$remaining_count" -eq 0 ] || \
+    err "Docker retained $remaining_count unknown unreferenced image(s) after non-forced cleanup"
 
   if [ "$mode" = "predeploy" ]; then
     while IFS= read -r image_id; do

@@ -2577,6 +2577,118 @@ test_prune_removes_only_unreferenced_unprotected_images() (
     fail "pre-deployment cleanup removed a protected image or did not remove the sole unused image"
 )
 
+test_prune_protects_container_reference_and_build_images() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  local root container_image node_image buildkit_image unused_image
+  root="$(mktemp -d)"
+  trap 'rm -rf "$root"' EXIT
+  PRUNE_PROTECTED_IMAGES_FILE="$root/protected"
+  PRUNE_CANDIDATE_IMAGES_FILE="$root/candidates"
+  PRUNE_INVENTORY_SCRATCH_FILE="$root/inventory"
+  : > "$PRUNE_PROTECTED_IMAGES_FILE"
+  container_image="sha256:$(printf '8%.0s' {1..64})"
+  node_image="sha256:$(printf '9%.0s' {1..64})"
+  buildkit_image="sha256:$(printf 'a%.0s' {1..64})"
+  unused_image="sha256:$(printf 'b%.0s' {1..64})"
+  printf '%s\n' "$container_image" "$node_image" "$buildkit_image" "$unused_image" > \
+    "$PRUNE_CANDIDATE_IMAGES_FILE"
+  docker() {
+    if [ "$1" = "ps" ]; then
+      printf 'mysql-container\n'
+      return 0
+    fi
+    if [ "$1" = "inspect" ] && [ "$2" = "mysql-container" ]; then
+      if [[ "$*" == *'.Config.Image'* ]]; then
+        printf 'mysql:8.0\n'
+      else
+        printf '%s\n' "$container_image"
+      fi
+      return 0
+    fi
+    if [ "$1" = "image" ] && [ "$2" = "inspect" ] && [ "$3" = "mysql:8.0" ]; then
+      printf '%s\n' "$container_image"
+      return 0
+    fi
+    if [ "$1" = "image" ] && [ "$2" = "inspect" ] && [ "${4:-}" = "--format" ]; then
+      case "$3" in
+        "$node_image") printf 'node:20-bookworm-slim\n' ;;
+        "$buildkit_image") printf 'docker/dockerfile:1.7\n' ;;
+      esac
+      return 0
+    fi
+    fail "unexpected Docker call while classifying protected images: $*"
+  }
+
+  log() { :; }
+  protect_container_images_for_prune
+  protect_builder_base_images_for_prune
+  grep -Fxq "$container_image" "$PRUNE_PROTECTED_IMAGES_FILE" || \
+    fail "container image reference was not protected"
+  grep -Fxq "$node_image" "$PRUNE_PROTECTED_IMAGES_FILE" || \
+    fail "Node build/base image was not protected"
+  grep -Fxq "$buildkit_image" "$PRUNE_PROTECTED_IMAGES_FILE" || \
+    fail "BuildKit frontend image was not protected"
+  if grep -Fxq "$unused_image" "$PRUNE_PROTECTED_IMAGES_FILE"; then
+    fail "unknown unused image was incorrectly protected"
+  fi
+)
+
+test_prune_classifies_known_docker_removal_races() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  local root missing_image container_image orphan_image
+  root="$(mktemp -d)"
+  trap 'rm -rf "$root"' EXIT
+  PRUNE_PROTECTED_IMAGES_FILE="$root/protected"
+  : > "$PRUNE_PROTECTED_IMAGES_FILE"
+  missing_image="sha256:$(printf 'c%.0s' {1..64})"
+  container_image="sha256:$(printf 'd%.0s' {1..64})"
+  orphan_image="sha256:$(printf 'e%.0s' {1..64})"
+  warn() { :; }
+  docker() {
+    if [ "$1" = "image" ] && [ "$2" = "inspect" ] && [ "${4:-}" = "--format" ]; then
+      case "$3" in
+        "$missing_image") printf 'already-gone:test\n' ;;
+        "$container_image") printf 'mysql:8.0\n' ;;
+        "$orphan_image") printf 'unknown-orphan:test\n' ;;
+      esac
+      return 0
+    fi
+    if [ "$1" = "image" ] && [ "$2" = "inspect" ]; then
+      [ "$3" != "$missing_image" ]
+      return
+    fi
+    if [ "$1" = "image" ] && [ "$2" = "rm" ]; then
+      case "$3" in
+        already-gone:test)
+          printf 'Error response from daemon: No such image: already-gone:test\n' >&2
+          return 1
+          ;;
+        mysql:8.0)
+          printf 'conflict: image is being used by running container abc\n' >&2
+          return 1
+          ;;
+        unknown-orphan:test)
+          printf 'unexpected storage driver failure\n' >&2
+          return 1
+          ;;
+      esac
+    fi
+    fail "unexpected Docker call while classifying image removal: $*"
+  }
+
+  remove_unprotected_image_without_force "$missing_image" || \
+    fail "No-such-image cleanup race was treated as fatal"
+  remove_unprotected_image_without_force "$container_image" || \
+    fail "container-reference cleanup conflict was treated as fatal"
+  grep -Fxq "$container_image" "$PRUNE_PROTECTED_IMAGES_FILE" || \
+    fail "container-conflicted image was not dynamically protected"
+  if remove_unprotected_image_without_force "$orphan_image"; then
+    fail "unknown orphan image removal failure was ignored"
+  fi
+)
+
 test_prune_removes_arbitrarily_deep_unprotected_image_chain() (
   # shellcheck source=../deploy-git.sh
   source "$ROOT_DIR/deploy-git.sh"
@@ -2778,6 +2890,8 @@ test_explicit_managed_backup_discard_contract
 test_prune_backup_metadata_contracts
 test_prune_legacy_and_incomplete_backup_protection_contracts
 test_prune_removes_only_unreferenced_unprotected_images
+test_prune_protects_container_reference_and_build_images
+test_prune_classifies_known_docker_removal_races
 test_prune_removes_arbitrarily_deep_unprotected_image_chain
 test_failure_rollback_order
 printf 'deploy-git contract tests passed\n'
