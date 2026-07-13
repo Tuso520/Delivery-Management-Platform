@@ -2180,6 +2180,45 @@ test_prune_rejects_symlinked_managed_parent_directories() (
   fi
 )
 
+test_explicit_managed_backup_discard_contract() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  local root external
+  root="$(mktemp -d)"
+  external="$(mktemp -d)"
+  trap 'rm -rf "$root" "$external"' EXIT
+  APP_DIR="$root"
+  mkdir -p "$root/.deploy" "$root/backups/git-deploy/old-a" \
+    "$root/backups/git-deploy/old-b" "$external/must-survive"
+  init_or_adopt_repo() { cd "$APP_DIR"; }
+  acquire_lock() { :; }
+  log() { :; }
+  err() { fail "$*"; }
+
+  if manual_discard_managed_backups >/dev/null 2>&1; then
+    fail "managed backups were discarded without explicit confirmation"
+  fi
+  [ -d "$root/backups/git-deploy/old-a" ] || \
+    fail "unconfirmed managed backup discard changed the backup root"
+
+  if command -v ln >/dev/null 2>&1 && \
+    ln -s "$external/must-survive" "$root/backups/git-deploy/unsafe-link" 2>/dev/null && \
+    [ -L "$root/backups/git-deploy/unsafe-link" ]; then
+    if CONFIRM_DISCARD_MANAGED_BACKUPS=YES manual_discard_managed_backups >/dev/null 2>&1; then
+      fail "managed backup discard accepted a symbolic-link entry"
+    fi
+    [ -d "$external/must-survive" ] || \
+      fail "managed backup discard followed a symbolic link outside the managed root"
+    rm -f "$root/backups/git-deploy/unsafe-link"
+  fi
+
+  mkdir -p "$root/backups/git-deploy/old-a" "$root/backups/git-deploy/old-b"
+  CONFIRM_DISCARD_MANAGED_BACKUPS=YES manual_discard_managed_backups
+  [ -d "$root/backups/git-deploy" ] || fail "managed backup root itself was removed"
+  [ -z "$(find "$root/backups/git-deploy" -mindepth 1 -maxdepth 1 -print -quit)" ] || \
+    fail "explicit managed backup discard left an old backup behind"
+)
+
 test_prune_backup_metadata_contracts() (
   # shellcheck source=../deploy-git.sh
   source "$ROOT_DIR/deploy-git.sh"
@@ -2735,6 +2774,7 @@ test_docker_disk_usage_timeout_contract
 test_prune_missing_current_pointer_fails_before_image_delete
 test_prune_release_pointer_and_symlink_contracts
 test_prune_rejects_symlinked_managed_parent_directories
+test_explicit_managed_backup_discard_contract
 test_prune_backup_metadata_contracts
 test_prune_legacy_and_incomplete_backup_protection_contracts
 test_prune_removes_only_unreferenced_unprotected_images

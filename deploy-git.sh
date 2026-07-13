@@ -2782,6 +2782,43 @@ manual_prune_unused_images() {
   log "unused Docker image cleanup completed without deleting containers, volumes, networks or backups"
 }
 
+manual_discard_managed_backups() (
+  local app_root backup_root candidate canonical inventory=""
+  [ "${CONFIRM_DISCARD_MANAGED_BACKUPS:-NO}" = "YES" ] || \
+    err "managed backup discard requires CONFIRM_DISCARD_MANAGED_BACKUPS=YES"
+  init_or_adopt_repo
+  validate_prune_managed_paths
+  acquire_lock
+  app_root="$(cd "$APP_DIR" && pwd -P)" || err "application root could not be resolved"
+  backup_root="$APP_DIR/backups/git-deploy"
+  if [ ! -e "$backup_root" ]; then
+    log "no managed deployment backups need to be discarded"
+    return 0
+  fi
+  [ -d "$backup_root" ] && [ ! -L "$backup_root" ] || \
+    err "managed backup root is not a safe directory"
+  backup_root="$(cd "$backup_root" && pwd -P)" || err "managed backup root could not be resolved"
+  [ "$backup_root" = "$app_root/backups/git-deploy" ] || \
+    err "managed backup root resolves outside the application"
+  inventory="$(mktemp "$APP_DIR/.deploy/discard-managed-backups.XXXXXX")" || \
+    err "managed backup discard inventory could not be created"
+  trap 'rm -f "$inventory"' EXIT
+  chmod 600 "$inventory" || err "managed backup discard inventory could not be protected"
+  find "$backup_root" -mindepth 1 -maxdepth 1 -print0 > "$inventory" || \
+    err "managed backup inventory could not be read"
+  while IFS= read -r -d '' candidate; do
+    [ -d "$candidate" ] && [ ! -L "$candidate" ] || \
+      err "managed backup root contains an unsafe entry"
+    canonical="$(cd "$candidate" && pwd -P)" || err "managed backup entry could not be resolved"
+    [ "${canonical%/*}" = "$backup_root" ] || \
+      err "managed backup entry resolves outside the managed root"
+    rm -rf -- "$canonical" || err "managed backup could not be discarded: ${canonical##*/}"
+    log "discarded explicitly authorized managed backup: ${canonical##*/}"
+  done < "$inventory"
+  [ -z "$(find "$backup_root" -mindepth 1 -maxdepth 1 -print -quit)" ] || \
+    err "managed backup discard did not empty the managed root"
+)
+
 build_images() {
   log "building application images"
   compose build backend backend-migrate frontend
@@ -3568,6 +3605,7 @@ main() {
     deploy) deploy ;;
     preflight) init_or_adopt_repo; acquire_lock; preflight ;;
     backup) manual_backup ;;
+    discard-managed-backups) manual_discard_managed_backups ;;
     prune-unused-images-predeploy) manual_prune_unused_images predeploy ;;
     prune-unused-images) manual_prune_unused_images ;;
     status) show_status ;;
@@ -3580,6 +3618,7 @@ Usage:
   bash deploy-git.sh deploy
   bash deploy-git.sh status
   bash deploy-git.sh backup
+  CONFIRM_DISCARD_MANAGED_BACKUPS=YES bash deploy-git.sh discard-managed-backups
   bash deploy-git.sh prune-unused-images-predeploy
   bash deploy-git.sh prune-unused-images
   bash deploy-git.sh rollback-code

@@ -452,6 +452,9 @@ jobs:
             export REF="$DEPLOY_REF"
           fi
 
+          # One-time cleanup explicitly authorized on 2026-07-14: discard the
+          # unusable legacy deployment backups before reclaiming old images.
+          CONFIRM_DISCARD_MANAGED_BACKUPS=YES bash "$DEPLOY_SCRIPT" discard-managed-backups
           bash "$DEPLOY_SCRIPT" prune-unused-images-predeploy
           bash "$DEPLOY_SCRIPT" deploy
           bash "$DEPLOY_SCRIPT" status
