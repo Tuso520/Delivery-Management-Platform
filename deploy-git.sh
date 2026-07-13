@@ -2417,14 +2417,19 @@ count_remaining_prune_candidates() {
 }
 
 manual_prune_unused_images() {
+  local mode="${1:-runtime}"
   local image_id pass=0 protected_count candidate_count remaining_before remaining_count=0 service
   local -a image_ids=()
+  case "$mode" in
+    runtime|predeploy) ;;
+    *) err "unsupported image cleanup mode: $mode" ;;
+  esac
   init_or_adopt_repo
   validate_prune_managed_paths || err "managed deployment paths are unsafe; no image was deleted"
   acquire_lock
   validate_prune_managed_paths || err "managed deployment paths changed while acquiring the lock; no image was deleted"
-  detect_compose
   require_command awk
+  require_command docker
   require_command find
   require_command gzip
   require_command grep
@@ -2434,9 +2439,12 @@ manual_prune_unused_images() {
   require_command tar
   require_command tr
   require_command wc
-  source_env
-  compose config -q >/dev/null || err "Compose configuration is invalid; refusing image cleanup"
-  load_app_topology required || err "application topology is invalid; refusing image cleanup"
+  if [ "$mode" = "runtime" ]; then
+    detect_compose
+    source_env
+    compose config -q >/dev/null || err "Compose configuration is invalid; refusing image cleanup"
+    load_app_topology required || err "application topology is invalid; refusing image cleanup"
+  fi
   PRUNE_PROTECTED_IMAGES_FILE="$(mktemp "$APP_DIR/.deploy/prune-protected-images.XXXXXX")"
   PRUNE_CANDIDATE_IMAGES_FILE="$(mktemp "$APP_DIR/.deploy/prune-candidate-images.XXXXXX")"
   PRUNE_INVENTORY_SCRATCH_FILE="$(mktemp "$APP_DIR/.deploy/prune-inventory.XXXXXX")"
@@ -2480,6 +2488,16 @@ manual_prune_unused_images() {
   log "Docker disk usage after unused-image cleanup"
   docker system df || err "Docker disk usage could not be verified after cleanup"
   [ "$remaining_count" -eq 0 ] || err "Docker retained $remaining_count unprotected images; cleanup stopped without forcing deletion"
+
+  if [ "$mode" = "predeploy" ]; then
+    while IFS= read -r image_id; do
+      [ -n "$image_id" ] || continue
+      docker image inspect "$image_id" >/dev/null 2>&1 || \
+        err "a protected image disappeared during pre-deployment cleanup: $image_id"
+    done < "$PRUNE_PROTECTED_IMAGES_FILE"
+    log "pre-deployment Docker image cleanup completed without requiring the target application topology"
+    return 0
+  fi
 
   check_url "backend readiness after image cleanup" "http://127.0.0.1:${BACKEND_PORT:-3000}/api/v1/ready" || \
     err "backend health verification failed after image cleanup"
@@ -3137,6 +3155,7 @@ main() {
     deploy) deploy ;;
     preflight) init_or_adopt_repo; acquire_lock; preflight ;;
     backup) manual_backup ;;
+    prune-unused-images-predeploy) manual_prune_unused_images predeploy ;;
     prune-unused-images) manual_prune_unused_images ;;
     status) show_status ;;
     logs) show_logs ;;
@@ -3148,6 +3167,7 @@ Usage:
   bash deploy-git.sh deploy
   bash deploy-git.sh status
   bash deploy-git.sh backup
+  bash deploy-git.sh prune-unused-images-predeploy
   bash deploy-git.sh prune-unused-images
   bash deploy-git.sh rollback-code
   CONFIRM_RESTORE=YES BACKUP_PATH=backups/git-deploy/<stamp> bash deploy-git.sh restore-data

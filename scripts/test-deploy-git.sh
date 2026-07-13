@@ -1648,18 +1648,21 @@ EXPECTED
 
 test_workflow_runs_protected_image_cleanup_after_deploy() {
   local workflow="$ROOT_DIR/.github/workflows/deploy.yml"
-  local deploy_line prune_line first_status_line final_status_line
+  local predeploy_prune_line deploy_line prune_line first_status_line final_status_line
   local -a status_lines=()
+  predeploy_prune_line="$(grep -nF 'bash "$DEPLOY_SCRIPT" prune-unused-images-predeploy' "$workflow" | tail -1 | cut -d: -f1)"
   deploy_line="$(grep -nF 'bash "$DEPLOY_SCRIPT" deploy' "$workflow" | tail -1 | cut -d: -f1)"
   prune_line="$(grep -nF 'bash "$DEPLOY_SCRIPT" prune-unused-images' "$workflow" | tail -1 | cut -d: -f1)"
   mapfile -t status_lines < <(grep -nF 'bash "$DEPLOY_SCRIPT" status' "$workflow" | cut -d: -f1)
-  [ -n "$deploy_line" ] && [ -n "$prune_line" ] && [ "${#status_lines[@]}" -eq 2 ] || \
-    fail "workflow is missing deploy, protected image cleanup or its two status verifications"
+  [ -n "$predeploy_prune_line" ] && [ -n "$deploy_line" ] && [ -n "$prune_line" ] && \
+    [ "${#status_lines[@]}" -eq 2 ] || \
+    fail "workflow is missing pre-deploy cleanup, deploy, protected image cleanup or its two status verifications"
   first_status_line="${status_lines[0]}"
   final_status_line="${status_lines[1]}"
-  [ "$deploy_line" -lt "$first_status_line" ] && [ "$first_status_line" -lt "$prune_line" ] && \
+  [ "$predeploy_prune_line" -lt "$deploy_line" ] && [ "$deploy_line" -lt "$first_status_line" ] && \
+    [ "$first_status_line" -lt "$prune_line" ] && \
     [ "$prune_line" -lt "$final_status_line" ] || \
-    fail "workflow does not verify status before and after protected image cleanup"
+    fail "workflow does not clean before build and verify status before and after runtime cleanup"
   grep -Fq 'bash "$DEPLOY_SCRIPT" prune-unused-images || prune_status="$?"' "$workflow" || \
     fail "workflow does not preserve the protected image cleanup exit status"
   grep -Fq 'bash "$DEPLOY_SCRIPT" status || final_status="$?"' "$workflow" || \
@@ -2147,6 +2150,20 @@ test_prune_removes_only_unreferenced_unprotected_images() (
   manual_prune_unused_images
   [ "$(cat "$calls")" = "image-rm temporary-unused:test" ] || \
     fail "cleanup removed a protected image or did not remove the sole unused image"
+
+  : > "$calls"
+  : > "$deleted"
+  detect_compose() { fail "pre-deployment cleanup required target Compose detection"; }
+  source_env() { fail "pre-deployment cleanup loaded the target environment"; }
+  compose() { fail "pre-deployment cleanup required target Compose configuration"; }
+  load_app_topology() { fail "pre-deployment cleanup required the target worker topology"; }
+  check_url() { fail "pre-deployment cleanup required a target health endpoint"; }
+  check_service_stable() { fail "pre-deployment cleanup required target workers"; }
+  verify_release_version() { fail "pre-deployment cleanup required target frontend metadata"; }
+  verify_service_release() { fail "pre-deployment cleanup required target service metadata"; }
+  manual_prune_unused_images predeploy
+  [ "$(cat "$calls")" = "image-rm temporary-unused:test" ] || \
+    fail "pre-deployment cleanup removed a protected image or did not remove the sole unused image"
 )
 
 test_prune_removes_arbitrarily_deep_unprotected_image_chain() (

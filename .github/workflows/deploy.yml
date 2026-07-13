@@ -397,6 +397,7 @@ jobs:
             export REF="$DEPLOY_REF"
           fi
 
+          bash "$DEPLOY_SCRIPT" prune-unused-images-predeploy
           bash "$DEPLOY_SCRIPT" deploy
           bash "$DEPLOY_SCRIPT" status
           prune_status=0
