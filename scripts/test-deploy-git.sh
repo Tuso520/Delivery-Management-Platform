@@ -662,6 +662,7 @@ test_backup_source_revision_and_key_binding() (
   git() {
     case "$*" in
       "cat-file -e ${expected_source_revision}^{commit}") return 0 ;;
+      "cat-file -e ${expected_target_revision}^{commit}") return 0 ;;
       "rev-parse --verify HEAD") printf '%s\n' "$expected_target_revision" ;;
       *) return 1 ;;
     esac
@@ -699,12 +700,79 @@ test_backup_source_revision_and_key_binding() (
     printf 'minio-backup' > "$temp_dir/minio-source/object"
     tar -czf "$CURRENT_BACKUP_DIR/minio.tar.gz" -C "$temp_dir/minio-source" .
   }
+  validate_backup_for_publish() { backup_is_rotation_eligible "$1"; }
   create_backup
   [ "$(cat "$CURRENT_BACKUP_DIR/git-revision.txt")" = "$expected_source_revision" ] || fail "backup was labeled with target rather than source revision"
   [ "$(cat "$CURRENT_BACKUP_DIR/target-git-revision.txt")" = "$expected_target_revision" ] || fail "backup target revision was not recorded"
   grep -Fxq 'RELEASE_ID=111111111111' "$CURRENT_BACKUP_DIR/env.snapshot" || fail "backup environment was not paired to source release"
   expected_fingerprint="$(printf '%s' "$local_key" | openssl base64 -d -A | sha256sum | awk '{print $1}')"
   [ "$(cat "$CURRENT_BACKUP_DIR/integration-secret-key.sha256")" = "$expected_fingerprint" ] || fail "backup key fingerprint was not derived from decoded key bytes"
+)
+
+test_backup_publication_is_directory_atomic_and_failure_closed() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  temp_dir="$(mktemp -d)"
+  trap 'rm -rf "$temp_dir"' EXIT
+  APP_DIR="$temp_dir"
+  DEPLOY_RUN_ID="staging-contract"
+  EXPECTED_SOURCE_REVISION="1111111111111111111111111111111111111111"
+  EXPECTED_TARGET_REVISION="2222222222222222222222222222222222222222"
+  POPULATE_MODE="database-failure"
+  mkdir -p "$APP_DIR/.deploy"
+  cd "$APP_DIR"
+  source_env() { :; }
+  date() { printf '20260714_010203\n'; }
+  release_id() { printf '222222222222\n'; }
+  deployment_data_revision() { printf '%s\n' "$EXPECTED_SOURCE_REVISION"; }
+  git() {
+    [ "$*" = "rev-parse --verify HEAD" ] || return 1
+    printf '%s\n' "$EXPECTED_TARGET_REVISION"
+  }
+  validate_backup_for_publish() {
+    printf 'validate\n' >> "$CURRENT_BACKUP_DIR/calls"
+    [ "$POPULATE_MODE" != "validation-failure" ]
+  }
+  populate_backup_staging() {
+    printf 'database\n' > "$CURRENT_BACKUP_DIR/mysql.sql.gz.part"
+    [ "$POPULATE_MODE" != "database-failure" ] || return 1
+    printf 'minio\n' > "$CURRENT_BACKUP_DIR/minio.tar.gz.part"
+    validate_backup_for_publish "$CURRENT_BACKUP_DIR" || return 1
+    mv "$CURRENT_BACKUP_DIR/mysql.sql.gz.part" "$CURRENT_BACKUP_DIR/mysql.sql.gz"
+    mv "$CURRENT_BACKUP_DIR/minio.tar.gz.part" "$CURRENT_BACKUP_DIR/minio.tar.gz"
+    printf 'complete\n' > "$CURRENT_BACKUP_DIR/complete.marker"
+  }
+
+  if create_backup >/dev/null 2>&1; then
+    fail "database backup failure published a directory"
+  fi
+  [ -z "$(find "$APP_DIR/backups/git-deploy" -mindepth 1 -maxdepth 1 -print -quit)" ] || \
+    fail "database failure left an entry in the published backup root"
+  [ -z "$(find "$APP_DIR/backups/git-deploy-staging" -mindepth 1 -maxdepth 1 -print -quit)" ] || \
+    fail "database failure left the current staging directory"
+  [ ! -e "$APP_DIR/.deploy/latest_backup" ] || fail "database failure changed the latest-backup pointer"
+
+  POPULATE_MODE="validation-failure"
+  if create_backup >/dev/null 2>&1; then
+    fail "metadata validation failure published a directory"
+  fi
+  [ -z "$(find "$APP_DIR/backups/git-deploy" -mindepth 1 -maxdepth 1 -print -quit)" ] || \
+    fail "validation failure left an entry in the published backup root"
+  [ -z "$(find "$APP_DIR/backups/git-deploy-staging" -mindepth 1 -maxdepth 1 -print -quit)" ] || \
+    fail "validation failure left the current staging directory"
+  [ ! -e "$APP_DIR/.deploy/latest_backup" ] || fail "validation failure changed the latest-backup pointer"
+
+  POPULATE_MODE="success"
+  create_backup >/dev/null || fail "complete staged backup was not published"
+  case "$CURRENT_BACKUP_DIR" in
+    backups/git-deploy/*) ;;
+    *) fail "successful backup did not switch CURRENT_BACKUP_DIR to the published root" ;;
+  esac
+  [ -f "$APP_DIR/$CURRENT_BACKUP_DIR/complete.marker" ] || fail "published backup is incomplete"
+  [ "$(cat "$APP_DIR/.deploy/latest_backup")" = "$CURRENT_BACKUP_DIR" ] || \
+    fail "latest-backup pointer does not reference the atomically published directory"
+  [ -z "$(find "$APP_DIR/backups/git-deploy-staging" -mindepth 1 -maxdepth 1 -print -quit)" ] || \
+    fail "successful publication left a staging directory"
 )
 
 test_runtime_revision_follows_exact_database_migrations() (
@@ -862,25 +930,63 @@ test_minio_backup_is_atomic_and_health_gated() (
   # shellcheck source=../deploy-git.sh
   source "$ROOT_DIR/deploy-git.sh"
   temp_dir="$(mktemp -d)"
-  trap 'rm -rf "$temp_dir"' EXIT
+  calls_file="$(mktemp)"
+  trap 'rm -rf "$temp_dir"; rm -f "$calls_file"' EXIT
   APP_DIR="$temp_dir"
-  CURRENT_BACKUP_DIR="backups/git-deploy/current"
-  MINIO_HEALTH="healthy"
+  CURRENT_BACKUP_DIR="backups/git-deploy-staging/current"
+  MINIO_INITIAL_HEALTH="healthy"
+  MINIO_RESTART_HEALTH="healthy"
+  MINIO_STATE="true"
+  MINIO_RESTARTED="NO"
+  MINIO_STOP_FAIL="NO"
+  MINIO_START_FAIL="NO"
   MINIO_RUN_FAIL="NO"
-  mkdir -p "$APP_DIR/$CURRENT_BACKUP_DIR" "$temp_dir/minio-source"
+  HELPER_AVAILABLE="YES"
+  HELPER_ID="sha256:$(printf 'a%.0s' {1..64})"
+  mkdir -p "$APP_DIR/$CURRENT_BACKUP_DIR" "$APP_DIR/backups/git-deploy" "$temp_dir/minio-source"
   printf 'object data\n' > "$temp_dir/minio-source/object"
   cd "$APP_DIR"
+  release_id() { printf 'release-test\n'; }
+  sleep() { :; }
   compose() {
-    [ "$*" = "ps --status running --quiet minio" ] || return 1
-    printf 'minio-container\n'
+    case "$*" in
+      "ps --status running --quiet minio")
+        [ "$MINIO_STATE" = "true" ] && printf 'minio-container\n'
+        ;;
+      "stop minio")
+        record_call "stop"
+        [ "$MINIO_STOP_FAIL" != "YES" ] || return 1
+        MINIO_STATE="false"
+        ;;
+      "start minio")
+        record_call "start"
+        MINIO_STATE="true"
+        MINIO_RESTARTED="YES"
+        [ "$MINIO_START_FAIL" != "YES" ]
+        ;;
+      *) return 1 ;;
+    esac
   }
   docker() {
     case "$1" in
+      image)
+        [ "$2" = "inspect" ] || return 1
+        record_call "helper-inspect"
+        [ "$HELPER_AVAILABLE" = "YES" ] || return 1
+        printf '%s\tdelivery-platform-backend\trelease-test\n' "$HELPER_ID"
+        ;;
       inspect)
-        if [[ "$*" = *'.State.Running'* ]]; then
-          printf 'true\t%s\n' "$MINIO_HEALTH"
-        elif [[ "$*" = *'.Mounts'* ]]; then
+        if [[ "$*" = *'.Mounts'* ]]; then
           printf 'volume\tminio-volume\n'
+        elif [[ "$*" = *'.State.Health'* ]]; then
+          if [ "$MINIO_RESTARTED" = "YES" ]; then
+            record_call "health $MINIO_RESTART_HEALTH"
+            printf '%s\t%s\n' "$MINIO_STATE" "$MINIO_RESTART_HEALTH"
+          else
+            printf '%s\t%s\n' "$MINIO_STATE" "$MINIO_INITIAL_HEALTH"
+          fi
+        elif [[ "$*" = *'.State.Running'* ]]; then
+          printf '%s\n' "$MINIO_STATE"
         else
           return 1
         fi
@@ -889,33 +995,115 @@ test_minio_backup_is_atomic_and_health_gated() (
         [ "$2" = "inspect" ] && [ "$3" = "minio-volume" ]
         ;;
       run)
-        tar -czf "$APP_DIR/$CURRENT_BACKUP_DIR/minio.tar.gz.part" -C "$temp_dir/minio-source" .
-        [ "$MINIO_RUN_FAIL" != "YES" ]
+        if [[ "$*" = *'command -v tar'* ]]; then
+          [[ "$*" = *'--user 0:0'* ]] || return 1
+          [[ "$*" = *'--read-only'* ]] || return 1
+          record_call "helper-preflight running=$MINIO_STATE"
+        else
+          [[ "$*" = *'--user 0:0'* ]] || return 1
+          [[ "$*" = *"$APP_DIR/$CURRENT_BACKUP_DIR:/backup"* ]] || return 1
+          [[ "$*" != *"$APP_DIR/$CURRENT_BACKUP_DIR:/backup:ro"* ]] || return 1
+          record_call "archive running=$MINIO_STATE image=$HELPER_ID"
+          tar -czf "$APP_DIR/$CURRENT_BACKUP_DIR/minio.tar.gz.part" -C "$temp_dir/minio-source" .
+          [ "$MINIO_RUN_FAIL" != "YES" ]
+        fi
         ;;
       *) return 1 ;;
     esac
   }
 
   backup_minio || fail "healthy MinIO source was rejected"
+  assert_calls "$(cat <<'EXPECTED'
+helper-inspect
+helper-preflight running=true
+stop
+archive running=false image=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+start
+health healthy
+EXPECTED
+)"
   [ -f "$APP_DIR/$CURRENT_BACKUP_DIR/minio.tar.gz" ] || fail "validated MinIO archive was not published"
   [ ! -e "$APP_DIR/$CURRENT_BACKUP_DIR/minio.tar.gz.part" ] || fail "MinIO partial archive survived a successful publish"
   tar -tzf "$APP_DIR/$CURRENT_BACKUP_DIR/minio.tar.gz" >/dev/null || fail "published MinIO archive is invalid"
 
   rm -f "$APP_DIR/$CURRENT_BACKUP_DIR/minio.tar.gz"
-  MINIO_HEALTH="unhealthy"
+  : > "$calls_file"
+  MINIO_INITIAL_HEALTH="unhealthy"
+  MINIO_RESTARTED="NO"
   if backup_minio >/dev/null 2>&1; then
     fail "unhealthy MinIO source was accepted"
   fi
+  [ ! -s "$calls_file" ] || fail "initially unhealthy MinIO was stopped or restarted"
   [ ! -e "$APP_DIR/$CURRENT_BACKUP_DIR/minio.tar.gz" ] || fail "unhealthy MinIO source published an archive"
   [ ! -e "$APP_DIR/$CURRENT_BACKUP_DIR/minio.tar.gz.part" ] || fail "unhealthy MinIO source left a partial archive"
 
-  MINIO_HEALTH="healthy"
+  : > "$calls_file"
+  MINIO_INITIAL_HEALTH="healthy"
+  MINIO_STATE="true"
+  MINIO_RESTARTED="NO"
+  HELPER_AVAILABLE="NO"
+  if backup_minio >/dev/null 2>&1; then
+    fail "missing local helper image was accepted"
+  fi
+  assert_calls "helper-inspect"
+  if grep -Fxq 'stop' "$calls_file"; then
+    fail "MinIO was stopped before the helper image was available locally"
+  fi
+  [ ! -e "$APP_DIR/$CURRENT_BACKUP_DIR/minio.tar.gz.part" ] || fail "missing helper image left a partial archive"
+
+  : > "$calls_file"
+  HELPER_AVAILABLE="YES"
   MINIO_RUN_FAIL="YES"
   if backup_minio >/dev/null 2>&1; then
     fail "failed MinIO archive command was accepted"
   fi
+  grep -Fq 'archive running=false image=' "$calls_file" || fail "MinIO archive ran before the source was stopped"
+  grep -Fxq 'start' "$calls_file" || fail "MinIO was not restarted after archive failure"
+  grep -Fxq 'health healthy' "$calls_file" || fail "MinIO health was not awaited after archive failure"
   [ ! -e "$APP_DIR/$CURRENT_BACKUP_DIR/minio.tar.gz" ] || fail "failed MinIO archive command published an archive"
   [ ! -e "$APP_DIR/$CURRENT_BACKUP_DIR/minio.tar.gz.part" ] || fail "failed MinIO archive command left a partial archive"
+
+  : > "$calls_file"
+  MINIO_STATE="true"
+  MINIO_RESTARTED="NO"
+  MINIO_RUN_FAIL="NO"
+  MINIO_STOP_FAIL="YES"
+  if backup_minio >/dev/null 2>&1; then
+    fail "failed MinIO stop was accepted"
+  fi
+  grep -Fxq 'start' "$calls_file" || fail "MinIO recovery was not attempted after stop failure"
+  grep -Fxq 'health healthy' "$calls_file" || fail "MinIO health was not awaited after stop failure"
+  if grep -q '^archive ' "$calls_file"; then
+    fail "raw MinIO volume was read after stop failure"
+  fi
+
+  : > "$calls_file"
+  MINIO_STATE="true"
+  MINIO_RESTARTED="NO"
+  MINIO_STOP_FAIL="NO"
+  MINIO_START_FAIL="YES"
+  if backup_minio >/dev/null 2>&1; then
+    fail "failed MinIO restart was accepted"
+  fi
+  grep -Fxq 'health healthy' "$calls_file" || fail "health was not checked after a failed restart command"
+  [ ! -e "$APP_DIR/$CURRENT_BACKUP_DIR/minio.tar.gz" ] || fail "restart failure published a MinIO archive"
+  [ ! -e "$APP_DIR/$CURRENT_BACKUP_DIR/minio.tar.gz.part" ] || fail "restart failure left a partial archive"
+
+  : > "$calls_file"
+  MINIO_STATE="true"
+  MINIO_RESTARTED="NO"
+  MINIO_START_FAIL="NO"
+  MINIO_RESTART_HEALTH="unhealthy"
+  if backup_minio >/dev/null 2>&1; then
+    fail "unhealthy MinIO restart was accepted"
+  fi
+  grep -Fxq 'start' "$calls_file" || fail "MinIO was not restarted before the health failure"
+  grep -Fxq 'health unhealthy' "$calls_file" || fail "unhealthy MinIO restart was not health gated"
+  [ ! -e "$APP_DIR/$CURRENT_BACKUP_DIR/minio.tar.gz" ] || fail "health failure published a MinIO archive"
+  [ ! -e "$APP_DIR/$CURRENT_BACKUP_DIR/minio.tar.gz.part" ] || fail "health failure left a partial archive"
+  if grep -Eq '(^|[[:space:]])alpine([[:space:]]|$)' "$ROOT_DIR/deploy-git.sh"; then
+    fail "backup or restore still depends on an unpinned Alpine helper image"
+  fi
 )
 
 test_backup_rotation_deletes_only_verified_unprotected_backups() (
@@ -1434,7 +1622,7 @@ test_restore_stops_minio_before_database_mutation() (
   calls_file="$(mktemp)"
   trap 'rm -rf "$temp_dir"; rm -f "$calls_file"' EXIT
   APP_DIR="$temp_dir"
-  BACKUP_PATH="$temp_dir/backup"
+  BACKUP_PATH="$temp_dir/backups/git-deploy/contract"
   CONFIRM_RESTORE="YES"
   DEPLOY_RUN_ID="restore-contract"
   mkdir -p "$BACKUP_PATH" "$APP_DIR/.deploy"
@@ -1442,6 +1630,8 @@ test_restore_stops_minio_before_database_mutation() (
   cd "$APP_DIR"
   source_env() { :; }
   validate_backup_for_restore() { :; }
+  retained_backend_helper_image_id() { printf 'sha256:%064d\n' 0; }
+  verified_tar_helper_image_id() { printf 'sha256:%064d\n' 0; }
   start_infra() { record_call "start-infra"; }
   quiesce_app() { record_call "quiesce $*"; }
   minio_volume_name() { printf 'minio-volume\n'; }
@@ -1463,6 +1653,28 @@ quiesce compatible
 compose stop minio
 EXPECTED
 )"
+)
+
+test_restore_pointer_cannot_reference_backup_staging() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  temp_dir="$(mktemp -d)"
+  trap 'rm -rf "$temp_dir"' EXIT
+  APP_DIR="$temp_dir"
+  BACKUP_PATH=""
+  CONFIRM_RESTORE="YES"
+  VALIDATE_CALLED="NO"
+  mkdir -p "$APP_DIR/.deploy" "$APP_DIR/backups/git-deploy" "$APP_DIR/backups/git-deploy-staging/incomplete"
+  printf '%s\n' 'backups/git-deploy-staging/incomplete' > "$APP_DIR/.deploy/latest_backup"
+  cd "$APP_DIR"
+  source_env() { :; }
+  validate_backup_for_restore() { VALIDATE_CALLED="YES"; }
+  warn() { :; }
+
+  if restore_data_from_backup; then
+    fail "restore accepted a latest-backup pointer into staging"
+  fi
+  [ "$VALIDATE_CALLED" = "NO" ] || fail "staging backup reached restore validation"
 )
 
 test_manual_restore_preflight_failure_restarts_infrastructure() {
@@ -1608,6 +1820,70 @@ test_run_migrations_marks_mutation_before_compose() (
   fi
   [ "$DATABASE_MUTATION_STARTED" = "YES" ] || fail "database mutation boundary was not set before migration execution"
 )
+
+test_post_migration_audit_never_mutates_published_backup() {
+  local mode
+  for mode in table-write-failure checksum-write-failure success; do
+    (
+      # shellcheck source=../deploy-git.sh
+      source "$ROOT_DIR/deploy-git.sh"
+      temp_dir="$(mktemp -d)"
+      trap 'rm -rf "$temp_dir"' EXIT
+      APP_DIR="$temp_dir"
+      DEPLOY_RUN_ID="migration-audit-$mode"
+      CURRENT_BACKUP_DIR="backups/git-deploy/contract"
+      target_revision="2222222222222222222222222222222222222222"
+      mkdir -p "$APP_DIR/.deploy"
+      cd "$APP_DIR"
+      prepare_managed_backup_roots
+      backup_dir="$APP_DIR/$CURRENT_BACKUP_DIR"
+      create_complete_format_three_backup_fixture "$backup_dir"
+      find "$backup_dir" -maxdepth 1 -type f -exec sha256sum {} \; | LC_ALL=C sort > "$temp_dir/backup.before"
+      verify_backup_checksums "$backup_dir" || fail "test rollback backup is invalid before audit"
+
+      write_table_audit() {
+        printf 'projects\t3\n' > "$1"
+        [ "$mode" != "table-write-failure" ]
+      }
+      write_foreign_key_audit() { printf 'project_members.fk\t0\n' > "$1"; }
+      verify_table_counts_preserved() { printf 'projects\t3\t3\t0\n' > "$3"; }
+      if [ "$mode" = "checksum-write-failure" ]; then
+        write_migration_audit_checksums() {
+          printf 'partial checksum\n' > "$1/checksums.sha256.tmp.injected"
+          return 1
+        }
+      fi
+
+      if [ "$mode" = "success" ]; then
+        publish_post_migration_audit "$target_revision" || fail "valid independent migration audit was not published"
+      elif publish_post_migration_audit "$target_revision" >/dev/null 2>&1; then
+        fail "injected $mode was accepted"
+      fi
+
+      find "$backup_dir" -maxdepth 1 -type f -exec sha256sum {} \; | LC_ALL=C sort > "$temp_dir/backup.after"
+      cmp -s "$temp_dir/backup.before" "$temp_dir/backup.after" || \
+        fail "$mode changed the published rollback backup"
+      verify_backup_checksums "$backup_dir" || fail "$mode invalidated the published rollback backup"
+      for file in table-counts.after.tsv foreign-keys.after.tsv table-count-deltas.tsv; do
+        [ ! -e "$backup_dir/$file" ] || fail "$mode wrote post-migration data into the rollback backup"
+      done
+      [ -z "$(find "$APP_DIR/backups/git-deploy-staging" -mindepth 1 -maxdepth 1 -print -quit)" ] || \
+        fail "$mode left the current audit staging directory"
+
+      audit_dir="$APP_DIR/backups/git-deploy-audits/contract"
+      if [ "$mode" = "success" ]; then
+        [ -d "$audit_dir" ] || fail "independent migration audit directory is missing"
+        verify_migration_audit "$audit_dir" "$CURRENT_BACKUP_DIR" "$backup_dir" "$target_revision" || \
+          fail "published independent migration audit failed checksum validation"
+        [ "$(cat "$APP_DIR/.deploy/latest_migration_audit")" = 'backups/git-deploy-audits/contract' ] || \
+          fail "latest migration-audit pointer is incorrect"
+      else
+        [ ! -e "$audit_dir" ] || fail "$mode published an incomplete migration audit"
+        [ ! -e "$APP_DIR/.deploy/latest_migration_audit" ] || fail "$mode changed the migration-audit pointer"
+      fi
+    )
+  done
+}
 
 test_success_revision_commits_before_env_cleanup() (
   # shellcheck source=../deploy-git.sh
@@ -2324,6 +2600,7 @@ test_git_bundle_is_imported_after_target_binding
 test_exact_table_count_gate
 test_foreign_key_orphan_gate
 test_backup_source_revision_and_key_binding
+test_backup_publication_is_directory_atomic_and_failure_closed
 test_runtime_revision_follows_exact_database_migrations
 test_restore_candidate_uses_complete_backup_environment
 test_restore_runtime_never_builds_source_images
@@ -2347,9 +2624,11 @@ test_code_only_rollback_requires_exact_database_manifest
 test_incomplete_restore_marker_blocks_ordinary_deploy
 test_deploy_checks_incomplete_restore_before_source_import
 test_restore_stops_minio_before_database_mutation
+test_restore_pointer_cannot_reference_backup_staging
 test_manual_restore_preflight_failure_restarts_infrastructure
 test_unexpected_exit_respects_database_mutation_boundary
 test_run_migrations_marks_mutation_before_compose
+test_post_migration_audit_never_mutates_published_backup
 test_success_revision_commits_before_env_cleanup
 test_workflow_runs_protected_image_cleanup_after_deploy
 test_workflow_resolves_one_immutable_commit_for_all_jobs

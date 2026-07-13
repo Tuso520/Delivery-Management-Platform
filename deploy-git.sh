@@ -762,6 +762,7 @@ validate_env() {
   require_command gzip
   require_command tar
   require_command find
+  require_command stat
   prepare_integration_secret_key || err "integration secret encryption key preflight failed"
   local required_vars=(
     MYSQL_ROOT_PASSWORD MYSQL_DATABASE MYSQL_USER MYSQL_USER_PASSWORD
@@ -1813,6 +1814,29 @@ minio_running_container_id() {
   printf '%s\n' "$container_id"
 }
 
+wait_minio_healthy() {
+  local expected_container_id="${1:-}"
+  local remaining=60 container_id state_record running health extra
+  while [ "$remaining" -gt 0 ]; do
+    container_id="$(minio_running_container_id 2>/dev/null || true)"
+    if [ -n "$container_id" ]; then
+      if [ -n "$expected_container_id" ] && [ "$container_id" != "$expected_container_id" ]; then
+        warn "MinIO container identity changed while restoring the backup source"
+        return 1
+      fi
+      state_record="$(docker inspect "$container_id" --format '{{printf "%t\t" .State.Running}}{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' 2>/dev/null || true)"
+      IFS=$'\t' read -r running health extra <<< "$state_record"
+      if [ "$running" = "true" ] && [ "$health" = "healthy" ] && [ -z "$extra" ]; then
+        return 0
+      fi
+    fi
+    remaining=$((remaining - 1))
+    sleep 2
+  done
+  warn "MinIO did not return to a healthy state after backup"
+  return 1
+}
+
 minio_volume_name() {
   local container_id="${1:-}"
   local mount_record mount_type volume_name extra
@@ -1832,8 +1856,14 @@ minio_volume_name() {
 }
 
 verified_minio_backup_volume() {
-  local container_id state_record running health extra volume_name
-  container_id="$(minio_running_container_id)" || {
+  local container_id="${1:-}" state_record running health extra volume_name
+  if [ -z "$container_id" ]; then
+    container_id="$(minio_running_container_id)" || {
+      warn "MinIO container is not running; refusing an unpaired database-only backup"
+      return 1
+    }
+  fi
+  [ -n "$container_id" ] || {
     warn "MinIO container is not running; refusing an unpaired database-only backup"
     return 1
   }
@@ -1851,13 +1881,109 @@ verified_minio_backup_volume() {
   printf '%s\n' "$volume_name"
 }
 
+prepare_managed_backup_roots() {
+  local backups_root="$APP_DIR/backups"
+  local published_root="$backups_root/git-deploy"
+  local staging_root="$backups_root/git-deploy-staging"
+  local audit_root="$backups_root/git-deploy-audits"
+  local backups_canonical published_parent staging_parent audit_parent published_device staging_device audit_device path
+  for path in "$backups_root" "$published_root" "$staging_root" "$audit_root"; do
+    if [ -L "$path" ]; then
+      warn "managed backup path is a symbolic link: $path"
+      return 1
+    fi
+    if [ -e "$path" ]; then
+      [ -d "$path" ] || {
+        warn "managed backup path is not a directory: $path"
+        return 1
+      }
+    else
+      mkdir -- "$path" || return 1
+      chmod 700 "$path" || return 1
+    fi
+  done
+  backups_canonical="$(cd "$backups_root" && pwd -P)" || return 1
+  published_parent="$(cd "$published_root/.." && pwd -P)" || return 1
+  staging_parent="$(cd "$staging_root/.." && pwd -P)" || return 1
+  audit_parent="$(cd "$audit_root/.." && pwd -P)" || return 1
+  [ "$published_parent" = "$backups_canonical" ] && \
+    [ "$staging_parent" = "$backups_canonical" ] && \
+    [ "$audit_parent" = "$backups_canonical" ] || {
+    warn "managed backup roots do not share the expected parent directory"
+    return 1
+  }
+  published_device="$(stat -c '%d' "$published_root")" || return 1
+  staging_device="$(stat -c '%d' "$staging_root")" || return 1
+  audit_device="$(stat -c '%d' "$audit_root")" || return 1
+  [ "$published_device" = "$staging_device" ] && [ "$published_device" = "$audit_device" ] || {
+    warn "backup staging, published and audit roots are not on the same filesystem"
+    return 1
+  }
+}
+
+cleanup_failed_backup_staging() {
+  local staging_dir="$1"
+  local staging_root="$APP_DIR/backups/git-deploy-staging"
+  local canonical_root canonical_dir
+  [ -d "$staging_root" ] && [ ! -L "$staging_root" ] || return 1
+  [ -d "$staging_dir" ] && [ ! -L "$staging_dir" ] || return 1
+  canonical_root="$(cd "$staging_root" && pwd -P)" || return 1
+  canonical_dir="$(cd "$staging_dir" && pwd -P)" || return 1
+  [ "${canonical_dir%/*}" = "$canonical_root" ] || return 1
+  rm -rf -- "$canonical_dir" || return 1
+  log "removed incomplete backup staging directory: ${canonical_dir##*/}"
+}
+
+verified_tar_helper_image_id() {
+  local image_reference="$1"
+  local expected_version="$2"
+  local identity image_id title version extra
+  identity="$(docker image inspect "$image_reference" \
+    --format '{{.Id}}{{printf "\t"}}{{index .Config.Labels "org.opencontainers.image.title"}}{{printf "\t"}}{{index .Config.Labels "org.opencontainers.image.version"}}' 2>/dev/null)" || {
+    warn "local release helper image is unavailable: $image_reference"
+    return 1
+  }
+  IFS=$'\t' read -r image_id title version extra <<< "$identity"
+  [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+  [ "$title" = "delivery-platform-backend" ] || return 1
+  [ "$version" = "$expected_version" ] || return 1
+  [ -z "$extra" ] || return 1
+  docker run --rm --network none --read-only --user 0:0 \
+    --entrypoint /bin/sh "$image_id" \
+    -c '[ "$(id -u)" = "0" ] && command -v tar >/dev/null && command -v gzip >/dev/null && command -v find >/dev/null' \
+    >/dev/null 2>&1 || {
+      warn "local release helper image does not provide the required archive tools"
+      return 1
+    }
+  printf '%s\n' "$image_id"
+}
+
+retained_backend_helper_image_id() {
+  local backup_dir="$1"
+  local service tag image_id title version extra found=""
+  while IFS=$'\t' read -r service tag image_id title version extra; do
+    [ "$service" = "backend" ] || continue
+    [ -z "$found" ] || return 1
+    [ -z "$extra" ] || return 1
+    [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+    found="$image_id"
+  done < "$backup_dir/retained-images.tsv"
+  [ -n "$found" ] || return 1
+  printf '%s\n' "$found"
+}
+
 backup_minio() {
-  local volume_name backup_root backup_dir archive partial
-  volume_name="$(verified_minio_backup_volume)" || return 1
-  backup_root="$(cd "$APP_DIR/backups/git-deploy" && pwd -P)" || return 1
+  local container_id volume_name staging_root backup_dir archive partial stopped_state helper_version helper_image_id
+  local archive_failed="NO" restart_failed="NO"
+  container_id="$(minio_running_container_id)" || {
+    warn "MinIO container is not running; refusing an unpaired database-only backup"
+    return 1
+  }
+  volume_name="$(verified_minio_backup_volume "$container_id")" || return 1
+  staging_root="$(cd "$APP_DIR/backups/git-deploy-staging" && pwd -P)" || return 1
   backup_dir="$(cd "$CURRENT_BACKUP_DIR" && pwd -P)" || return 1
-  [ "${backup_dir%/*}" = "$backup_root" ] || {
-    warn "MinIO backup destination is outside the managed backup directory"
+  [ "${backup_dir%/*}" = "$staging_root" ] || {
+    warn "MinIO backup destination is outside the managed staging directory"
     return 1
   }
   archive="$backup_dir/minio.tar.gz"
@@ -1866,13 +1992,49 @@ backup_minio() {
     warn "MinIO backup archive destination already exists"
     return 1
   }
-  log "backing up MinIO volume: $volume_name"
-  if ! docker run --rm \
-    -v "${volume_name}:/data:ro" \
-    -v "${backup_dir}:/backup" \
-    alpine sh -c 'tar czf /backup/minio.tar.gz.part -C /data .'; then
+  helper_version="$(release_id)" || return 1
+  helper_image_id="$(verified_tar_helper_image_id \
+    "delivery-platform-backend:$helper_version" "$helper_version")" || {
+    warn "MinIO backup helper preflight failed before storage shutdown"
+    return 1
+  }
+  log "stopping MinIO before backing up raw volume: $volume_name"
+  if ! compose stop minio >/dev/null 2>&1; then
+    warn "MinIO could not be stopped safely; refusing to read its raw volume"
+    archive_failed="YES"
+  else
+    stopped_state="$(docker inspect "$container_id" --format '{{.State.Running}}' 2>/dev/null || true)"
+    if [ "$stopped_state" != "false" ]; then
+      warn "MinIO still appears to be running after stop; refusing to read its raw volume"
+      archive_failed="YES"
+    else
+      log "backing up stopped MinIO volume: $volume_name"
+      if ! docker run --rm \
+        --network none \
+        --user 0:0 \
+        --entrypoint /bin/sh \
+        -v "${volume_name}:/data:ro" \
+        -v "${backup_dir}:/backup" \
+        "$helper_image_id" -c 'tar czf /backup/minio.tar.gz.part -C /data .'; then
+        warn "MinIO backup failed; the staged paired backup will not be published"
+        archive_failed="YES"
+      fi
+    fi
+  fi
+
+  # Restore availability even when stop verification or archiving fails. A
+  # non-zero start result is still a hard failure if health later looks good.
+  if ! compose start minio >/dev/null 2>&1; then
+    warn "MinIO could not be restarted after the backup attempt"
+    restart_failed="YES"
+  fi
+  if ! wait_minio_healthy "$container_id"; then
+    restart_failed="YES"
+  fi
+
+  if [ "$archive_failed" = "YES" ] || [ "$restart_failed" = "YES" ]; then
     rm -f -- "$partial"
-    warn "MinIO backup failed; the paired backup remains incomplete and will not be published"
+    warn "MinIO backup attempt did not complete safely; no paired backup will be published"
     return 1
   fi
   if [ ! -s "$partial" ] || ! tar -tzf "$partial" >/dev/null; then
@@ -1882,20 +2044,14 @@ backup_minio() {
   fi
   mv -f -- "$partial" "$archive" || return 1
   tar -tzf "$archive" >/dev/null || return 1
+  log "MinIO backup completed and the source container is healthy"
 }
 
-create_backup() {
-  local stamp id source_revision source_id target_revision runtime_id key_fingerprint source_env_file
+populate_backup_staging() {
+  local source_revision="$1"
+  local target_revision="$2"
+  local runtime_id key_fingerprint source_env_file
   local runtime_config runtime_services runtime_config_with_images runtime_services_with_images
-  source_env
-  rotate_backups || return 1
-  stamp="$(date +%Y%m%d_%H%M%S)"
-  id="$(release_id)"
-  source_revision="$(deployment_data_revision)" || return 1
-  source_id="${source_revision:0:12}"
-  target_revision="$(git rev-parse --verify HEAD)" || return 1
-  CURRENT_BACKUP_DIR="backups/git-deploy/${stamp}-${source_id}-to-${id}"
-  mkdir -p "$CURRENT_BACKUP_DIR" || return 1
   chmod 700 "$CURRENT_BACKUP_DIR" || return 1
   printf '3\n' > "$CURRENT_BACKUP_DIR/backup-format-version" || return 1
   select_backup_runtime_revision "$source_revision" "$target_revision" "$CURRENT_BACKUP_DIR" || return 1
@@ -1940,7 +2096,102 @@ create_backup() {
     warn "automatic paired rollback was requested, but no code revision exactly matches the current database migration state"
     return 1
   fi
-  printf '%s\n' "$CURRENT_BACKUP_DIR" > .deploy/latest_backup || return 1
+  validate_backup_for_publish "$CURRENT_BACKUP_DIR" || return 1
+}
+
+validate_backup_for_publish() {
+  local backup_dir="$1"
+  local format revision previous_revision target_revision revision_candidate selection paired migration_state
+  local compose_files release_id key_fingerprint actual_fingerprint
+  backup_is_rotation_eligible "$backup_dir" || {
+    warn "staged backup failed the v3 checksum or archive gate"
+    return 1
+  }
+  format="$(read_single_line_file "$backup_dir/backup-format-version")" || return 1
+  [ "$format" = "3" ] || return 1
+  revision="$(read_single_line_file "$backup_dir/git-revision.txt")" || return 1
+  previous_revision="$(read_single_line_file "$backup_dir/previous-successful-revision.txt")" || return 1
+  target_revision="$(read_single_line_file "$backup_dir/target-git-revision.txt")" || return 1
+  for revision_candidate in "$revision" "$previous_revision" "$target_revision"; do
+    [[ "$revision_candidate" =~ ^[0-9a-f]{40}$ ]] || return 1
+    git cat-file -e "${revision_candidate}^{commit}" 2>/dev/null || return 1
+  done
+  selection="$(read_single_line_file "$backup_dir/runtime-selection.txt")" || return 1
+  paired="$(read_single_line_file "$backup_dir/paired-restore.status")" || return 1
+  migration_state="$(read_single_line_file "$backup_dir/database-migration-state.txt")" || return 1
+  case "$selection:$paired" in
+    source:YES|target:YES|recovery:YES)
+      [ "$migration_state" = "CLEAN" ] || return 1
+      ;;
+    unavailable:NO)
+      case "$migration_state" in
+        CLEAN|UNSAFE_UNFINISHED_MIGRATION) ;;
+        *) return 1 ;;
+      esac
+      ;;
+    *) return 1 ;;
+  esac
+  compose_files="$(read_single_line_file "$backup_dir/compose-files.txt")" || return 1
+  validate_compose_file_list "$compose_files" || return 1
+  read_env_assignment "$backup_dir/env.snapshot" RELEASE_ID || return 1
+  release_id="$DOTENV_VALUE"
+  [ "$release_id" = "${revision:0:12}" ] || return 1
+  read_env_assignment "$backup_dir/env.snapshot" INTEGRATION_SECRET_ENCRYPTION_KEY || return 1
+  valid_integration_secret_key "$DOTENV_VALUE" || return 1
+  actual_fingerprint="$(integration_secret_key_fingerprint "$DOTENV_VALUE")" || return 1
+  key_fingerprint="$(read_single_line_file "$backup_dir/integration-secret-key.sha256")" || return 1
+  [[ "$key_fingerprint" =~ ^[0-9a-f]{64}$ ]] || return 1
+  [ "$actual_fingerprint" = "$key_fingerprint" ] || return 1
+  validate_retained_runtime_images "$backup_dir" || {
+    warn "staged backup retained-image metadata failed validation"
+    return 1
+  }
+}
+
+create_backup() {
+  local stamp id source_revision source_id target_revision staging_dir final_dir staging_absolute final_absolute
+  source_env
+  prepare_managed_backup_roots || return 1
+  rotate_backups || return 1
+  stamp="$(date +%Y%m%d_%H%M%S)"
+  id="$(release_id)"
+  source_revision="$(deployment_data_revision)" || return 1
+  source_id="${source_revision:0:12}"
+  target_revision="$(git rev-parse --verify HEAD)" || return 1
+  final_dir="backups/git-deploy/${stamp}-${source_id}-to-${id}"
+  staging_dir="backups/git-deploy-staging/${stamp}-${source_id}-to-${id}.stage-${DEPLOY_RUN_ID}-$$"
+  final_absolute="$APP_DIR/$final_dir"
+  staging_absolute="$APP_DIR/$staging_dir"
+  if [ -e "$final_absolute" ] || [ -L "$final_absolute" ]; then
+    warn "refusing to overwrite an existing published backup: $final_dir"
+    return 1
+  fi
+  if [ -e "$staging_absolute" ] || [ -L "$staging_absolute" ]; then
+    warn "backup staging destination already exists: $staging_dir"
+    return 1
+  fi
+  mkdir -- "$staging_absolute" || return 1
+  CURRENT_BACKUP_DIR="$staging_dir"
+  if ! populate_backup_staging "$source_revision" "$target_revision"; then
+    warn "backup staging failed before publication"
+    if cleanup_failed_backup_staging "$staging_absolute"; then
+      CURRENT_BACKUP_DIR=""
+    else
+      warn "incomplete staging was retained for manual inspection: $staging_dir"
+    fi
+    return 1
+  fi
+  if ! mv -T -- "$staging_absolute" "$final_absolute"; then
+    warn "validated backup could not be atomically published"
+    if cleanup_failed_backup_staging "$staging_absolute"; then
+      CURRENT_BACKUP_DIR=""
+    else
+      warn "validated staging was retained for manual inspection: $staging_dir"
+    fi
+    return 1
+  fi
+  CURRENT_BACKUP_DIR="$final_dir"
+  write_revision_file .deploy/latest_backup "$CURRENT_BACKUP_DIR" || return 1
   log "backup saved: $CURRENT_BACKUP_DIR"
 }
 
@@ -2516,6 +2767,140 @@ build_images() {
   compose build backend backend-migrate frontend
 }
 
+migration_audit_required_artifacts() {
+  printf '%s\n' \
+    audit-format-version \
+    backup-path.txt \
+    backup-checksums.sha256.digest \
+    target-git-revision.txt \
+    table-counts.after.tsv \
+    foreign-keys.after.tsv \
+    table-count-deltas.tsv
+}
+
+write_migration_audit_checksums() {
+  local audit_dir="$1"
+  local temporary="$audit_dir/checksums.sha256.tmp.$$" file
+  local -a files=()
+  mapfile -t files < <(migration_audit_required_artifacts)
+  : > "$temporary" || return 1
+  for file in "${files[@]}"; do
+    [ -f "$audit_dir/$file" ] && [ ! -L "$audit_dir/$file" ] || {
+      rm -f "$temporary"
+      return 1
+    }
+    (cd "$audit_dir" && sha256sum -- "$file") >> "$temporary" || {
+      rm -f "$temporary"
+      return 1
+    }
+  done
+  chmod 600 "$temporary" || return 1
+  mv -f "$temporary" "$audit_dir/checksums.sha256" || return 1
+}
+
+migration_audit_checksum_manifest_is_safe() {
+  local audit_dir="$1"
+  local line file required
+  local checksum_line_pattern='^([0-9a-f]{64}) ([ *])([A-Za-z0-9._-]+)$'
+  local -A seen=()
+  while IFS= read -r line || [ -n "$line" ]; do
+    [[ "$line" =~ $checksum_line_pattern ]] || return 1
+    file="${BASH_REMATCH[3]}"
+    case "$file" in
+      audit-format-version|backup-path.txt|backup-checksums.sha256.digest|target-git-revision.txt|\
+      table-counts.after.tsv|foreign-keys.after.tsv|table-count-deltas.tsv) ;;
+      *) return 1 ;;
+    esac
+    [ -z "${seen[$file]:-}" ] || return 1
+    [ -f "$audit_dir/$file" ] && [ ! -L "$audit_dir/$file" ] || return 1
+    seen["$file"]="YES"
+  done < "$audit_dir/checksums.sha256"
+  while IFS= read -r required; do
+    [ "${seen[$required]:-}" = "YES" ] || return 1
+  done < <(migration_audit_required_artifacts)
+}
+
+verify_migration_audit() {
+  local audit_dir="$1"
+  local backup_reference="$2"
+  local backup_dir="$3"
+  local target_revision="$4"
+  local format recorded_backup recorded_digest actual_digest recorded_target
+  [ -f "$audit_dir/checksums.sha256" ] && [ ! -L "$audit_dir/checksums.sha256" ] || return 1
+  migration_audit_checksum_manifest_is_safe "$audit_dir" || return 1
+  (cd "$audit_dir" && sha256sum --check --strict checksums.sha256 >/dev/null) || return 1
+  format="$(read_single_line_file "$audit_dir/audit-format-version")" || return 1
+  recorded_backup="$(read_single_line_file "$audit_dir/backup-path.txt")" || return 1
+  recorded_digest="$(read_single_line_file "$audit_dir/backup-checksums.sha256.digest")" || return 1
+  recorded_target="$(read_single_line_file "$audit_dir/target-git-revision.txt")" || return 1
+  [ "$format" = "1" ] || return 1
+  [ "$recorded_backup" = "$backup_reference" ] || return 1
+  [[ "$recorded_digest" =~ ^[0-9a-f]{64}$ ]] || return 1
+  actual_digest="$(sha256sum "$backup_dir/checksums.sha256" | awk '{print $1}')" || return 1
+  [ "$recorded_digest" = "$actual_digest" ] || return 1
+  [ "$recorded_target" = "$target_revision" ] || return 1
+}
+
+populate_migration_audit_staging() {
+  local audit_dir="$1"
+  local backup_reference="$2"
+  local backup_dir="$3"
+  local target_revision="$4"
+  local backup_digest
+  backup_digest="$(sha256sum "$backup_dir/checksums.sha256" | awk '{print $1}')" || return 1
+  [[ "$backup_digest" =~ ^[0-9a-f]{64}$ ]] || return 1
+  printf '1\n' > "$audit_dir/audit-format-version" || return 1
+  printf '%s\n' "$backup_reference" > "$audit_dir/backup-path.txt" || return 1
+  printf '%s\n' "$backup_digest" > "$audit_dir/backup-checksums.sha256.digest" || return 1
+  printf '%s\n' "$target_revision" > "$audit_dir/target-git-revision.txt" || return 1
+  write_table_audit "$audit_dir/table-counts.after.tsv" || return 1
+  write_foreign_key_audit "$audit_dir/foreign-keys.after.tsv" || return 1
+  verify_table_counts_preserved \
+    "$backup_dir/table-counts.before.tsv" \
+    "$audit_dir/table-counts.after.tsv" \
+    "$audit_dir/table-count-deltas.tsv" || return 1
+  write_migration_audit_checksums "$audit_dir" || return 1
+  verify_migration_audit "$audit_dir" "$backup_reference" "$backup_dir" "$target_revision" || return 1
+}
+
+publish_post_migration_audit() {
+  local target_revision="$1"
+  local backup_root audit_root backup_dir backup_name staging_dir staging_absolute final_dir final_absolute
+  [[ "$target_revision" =~ ^[0-9a-f]{40}$ ]] || return 1
+  prepare_managed_backup_roots || return 1
+  backup_root="$(cd "$APP_DIR/backups/git-deploy" && pwd -P)" || return 1
+  audit_root="$(cd "$APP_DIR/backups/git-deploy-audits" && pwd -P)" || return 1
+  backup_dir="$(resolve_managed_backup_reference "$backup_root" "$CURRENT_BACKUP_DIR")" || return 1
+  verify_backup_checksums "$backup_dir" || return 1
+  backup_name="${backup_dir##*/}"
+  staging_dir="backups/git-deploy-staging/audit-${backup_name}.stage-${DEPLOY_RUN_ID}-$$"
+  staging_absolute="$APP_DIR/$staging_dir"
+  final_dir="backups/git-deploy-audits/$backup_name"
+  final_absolute="$audit_root/$backup_name"
+  if [ -e "$staging_absolute" ] || [ -L "$staging_absolute" ] || \
+     [ -e "$final_absolute" ] || [ -L "$final_absolute" ]; then
+    warn "migration audit staging or published destination already exists"
+    return 1
+  fi
+  mkdir -- "$staging_absolute" || return 1
+  chmod 700 "$staging_absolute" || return 1
+  if ! populate_migration_audit_staging \
+    "$staging_absolute" "$CURRENT_BACKUP_DIR" "$backup_dir" "$target_revision"; then
+    warn "post-migration audit failed before publication; rollback backup remains unchanged"
+    cleanup_failed_backup_staging "$staging_absolute" || \
+      warn "incomplete migration audit staging was retained for manual inspection: $staging_dir"
+    return 1
+  fi
+  if ! mv -T -- "$staging_absolute" "$final_absolute"; then
+    warn "validated post-migration audit could not be atomically published"
+    cleanup_failed_backup_staging "$staging_absolute" || \
+      warn "validated migration audit staging was retained for manual inspection: $staging_dir"
+    return 1
+  fi
+  write_revision_file .deploy/latest_migration_audit "$final_dir" || return 1
+  log "post-migration audit saved independently: $final_dir"
+}
+
 run_migrations() {
   local target_revision
   log "running guarded Prisma migration and idempotent seed"
@@ -2523,13 +2908,7 @@ run_migrations() {
   target_revision="$(git rev-parse --verify HEAD)" || return 1
   write_revision_file .deploy/database-mutation-target "$target_revision" || return 1
   compose run --rm backend-migrate || return 1
-  write_table_audit "$CURRENT_BACKUP_DIR/table-counts.after.tsv" || return 1
-  write_foreign_key_audit "$CURRENT_BACKUP_DIR/foreign-keys.after.tsv" || return 1
-  verify_table_counts_preserved \
-    "$CURRENT_BACKUP_DIR/table-counts.before.tsv" \
-    "$CURRENT_BACKUP_DIR/table-counts.after.tsv" \
-    "$CURRENT_BACKUP_DIR/table-count-deltas.tsv" || return 1
-  write_backup_checksums "$CURRENT_BACKUP_DIR" || return 1
+  publish_post_migration_audit "$target_revision" || return 1
 }
 
 check_url() {
@@ -2846,18 +3225,30 @@ restore_data_from_backup() {
     return 1
   }
   source_env
-  local backup volume_name validation_prefix restored_counts restored_foreign_keys restored_migrations restored_migration_state restore_revision
-  backup="$BACKUP_PATH"
-  if [ -z "$backup" ]; then
-    backup="$(cat .deploy/latest_backup 2>/dev/null || true)"
-  fi
-  if [ -z "$backup" ] || [ ! -d "$backup" ]; then
-    warn "backup directory not found: ${backup:-empty}"
+  local backup backup_reference backup_root volume_name validation_prefix restored_counts restored_foreign_keys restored_migrations restored_migration_state restore_revision retained_helper_image restore_helper_image
+  if [ ! -d "$APP_DIR/backups/git-deploy" ] || [ -L "$APP_DIR/backups/git-deploy" ]; then
+    warn "published backup root is missing or unsafe"
     return 1
   fi
-  backup="$(cd "$backup" && pwd)" || return 1
+  backup_root="$(cd "$APP_DIR/backups/git-deploy" && pwd -P)" || return 1
+  backup_reference="$BACKUP_PATH"
+  if [ -z "$backup_reference" ]; then
+    backup_reference="$(read_single_line_file .deploy/latest_backup 2>/dev/null || true)"
+  fi
+  backup="$(resolve_managed_backup_reference "$backup_root" "$backup_reference" 2>/dev/null || true)"
+  if [ -z "$backup" ]; then
+    warn "backup reference is missing, unsafe, or outside the published backup root: ${backup_reference:-empty}"
+    return 1
+  fi
   RESTORED_BACKUP_DIR="$backup"
   validate_backup_for_restore "$backup" || return 1
+  restore_revision="$(read_single_line_file "$backup/git-revision.txt")" || return 1
+  retained_helper_image="$(retained_backend_helper_image_id "$backup")" || return 1
+  restore_helper_image="$(verified_tar_helper_image_id \
+    "$retained_helper_image" "${restore_revision:0:12}")" || {
+    warn "restore helper preflight failed before storage shutdown"
+    return 1
+  }
 
   start_infra || return 1
   quiesce_app compatible || return 1
@@ -2867,7 +3258,6 @@ restore_data_from_backup() {
     return 1
   }
   compose stop minio >/dev/null 2>&1 || return 1
-  restore_revision="$(tr -d '[:space:]' < "$backup/git-revision.txt")" || return 1
   write_revision_file .deploy/database-mutation-target "$restore_revision" || return 1
   write_incomplete_data_restore_marker "$backup" || return 1
   DATABASE_MUTATION_STARTED="YES"
@@ -2882,9 +3272,12 @@ restore_data_from_backup() {
 
   log "restoring MinIO volume: $volume_name"
   docker run --rm \
+    --network none \
+    --user 0:0 \
+    --entrypoint /bin/sh \
     -v "${volume_name}:/data" \
     -v "${backup}:/backup:ro" \
-    alpine sh -c 'find /data -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar xzf /backup/minio.tar.gz -C /data' || return 1
+    "$restore_helper_image" -c 'find /data -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar xzf /backup/minio.tar.gz -C /data' || return 1
   compose up -d minio || return 1
 
   validation_prefix="$APP_DIR/.deploy/restore-validation-${DEPLOY_RUN_ID}"

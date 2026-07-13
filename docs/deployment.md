@@ -91,10 +91,7 @@ Windows PowerShell：
 - `runtime-compose.resolved.yml` 与 `runtime-topology.services`
 - `retained-images.tsv` 与 `restore-images.override.yml`
 - `table-counts.before.tsv`
-- `table-counts.after.tsv`
-- `table-count-deltas.tsv`
 - `foreign-keys.before.tsv`
-- `foreign-keys.after.tsv`
 - `checksums.sha256`
 
 备份目录：
@@ -103,9 +100,19 @@ Windows PowerShell：
 backups/git-deploy/YYYYMMDD_HHMMSS-<source-release>-to-<target-release>/
 ```
 
+备份不会直接写入上述正式目录。每次运行先在同一 `backups/` 文件系统中的 `backups/git-deploy-staging/<run>/` 构建 MySQL、MinIO、运行时元数据和 checksum；只有所有 v3 必需文件、元数据绑定、压缩包和 checksum 全部验证通过后，才用一次目录级原子重命名发布到 `backups/git-deploy/`，随后原子更新 `.deploy/latest_backup`。当前运行在发布前失败时，只清理经路径校验且属于本次运行的 staging 直接子目录；清理校验失败则保留该 staging 供人工取证。脚本绝不因此删除或覆盖既有正式备份。staging 根不参与备份轮换和镜像清理，也不能被 `restore-data` 或 `latest_backup` 当作恢复源。
+
+迁移成功后的 `table-counts.after.tsv`、`foreign-keys.after.tsv` 和 `table-count-deltas.tsv` 不再回写已发布回滚备份。它们与 `backup-path.txt`、原备份 `checksums.sha256` 摘要、目标 revision、`audit-format-version=1` 一起先在 staging 中生成独立 checksum 清单，完整验证后再原子发布为：
+
+```text
+backups/git-deploy-audits/<对应备份目录名>/
+```
+
+随后 `.deploy/latest_migration_audit` 才会原子更新。任何审计文件写入、磁盘、checksum 或发布失败都阻断切换并只影响本次审计 staging；已发布回滚备份保持逐字节不变，其原 checksum 始终可用于失败后的成对恢复。
+
 备份格式固定为 v3；旧 v2 备份缺少可核验的运行时身份，自动恢复会 fail closed。`git-revision.txt` 记录与迁移前数据库中已完成 Prisma migration 名称和 checksum **完全一致**的可恢复运行时：通常是上一成功版本；若之前的不安全发布已经把数据库前向迁移，则选择与现有 migration 清单完全一致的目标版本，避免把新 schema 交给旧代码。两者都不匹配或存在未完成 migration 时，备份仍保存数据，但 `paired-restore.status=NO`，只能用于人工数据取证，不会执行自动破坏性恢复。`previous-successful-revision.txt` 和 `target-git-revision.txt` 分别保留来源与目标审计事实。
 
-MinIO 备份必须来自处于 `running` 且 `healthy` 状态的容器，并且 `/data` 只能解析为一个有效的命名卷。归档先写入 `minio.tar.gz.part`，在宿主机通过 `tar -tzf` 后才原子发布为 `minio.tar.gz`；归档命令、健康检查、卷解析或校验任一失败都会中止部署，绝不生成空文件继续数据库迁移。失败诊断会记录文件系统容量、各备份目录大小、`docker system df`、MinIO 容器状态和卷身份，但不记录环境变量或密钥。
+MinIO 备份必须来自处于 `running` 且 `healthy` 状态的容器，并且 `/data` 只能解析为一个有效的命名卷。脚本不再运行可变的裸 `alpine` helper；它在任何存储停机前确认本次已构建的 `delivery-platform-backend:<release>` 已存在于本机，严格核对其 immutable Image ID 与 OCI title/version，并以显式 `0:0` 用户在无网络、只读容器中预检 `tar`、`gzip`、`find`。后续归档同样以 `0:0` 用户只引用该 Image ID、只读挂载 `/data`，并把 staging 目录可写挂载到 `/backup`，因此既能读取受限卷、写出归档，也不会在 MinIO 停止后访问镜像仓库。API、前端和 Worker 已静默后，脚本会停止 MinIO 并再次确认原容器确实不再运行，只有此时才允许只读挂载原始命名卷执行 tar。无论 stop 后检查或 tar 成功、失败，脚本都会尝试启动同一个 MinIO 容器并等待其重新达到 `running` 且 `healthy`；helper、本地镜像、stop、停止状态确认、归档、restart 或恢复健康任一失败都 fail closed，不发布备份，也不进入数据库迁移。归档只在 staging 中写入 `minio.tar.gz.part`，MinIO 恢复健康且宿主机 `tar -tzf` 通过后才改名为 `minio.tar.gz`。绝不生成空文件继续部署。失败诊断会记录文件系统容量、各正式备份目录大小、`docker system df`、MinIO 容器状态和卷身份，但不记录环境变量或密钥。
 
 `BACKUP_RETENTION_DAYS` 默认为 14，必须是非负整数。创建新备份前只会清理超过保留期、格式为 v3、checksum 与 MySQL/MinIO 压缩包均验证通过，且未被 `latest_backup`、当前备份或未完成恢复标记引用的直接子目录；损坏、未校验、旧格式或保护指针异常时一律保留并 fail safe。缩短保留期不能修复 MinIO 不健康或卷丢失，遇到备份失败应先在服务器执行：
 
@@ -129,9 +136,9 @@ bash deploy-git.sh prune-unused-images
 
 该清理命令不新增环境开关或 Secret，沿用既有 `APP_DIR`、`COMPOSE_FILES`、`COMPOSE_PROJECT_NAME` 和服务器 `.env` 解析 Compose。`BACKUP_RETENTION_DAYS` 只控制已严格校验备份目录的保留期，不扩大镜像候选范围，也不会放宽当前发布、上一发布、容器或备份镜像的保护条件。
 
-脚本对每张表执行精确 `COUNT(*)`，迁移后拒绝旧表消失或行数减少，并逐条检查 `information_schema.KEY_COLUMN_USAGE` 中的外键是否存在孤儿记录；任何 SQL 或报告写入失败都会阻断切换。数据库、MinIO、完整环境、revision、源 Compose 拓扑、不可变镜像 ID/OCI release label 和审计报告均进入 checksum 清单。上一运行版本没有不可变 tag 时，只允许从仍存在且 release label 匹配的运行容器捕获精确 Image ID 并补 tag，禁止通过重新构建旧 Dockerfile 伪造回滚镜像。
+脚本对每张表执行精确 `COUNT(*)`，迁移后拒绝旧表消失或行数减少，并逐条检查 `information_schema.KEY_COLUMN_USAGE` 中的外键是否存在孤儿记录；任何 SQL 或报告写入失败都会阻断切换。数据库、MinIO、完整环境、revision、源 Compose 拓扑、不可变镜像 ID/OCI release label 和迁移前审计进入回滚备份 checksum；迁移后审计进入独立 v1 audit checksum，并绑定原备份摘要。上一运行版本没有不可变 tag 时，只允许从仍存在且 release label 匹配的运行容器捕获精确 Image ID 并补 tag，禁止通过重新构建旧 Dockerfile 伪造回滚镜像。
 
-`restore-data` 是显式破坏性操作，必须同时提供 `CONFIRM_RESTORE=YES` 和备份路径。脚本会在任何 `DROP DATABASE` 前重新从 `git-revision.txt` 解包并解析源 Compose，核对 Worker 拓扑、完整环境中的 release id、集成密钥指纹、不可变镜像 tag/Image ID/OCI label、所有 checksum 及 MinIO 压缩包，并确认 MinIO 已成功停止、数据卷可定位。随后原子写入 database mutation marker 和 `.deploy/data-restore-incomplete` 才允许替换数据库；后者绑定备份绝对路径、checksum 清单摘要和 revision，跨进程保留恢复未完成事实。导入后要求表计数、Prisma migration 清单与备份完全一致，外键孤儿为零且既有密文通过 `--verify` 真正解密；再 checkout 已验证 revision，加载 checksummed image override，并使用 `--no-build` 启动。破坏前预检失败会恢复原运行时；破坏阶段开始后的任一失败都会保持停服，不会用不匹配代码或现场重建镜像启动已恢复数据。
+`restore-data` 是显式破坏性操作，必须同时提供 `CONFIRM_RESTORE=YES` 和备份路径。显式路径或 `.deploy/latest_backup` 都必须解析为 `backups/git-deploy/` 下已发布的直接子目录；staging、目录外路径、符号链接或缺失引用会在读取备份内容前被拒绝。脚本会在任何 `DROP DATABASE` 前重新从 `git-revision.txt` 解包并解析源 Compose，核对 Worker 拓扑、完整环境中的 release id、集成密钥指纹、不可变镜像 tag/Image ID/OCI label、所有 checksum 及 MinIO 压缩包；恢复 helper 固定为已通过 `retained-images.tsv` 校验的 backend Image ID，并在 MinIO 停止前完成本地工具预检，恢复阶段不会临时拉取镜像。随后确认 MinIO 已成功停止、数据卷可定位，原子写入 database mutation marker 和 `.deploy/data-restore-incomplete` 才允许替换数据库；后者绑定备份绝对路径、checksum 清单摘要和 revision，跨进程保留恢复未完成事实。导入后要求表计数、Prisma migration 清单与备份完全一致，外键孤儿为零且既有密文通过 `--verify` 真正解密；再 checkout 已验证 revision，加载 checksummed image override，并使用 `--no-build` 启动。破坏前预检失败会恢复原运行时；破坏阶段开始后的任一失败都会保持停服，不会用不匹配代码或现场重建镜像启动已恢复数据。
 
 `.deploy/data-restore-incomplete` 存在时，普通 deploy、backup 和 `rollback-code` 在源码或环境切换前即被阻断，也不会自动启动应用。恢复只能用标记绑定的原 `BACKUP_PATH` 重新执行 `CONFIRM_RESTORE=YES bash deploy-git.sh restore-data`；更换路径、revision 或 checksum 清单均会拒绝。只有 MySQL 与 MinIO 恢复、精确表计数、外键、Prisma migration 和密文解密全部验证通过后才清除此标记。
 
