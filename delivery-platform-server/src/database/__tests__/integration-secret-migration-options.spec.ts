@@ -7,6 +7,7 @@ describe('integration secret migration options', () => {
   it('defaults to a read-only dry run', () => {
     expect(parseIntegrationSecretMigrationOptions([])).toEqual({
       apply: false,
+      verify: false,
       actorUserId: undefined,
       actorUsername: undefined,
       help: false,
@@ -26,6 +27,7 @@ describe('integration secret migration options', () => {
     ).toThrow('Use only one of --actor-user-id or --actor-username');
     expect(parseIntegrationSecretMigrationOptions(['--apply', '--actor-user-id=user-1'])).toEqual({
       apply: true,
+      verify: false,
       actorUserId: 'user-1',
       actorUsername: undefined,
       help: false,
@@ -36,6 +38,22 @@ describe('integration secret migration options', () => {
     expect(parseIntegrationSecretMigrationOptions(['--help']).help).toBe(true);
     expect(parseIntegrationSecretMigrationOptions(['-h']).help).toBe(true);
     expect(INTEGRATION_SECRET_MIGRATION_HELP).toContain('Default mode is DRY_RUN');
+  });
+
+  it('supports strict read-only verification', () => {
+    expect(parseIntegrationSecretMigrationOptions(['--verify'])).toEqual({
+      apply: false,
+      verify: true,
+      actorUserId: undefined,
+      actorUsername: undefined,
+      help: false,
+    });
+    expect(() =>
+      parseIntegrationSecretMigrationOptions(['--apply', '--verify', '--actor-username=admin']),
+    ).toThrow('--apply and --verify are mutually exclusive');
+    expect(() =>
+      parseIntegrationSecretMigrationOptions(['--verify', '--actor-username=admin']),
+    ).toThrow('--verify does not accept a migration actor');
   });
 
   it('rejects unknown or empty arguments', () => {

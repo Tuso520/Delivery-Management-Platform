@@ -31,6 +31,12 @@ LOCK_DIR=""
 CURRENT_BACKUP_DIR=""
 DEPLOY_ACTIVE="NO"
 DEPLOY_SUCCEEDED="NO"
+INTEGRATION_SECRET_KEY_SOURCE="existing"
+PREPARED_INTEGRATION_SECRET_KEY=""
+DECLARED_COMPOSE_SERVICES=""
+APPLICATION_SERVICES=()
+WORKER_SERVICES=()
+APP_SWITCH_STARTED="NO"
 
 log() { echo -e "${GREEN}[deploy]${NC} $*"; }
 warn() { echo -e "${YELLOW}[warn]${NC} $*"; }
@@ -98,6 +104,45 @@ detect_compose() {
 
 compose() {
   "${COMPOSE[@]}" "${COMPOSE_ARGS[@]}" "$@"
+}
+
+compose_service_declared() {
+  local service="$1"
+  grep -Fxq -- "$service" <<< "$DECLARED_COMPOSE_SERVICES"
+}
+
+load_app_topology() {
+  local policy="${1:-required}"
+  local has_file_worker="NO"
+  local has_outbox_worker="NO"
+  DECLARED_COMPOSE_SERVICES="$(compose config --services)" || return 1
+  compose_service_declared backend || {
+    warn "backend service is missing from the Compose topology"
+    return 1
+  }
+  compose_service_declared frontend || {
+    warn "frontend service is missing from the Compose topology"
+    return 1
+  }
+  compose_service_declared file-worker && has_file_worker="YES"
+  compose_service_declared outbox-worker && has_outbox_worker="YES"
+
+  WORKER_SERVICES=()
+  if [ "$has_file_worker" = "YES" ]; then
+    WORKER_SERVICES+=(file-worker)
+  fi
+  if [ "$has_outbox_worker" = "YES" ]; then
+    WORKER_SERVICES+=(outbox-worker)
+  fi
+  if [ "$policy" != "available" ] && [ "$has_file_worker" != "$has_outbox_worker" ]; then
+    warn "partial worker topology detected; file-worker and outbox-worker must be declared together"
+    return 1
+  fi
+  if [ "$policy" = "required" ] && [ "${#WORKER_SERVICES[@]}" -ne 2 ]; then
+    warn "target topology requires file-worker and outbox-worker"
+    return 1
+  fi
+  APPLICATION_SERVICES=(backend "${WORKER_SERVICES[@]}" frontend)
 }
 
 release_id() {
@@ -206,6 +251,136 @@ source_env() {
   set +a
 }
 
+valid_integration_secret_key() {
+  local value="$1"
+  local decoded_length canonical
+  [ -n "$value" ] || return 1
+  decoded_length="$(printf '%s' "$value" | openssl base64 -d -A 2>/dev/null | wc -c | tr -d '[:space:]')" || return 1
+  [ "$decoded_length" = "32" ] || return 1
+  canonical="$(printf '%s' "$value" | openssl base64 -d -A 2>/dev/null | openssl base64 -A 2>/dev/null)" || return 1
+  [ "$canonical" = "$value" ]
+}
+
+read_previous_integration_secret_key() {
+  local file="$APP_DIR/.deploy/env.before-deploy"
+  [ -f "$file" ] || return 1
+  (
+    unset INTEGRATION_SECRET_ENCRYPTION_KEY
+    set -a
+    # shellcheck disable=SC1090
+    . "$file" >/dev/null 2>&1
+    set +a
+    printf '%s' "${INTEGRATION_SECRET_ENCRYPTION_KEY:-}"
+  )
+}
+
+prepare_integration_secret_key() {
+  local configured="${INTEGRATION_SECRET_ENCRYPTION_KEY:-}"
+  local previous=""
+  require_command openssl
+
+  if [ -z "$configured" ] || [[ "$configured" == CHANGE_ME* ]]; then
+    previous="$(read_previous_integration_secret_key 2>/dev/null || true)"
+    if [ -n "$previous" ] && [[ "$previous" != CHANGE_ME* ]]; then
+      valid_integration_secret_key "$previous" || {
+        warn "the pre-deployment INTEGRATION_SECRET_ENCRYPTION_KEY is not a canonical 32-byte Base64 value"
+        return 1
+      }
+      configured="$previous"
+      INTEGRATION_SECRET_KEY_SOURCE="restored"
+    else
+      configured="$(openssl rand -base64 32 | tr -d '\r\n')" || return 1
+      INTEGRATION_SECRET_KEY_SOURCE="generated"
+    fi
+  fi
+
+  valid_integration_secret_key "$configured" || {
+    warn "INTEGRATION_SECRET_ENCRYPTION_KEY must be a canonical 32-byte Base64 value"
+    return 1
+  }
+  PREPARED_INTEGRATION_SECRET_KEY="$configured"
+  export INTEGRATION_SECRET_ENCRYPTION_KEY="$configured"
+  export INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME="${INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME:-admin}"
+}
+
+write_env_assignment() {
+  local file="$1"
+  local name="$2"
+  local value="$3"
+  local temporary="${file}.tmp.$$"
+  [ -f "$file" ] || return 1
+  : > "$temporary" || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      "$name="*) ;;
+      *) printf '%s\n' "$line" >> "$temporary" || return 1 ;;
+    esac
+  done < "$file"
+  printf '%s=%s\n' "$name" "$value" >> "$temporary" || return 1
+  chmod 600 "$temporary" || return 1
+  mv -f "$temporary" "$file" || return 1
+}
+
+encrypted_integration_config_count() {
+  local column_count ciphertext_count
+  column_count="$(
+    compose exec -T mysql sh -c \
+      'mysql -N -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" -e "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name=0x696e746567726174696f6e5f636f6e66696773 AND column_name=0x656e637279707465645f636f6e666967;"' \
+      2>/dev/null | tr -d '[:space:]'
+  )" || return 1
+  case "$column_count" in
+    0) printf '0\n'; return 0 ;;
+    1) ;;
+    *) return 1 ;;
+  esac
+  ciphertext_count="$(
+    compose exec -T mysql sh -c \
+      'mysql -N -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" -e "SELECT COUNT(*) FROM integration_configs WHERE encrypted_config IS NOT NULL AND CHAR_LENGTH(encrypted_config) > 0;"' \
+      2>/dev/null | tr -d '[:space:]'
+  )" || return 1
+  [[ "$ciphertext_count" =~ ^[0-9]+$ ]] || return 1
+  printf '%s\n' "$ciphertext_count"
+}
+
+persist_prepared_integration_secret_key() {
+  local ciphertext_count
+  valid_integration_secret_key "$PREPARED_INTEGRATION_SECRET_KEY" || {
+    warn "the prepared integration encryption key is unavailable or invalid"
+    return 1
+  }
+  export INTEGRATION_SECRET_ENCRYPTION_KEY="$PREPARED_INTEGRATION_SECRET_KEY"
+  case "$INTEGRATION_SECRET_KEY_SOURCE" in
+    existing) return 0 ;;
+    restored) ;;
+    generated)
+      ciphertext_count="$(encrypted_integration_config_count)" || {
+        warn "could not verify whether encrypted integration configuration already exists"
+        return 1
+      }
+      if [ "$ciphertext_count" != "0" ]; then
+        warn "encrypted integration configuration exists but its original encryption key is unavailable; refusing key replacement"
+        return 1
+      fi
+      ;;
+    *) return 1 ;;
+  esac
+
+  write_env_assignment "$APP_DIR/.env" INTEGRATION_SECRET_ENCRYPTION_KEY "$PREPARED_INTEGRATION_SECRET_KEY" || return 1
+  if [ "$INTEGRATION_SECRET_KEY_SOURCE" = "generated" ]; then
+    if [ -f "$APP_DIR/.deploy/env.before-deploy" ]; then
+      write_env_assignment "$APP_DIR/.deploy/env.before-deploy" INTEGRATION_SECRET_ENCRYPTION_KEY "$PREPARED_INTEGRATION_SECRET_KEY" || return 1
+    elif [ -f "$APP_DIR/.deploy/env.was_absent" ]; then
+      cp -p "$APP_DIR/.env" "$APP_DIR/.deploy/env.before-deploy" || return 1
+      chmod 600 "$APP_DIR/.deploy/env.before-deploy" || return 1
+      rm -f "$APP_DIR/.deploy/env.was_absent" || return 1
+    fi
+    log "generated and persisted a new integration encryption key after confirming no existing ciphertext"
+  else
+    log "preserved the pre-deployment integration encryption key"
+  fi
+  INTEGRATION_SECRET_KEY_SOURCE="existing"
+}
+
 validate_layout() {
   [ -f docker-compose.yml ] || err "missing docker-compose.yml"
   [ -f delivery-platform-web/Dockerfile ] || err "missing delivery-platform-web/Dockerfile"
@@ -216,10 +391,12 @@ validate_layout() {
 
 validate_env() {
   source_env
+  prepare_integration_secret_key || err "integration secret encryption key preflight failed"
   local required_vars=(
     MYSQL_ROOT_PASSWORD MYSQL_DATABASE MYSQL_USER MYSQL_USER_PASSWORD
     REDIS_PASSWORD MINIO_ROOT_USER MINIO_ROOT_PASSWORD MINIO_BUCKET
     MINIO_IMAGE MINIO_MC_IMAGE JWT_SECRET SEED_ADMIN_PASSWORD SEED_DEFAULT_PASSWORD
+    INTEGRATION_SECRET_ENCRYPTION_KEY INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME
   )
   local name value
   for name in "${required_vars[@]}"; do
@@ -229,6 +406,9 @@ validate_env() {
     fi
   done
   [ "${#JWT_SECRET}" -ge 32 ] || err "JWT_SECRET must contain at least 32 characters"
+  for value in "$JWT_SECRET" "$MYSQL_ROOT_PASSWORD" "$MYSQL_USER_PASSWORD" "$REDIS_PASSWORD" "$MINIO_ROOT_PASSWORD"; do
+    [ "$INTEGRATION_SECRET_ENCRYPTION_KEY" != "$value" ] || err "INTEGRATION_SECRET_ENCRYPTION_KEY must not reuse another platform credential"
+  done
   [[ "${MINIO_IMAGE}" =~ ^(minio/minio|quay\.io/minio/minio):RELEASE\. ]] || err "MINIO_IMAGE must use a fixed RELEASE tag from minio/minio or quay.io/minio/minio"
   [[ "${MINIO_MC_IMAGE}" =~ ^(minio/mc|quay\.io/minio/mc):RELEASE\. ]] || err "MINIO_MC_IMAGE must use a fixed RELEASE tag from minio/mc or quay.io/minio/mc"
 }
@@ -299,14 +479,31 @@ wait_mysql() {
 }
 
 quiesce_app() {
+  local policy="${1:-required}"
+  load_app_topology "$policy" || return 1
   log "stopping workers and application containers before backup and migration"
-  compose stop file-worker outbox-worker >/dev/null 2>&1 || return 1
+  if [ "${#WORKER_SERVICES[@]}" -gt 0 ]; then
+    compose stop "${WORKER_SERVICES[@]}" >/dev/null 2>&1 || return 1
+  fi
   compose stop backend frontend >/dev/null 2>&1 || return 1
 }
 
 resume_existing_app() {
-  compose start backend frontend >/dev/null 2>&1 || true
-  compose start file-worker outbox-worker >/dev/null 2>&1 || true
+  local policy="${1:-compatible}"
+  local service
+  load_app_topology "$policy" || return 1
+  compose start backend >/dev/null 2>&1 || return 1
+  check_url "backend readiness" "http://127.0.0.1:${BACKEND_PORT:-3000}/api/v1/ready" || return 1
+  if [ "${#WORKER_SERVICES[@]}" -gt 0 ]; then
+    compose start "${WORKER_SERVICES[@]}" >/dev/null 2>&1 || return 1
+    for service in "${WORKER_SERVICES[@]}"; do
+      check_service_stable "$service" || return 1
+    done
+  fi
+  compose start frontend >/dev/null 2>&1 || return 1
+  check_url "frontend" "http://127.0.0.1:${FRONTEND_PORT:-8080}" || return 1
+  verify_release_version || return 1
+  verify_service_release "${APPLICATION_SERVICES[@]}" || return 1
 }
 
 write_table_audit() {
@@ -396,26 +593,33 @@ check_url() {
   return 1
 }
 
-check_service_running() {
+check_service_stable() {
   local service="$1"
-  local remaining=20 container_id
+  local remaining=20 container_id stable_container_id initial_restarts final_restarts
   while [ "$remaining" -gt 0 ]; do
     container_id="$(compose ps --status running --quiet "$service" 2>/dev/null || true)"
     if [ -n "$container_id" ]; then
-      log "$service running"
-      return 0
+      initial_restarts="$(docker inspect "$container_id" --format '{{.RestartCount}}' 2>/dev/null)" || return 1
+      sleep 5
+      stable_container_id="$(compose ps --status running --quiet "$service" 2>/dev/null || true)"
+      final_restarts="$(docker inspect "$container_id" --format '{{.RestartCount}}' 2>/dev/null)" || return 1
+      if [ "$stable_container_id" = "$container_id" ] && [ "$final_restarts" = "$initial_restarts" ]; then
+        log "$service stable"
+        return 0
+      fi
     fi
     remaining=$((remaining - 1))
     sleep 3
   done
-  warn "$service is not running"
+  warn "$service did not remain stable"
   return 1
 }
 
 verify_service_release() {
   local expected service container_id actual
+  [ "$#" -gt 0 ] || return 1
   expected="$(release_id)"
-  for service in backend file-worker outbox-worker frontend; do
+  for service in "$@"; do
     container_id="$(compose ps --all --quiet "$service")"
     [ -n "$container_id" ] || {
       warn "$service container was not found"
@@ -427,7 +631,7 @@ verify_service_release() {
       return 1
     }
   done
-  log "application and worker release labels verified: $expected"
+  log "declared application release labels verified: $expected"
 }
 
 verify_release_version() {
@@ -444,16 +648,22 @@ verify_release_version() {
 }
 
 switch_app() {
+  local policy="${1:-required}"
+  load_app_topology "$policy" || return 1
   log "switching application containers"
-  compose up -d --no-deps --force-recreate backend || return 1
+  APP_SWITCH_STARTED="YES"
+  compose up -d --no-deps --force-recreate --remove-orphans backend || return 1
   check_url "backend readiness" "http://127.0.0.1:${BACKEND_PORT:-3000}/api/v1/ready" || return 1
-  compose up -d --no-deps --force-recreate file-worker outbox-worker || return 1
-  check_service_running "file-worker" || return 1
-  check_service_running "outbox-worker" || return 1
+  if [ "${#WORKER_SERVICES[@]}" -gt 0 ]; then
+    compose up -d --no-deps --force-recreate "${WORKER_SERVICES[@]}" || return 1
+    for service in "${WORKER_SERVICES[@]}"; do
+      check_service_stable "$service" || return 1
+    done
+  fi
   compose up -d --no-deps --force-recreate frontend || return 1
   check_url "frontend" "http://127.0.0.1:${FRONTEND_PORT:-8080}" || return 1
   verify_release_version || return 1
-  verify_service_release || return 1
+  verify_service_release "${APPLICATION_SERVICES[@]}" || return 1
 }
 
 mark_deployment_successful() {
@@ -469,6 +679,7 @@ mark_deployment_successful() {
 
 capture_failure_diagnostics() {
   local stamp output
+  local -a log_services=(backend backend-migrate frontend mysql redis minio)
   stamp="$(date +%Y%m%d_%H%M%S)"
   mkdir -p backups/failures
   output="backups/failures/git_deploy_failure_${stamp}.log"
@@ -485,12 +696,15 @@ capture_failure_diagnostics() {
     compose ps -a || true
     echo
     echo "===== logs ====="
-    compose logs --no-color --tail=300 backend backend-migrate file-worker outbox-worker frontend mysql redis minio || true
+    if load_app_topology available; then
+      log_services=("${APPLICATION_SERVICES[@]}" backend-migrate mysql redis minio)
+    fi
+    compose logs --no-color --tail=300 "${log_services[@]}" || true
   } > "$output" 2>&1
   warn "failure diagnostics saved: $output"
 }
 
-rollback_code_from_revision_file() {
+rollback_source_from_revision_file() {
   local revision_file="$1"
   local revision_label="$2"
   local revision
@@ -503,15 +717,14 @@ rollback_code_from_revision_file() {
   git checkout --detach "$revision" || return 1
   git reset --hard "$revision" || return 1
   write_release_metadata || return 1
-  build_images || return 1
 }
 
-rollback_code_to_last_successful() {
-  rollback_code_from_revision_file .deploy/last_successful_rev "last successful"
+rollback_source_to_last_successful() {
+  rollback_source_from_revision_file .deploy/last_successful_rev "last successful"
 }
 
-rollback_code_to_previous_successful() {
-  rollback_code_from_revision_file .deploy/previous_successful_rev "previous successful"
+rollback_source_to_previous_successful() {
+  rollback_source_from_revision_file .deploy/previous_successful_rev "previous successful"
 }
 
 restore_data_from_backup() {
@@ -539,7 +752,7 @@ restore_data_from_backup() {
   fi
 
   start_infra || return 1
-  compose stop file-worker outbox-worker backend frontend >/dev/null 2>&1 || return 1
+  quiesce_app compatible || return 1
   log "restoring MySQL from $backup/mysql.sql.gz"
   compose exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP DATABASE IF EXISTS \`$MYSQL_DATABASE\`; CREATE DATABASE \`$MYSQL_DATABASE\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"' || return 1
   gunzip -c "$backup/mysql.sql.gz" | compose exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' || return 1
@@ -564,7 +777,8 @@ restore_data_from_backup() {
 
 handle_deploy_failure() {
   local reason="$1"
-  capture_failure_diagnostics
+  quiesce_app available || warn "failed to fully quiesce the current application topology"
+  capture_failure_diagnostics || warn "failure diagnostics could not be saved"
   if [ "$ROLLBACK_DATA_ON_FAILURE" = "YES" ]; then
     warn "ROLLBACK_DATA_ON_FAILURE=YES, restoring latest backup"
     if ! CONFIRM_RESTORE=YES BACKUP_PATH="${CURRENT_BACKUP_DIR:-$BACKUP_PATH}" restore_data_from_backup; then
@@ -572,11 +786,27 @@ handle_deploy_failure() {
     fi
   fi
   restore_deployment_env || warn "failed to restore the pre-deployment environment file"
-  if rollback_code_to_last_successful; then
-    switch_app || warn "rollback completed but health verification failed"
+  if rollback_source_to_last_successful; then
+    if [ "$APP_SWITCH_STARTED" = "NO" ]; then
+      if ! resume_existing_app compatible; then
+        warn "existing containers could not be resumed; recreating them from retained release images"
+        switch_app compatible || warn "rollback completed but health verification failed"
+      fi
+    elif ! switch_app compatible; then
+      warn "rollback completed but health verification failed"
+      resume_existing_app available || true
+    fi
   else
-    resume_existing_app
+    resume_existing_app available || true
   fi
+  err "$reason"
+}
+
+handle_pre_quiesce_failure() {
+  local reason="$1"
+  capture_failure_diagnostics || warn "failure diagnostics could not be saved"
+  restore_deployment_env || warn "failed to restore the pre-deployment environment file"
+  rollback_source_to_last_successful || warn "failed to restore the last successful source revision"
   err "$reason"
 }
 
@@ -587,14 +817,16 @@ deploy() {
   checkout_target
   preflight
   if ! build_images; then
-    handle_deploy_failure "image build failed"
+    handle_pre_quiesce_failure "image build failed"
   fi
   start_infra
+  if ! persist_prepared_integration_secret_key; then
+    handle_pre_quiesce_failure "integration secret encryption key preflight failed"
+  fi
   if ! quiesce_app; then
     handle_deploy_failure "workers or application containers could not be stopped safely"
   fi
   if ! create_backup; then
-    resume_existing_app
     handle_deploy_failure "backup failed"
   fi
   if ! run_migrations; then
@@ -630,21 +862,22 @@ manual_backup() {
   acquire_lock
   preflight
   start_infra
-  if ! quiesce_app; then
-    resume_existing_app
+  if ! quiesce_app compatible; then
+    resume_existing_app available || true
     err "workers or application containers could not be stopped safely"
   fi
   if ! create_backup; then
-    resume_existing_app
+    resume_existing_app available || true
     err "backup failed"
   fi
-  resume_existing_app
+  resume_existing_app compatible
 }
 
 show_logs() {
   init_or_adopt_repo
   detect_compose
-  compose logs -f --tail=200 backend frontend backend-migrate file-worker outbox-worker
+  load_app_topology available || return 1
+  compose logs -f --tail=200 "${APPLICATION_SERVICES[@]}" backend-migrate
 }
 
 main() {
@@ -655,7 +888,7 @@ main() {
     backup) manual_backup ;;
     status) show_status ;;
     logs) show_logs ;;
-    rollback-code) init_or_adopt_repo; acquire_lock; preflight; rollback_code_to_previous_successful; switch_app; mark_deployment_successful ;;
+    rollback-code) init_or_adopt_repo; acquire_lock; preflight; quiesce_app compatible; rollback_source_to_previous_successful; switch_app compatible; mark_deployment_successful ;;
     restore-data) init_or_adopt_repo; acquire_lock; preflight; restore_data_from_backup; switch_app ;;
     *)
       cat <<'USAGE'

@@ -120,7 +120,7 @@ services:
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
       - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN}
-      - INTEGRATION_SECRET_ENCRYPTION_KEY=${INTEGRATION_SECRET_ENCRYPTION_KEY}
+      - INTEGRATION_SECRET_ENCRYPTION_KEY=${INTEGRATION_SECRET_ENCRYPTION_KEY:?INTEGRATION_SECRET_ENCRYPTION_KEY is required}
       - MINIO_ENDPOINT=minio
       - MINIO_PORT=9000
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER}
@@ -192,7 +192,7 @@ services:
     environment:
       - NODE_ENV=production
       - DATABASE_URL=mysql://${MYSQL_USER}:${MYSQL_USER_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
-      - INTEGRATION_SECRET_ENCRYPTION_KEY=${INTEGRATION_SECRET_ENCRYPTION_KEY}
+      - INTEGRATION_SECRET_ENCRYPTION_KEY=${INTEGRATION_SECRET_ENCRYPTION_KEY:?INTEGRATION_SECRET_ENCRYPTION_KEY is required}
     depends_on:
       mysql:
         condition: service_healthy
@@ -213,7 +213,7 @@ services:
     environment:
       - NODE_ENV=production
       - DATABASE_URL=mysql://${MYSQL_USER}:${MYSQL_USER_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
-      - INTEGRATION_SECRET_ENCRYPTION_KEY=${INTEGRATION_SECRET_ENCRYPTION_KEY}
+      - INTEGRATION_SECRET_ENCRYPTION_KEY=${INTEGRATION_SECRET_ENCRYPTION_KEY:?INTEGRATION_SECRET_ENCRYPTION_KEY is required}
       - INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME=${INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME:-admin}
       - SEED_RESET_EXISTING_USER_PASSWORDS=${SEED_RESET_EXISTING_USER_PASSWORDS:-false}
       - SEED_ADMIN_PASSWORD=${SEED_ADMIN_PASSWORD}
@@ -228,7 +228,7 @@ services:
       mysql:
         condition: service_healthy
     command: >
-      sh -c "node prisma/prepare-migrate.js && ./node_modules/.bin/prisma migrate deploy && ./node_modules/.bin/ts-node --transpile-only prisma/seed.ts && ./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts --apply --actor-username=$${INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME}"
+      sh -c "node prisma/prepare-migrate.js && ./node_modules/.bin/prisma migrate deploy && ./node_modules/.bin/ts-node --transpile-only prisma/seed.ts && ./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts && ./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts --apply --actor-username=$${INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME} && ./node_modules/.bin/ts-node --transpile-only prisma/seed.ts && ./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts --verify"
     networks:
       - delivery-network
 
@@ -238,6 +238,7 @@ services:
       dockerfile: Dockerfile
       args:
         RELEASE_ID: ${RELEASE_ID:-development}
+    image: delivery-platform-frontend:${RELEASE_ID:-development}
     container_name: delivery-frontend
     restart: unless-stopped
     ports:

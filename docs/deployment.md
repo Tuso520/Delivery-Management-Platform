@@ -21,7 +21,7 @@ BRANCH=main bash deploy-git.sh deploy
 推送 `main` 或手动触发工作流后，执行顺序如下：
 
 1. `quality`：安装前后端依赖，执行后端类型检查、测试、构建，以及前端类型检查、测试、构建。
-2. `validate`：校验本地、默认和生产 Compose 组合，并对 `deploy-git.sh` 执行 shell 语法检查。
+2. `validate`：校验本地、默认和生产 Compose 组合，并对 `deploy-git.sh` 执行 shell 语法检查和部署契约测试。
 3. `deploy`：仅当前两项都通过时进入 Environment `test`，固定目标提交，使用 SSH 上传并校验 Git bundle；bundle 只向服务器 Git 对象库导入目标提交，不预先覆盖线上工作区，随后由同一提交中的 `deploy-git.sh` 完成备份、migration、容器切换和健康检查。
 4. 部署脚本备份 MySQL、MinIO 和环境快照，执行受控迁移，重建 API、File Worker、Outbox Worker 和前端容器，并检查依赖就绪状态、Worker 运行状态、前端响应和发布版本号；失败时保存诊断信息并尝试回滚到上一提交。
 
@@ -56,7 +56,7 @@ DEPLOY_ENV_FILE_B64=<服务器 .env 的 base64 内容，可选>
 
 `DEPLOY_SSH_KEY` 应使用测试环境专用、最小权限的部署密钥。私钥、`.env`、Token 和服务器备份不得提交到 Git。
 
-`DEPLOY_ENV_FILE_B64` 为空时，服务器保留现有 `.env`。首次部署或明确需要刷新测试环境配置时，可在本机生成：
+`DEPLOY_ENV_FILE_B64` 为空时，服务器保留现有 `.env`。部署脚本会在构建阶段准备集成加密密钥：优先沿用当前或部署前环境中的有效值；两处都未配置时，仅在 MySQL 确认不存在任何既有集成密文后，才在服务器本地生成并以 `0600` 权限持久化新的 32 字节 Base64 密钥。密钥值不会写入日志；若已有密文但原密钥缺失，发布在停止业务容器前闭锁，禁止用新密钥覆盖。首次部署或明确需要刷新测试环境配置时，可在本机生成：
 
 ```bash
 base64 -w0 .env.test
@@ -99,10 +99,10 @@ backups/git-deploy/YYYYMMDD_HHMMSS-<release-id>/
 默认 Compose 的 `backend-migrate` 是启动门禁，固定执行：
 
 ```text
-prepare-migrate → prisma migrate deploy → 幂等 seed → 集成 Secret apply
+prepare-migrate → prisma migrate deploy → bootstrap 幂等 seed → Secret dry-run → Secret apply（单事务）→ 第二次幂等 seed → Secret verify
 ```
 
-`backend`、`file-worker` 和 `outbox-worker` 都等待该容器成功；任何一步失败都不得启动业务流量。API、Outbox Worker 和迁移容器必须使用同一个 `INTEGRATION_SECRET_ENCRYPTION_KEY`，迁移审计账号由 `INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME` 指定且必须处于启用状态。File Worker 不持有集成 Secret。
+首次空库需要 bootstrap seed 创建迁移审计账号；第二次 seed 用于验证幂等性。Secret apply 会先验证所有既有密文都能由同一密钥解密，再把配置更新和成功审计放在同一个事务内；`--verify` 是只读严格门禁，要求 `plaintextSecretRows=0` 且 `planned=0`。`backend`、`file-worker` 和 `outbox-worker` 都等待该容器成功；任何一步失败都不得启动业务流量。API、Outbox Worker 和迁移容器必须使用同一个 `INTEGRATION_SECRET_ENCRYPTION_KEY`，迁移审计账号由 `INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME` 指定且必须处于启用状态。File Worker 不持有集成 Secret。
 
 ### 整体重构既有库升级
 
@@ -117,9 +117,10 @@ pnpm --filter ./delivery-platform-server prisma:migrate-target-foundation -- --a
 pnpm --filter ./delivery-platform-server prisma:migrate-target-foundation -- --verify --strict
 pnpm --filter ./delivery-platform-server prisma:migrate-integration-secrets
 pnpm --filter ./delivery-platform-server prisma:migrate-integration-secrets -- --apply --actor-user-id="$MIGRATION_ACTOR_ID"
+pnpm --filter ./delivery-platform-server prisma:migrate-integration-secrets -- --verify
 ```
 
-若通过 Compose 执行发布，最后两条 Secret 命令已经由 `backend-migrate` 使用 `INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME` 执行；人工命令只用于保存 dry-run 报告或非 Compose 环境，不得对不同密钥重复 apply。若不存在旧标准/知识或旧集成配置，dry-run 会报告 0 项，仍应保存报告。加密密钥不得复用 JWT、数据库或 MinIO 密钥。完成后再运行一次幂等 seed、比较业务表计数并完成 strict verify，之后才启动 API 和 Worker。
+若通过 Compose 执行发布，上述三条 Secret 命令已经由 `backend-migrate` 使用 `INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME` 执行；人工命令只用于保存报告或非 Compose 环境，不得对不同密钥重复 apply。若不存在旧标准/知识或旧集成配置，dry-run 会报告 0 项，仍应保存报告。加密密钥不得复用 JWT、数据库、Redis 或 MinIO 密钥。完成后再运行一次幂等 seed、比较业务表计数并完成 strict verify，之后才启动 API 和 Worker。
 
 迁移 094 删除旧项目运行时列前会将原状态写入 `project_legacy_state_archive` 并执行状态 preflight；出现异常必须中止，禁止绕过校验手工删列。旧业务表只读保留，不要在常规发布中物理删除。
 
@@ -142,7 +143,7 @@ docker compose ps
 - File Worker 执行缩略图、大图、CAD/Visio、XMind 和视频处理；通过数据库租约领取任务，支持租约回收、指数退避和最大尝试次数。
 - `FILE_CONVERTER_URL` 为空时，需要转换的格式返回 `FILE_CONVERTER_NOT_CONFIGURED`，不会伪装为预览成功。转换服务必须限制输出大小并使用独立 Token。
 - Outbox Worker 解析通知规则并投递站内、飞书和企业微信，按事件/用户/通道记录 `NotificationDelivery`。缺少身份/配置是 `SKIPPED`，暂时错误重试，达到上限进入 `DEAD`。
-- API、File Worker 与 Outbox Worker 使用同一个带 release 标签的后端镜像。发布切换前必须先停止两个 Worker，再停止 API；schema、目标数据与 Secret 迁移完成后按 API、Worker、前端顺序启动，并核对四个容器的 release 标签。回滚前同样先停 Worker，部署脚本不提供跳过静默阶段的开关。
+- API、File Worker 与 Outbox Worker 使用同一个带 release 标签的后端镜像，前端同样使用 release-tagged 镜像；发布构建不会覆盖上一成功版本镜像。发布切换前必须先停止两个 Worker，再停止 API；schema、目标数据与 Secret 迁移完成后按 API、Worker、前端顺序启动，并核对四个容器的 release 标签。回滚优先恢复未被替换的上一版本容器；若已开始切换，则从保留的 release 镜像重建，不把重新构建旧源码作为唯一恢复路径。跨版本回滚统一读取被回滚提交的 Compose 服务清单：当前目标版本仍严格要求两个 Worker；回滚到尚未引入 Worker 的历史提交时只恢复该提交实际声明的 API 与前端，并清除新拓扑的孤儿容器。
 
 ## 文件预览环境
 
