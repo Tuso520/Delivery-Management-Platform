@@ -722,6 +722,50 @@ test_backup_source_revision_and_key_binding() (
   [ "$(cat "$CURRENT_BACKUP_DIR/integration-secret-key.sha256")" = "$expected_fingerprint" ] || fail "backup key fingerprint was not derived from decoded key bytes"
 )
 
+test_revision_compose_resolves_relative_backup_environment() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  local root fixture calls output services expected_env
+  root="$(mktemp -d)"
+  fixture="$root/fixture"
+  calls="$root/compose-calls"
+  output="$root/rendered.yml"
+  services="$root/services"
+  trap 'rm -rf "$root"' EXIT
+  mkdir -p "$root/.deploy" "$root/backups/staging" "$fixture"
+  printf 'VALUE=present\n' > "$root/backups/staging/env.snapshot"
+  printf 'services: {}\n' > "$fixture/docker-compose.yml"
+  : > "$calls"
+  APP_DIR="$root"
+  DEPLOY_RUN_ID="relative-env-contract"
+  COMPOSE_PROJECT_NAME="relative-env-contract"
+  COMPOSE=(mock_revision_compose)
+  expected_env="$root/backups/staging/env.snapshot"
+  git() {
+    [ "$1" = "archive" ] || return 1
+    tar -cf - -C "$fixture" .
+  }
+  mock_revision_compose() {
+    [ "$1" = "--env-file" ] || return 1
+    printf '%s\n' "$2" >> "$calls"
+    [ "$2" = "$expected_env" ] || return 1
+    case "${*: -1}" in
+      config) printf 'services: {}\n' ;;
+      --services) printf 'backend\nfrontend\n' ;;
+      *) return 1 ;;
+    esac
+  }
+
+  render_revision_compose \
+    "$(printf '1%.0s' {1..40})" "backups/staging/env.snapshot" "docker-compose.yml" \
+    "$output" "$services" || fail "relative backup environment was resolved inside the runtime tree"
+  [ "$(wc -l < "$calls" | tr -d '[:space:]')" = "2" ] || \
+    fail "revision Compose did not use the absolute backup environment for both renders"
+  [ -s "$output" ] || fail "revision Compose config was not rendered"
+  grep -Fxq backend "$services" || fail "revision Compose services were not rendered"
+  grep -Fxq frontend "$services" || fail "revision Compose services were not rendered"
+)
+
 test_backup_publication_is_directory_atomic_and_failure_closed() (
   # shellcheck source=../deploy-git.sh
   source "$ROOT_DIR/deploy-git.sh"
@@ -2847,6 +2891,7 @@ test_git_bundle_is_imported_after_target_binding
 test_exact_table_count_gate
 test_foreign_key_orphan_gate
 test_backup_source_revision_and_key_binding
+test_revision_compose_resolves_relative_backup_environment
 test_backup_publication_is_directory_atomic_and_failure_closed
 test_runtime_revision_follows_exact_database_migrations
 test_restore_candidate_uses_complete_backup_environment

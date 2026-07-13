@@ -1326,6 +1326,11 @@ render_revision_compose() (
   local -a files args
   trap 'rm -rf "$tree" "$raw_config"' EXIT
   validate_compose_file_list "$compose_files" || return 1
+  case "$env_file" in
+    /*) ;;
+    *) env_file="$APP_DIR/$env_file" ;;
+  esac
+  [ -f "$env_file" ] || return 1
   mkdir -p "$tree" || return 1
   git archive "$revision" | tar -x -C "$tree" || return 1
   IFS=':' read -r -a files <<< "$compose_files"
