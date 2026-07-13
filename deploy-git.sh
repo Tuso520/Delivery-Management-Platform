@@ -2253,8 +2253,20 @@ remove_unprotected_image_without_force() {
   fi
 }
 
+count_remaining_prune_candidates() {
+  local image_id count=0
+  docker image ls --no-trunc --quiet | sort -u > "$PRUNE_INVENTORY_SCRATCH_FILE" || return 1
+  while IFS= read -r image_id; do
+    [ -n "$image_id" ] || continue
+    grep -Fxq "$image_id" "$PRUNE_PROTECTED_IMAGES_FILE" && continue
+    grep -Fxq "$image_id" "$PRUNE_INVENTORY_SCRATCH_FILE" || continue
+    count=$((count + 1))
+  done < "$PRUNE_CANDIDATE_IMAGES_FILE"
+  printf '%s\n' "$count"
+}
+
 manual_prune_unused_images() {
-  local image_id pass protected_count candidate_count remaining_count=0 service
+  local image_id pass=0 protected_count candidate_count remaining_before remaining_count=0 service
   local -a image_ids=()
   init_or_adopt_repo
   validate_prune_managed_paths || err "managed deployment paths are unsafe; no image was deleted"
@@ -2292,9 +2304,14 @@ manual_prune_unused_images() {
   candidate_count="$(wc -l < "$PRUNE_CANDIDATE_IMAGES_FILE" | tr -d '[:space:]')"
   log "image cleanup inventory: total=$candidate_count protected=$protected_count"
 
-  # Two non-forced passes allow child images to disappear before their unused
-  # parents. Docker still refuses any image that gains a container reference.
-  for pass in 1 2; do
+  # Repeat non-forced removal while the candidate count decreases. This handles
+  # arbitrarily deep parent/child chains without ever forcing a referenced image.
+  while :; do
+    remaining_before="$(count_remaining_prune_candidates)" || \
+      err "Docker image inventory could not be refreshed during cleanup"
+    remaining_count="$remaining_before"
+    [ "$remaining_before" -gt 0 ] || break
+    pass=$((pass + 1))
     log "unused image removal pass $pass"
     for image_id in "${image_ids[@]}"; do
       [ -n "$image_id" ] || continue
@@ -2302,14 +2319,10 @@ manual_prune_unused_images() {
       docker image inspect "$image_id" >/dev/null 2>&1 || continue
       remove_unprotected_image_without_force "$image_id" || true
     done
-  done
-
-  for image_id in "${image_ids[@]}"; do
-    [ -n "$image_id" ] || continue
-    grep -Fxq "$image_id" "$PRUNE_PROTECTED_IMAGES_FILE" && continue
-    if docker image inspect "$image_id" >/dev/null 2>&1; then
-      remaining_count=$((remaining_count + 1))
-    fi
+    remaining_count="$(count_remaining_prune_candidates)" || \
+      err "Docker image inventory could not be refreshed after removal pass $pass"
+    [ "$remaining_count" -eq 0 ] && break
+    [ "$remaining_count" -lt "$remaining_before" ] || break
   done
   log "Docker disk usage after unused-image cleanup"
   docker system df || err "Docker disk usage could not be verified after cleanup"

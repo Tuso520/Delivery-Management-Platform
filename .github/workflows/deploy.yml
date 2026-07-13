@@ -18,22 +18,43 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  resolve:
+    name: 固定发布提交
+    runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.resolve.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: 解析并限制发布提交
+        id: resolve
+        env:
+          REQUESTED_REF: ${{ github.event.inputs.ref }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          requested="${REQUESTED_REF:-$EVENT_SHA}"
+          resolved="$(git rev-parse --verify --end-of-options "${requested}^{commit}")"
+          [[ "$resolved" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::目标 ref 无法解析为完整 Git commit"
+            exit 1
+          }
+          git merge-base --is-ancestor "$resolved" HEAD || {
+            echo "::error::仅允许部署本次解析时 main 历史中的提交或标签"
+            exit 1
+          }
+          printf 'commit=%s\n' "$resolved" >> "$GITHUB_OUTPUT"
+
   quality:
     name: 部署前质量门禁
+    needs: resolve
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.sha }}
+          ref: ${{ needs.resolve.outputs.commit }}
           fetch-depth: 0
-      - name: 限制手动部署版本
-        if: ${{ github.event_name == 'workflow_dispatch' }}
-        run: |
-          git fetch origin main
-          git merge-base --is-ancestor HEAD origin/main || {
-            echo "::error::仅允许部署 main 历史中的提交或标签"
-            exit 1
-          }
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -73,11 +94,12 @@ jobs:
 
   validate:
     name: 部署配置校验
+    needs: resolve
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.sha }}
+          ref: ${{ needs.resolve.outputs.commit }}
           fetch-depth: 0
       - name: 校验 Compose 配置
         run: |
@@ -91,6 +113,7 @@ jobs:
 
   integration:
     name: 真实依赖与核心 E2E
+    needs: resolve
     runs-on: ubuntu-latest
     env:
       COMPOSE_PROJECT_NAME: delivery-platform-ci
@@ -103,7 +126,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.sha }}
+          ref: ${{ needs.resolve.outputs.commit }}
           fetch-depth: 0
       - name: 固定真实验收提交
         run: |
@@ -203,12 +226,12 @@ jobs:
 
   deploy:
     name: 部署到服务器
-    needs: [quality, validate, integration]
+    needs: [resolve, quality, validate, integration]
     runs-on: ubuntu-latest
     environment: test
     env:
       DEPLOY_ENV: test
-      DEPLOY_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.sha }}
+      DEPLOY_REF: ${{ needs.resolve.outputs.commit }}
       SERVER_HOST: ${{ vars.DEPLOY_HOST || secrets.DEPLOY_HOST }}
       SERVER_USER: ${{ vars.DEPLOY_USER || secrets.DEPLOY_USER }}
       SERVER_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -221,7 +244,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.sha }}
+          ref: ${{ needs.resolve.outputs.commit }}
           fetch-depth: 0
           persist-credentials: false
 

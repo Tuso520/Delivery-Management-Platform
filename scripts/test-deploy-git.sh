@@ -1650,6 +1650,25 @@ test_workflow_runs_protected_image_cleanup_after_deploy() {
   fi
 }
 
+test_workflow_resolves_one_immutable_commit_for_all_jobs() {
+  local workflow="$ROOT_DIR/.github/workflows/deploy.yml"
+  [ "$(grep -Fc 'ref: ${{ needs.resolve.outputs.commit }}' "$workflow")" -eq 4 ] || \
+    fail "quality, validate, integration and deploy do not checkout one resolved commit"
+  [ "$(grep -Fc 'needs: resolve' "$workflow")" -eq 3 ] || \
+    fail "parallel deployment gates do not all depend on the commit resolver"
+  grep -Fq 'needs: [resolve, quality, validate, integration]' "$workflow" || \
+    fail "deploy does not depend on the resolver and every deployment gate"
+  grep -Fq 'DEPLOY_REF: ${{ needs.resolve.outputs.commit }}' "$workflow" || \
+    fail "server deployment is not bound to the resolved commit"
+  grep -Fq 'git rev-parse --verify --end-of-options "${requested}^{commit}"' "$workflow" || \
+    fail "workflow does not safely resolve a requested ref to a commit"
+  grep -Fq 'git merge-base --is-ancestor "$resolved" HEAD' "$workflow" || \
+    fail "resolved commit is not restricted to the captured main history"
+  if grep -Fq "github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.sha" "$workflow"; then
+    fail "workflow still resolves the mutable manual ref independently in downstream jobs"
+  fi
+}
+
 test_prune_missing_current_pointer_fails_before_image_delete() {
   local root calls status
   root="$(mktemp -d)"
@@ -1943,9 +1962,9 @@ test_prune_removes_only_unreferenced_unprotected_images() (
       return 0
     fi
     if [ "$1" = "image" ] && [ "$2" = "ls" ]; then
-      printf '%s\n' \
-        "$container_image" "$backup_image" "$unused_image" \
-        "$current_backend" "$current_frontend" "$previous_backend" "$previous_frontend"
+      printf '%s\n' "$container_image" "$backup_image"
+      [ -s "$deleted" ] || printf '%s\n' "$unused_image"
+      printf '%s\n' "$current_backend" "$current_frontend" "$previous_backend" "$previous_frontend"
       return 0
     fi
     if [ "$1" = "image" ] && [ "$2" = "inspect" ]; then
@@ -1969,6 +1988,114 @@ test_prune_removes_only_unreferenced_unprotected_images() (
   manual_prune_unused_images
   [ "$(cat "$calls")" = "image-rm temporary-unused:test" ] || \
     fail "cleanup removed a protected image or did not remove the sole unused image"
+)
+
+test_prune_removes_arbitrarily_deep_unprotected_image_chain() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  local root deleted calls revision parent_image middle_image child_image current_backend current_frontend
+  root="$(mktemp -d)"
+  deleted="$root/deleted"
+  calls="$root/calls"
+  trap 'rm -rf "$root"' EXIT
+  mkdir -p "$root/.deploy"
+  : > "$deleted"
+  : > "$calls"
+  APP_DIR="$root"
+  revision="$(printf 'a%.0s' {1..40})"
+  printf '%s\n' "$revision" > "$root/.deploy/last_successful_rev"
+  parent_image="sha256:$(printf '1%.0s' {1..64})"
+  middle_image="sha256:$(printf '2%.0s' {1..64})"
+  child_image="sha256:$(printf '3%.0s' {1..64})"
+  current_backend="sha256:$(printf '4%.0s' {1..64})"
+  current_frontend="sha256:$(printf '5%.0s' {1..64})"
+
+  init_or_adopt_repo() { cd "$APP_DIR"; }
+  validate_prune_managed_paths() { :; }
+  acquire_lock() { :; }
+  detect_compose() { :; }
+  require_command() { :; }
+  source_env() { :; }
+  compose() { :; }
+  load_app_topology() {
+    WORKER_SERVICES=(file-worker outbox-worker)
+    APPLICATION_SERVICES=(backend file-worker outbox-worker frontend)
+  }
+  check_url() { :; }
+  check_service_stable() { :; }
+  verify_release_version() { :; }
+  verify_service_release() { :; }
+  log() { :; }
+  err() { fail "$*"; }
+  image_identity() {
+    case "$1" in
+      delivery-platform-backend:aaaaaaaaaaaa)
+        printf '%s\tdelivery-platform-backend\taaaaaaaaaaaa\n' "$current_backend"
+        ;;
+      delivery-platform-frontend:aaaaaaaaaaaa)
+        printf '%s\tdelivery-platform-frontend\taaaaaaaaaaaa\n' "$current_frontend"
+        ;;
+      *) return 1 ;;
+    esac
+  }
+  image_deleted() { grep -Fxq "$1" "$deleted"; }
+  mark_image_deleted() { printf '%s\n' "$1" >> "$deleted"; }
+  docker() {
+    if [ "$1" = "system" ] && [ "$2" = "df" ]; then
+      return 0
+    fi
+    if [ "$1" = "ps" ]; then
+      return 0
+    fi
+    if [ "$1" = "image" ] && [ "$2" = "ls" ]; then
+      for id in "$parent_image" "$middle_image" "$child_image" "$current_backend" "$current_frontend"; do
+        image_deleted "$id" || printf '%s\n' "$id"
+      done
+      return 0
+    fi
+    if [ "$1" = "image" ] && [ "$2" = "inspect" ]; then
+      image_deleted "$3" && return 1
+      if [ "${4:-}" = "--format" ]; then
+        case "$3" in
+          "$parent_image") printf 'chain-parent:test\n' ;;
+          "$middle_image") printf 'chain-middle:test\n' ;;
+          "$child_image") printf 'chain-child:test\n' ;;
+          *) return 0 ;;
+        esac
+      fi
+      return 0
+    fi
+    if [ "$1" = "image" ] && [ "$2" = "rm" ]; then
+      printf 'image-rm %s\n' "$3" >> "$calls"
+      case "$3" in
+        chain-parent:test)
+          image_deleted "$middle_image" || return 1
+          mark_image_deleted "$parent_image"
+          ;;
+        chain-middle:test)
+          image_deleted "$child_image" || return 1
+          mark_image_deleted "$middle_image"
+          ;;
+        chain-child:test)
+          mark_image_deleted "$child_image"
+          ;;
+        *) return 1 ;;
+      esac
+      return 0
+    fi
+    fail "unexpected docker call: $*"
+  }
+
+  manual_prune_unused_images
+  for id in "$parent_image" "$middle_image" "$child_image"; do
+    image_deleted "$id" || fail "deep unused image chain was not fully removed"
+  done
+  if image_deleted "$current_backend"; then
+    fail "cleanup removed the protected backend image"
+  fi
+  if image_deleted "$current_frontend"; then
+    fail "cleanup removed the protected frontend image"
+  fi
 )
 
 test_failure_rollback_order() {
@@ -2049,10 +2176,12 @@ test_unexpected_exit_respects_database_mutation_boundary
 test_run_migrations_marks_mutation_before_compose
 test_success_revision_commits_before_env_cleanup
 test_workflow_runs_protected_image_cleanup_after_deploy
+test_workflow_resolves_one_immutable_commit_for_all_jobs
 test_prune_missing_current_pointer_fails_before_image_delete
 test_prune_release_pointer_and_symlink_contracts
 test_prune_rejects_symlinked_managed_parent_directories
 test_prune_backup_metadata_contracts
 test_prune_removes_only_unreferenced_unprotected_images
+test_prune_removes_arbitrarily_deep_unprotected_image_chain
 test_failure_rollback_order
 printf 'deploy-git contract tests passed\n'

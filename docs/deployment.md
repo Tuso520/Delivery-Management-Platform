@@ -20,17 +20,18 @@ BRANCH=main bash deploy-git.sh deploy
 
 推送 `main` 或手动触发工作流后，执行顺序如下：
 
-1. `quality`：安装前后端依赖，执行后端类型检查、测试、构建，以及前端类型检查、测试、构建。
-2. `validate`：对同一个目标 ref 校验本地、默认和生产 Compose 组合，并对 `deploy-git.sh` 执行 shell 语法检查和部署契约测试。
-3. `integration`：以 checkout 后解析出的完整 Git HEAD 标记本次验收镜像，生成仅供本次 runner 使用并立即遮罩的临时凭据，启动真实 NestJS、MySQL、Redis、MinIO、File Worker、Outbox Worker 与前端；两个 Worker 必须保持 running 且容器 ID、重启次数稳定，之后才执行登录/Refresh Token API E2E、依赖就绪冒烟，以及管理员和受限项目经理的浏览器权限与数据范围 E2E。
-4. `deploy`：仅前三项都通过时进入 Environment `test`，固定目标提交，使用 SSH 上传 Git bundle；bundle 导入、服务器工作区校验、可选环境原子替换都由同一提交中的 `deploy-git.sh` 在取得服务器部署锁后完成，随后执行备份、migration、容器切换和健康检查。
-5. 部署脚本备份 MySQL、MinIO 和环境快照，执行受控迁移，重建 API、File Worker、Outbox Worker 和前端容器，并检查依赖就绪状态、Worker 运行状态、前端响应和发布版本号；失败时保存诊断信息。源码切换后、写库前可恢复来源运行时，写库后只能保留目标版本向前修复，或恢复经过验证的成对数据与运行时。
+1. `resolve`：仅解析一次 push SHA 或手动 ref，将其固定为 main 历史中的完整 40 位 commit SHA；后续作业只接收该不可变输出，移动分支或标签不能让门禁与发布运行不同代码。
+2. `quality`：安装前后端依赖，执行后端类型检查、测试、构建，以及前端类型检查、测试、构建。
+3. `validate`：对同一个已固定 commit 校验本地、默认和生产 Compose 组合，并对 `deploy-git.sh` 执行 shell 语法检查和部署契约测试。
+4. `integration`：以同一个已固定 commit 标记本次验收镜像，生成仅供本次 runner 使用并立即遮罩的临时凭据，启动真实 NestJS、MySQL、Redis、MinIO、File Worker、Outbox Worker 与前端；两个 Worker 必须保持 running 且容器 ID、重启次数稳定，之后才执行登录/Refresh Token API E2E、依赖就绪冒烟，以及管理员和受限项目经理的浏览器权限与数据范围 E2E。
+5. `deploy`：仅前三项门禁都通过时进入 Environment `test`，使用同一个已固定 commit 和 SSH 上传 Git bundle；bundle 导入、服务器工作区校验、可选环境原子替换都由该提交中的 `deploy-git.sh` 在取得服务器部署锁后完成，随后执行备份、migration、容器切换和健康检查。
+6. 部署脚本备份 MySQL、MinIO 和环境快照，执行受控迁移，重建 API、File Worker、Outbox Worker 和前端容器，并检查依赖就绪状态、Worker 运行状态、前端响应和发布版本号；失败时保存诊断信息。源码切换后、写库前可恢复来源运行时，写库后只能保留目标版本向前修复，或恢复经过验证的成对数据与运行时。
 
 服务器工作区存在任何未提交的受跟踪或未跟踪源码时，自动部署都会在切换代码前拒绝继续；`.env`、备份、存储和发布元数据等 `.gitignore` 中的服务器专属文件不受影响。不得通过清理未知文件绕过该门禁，应先识别并保留服务器侧改动。
 
 为从旧归档覆盖式发布切换到 Git 工作区，当前 Actions 只允许一次精确历史 release overlay 恢复：必须在部署锁内证明每个变更文件的 blob 都与同一历史提交完全一致，并把补丁和未跟踪文件移入 `.deploy/recovered-overlays/`；任何未知改动仍 fail closed。共享服务器完成一次新流程成功发布并确认工作区 clean 后，应删除 `ALLOW_RELEASE_OVERLAY_RECOVERY` 及对应兼容函数。
 
-工作流已具备上述逻辑不等于自动部署已经跑通。首次启用或凭据变更后，必须以 GitHub Actions 中对应提交的 `quality`、`validate`、`integration`、`deploy` 四个作业均成功，以及测试服务器版本核对结果为准。
+工作流已具备上述逻辑不等于自动部署已经跑通。首次启用或凭据变更后，必须以 GitHub Actions 中对应提交的 `resolve`、`quality`、`validate`、`integration`、`deploy` 五个作业均成功，以及测试服务器版本核对结果为准。
 
 ## GitHub Environment 配置
 
