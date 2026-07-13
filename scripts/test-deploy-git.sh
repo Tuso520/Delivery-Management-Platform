@@ -1980,6 +1980,23 @@ test_workflow_resolves_one_immutable_commit_for_all_jobs() {
   fi
 }
 
+test_image_identity_uses_real_tab_template() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  local expected_id output
+  expected_id="sha256:$(printf 'a%.0s' {1..64})"
+  docker() {
+    [ "$1" = image ] && [ "$2" = inspect ] && [ "$3" = fixture ] && [ "$4" = --format ] || \
+      fail "image identity issued an unexpected Docker command: $*"
+    [ "$5" = '{{.Id}}{{"\t"}}{{index .Config.Labels "org.opencontainers.image.title"}}{{"\t"}}{{index .Config.Labels "org.opencontainers.image.version"}}' ] || \
+      fail "image identity does not ask Docker to render real tab delimiters"
+    printf '%s\tdelivery-platform-backend\tfixture-release\n' "$expected_id"
+  }
+  output="$(image_identity fixture)"
+  [ "$output" = "$expected_id"$'\t''delivery-platform-backend'$'\t''fixture-release' ] || \
+    fail "image identity changed the tab-delimited output contract"
+)
+
 test_docker_disk_usage_timeout_contract() (
   # shellcheck source=../deploy-git.sh
   source "$ROOT_DIR/deploy-git.sh"
@@ -2675,6 +2692,7 @@ test_post_migration_audit_never_mutates_published_backup
 test_success_revision_commits_before_env_cleanup
 test_workflow_runs_protected_image_cleanup_after_deploy
 test_workflow_resolves_one_immutable_commit_for_all_jobs
+test_image_identity_uses_real_tab_template
 test_docker_disk_usage_timeout_contract
 test_prune_missing_current_pointer_fails_before_image_delete
 test_prune_release_pointer_and_symlink_contracts
