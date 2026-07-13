@@ -2042,6 +2042,16 @@ test_prune_release_pointer_and_symlink_contracts() (
   [ "$(sort -u "$PRUNE_PROTECTED_IMAGES_FILE" | wc -l | tr -d '[:space:]')" = "2" ] || \
     fail "current release images were not protected"
 
+  : > "$PRUNE_PROTECTED_IMAGES_FILE"
+  image_identity() { return 1; }
+  protect_release_pointer_images_for_prune predeploy || \
+    fail "pre-deployment cleanup rejected a release image that is already absent"
+  [ ! -s "$PRUNE_PROTECTED_IMAGES_FILE" ] || \
+    fail "pre-deployment cleanup invented protection for an absent release image"
+  if protect_release_pointer_images_for_prune runtime >/dev/null 2>&1; then
+    fail "runtime cleanup accepted a missing current release image"
+  fi
+
   if command -v ln >/dev/null 2>&1; then
     rm -f .deploy/last_successful_rev
     if ln -s missing-current-revision .deploy/last_successful_rev 2>/dev/null && \

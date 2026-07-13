@@ -2333,7 +2333,12 @@ protect_container_images_for_prune() {
 }
 
 protect_release_pointer_images_for_prune() {
+  local mode="${1:-runtime}"
   local pointer revision runtime_id component tag expected_title identity image_id title version extra
+  case "$mode" in
+    runtime|predeploy) ;;
+    *) return 1 ;;
+  esac
   for pointer in .deploy/last_successful_rev .deploy/previous_successful_rev; do
     if [ -L "$pointer" ]; then
       warn "refusing image cleanup because a release pointer is a symbolic link: $pointer"
@@ -2367,6 +2372,10 @@ protect_release_pointer_images_for_prune() {
       fi
       tag="${expected_title}:${runtime_id}"
       identity="$(image_identity "$tag")" || {
+        if [ "$mode" = "predeploy" ]; then
+          warn "release pointer image is already absent before deployment; container and backup Image IDs remain protected: $tag"
+          continue
+        fi
         warn "refusing image cleanup because the protected release image is missing: $tag"
         return 1
       }
@@ -2605,9 +2614,10 @@ protect_backup_images_for_prune() {
 }
 
 collect_prune_protected_images() {
+  local mode="${1:-runtime}"
   : > "$PRUNE_PROTECTED_IMAGES_FILE" || return 1
   protect_container_images_for_prune || return 1
-  protect_release_pointer_images_for_prune || return 1
+  protect_release_pointer_images_for_prune "$mode" || return 1
   protect_backup_images_for_prune || return 1
   sort -u -o "$PRUNE_PROTECTED_IMAGES_FILE" "$PRUNE_PROTECTED_IMAGES_FILE" || return 1
 }
@@ -2704,7 +2714,7 @@ manual_prune_unused_images() {
 
   log "Docker disk usage before unused-image cleanup"
   docker system df || err "Docker disk usage could not be read"
-  collect_prune_protected_images || err "protected runtime and rollback images could not be proven; no image was deleted"
+  collect_prune_protected_images "$mode" || err "protected runtime and rollback images could not be proven; no image was deleted"
   docker image ls --no-trunc --quiet | sort -u > "$PRUNE_CANDIDATE_IMAGES_FILE" || \
     err "Docker image inventory could not be read; no image was deleted"
   mapfile -t image_ids < "$PRUNE_CANDIDATE_IMAGES_FILE"
