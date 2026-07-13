@@ -36,6 +36,8 @@ interface UnifiedFileContent {
 }
 
 type UnifiedFileAccessActor = Pick<JwtPayload, 'sub' | 'permissions' | 'roles'>;
+type UnifiedFileAccessAction = 'VIEW' | 'DOWNLOAD' | 'UPDATE';
+type UnifiedFileBusinessDomain = 'PROJECT_ARCHIVE' | 'STANDARD' | 'KNOWLEDGE';
 
 const directImageExtensions = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif']);
 const officeExtensions = new Set(['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']);
@@ -138,9 +140,11 @@ export class UnifiedFileService {
   async uploadDraftFile(
     rawFile: Express.Multer.File,
     dto: UploadDraftFileDto,
-    userId: string,
+    actor: UnifiedFileAccessActor,
     rawIdempotencyKey?: string,
   ) {
+    this.assertDraftUploadPermission(dto.ownerType, actor);
+    const userId = actor.sub;
     const idempotencyKey = this.validateIdempotencyKey(rawIdempotencyKey);
     const file = withNormalizedUploadFileName(rawFile);
     const extension = this.extensionOf(file.originalname);
@@ -265,9 +269,11 @@ export class UnifiedFileService {
     archiveItemId: string,
     rawFile: Express.Multer.File,
     dto: UploadProjectArchiveFileDto,
-    userId: string,
+    actor: UnifiedFileAccessActor,
     rawIdempotencyKey?: string,
   ) {
+    this.assertPermission(actor, 'archive:upload');
+    const userId = actor.sub;
     const idempotencyKey = this.validateIdempotencyKey(rawIdempotencyKey);
     await this.projectAccess.assertProjectAccess(projectId, userId);
     const archiveItem = await this.prisma.projectArchiveEntry.findFirst({
@@ -309,7 +315,7 @@ export class UnifiedFileService {
         checksum,
         dto.logicalFileId,
       );
-      if (replay) return this.findById(replay.logicalFileId, userId);
+      if (replay) return this.findById(replay.logicalFileId, actor);
     }
     const existing = await this.resolveExistingArchiveFile(
       projectId,
@@ -492,18 +498,18 @@ export class UnifiedFileService {
           checksum,
           dto.logicalFileId,
         );
-        if (replay) return this.findById(replay.logicalFileId, userId);
+        if (replay) return this.findById(replay.logicalFileId, actor);
       }
       throw error;
     }
     if (preparedReview && result.reviewTaskId) {
       await this.reviewTasks.logPreparedTaskCreated(preparedReview, result.reviewTaskId);
     }
-    return this.findById(result.logicalFileId, userId);
+    return this.findById(result.logicalFileId, actor);
   }
 
-  async findById(identifier: string, actor: string | UnifiedFileAccessActor) {
-    const file = await this.getAccessibleLogicalFile(identifier, actor);
+  async findById(identifier: string, actor: UnifiedFileAccessActor) {
+    const file = await this.getAccessibleLogicalFile(identifier, actor, 'VIEW');
     return {
       id: file.id,
       ownerType: file.ownerType,
@@ -517,8 +523,8 @@ export class UnifiedFileService {
     };
   }
 
-  async getVersions(identifier: string, actor: string | UnifiedFileAccessActor) {
-    const file = await this.getAccessibleLogicalFile(identifier, actor);
+  async getVersions(identifier: string, actor: UnifiedFileAccessActor) {
+    const file = await this.getAccessibleLogicalFile(identifier, actor, 'VIEW');
     return this.prisma.fileVersion.findMany({
       where: { logicalFileId: file.id, archivedAt: null },
       include: {
@@ -539,7 +545,7 @@ export class UnifiedFileService {
   }
 
   async createPreviewSession(identifier: string, actor: JwtPayload) {
-    const file = await this.getAccessibleLogicalFile(identifier, actor);
+    const file = await this.getAccessibleLogicalFile(identifier, actor, 'VIEW');
     const requestedVersion = file.versions?.find((version) => version.id === identifier);
     const current = requestedVersion ?? file.currentVersion;
     if (!current) {
@@ -564,11 +570,7 @@ export class UnifiedFileService {
       afterData: { fileVersionId: current.id },
     });
     const viewerType = resolvedPreview.viewerType;
-    const downloadAllowed =
-      actor.roles.includes('SUPER_ADMIN') ||
-      actor.permissions.some((permission) =>
-        ['file:download', 'standard:download', 'knowledge:download'].includes(permission),
-      );
+    const downloadAllowed = this.hasOwnerActionPermission(file.ownerType, actor, 'DOWNLOAD');
     const onlyOffice =
       viewerType === 'ONLYOFFICE_VIEW'
         ? this.buildOnlyOfficeViewSession({
@@ -603,11 +605,10 @@ export class UnifiedFileService {
 
   async download(
     identifier: string,
-    actorInput: string | UnifiedFileAccessActor,
+    actor: UnifiedFileAccessActor,
     context?: { ipAddress?: string; userAgent?: string },
   ): Promise<UnifiedFileContent> {
-    const actor = this.normalizeActor(actorInput);
-    const file = await this.getAccessibleLogicalFile(identifier, actor);
+    const file = await this.getAccessibleLogicalFile(identifier, actor, 'DOWNLOAD');
     const requestedVersion = file.versions?.find((version) => version.id === identifier);
     const targetVersion = requestedVersion ?? file.currentVersion;
     if (!targetVersion) {
@@ -633,15 +634,14 @@ export class UnifiedFileService {
 
   async getThumbnail(
     identifier: string,
-    actor: string | UnifiedFileAccessActor,
+    actor: UnifiedFileAccessActor,
   ): Promise<UnifiedFileContent | null> {
-    const normalizedActor = this.normalizeActor(actor);
-    const file = await this.getAccessibleLogicalFile(identifier, normalizedActor);
+    const file = await this.getAccessibleLogicalFile(identifier, actor, 'VIEW');
     const requestedVersion = file.versions?.find((version) => version.id === identifier);
     const targetVersion = requestedVersion ?? file.currentVersion;
     if (!targetVersion) return null;
     if (requestedVersion && requestedVersion.id !== file.currentVersionId) {
-      await this.assertVersionPreviewAccess(requestedVersion, normalizedActor);
+      await this.assertVersionPreviewAccess(requestedVersion, actor);
     }
     const sourceAsset = targetVersion.asset;
     const completedJob = await this.prisma.fileProcessingJob.findFirst({
@@ -665,9 +665,8 @@ export class UnifiedFileService {
     };
   }
 
-  async getProcessingStatus(identifier: string, actorInput: string | UnifiedFileAccessActor) {
-    const actor = this.normalizeActor(actorInput);
-    const file = await this.getAccessibleLogicalFile(identifier, actor);
+  async getProcessingStatus(identifier: string, actor: UnifiedFileAccessActor) {
+    const file = await this.getAccessibleLogicalFile(identifier, actor, 'VIEW');
     const requestedVersion = file.versions?.find((version) => version.id === identifier);
     const targetVersion = requestedVersion ?? file.currentVersion;
     if (!targetVersion) return [];
@@ -694,7 +693,7 @@ export class UnifiedFileService {
   }
 
   async archive(identifier: string, actor: UnifiedFileAccessActor) {
-    const file = await this.getAccessibleLogicalFile(identifier, actor);
+    const file = await this.getAccessibleLogicalFile(identifier, actor, 'UPDATE');
     const logicalFileId = file.id;
     const archivedAt = new Date();
     await this.prisma.$transaction(async (tx) => {
@@ -923,9 +922,9 @@ export class UnifiedFileService {
 
   private async getAccessibleLogicalFile(
     identifier: string,
-    actorInput: string | UnifiedFileAccessActor,
+    actor: UnifiedFileAccessActor,
+    action: UnifiedFileAccessAction,
   ) {
-    const actor = this.normalizeActor(actorInput);
     const file = await this.prisma.logicalFile.findFirst({
       where: {
         archivedAt: null,
@@ -965,37 +964,73 @@ export class UnifiedFileService {
       },
     });
     if (!file) throw new NotFoundException('文件不存在');
-    if (actor.roles.includes('SUPER_ADMIN') || file.createdBy === actor.sub) {
-      return file;
+
+    const domain = this.resolveBusinessDomain(file.ownerType);
+    if (!domain) {
+      throw new ForbiddenException('文件业务归属无效，已拒绝访问');
     }
-    if (file.projectArchiveFile) {
+
+    if (domain === 'PROJECT_ARCHIVE') {
+      if (!file.projectArchiveFile) {
+        throw new ForbiddenException('项目档案文件缺少有效业务引用，已拒绝访问');
+      }
+      if (!this.hasOwnerActionPermission(file.ownerType, actor, action)) {
+        if (
+          action === 'VIEW' &&
+          this.canViewReviewFiles(actor) &&
+          (await this.isAssignedReviewer(file.id, actor.sub, 'PROJECT_ARCHIVE'))
+        ) {
+          return file;
+        }
+        throw new ForbiddenException('当前用户缺少项目档案文件操作权限');
+      }
+      if (actor.roles.includes('SUPER_ADMIN')) return file;
       try {
         await this.projectAccess.assertProjectAccess(file.projectArchiveFile.projectId, actor.sub);
         return file;
       } catch (error) {
-        const canReview = this.canViewReviewFiles(actor);
-        if (!canReview || !(await this.isAssignedReviewer(file.id, actor.sub))) {
+        if (
+          action !== 'VIEW' ||
+          !this.canViewReviewFiles(actor) ||
+          !(await this.isAssignedReviewer(file.id, actor.sub, 'PROJECT_ARCHIVE'))
+        ) {
           throw error;
         }
         return file;
       }
     }
 
-    const canAccessStandard =
-      actor.permissions.some((permission) => permission.startsWith('standard:')) &&
-      (await this.hasStandardFileAccess(file.id, actor));
-    if (canAccessStandard) return file;
+    if (file.projectArchiveFile) {
+      throw new ForbiddenException('文件业务归属与项目档案引用不一致，已拒绝访问');
+    }
 
-    const canAccessKnowledge =
-      actor.permissions.some((permission) => permission.startsWith('knowledge:')) &&
-      (await this.hasKnowledgeFileAccess(file.id, actor));
-    if (canAccessKnowledge) return file;
+    const isDraft = file.ownerType.endsWith('_DRAFT');
+    if (isDraft) {
+      const ownsDraft = file.ownerId === actor.sub && file.createdBy === actor.sub;
+      if (
+        (actor.roles.includes('SUPER_ADMIN') || ownsDraft) &&
+        this.hasOwnerActionPermission(file.ownerType, actor, action)
+      ) {
+        return file;
+      }
+      throw new ForbiddenException('当前用户无权访问该领域的草稿文件');
+    }
 
-    const canReview = this.canViewReviewFiles(actor);
+    const hasActionPermission = this.hasOwnerActionPermission(file.ownerType, actor, action);
+    const hasBusinessAccess =
+      hasActionPermission &&
+      (domain === 'STANDARD'
+        ? await this.hasStandardFileAccess(file.id, file.ownerId, actor)
+        : await this.hasKnowledgeFileAccess(file.id, file.ownerId, actor));
+    if (hasBusinessAccess) return file;
+
+    const reviewSourceType = domain === 'STANDARD' ? 'STANDARD' : 'KNOWLEDGE';
     if (
-      canReview &&
-      ((await this.isAssignedReviewer(file.id, actor.sub)) ||
-        (this.canViewAllReviews(actor) && (await this.hasNonProjectReview(file.id))))
+      action === 'VIEW' &&
+      this.canViewReviewFiles(actor) &&
+      ((await this.isAssignedReviewer(file.id, actor.sub, reviewSourceType)) ||
+        (this.canViewAllReviews(actor) &&
+          (await this.hasNonProjectReview(file.id, reviewSourceType))))
     ) {
       return file;
     }
@@ -1003,8 +1038,80 @@ export class UnifiedFileService {
     throw new ForbiddenException('当前用户无权访问该文件');
   }
 
-  private normalizeActor(actor: string | UnifiedFileAccessActor): UnifiedFileAccessActor {
-    return typeof actor === 'string' ? { sub: actor, permissions: [], roles: [] } : actor;
+  private resolveBusinessDomain(ownerType: string): UnifiedFileBusinessDomain | null {
+    if (ownerType === 'PROJECT_ARCHIVE') return 'PROJECT_ARCHIVE';
+    if (ownerType === 'STANDARD' || ownerType === 'STANDARD_DRAFT') return 'STANDARD';
+    if (ownerType === 'KNOWLEDGE' || ownerType === 'KNOWLEDGE_DRAFT') return 'KNOWLEDGE';
+    return null;
+  }
+
+  private hasOwnerActionPermission(
+    ownerType: string,
+    actor: UnifiedFileAccessActor,
+    action: UnifiedFileAccessAction,
+  ): boolean {
+    if (actor.roles.includes('SUPER_ADMIN')) return true;
+    const domain = this.resolveBusinessDomain(ownerType);
+    if (domain === 'PROJECT_ARCHIVE') {
+      if (action === 'DOWNLOAD') return actor.permissions.includes('file:download');
+      if (action === 'UPDATE') return actor.permissions.includes('file:archive');
+      return actor.permissions.some((permission) =>
+        [
+          'archive:view',
+          'archive:upload',
+          'archive:version:view',
+          'file:preview',
+          'file:preview_pending',
+          'file:preview_history',
+        ].includes(permission),
+      );
+    }
+    if (domain === 'STANDARD') {
+      if (action === 'DOWNLOAD') return actor.permissions.includes('standard:download');
+      if (action === 'UPDATE') {
+        const domainPermission = ownerType === 'STANDARD_DRAFT'
+          ? actor.permissions.some((permission) =>
+              ['standard:create', 'standard:update_draft'].includes(permission),
+            )
+          : actor.permissions.includes('standard:archive');
+        return actor.permissions.includes('file:archive') && domainPermission;
+      }
+      return actor.permissions.includes('standard:view');
+    }
+    if (domain === 'KNOWLEDGE') {
+      if (action === 'DOWNLOAD') return actor.permissions.includes('knowledge:download');
+      if (action === 'UPDATE') {
+        const domainPermission = ownerType === 'KNOWLEDGE_DRAFT'
+          ? actor.permissions.some((permission) =>
+              ['knowledge:create', 'knowledge:update_draft'].includes(permission),
+            )
+          : actor.permissions.includes('knowledge:archive');
+        return actor.permissions.includes('file:archive') && domainPermission;
+      }
+      return actor.permissions.includes('knowledge:view');
+    }
+    return false;
+  }
+
+  private assertDraftUploadPermission(
+    ownerType: UploadDraftFileDto['ownerType'],
+    actor: UnifiedFileAccessActor,
+  ): void {
+    if (actor.roles.includes('SUPER_ADMIN')) return;
+    const permissionPrefix = ownerType === 'STANDARD' ? 'standard' : 'knowledge';
+    if (
+      actor.permissions.some((permission) =>
+        [`${permissionPrefix}:create`, `${permissionPrefix}:update_draft`].includes(permission),
+      )
+    ) {
+      return;
+    }
+    throw new ForbiddenException(`当前用户缺少${ownerType === 'STANDARD' ? '标准' : '知识'}文件上传权限`);
+  }
+
+  private assertPermission(actor: UnifiedFileAccessActor, permission: string): void {
+    if (actor.roles.includes('SUPER_ADMIN') || actor.permissions.includes(permission)) return;
+    throw new ForbiddenException('当前用户缺少文件操作权限');
   }
 
   private canViewReviewFiles(actor: UnifiedFileAccessActor): boolean {
@@ -1027,11 +1134,15 @@ export class UnifiedFileService {
     );
   }
 
-  private async hasNonProjectReview(logicalFileId: string): Promise<boolean> {
+  private async hasNonProjectReview(
+    logicalFileId: string,
+    sourceType: 'STANDARD' | 'KNOWLEDGE',
+  ): Promise<boolean> {
     return Boolean(
       await this.prisma.reviewTask.findFirst({
         where: {
           projectId: null,
+          sourceType,
           archivedAt: null,
           fileVersion: { logicalFileId, archivedAt: null },
         },
@@ -1040,10 +1151,15 @@ export class UnifiedFileService {
     );
   }
 
-  private async isAssignedReviewer(logicalFileId: string, userId: string): Promise<boolean> {
+  private async isAssignedReviewer(
+    logicalFileId: string,
+    userId: string,
+    sourceType: 'PROJECT_ARCHIVE' | 'STANDARD' | 'KNOWLEDGE',
+  ): Promise<boolean> {
     return Boolean(
       await this.prisma.reviewTask.findFirst({
         where: {
+          sourceType,
           archivedAt: null,
           status: 'PENDING',
           fileVersion: { logicalFileId },
@@ -1063,15 +1179,19 @@ export class UnifiedFileService {
 
   private async hasStandardFileAccess(
     logicalFileId: string,
+    standardId: string,
     actor: UnifiedFileAccessActor,
   ): Promise<boolean> {
-    const isManager = actor.permissions.some((permission) =>
-      ['standard:publish', 'standard:archive'].includes(permission),
-    );
+    const isManager =
+      actor.roles.includes('SUPER_ADMIN') ||
+      actor.permissions.some((permission) =>
+        ['standard:publish', 'standard:archive'].includes(permission),
+      );
     const assignedIds = await this.assignedSourceVersionIds('STANDARD', actor.sub);
     return Boolean(
       await this.prisma.standardVersion.findFirst({
         where: {
+          standardId,
           archivedAt: null,
           fileVersion: { logicalFileId, archivedAt: null },
           ...(isManager
@@ -1092,11 +1212,14 @@ export class UnifiedFileService {
 
   private async hasKnowledgeFileAccess(
     logicalFileId: string,
+    knowledgeItemId: string,
     actor: UnifiedFileAccessActor,
   ): Promise<boolean> {
-    const isManager = actor.permissions.some((permission) =>
-      ['knowledge:publish', 'knowledge:archive'].includes(permission),
-    );
+    const isManager =
+      actor.roles.includes('SUPER_ADMIN') ||
+      actor.permissions.some((permission) =>
+        ['knowledge:publish', 'knowledge:archive'].includes(permission),
+      );
     const assignedIds = await this.assignedSourceVersionIds('KNOWLEDGE', actor.sub);
     const visibility: Prisma.KnowledgeVersionWhereInput = isManager
       ? {}
@@ -1111,6 +1234,7 @@ export class UnifiedFileService {
     return Boolean(
       await this.prisma.knowledgeVersion.findFirst({
         where: {
+          knowledgeItemId,
           archivedAt: null,
           AND: [
             visibility,

@@ -4,6 +4,7 @@ import { Readable } from 'stream';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 
@@ -55,7 +56,7 @@ describe('UnifiedFileService', () => {
     );
 
     await expect(
-      service.uploadDraftFile(pdfFile(), { ownerType: 'STANDARD' }, 'user-1'),
+      service.uploadDraftFile(pdfFile(), { ownerType: 'STANDARD' }, fileActor(['standard:create'])),
     ).rejects.toThrow('系统设置不允许上传 .pdf 文件');
     expect(storage.upload).not.toHaveBeenCalled();
   });
@@ -81,7 +82,7 @@ describe('UnifiedFileService', () => {
     );
 
     await expect(
-      service.uploadDraftFile(file, { ownerType: 'KNOWLEDGE' }, 'user-1'),
+      service.uploadDraftFile(file, { ownerType: 'KNOWLEDGE' }, fileActor(['knowledge:create'])),
     ).rejects.toThrow('文件大小超过系统设置的 1 MB 上限');
     expect(storage.upload).not.toHaveBeenCalled();
   });
@@ -164,7 +165,7 @@ describe('UnifiedFileService', () => {
         revisionLevel: 'MINOR',
         createNewLogicalFile: true,
       },
-      'user-1',
+      fileActor(['archive:upload']),
     );
 
     expect(transaction.fileAsset.create).toHaveBeenCalledWith({
@@ -210,7 +211,7 @@ describe('UnifiedFileService', () => {
           revisionLevel: 'MINOR',
           createNewLogicalFile: true,
         },
-        'user-1',
+        fileActor(['archive:upload']),
       ),
     ).rejects.toThrow(new BadRequestException('该档案项不允许上传多个独立文件'));
     expect(storage.upload).toHaveBeenCalledTimes(1);
@@ -251,7 +252,7 @@ describe('UnifiedFileService', () => {
     const result = await service.uploadDraftFile(
       pdfFile(),
       { ownerType: 'STANDARD', changeDescription: '初稿' },
-      'user-1',
+      fileActor(['standard:create']),
     );
 
     expect(result).toEqual(
@@ -268,6 +269,29 @@ describe('UnifiedFileService', () => {
       data: expect.objectContaining({ status: 'DRAFT', version: 'V1.0' }),
     });
   });
+
+  it.each([
+    ['STANDARD' as const, ['knowledge:create', 'knowledge:update_draft']],
+    ['KNOWLEDGE' as const, ['standard:create', 'standard:update_draft']],
+  ])(
+    'rejects a %s draft upload authorized only by the other business domain',
+    async (ownerType, permissions) => {
+      const storage = { upload: jest.fn() } as unknown as FileStorageService;
+      const service = new UnifiedFileService(
+        {} as PrismaService,
+        storage,
+        projectAccess,
+        reviewConfiguration,
+        reviewTasks,
+        operationLog,
+      );
+
+      await expect(
+        service.uploadDraftFile(pdfFile(), { ownerType }, fileActor(permissions)),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(storage.upload).not.toHaveBeenCalled();
+    },
+  );
 
   it('stores the idempotency key only when creating a new draft version', async () => {
     const transaction = {
@@ -302,7 +326,12 @@ describe('UnifiedFileService', () => {
       operationLog,
     );
 
-    await service.uploadDraftFile(pdfFile(), { ownerType: 'STANDARD' }, 'user-1', 'draft-key-0001');
+    await service.uploadDraftFile(
+      pdfFile(),
+      { ownerType: 'STANDARD' },
+      fileActor(['standard:create']),
+      'draft-key-0001',
+    );
 
     expect(transaction.fileVersion.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ idempotencyKey: 'draft-key-0001' }),
@@ -334,7 +363,7 @@ describe('UnifiedFileService', () => {
     const result = await service.uploadDraftFile(
       file,
       { ownerType: 'STANDARD' },
-      'user-1',
+      fileActor(['standard:create']),
       'draft-key-0001',
     );
 
@@ -393,7 +422,7 @@ describe('UnifiedFileService', () => {
         'item-1',
         file,
         { uploadMode: 'NEW_VERSION', revisionLevel: 'MINOR' },
-        'user-1',
+        fileActor(['archive:upload']),
         'archive-key-0001',
       ),
     ).resolves.toEqual(replayResult);
@@ -425,7 +454,12 @@ describe('UnifiedFileService', () => {
     );
 
     await expect(
-      service.uploadDraftFile(file, { ownerType: 'STANDARD' }, 'user-1', 'draft-key-0001'),
+      service.uploadDraftFile(
+        file,
+        { ownerType: 'STANDARD' },
+        fileActor(['standard:create']),
+        'draft-key-0001',
+      ),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(storage.upload).not.toHaveBeenCalled();
     expect(storage.deleteFrom).not.toHaveBeenCalled();
@@ -446,7 +480,12 @@ describe('UnifiedFileService', () => {
     );
 
     await expect(
-      service.uploadDraftFile(pdfFile(), { ownerType: 'STANDARD' }, 'user-1', 'bad key'),
+      service.uploadDraftFile(
+        pdfFile(),
+        { ownerType: 'STANDARD' },
+        fileActor(['standard:create']),
+        'bad key',
+      ),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.fileVersion.findUnique).not.toHaveBeenCalled();
     expect(storage.upload).not.toHaveBeenCalled();
@@ -484,13 +523,13 @@ describe('UnifiedFileService', () => {
     const firstResult = await service.uploadDraftFile(
       file,
       { ownerType: 'STANDARD' },
-      'user-1',
+      fileActor(['standard:create']),
       'draft-key-0001',
     );
     const retryResult = await service.uploadDraftFile(
       file,
       { ownerType: 'STANDARD' },
-      'user-1',
+      fileActor(['standard:create']),
       'draft-key-0001',
     );
 
@@ -539,22 +578,22 @@ describe('UnifiedFileService', () => {
         'item-1',
         pdfFile(),
         { uploadMode: 'NEW_VERSION', revisionLevel: 'MINOR' },
-        'user-1',
+        fileActor(['archive:upload']),
       ),
     ).rejects.toThrow(new UnprocessableEntityException('要求审核，但未配置审批模板'));
     expect(storage.upload).not.toHaveBeenCalled();
   });
 
   it.each([
-    ['standard manager', 'standard:publish', 'STANDARD_DRAFT'],
-    ['knowledge manager', 'knowledge:publish', 'KNOWLEDGE_DRAFT'],
+    ['standard manager', 'standard:archive', 'STANDARD', 'standard-1'],
+    ['knowledge manager', 'knowledge:archive', 'KNOWLEDGE', 'knowledge-1'],
   ])(
     'archives a file through the %s entry with the complete actor context',
-    async (_label, permission, ownerType) => {
+    async (_label, permission, ownerType, ownerId) => {
       const logicalFile = {
         ...previewLogicalFile('pdf'),
         ownerType,
-        ownerId: 'draft-owner-1',
+        ownerId,
         createdBy: 'creator-1',
         projectArchiveFile: null,
       };
@@ -599,6 +638,194 @@ describe('UnifiedFileService', () => {
       expect(transaction.operationLog.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ userId: actor.sub, action: 'archive' }),
       });
+      if (ownerType === 'STANDARD') {
+        expect(prisma.standardVersion.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({ where: expect.objectContaining({ standardId: ownerId }) }),
+        );
+        expect(prisma.knowledgeVersion.findFirst).not.toHaveBeenCalled();
+      } else {
+        expect(prisma.knowledgeVersion.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({ where: expect.objectContaining({ knowledgeItemId: ownerId }) }),
+        );
+        expect(prisma.standardVersion.findFirst).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it.each([
+    ['STANDARD' as const, 'standard-1'],
+    ['KNOWLEDGE' as const, 'knowledge-1'],
+  ])(
+    'fails closed when %s ownership has no matching business reference',
+    async (ownerType, ownerId) => {
+      const logicalFile = businessLogicalFile(ownerType, ownerId);
+      const standardFindFirst = jest
+        .fn()
+        .mockResolvedValue(ownerType === 'STANDARD' ? null : { id: 'other-standard-version' });
+      const knowledgeFindFirst = jest
+        .fn()
+        .mockResolvedValue(ownerType === 'KNOWLEDGE' ? null : { id: 'other-knowledge-version' });
+      const prisma = {
+        logicalFile: { findFirst: jest.fn().mockResolvedValue(logicalFile) },
+        reviewTask: { findMany: jest.fn().mockResolvedValue([]) },
+        standardVersion: { findFirst: standardFindFirst },
+        knowledgeVersion: { findFirst: knowledgeFindFirst },
+      } as unknown as PrismaService;
+      const service = new UnifiedFileService(
+        prisma,
+        {} as FileStorageService,
+        projectAccess,
+        reviewConfiguration,
+        reviewTasks,
+        operationLog,
+      );
+
+      await expect(
+        service.findById(
+          logicalFile.id,
+          fileActor(['standard:view', 'knowledge:view'], 'reader-1'),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      if (ownerType === 'STANDARD') {
+        expect(standardFindFirst).toHaveBeenCalledWith(
+          expect.objectContaining({ where: expect.objectContaining({ standardId: ownerId }) }),
+        );
+        expect(knowledgeFindFirst).not.toHaveBeenCalled();
+      } else {
+        expect(knowledgeFindFirst).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({ knowledgeItemId: ownerId }),
+          }),
+        );
+        expect(standardFindFirst).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it.each([
+    ['STANDARD' as const, 'standard-1', ['standard:view', 'knowledge:download']],
+    ['KNOWLEDGE' as const, 'knowledge-1', ['knowledge:view', 'standard:download']],
+  ])(
+    'does not combine %s visibility with the other domain download permission',
+    async (ownerType, ownerId, permissions) => {
+      const logicalFile = businessLogicalFile(ownerType, ownerId);
+      const prisma = {
+        logicalFile: { findFirst: jest.fn().mockResolvedValue(logicalFile) },
+        reviewTask: { findMany: jest.fn().mockResolvedValue([]) },
+        standardVersion: {
+          findFirst: jest.fn().mockResolvedValue({ id: 'standard-version-1' }),
+        },
+        knowledgeVersion: {
+          findFirst: jest.fn().mockResolvedValue({ id: 'knowledge-version-1' }),
+        },
+      } as unknown as PrismaService;
+      const storage = {
+        getObjectFrom: jest.fn().mockResolvedValue(Readable.from('business bytes')),
+      } as unknown as FileStorageService;
+      const service = new UnifiedFileService(
+        prisma,
+        storage,
+        projectAccess,
+        reviewConfiguration,
+        reviewTasks,
+        operationLog,
+      );
+
+      await expect(
+        service.download(logicalFile.id, fileActor(permissions, 'reader-1')),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(storage.getObjectFrom).not.toHaveBeenCalled();
+      expect(prisma.standardVersion.findFirst).not.toHaveBeenCalled();
+      expect(prisma.knowledgeVersion.findFirst).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['STANDARD' as const, 'standard-1', ['standard:view', 'knowledge:download']],
+    ['KNOWLEDGE' as const, 'knowledge-1', ['knowledge:view', 'standard:download']],
+  ])(
+    'does not advertise the other domain download permission in a %s preview session',
+    async (ownerType, ownerId, permissions) => {
+      const logicalFile = businessLogicalFile(ownerType, ownerId);
+      const standardFindFirst = jest.fn().mockResolvedValue({ id: 'standard-version-1' });
+      const knowledgeFindFirst = jest.fn().mockResolvedValue({ id: 'knowledge-version-1' });
+      const prisma = {
+        logicalFile: { findFirst: jest.fn().mockResolvedValue(logicalFile) },
+        reviewTask: { findMany: jest.fn().mockResolvedValue([]) },
+        standardVersion: { findFirst: standardFindFirst },
+        knowledgeVersion: { findFirst: knowledgeFindFirst },
+        fileProcessingJob: { findMany: jest.fn().mockResolvedValue([]) },
+      } as unknown as PrismaService;
+      const storage = {
+        getPresignedUrlFrom: jest.fn().mockResolvedValue('https://files.test/business'),
+      } as unknown as FileStorageService;
+      const service = new UnifiedFileService(
+        prisma,
+        storage,
+        projectAccess,
+        reviewConfiguration,
+        reviewTasks,
+        operationLog,
+      );
+
+      const session = await service.createPreviewSession(logicalFile.id, {
+        ...fileActor(permissions, 'reader-1'),
+        username: 'reader',
+        realName: '领域阅读者',
+        email: null,
+        permissionVersion: 1,
+      });
+
+      expect(session.downloadAllowed).toBe(false);
+      if (ownerType === 'STANDARD') {
+        expect(standardFindFirst).toHaveBeenCalled();
+        expect(knowledgeFindFirst).not.toHaveBeenCalled();
+      } else {
+        expect(knowledgeFindFirst).toHaveBeenCalled();
+        expect(standardFindFirst).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it.each([
+    ['STANDARD' as const, 'standard-1', ['file:archive', 'standard:view', 'knowledge:archive']],
+    ['KNOWLEDGE' as const, 'knowledge-1', ['file:archive', 'knowledge:view', 'standard:archive']],
+  ])(
+    'does not combine %s visibility with the other domain update permission',
+    async (ownerType, ownerId, permissions) => {
+      const logicalFile = businessLogicalFile(ownerType, ownerId);
+      const transaction = {
+        logicalFile: { update: jest.fn() },
+        projectArchiveFile: { update: jest.fn() },
+        operationLog: { create: jest.fn() },
+      };
+      const prisma = {
+        logicalFile: { findFirst: jest.fn().mockResolvedValue(logicalFile) },
+        reviewTask: { findMany: jest.fn().mockResolvedValue([]) },
+        standardVersion: {
+          findFirst: jest.fn().mockResolvedValue({ id: 'standard-version-1' }),
+        },
+        knowledgeVersion: {
+          findFirst: jest.fn().mockResolvedValue({ id: 'knowledge-version-1' }),
+        },
+        $transaction: jest.fn(),
+      } as unknown as PrismaService;
+      const service = new UnifiedFileService(
+        prisma,
+        {} as FileStorageService,
+        projectAccess,
+        reviewConfiguration,
+        reviewTasks,
+        operationLog,
+      );
+
+      await expect(
+        service.archive(logicalFile.id, fileActor(permissions, 'reader-1')),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(transaction.logicalFile.update).not.toHaveBeenCalled();
+      expect(prisma.standardVersion.findFirst).not.toHaveBeenCalled();
+      expect(prisma.knowledgeVersion.findFirst).not.toHaveBeenCalled();
     },
   );
 
@@ -607,6 +834,8 @@ describe('UnifiedFileService', () => {
       logicalFile: {
         findFirst: jest.fn().mockResolvedValue({
           id: 'logical-1',
+          ownerType: 'PROJECT_ARCHIVE',
+          ownerId: 'archive-entry-1',
           createdBy: 'user-1',
           currentVersionId: 'version-1',
           currentVersion: {
@@ -877,6 +1106,8 @@ describe('UnifiedFileService', () => {
       logicalFile: {
         findFirst: jest.fn().mockResolvedValue({
           id: 'logical-1',
+          ownerType: 'PROJECT_ARCHIVE',
+          ownerId: 'archive-entry-1',
           createdBy: 'owner-1',
           currentVersionId: currentVersion.id,
           currentVersion,
@@ -1106,6 +1337,16 @@ describe('UnifiedFileService', () => {
     };
   }
 
+  function businessLogicalFile(ownerType: 'STANDARD' | 'KNOWLEDGE', ownerId: string) {
+    return {
+      ...previewLogicalFile('pdf'),
+      ownerType,
+      ownerId,
+      createdBy: 'creator-1',
+      projectArchiveFile: null,
+    };
+  }
+
   function previewJob(overrides: Record<string, unknown>) {
     return {
       id: 'job-preview',
@@ -1134,6 +1375,10 @@ describe('UnifiedFileService', () => {
       permissions: ['file:preview'],
       permissionVersion: 1,
     };
+  }
+
+  function fileActor(permissions: string[], sub = 'user-1') {
+    return { sub, permissions, roles: [] as string[] };
   }
 
   function idempotentVersion(

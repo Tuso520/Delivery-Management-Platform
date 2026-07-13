@@ -375,5 +375,6 @@ jobs:
           fi
 
           bash "$DEPLOY_SCRIPT" deploy
+          bash "$DEPLOY_SCRIPT" prune-unused-images
           bash "$DEPLOY_SCRIPT" status
           REMOTE

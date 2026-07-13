@@ -28,8 +28,6 @@ import type {
 } from '@/types/standard'
 import { downloadBlob } from '@/utils/blob'
 
-type ContentMode = 'ONLINE' | 'FILE'
-
 const route = useRoute()
 const router = useRouter()
 const { t, locale } = useI18n()
@@ -92,7 +90,7 @@ const columns = computed<TableColumnData[]>(() => [
 
 const versionColumns = computed<TableColumnData[]>(() => [
   { title: t('standard.fields.version'), dataIndex: 'version', width: 90 },
-  { title: t('standard.fields.content'), slotName: 'content', minWidth: 180 },
+  { title: t('standard.fields.fileName'), slotName: 'content', minWidth: 180 },
   { title: t('common.status'), dataIndex: 'status', slotName: 'status', width: 92 },
   {
     title: t('standard.fields.changeDescription'),
@@ -120,11 +118,8 @@ function listRouteQuery() {
 
 const detailVisible = ref(false)
 const selectedDetailId = ref('')
-const selectedVersion = ref<StandardVersion | null>(null)
 
 const createVisible = ref(false)
-const createContentMode = ref<ContentMode>('ONLINE')
-const createContent = ref('')
 const createSelectedFile = ref<File | null>(null)
 const createForm = reactive({
   code: '',
@@ -148,8 +143,6 @@ const editForm = reactive({
 
 const versionVisible = ref(false)
 const editingVersionId = ref('')
-const versionContentMode = ref<ContentMode>('ONLINE')
-const versionContent = ref('')
 const versionSelectedFile = ref<File | null>(null)
 const versionForm = reactive({
   version: '',
@@ -251,14 +244,7 @@ function formatDate(value?: string | null): string {
 }
 
 function versionFileName(version: StandardVersion): string {
-  return version.fileVersion?.asset?.originalName || t('standard.onlineContent')
-}
-
-function versionContentText(version: StandardVersion | null): string {
-  if (!version?.structuredContent) return ''
-  const markdown = version.structuredContent.markdown
-  if (typeof markdown === 'string') return markdown
-  return JSON.stringify(version.structuredContent, null, 2)
+  return version.fileVersion.asset.originalName
 }
 
 async function fetchList(): Promise<void> {
@@ -321,8 +307,6 @@ function resetCreateForm(): void {
     fileVersionId: '',
     changeDescription: t('standard.initialVersion'),
   })
-  createContentMode.value = 'ONLINE'
-  createContent.value = ''
   createSelectedFile.value = null
 }
 
@@ -337,17 +321,6 @@ function closeCreate(): void {
   if (route.query.mode === 'create') {
     void router.replace({ name: 'Standard', query: listRouteQuery() })
   }
-}
-
-function contentPayload(
-  mode: ContentMode,
-  content: string,
-  fileVersionId: string,
-): Pick<CreateStandardDto, 'fileVersionId' | 'structuredContent'> {
-  if (mode === 'FILE') {
-    return { fileVersionId: fileVersionId.trim(), structuredContent: null }
-  }
-  return { fileVersionId: null, structuredContent: { markdown: content.trim() } }
 }
 
 async function invalidateStandard(standardId?: string): Promise<void> {
@@ -400,8 +373,14 @@ const saveVersionMutation = useMutation({
 })
 
 const submitReviewMutation = useMutation({
-  mutationFn: ({ versionId }: { standardId: string; versionId: string }) =>
-    standardApi.submitReview(versionId),
+  mutationFn: ({
+    versionId,
+    revision,
+  }: {
+    standardId: string
+    versionId: string
+    revision: number
+  }) => standardApi.submitReview(versionId, revision),
   retry: false,
   onSuccess: (_, variables) => invalidateStandard(variables.standardId),
 })
@@ -460,20 +439,12 @@ async function submitCreate(): Promise<void> {
     Message.warning(t('standard.validation.masterRequired'))
     return
   }
-  if (createContentMode.value === 'ONLINE' && !createContent.value.trim()) {
-    Message.warning(t('standard.validation.contentRequired'))
-    return
-  }
-  if (
-    createContentMode.value === 'FILE' &&
-    !createSelectedFile.value &&
-    !createForm.fileVersionId.trim()
-  ) {
+  if (!createSelectedFile.value && !createForm.fileVersionId.trim()) {
     Message.warning(t('standard.validation.fileRequired'))
     return
   }
 
-  if (createContentMode.value === 'FILE' && createSelectedFile.value && !createForm.fileVersionId) {
+  if (createSelectedFile.value && !createForm.fileVersionId) {
     const uploaded = await uploadDraftMutation.mutateAsync({
       file: createSelectedFile.value,
       changeDescription: createForm.changeDescription,
@@ -487,8 +458,8 @@ async function submitCreate(): Promise<void> {
     category: createForm.category.trim() || undefined,
     effectiveAt: createForm.effectiveAt || undefined,
     version: createForm.version.trim() || undefined,
+    fileVersionId: createForm.fileVersionId.trim(),
     changeDescription: createForm.changeDescription.trim() || undefined,
-    ...contentPayload(createContentMode.value, createContent.value, createForm.fileVersionId),
   })
   Message.success(t('standard.messages.created'))
   createVisible.value = false
@@ -519,7 +490,6 @@ function openDetail(row: Standard): void {
 function closeDetail(): void {
   detailVisible.value = false
   selectedDetailId.value = ''
-  selectedVersion.value = null
   void router.push({ name: 'Standard', query: listRouteQuery() })
 }
 
@@ -563,9 +533,7 @@ function openCreateVersion(): void {
   const source =
     detail.value.versions?.find((item) => item.id === detail.value?.currentPublishedVersionId) ??
     detail.value.versions?.[0]
-  versionContentMode.value = source?.fileVersion ? 'FILE' : 'ONLINE'
   editingVersionId.value = ''
-  versionContent.value = versionContentText(source ?? null)
   versionSelectedFile.value = null
   Object.assign(versionForm, {
     version: '',
@@ -579,12 +547,10 @@ function openCreateVersion(): void {
 function openEditVersion(version: StandardVersion): void {
   if (!canEdit.value || !['DRAFT', 'REJECTED'].includes(version.status)) return
   editingVersionId.value = version.id
-  versionContentMode.value = version.fileVersion ? 'FILE' : 'ONLINE'
-  versionContent.value = versionContentText(version)
   versionSelectedFile.value = null
   Object.assign(versionForm, {
     version: version.version,
-    fileVersionId: version.fileVersionId ?? '',
+    fileVersionId: version.fileVersionId,
     effectiveAt: version.effectiveAt?.slice(0, 10) ?? '',
     changeDescription: version.changeDescription ?? '',
   })
@@ -593,19 +559,11 @@ function openEditVersion(version: StandardVersion): void {
 
 async function submitVersion(): Promise<void> {
   if (!detail.value) return
-  if (versionContentMode.value === 'ONLINE' && !versionContent.value.trim()) {
-    Message.warning(t('standard.validation.versionContentRequired'))
-    return
-  }
-  if (
-    versionContentMode.value === 'FILE' &&
-    !versionSelectedFile.value &&
-    !versionForm.fileVersionId.trim()
-  ) {
+  if (!versionSelectedFile.value && !versionForm.fileVersionId.trim()) {
     Message.warning(t('standard.validation.versionFileRequired'))
     return
   }
-  if (versionContentMode.value === 'FILE' && versionSelectedFile.value) {
+  if (versionSelectedFile.value && !versionForm.fileVersionId) {
     const uploaded = await uploadDraftMutation.mutateAsync({
       file: versionSelectedFile.value,
       changeDescription: versionForm.changeDescription,
@@ -617,9 +575,9 @@ async function submitVersion(): Promise<void> {
       ? detail.value.versions?.find((version) => version.id === editingVersionId.value)?.revision
       : undefined,
     version: versionForm.version.trim() || undefined,
+    fileVersionId: versionForm.fileVersionId.trim(),
     effectiveAt: versionForm.effectiveAt || null,
     changeDescription: versionForm.changeDescription.trim() || undefined,
-    ...contentPayload(versionContentMode.value, versionContent.value, versionForm.fileVersionId),
   }
   await saveVersionMutation.mutateAsync({
     standardId: detail.value.id,
@@ -645,6 +603,7 @@ function submitReview(version: StandardVersion): void {
       await submitReviewMutation.mutateAsync({
         standardId: detail.value.id,
         versionId: version.id,
+        revision: version.revision,
       })
       Message.success(t('standard.messages.reviewSubmitted'))
     },
@@ -702,24 +661,14 @@ function archiveStandard(row: Standard): void {
 }
 
 function previewVersion(version: StandardVersion): void {
-  const logicalFileId = version.fileVersion?.logicalFileId
-  if (!logicalFileId) {
-    selectedVersion.value = version
-    return
-  }
   filePreview.openPreview({
-    id: logicalFileId,
+    id: version.fileVersion.logicalFileId,
     title: versionFileName(version),
   })
 }
 
 async function downloadVersion(version: StandardVersion): Promise<void> {
-  const logicalFileId = version.fileVersion?.logicalFileId
-  if (!logicalFileId) {
-    Message.warning(t('standard.messages.onlineNoDownload'))
-    return
-  }
-  const blob = await standardApi.downloadFile(logicalFileId)
+  const blob = await standardApi.downloadFile(version.fileVersion.logicalFileId)
   downloadBlob(blob, versionFileName(version))
 }
 
@@ -734,7 +683,7 @@ async function downloadStandard(row: Standard): Promise<void> {
   const version =
     record.versions?.find((item) => item.id === record.currentPublishedVersionId) ??
     record.versions?.find((item) => item.status === 'PUBLISHED')
-  if (!version?.fileVersion) {
+  if (!version) {
     Message.warning(t('standard.messages.publishedNoDownload'))
     return
   }
@@ -751,25 +700,10 @@ async function syncRouteIntent(): Promise<void> {
 
   detailVisible.value = false
   selectedDetailId.value = ''
-  selectedVersion.value = null
   if (mode === 'create' && canCreate.value) {
     if (!createVisible.value) openCreate()
   }
 }
-
-watch(
-  () => standardDetailQuery.data.value,
-  (record) => {
-    if (!record) return
-    if (
-      !selectedVersion.value ||
-      !record.versions?.some((item) => item.id === selectedVersion.value?.id)
-    ) {
-      selectedVersion.value = record.versions?.[0] ?? null
-    }
-  },
-  { immediate: true },
-)
 
 watch(
   () => route.fullPath,
@@ -787,9 +721,7 @@ watch(
       </div>
       <a-space size="small">
         <a-button size="small" :loading="loading" @click="refreshPage">
-          {{
-            t('standard.refresh')
-          }}
+          {{ t('standard.refresh') }}
         </a-button>
         <a-button
           v-if="canCreate"
@@ -797,9 +729,7 @@ watch(
           type="primary"
           @click="openCreate"
         >
-          {{
-            t('standard.create')
-          }}
+          {{ t('standard.create') }}
         </a-button>
       </a-space>
     </header>
@@ -878,9 +808,7 @@ watch(
           {{ typeLabel(record.type) }}
         </template>
         <template #version="{ record }">
-          {{
-            record.currentPublishedVersion?.version || '-'
-          }}
+          {{ record.currentPublishedVersion?.version || '-' }}
         </template>
         <template #status="{ record }">
           <a-tag :color="statusColor(record.status)" size="small">
@@ -896,9 +824,7 @@ watch(
         <template #actions="{ record }">
           <a-space size="mini" :wrap="false">
             <a-button type="text" size="mini" @click="openDetail(record)">
-              {{
-                t('common.view')
-              }}
+              {{ t('common.view') }}
             </a-button>
             <a-button
               v-if="canDownload && record.currentPublishedVersion"
@@ -1000,41 +926,27 @@ watch(
             class="master-detail"
           >
             <a-descriptions-item :label="t('standard.fields.type')">
-              {{
-                typeLabel(detail.type)
-              }}
+              {{ typeLabel(detail.type) }}
             </a-descriptions-item>
             <a-descriptions-item :label="t('standard.fields.category')">
-              {{
-                detail.category || '-'
-              }}
+              {{ detail.category || '-' }}
             </a-descriptions-item>
             <a-descriptions-item :label="t('common.status')">
               <a-tag :color="statusMeta[detail.status].color" size="small">
-                {{
-                  t(statusMeta[detail.status].label)
-                }}
+                {{ t(statusMeta[detail.status].label) }}
               </a-tag>
             </a-descriptions-item>
             <a-descriptions-item :label="t('standard.fields.effectiveAt')">
-              {{
-                formatDate(detail.effectiveAt)
-              }}
+              {{ formatDate(detail.effectiveAt) }}
             </a-descriptions-item>
             <a-descriptions-item :label="t('standard.fields.creator')">
-              {{
-                detail.creator?.realName || '-'
-              }}
+              {{ detail.creator?.realName || '-' }}
             </a-descriptions-item>
             <a-descriptions-item :label="t('standard.fields.updater')">
-              {{
-                detail.updater?.realName || '-'
-              }}
+              {{ detail.updater?.realName || '-' }}
             </a-descriptions-item>
             <a-descriptions-item :label="t('common.updatedAt')">
-              {{
-                formatDate(detail.updatedAt)
-              }}
+              {{ formatDate(detail.updatedAt) }}
             </a-descriptions-item>
           </a-descriptions>
 
@@ -1061,24 +973,18 @@ watch(
                 </a-tag>
               </template>
               <template #changeDescription="{ record }">
-                {{
-                  record.changeDescription || '-'
-                }}
+                {{ record.changeDescription || '-' }}
               </template>
               <template #submitter="{ record }">
                 {{ record.submitter?.realName || '-' }}
               </template>
               <template #createdAt="{ record }">
-                {{
-                  formatDate(record.publishedAt || record.createdAt)
-                }}
+                {{ formatDate(record.publishedAt || record.createdAt) }}
               </template>
               <template #actions="{ record }">
                 <a-space size="mini" :wrap="false">
                   <a-button type="text" size="mini" @click="previewVersion(record)">
-                    {{
-                      t('common.view')
-                    }}
+                    {{ t('common.view') }}
                   </a-button>
                   <a-button
                     v-if="canEdit && ['DRAFT', 'REJECTED'].includes(record.status)"
@@ -1089,7 +995,7 @@ watch(
                     {{ t('standard.editDraft') }}
                   </a-button>
                   <a-button
-                    v-if="canDownload && record.fileVersion"
+                    v-if="canDownload"
                     type="text"
                     size="mini"
                     @click="downloadVersion(record)"
@@ -1108,12 +1014,6 @@ watch(
                 </a-space>
               </template>
             </a-table>
-            <div v-if="selectedVersion && !selectedVersion.fileVersion" class="online-content">
-              <div>
-                <strong>{{ selectedVersion.version }} {{ t('standard.onlineContent') }}</strong><span>{{ t('standard.readonly') }}</span>
-              </div>
-              <pre>{{ versionContentText(selectedVersion) || t('standard.noContent') }}</pre>
-            </div>
           </section>
 
           <section class="detail-section">
@@ -1166,44 +1066,23 @@ watch(
       <a-form :model="createForm" layout="vertical">
         <a-grid :cols="2" :col-gap="12" :row-gap="0">
           <a-grid-item>
-            <a-form-item
-              :label="t('standard.fields.code')"
-              required
-            >
-              <a-input
-                v-model="createForm.code"
-                :placeholder="t('standard.codePlaceholder')"
-              />
+            <a-form-item :label="t('standard.fields.code')" required>
+              <a-input v-model="createForm.code" :placeholder="t('standard.codePlaceholder')" />
             </a-form-item>
           </a-grid-item>
           <a-grid-item>
-            <a-form-item
-              :label="t('standard.fields.name')"
-              required
-            >
-              <a-input
-                v-model="createForm.name"
-                :placeholder="t('standard.namePlaceholder')"
-              />
+            <a-form-item :label="t('standard.fields.name')" required>
+              <a-input v-model="createForm.name" :placeholder="t('standard.namePlaceholder')" />
             </a-form-item>
           </a-grid-item>
           <a-grid-item>
-            <a-form-item
-              :label="t('standard.fields.type')"
-              required
-            >
-              <a-select
-                v-model="createForm.type"
-                :options="localizedStandardTypeOptions"
-              />
+            <a-form-item :label="t('standard.fields.type')" required>
+              <a-select v-model="createForm.type" :options="localizedStandardTypeOptions" />
             </a-form-item>
           </a-grid-item>
           <a-grid-item>
             <a-form-item :label="t('standard.fields.category')">
-              <a-input
-                v-model="createForm.category"
-                :placeholder="t('standard.optional')"
-              />
+              <a-input v-model="createForm.category" :placeholder="t('standard.optional')" />
             </a-form-item>
           </a-grid-item>
           <a-grid-item>
@@ -1227,29 +1106,7 @@ watch(
             :auto-size="{ minRows: 2, maxRows: 3 }"
           />
         </a-form-item>
-        <a-form-item :label="t('standard.standardContent')" required>
-          <a-radio-group v-model="createContentMode" type="button" size="small">
-            <a-radio value="ONLINE">
-              {{ t('standard.onlineContent') }}
-            </a-radio>
-            <a-radio value="FILE">
-              {{ t('standard.managedFile') }}
-            </a-radio>
-          </a-radio-group>
-        </a-form-item>
         <a-form-item
-          v-if="createContentMode === 'ONLINE'"
-          :label="t('standard.contentBody')"
-          required
-        >
-          <a-textarea
-            v-model="createContent"
-            :placeholder="t('standard.markdownPlaceholder')"
-            :auto-size="{ minRows: 8, maxRows: 14 }"
-          />
-        </a-form-item>
-        <a-form-item
-          v-else
           :label="t('standard.standardFile')"
           required
           :extra="t('standard.fileDraftHint')"
@@ -1276,36 +1133,20 @@ watch(
         {{ t('standard.editMasterHint') }}
       </a-alert>
       <a-form :model="editForm" layout="vertical">
-        <a-form-item
-          :label="t('standard.fields.code')"
-          required
-        >
+        <a-form-item :label="t('standard.fields.code')" required>
           <a-input v-model="editForm.code" />
         </a-form-item>
-        <a-form-item
-          :label="t('standard.fields.name')"
-          required
-        >
+        <a-form-item :label="t('standard.fields.name')" required>
           <a-input v-model="editForm.name" />
         </a-form-item>
-        <a-form-item
-          :label="t('standard.fields.type')"
-          required
-        >
-          <a-select
-            v-model="editForm.type"
-            :options="localizedStandardTypeOptions"
-          />
+        <a-form-item :label="t('standard.fields.type')" required>
+          <a-select v-model="editForm.type" :options="localizedStandardTypeOptions" />
         </a-form-item>
         <a-form-item :label="t('standard.fields.category')">
           <a-input v-model="editForm.category" />
         </a-form-item>
         <a-form-item :label="t('standard.fields.effectiveAt')">
-          <a-date-picker
-            v-model="editForm.effectiveAt"
-            format="YYYY-MM-DD"
-            style="width: 100%"
-          />
+          <a-date-picker v-model="editForm.effectiveAt" format="YYYY-MM-DD" style="width: 100%" />
         </a-form-item>
       </a-form>
     </a-modal>
@@ -1319,9 +1160,7 @@ watch(
       @ok="submitVersion"
     >
       <a-alert type="info" show-icon class="modal-note">
-        {{
-          t('standard.versionDraftHint')
-        }}
+        {{ t('standard.versionDraftHint') }}
       </a-alert>
       <a-form :model="versionForm" layout="vertical">
         <a-grid :cols="2" :col-gap="12">
@@ -1349,25 +1188,7 @@ watch(
             :auto-size="{ minRows: 2, maxRows: 3 }"
           />
         </a-form-item>
-        <a-form-item :label="t('standard.contentMode')">
-          <a-radio-group v-model="versionContentMode" type="button" size="small">
-            <a-radio value="ONLINE">
-              {{ t('standard.onlineContent') }}
-            </a-radio>
-            <a-radio value="FILE">
-              {{ t('standard.managedFile') }}
-            </a-radio>
-          </a-radio-group>
-        </a-form-item>
         <a-form-item
-          v-if="versionContentMode === 'ONLINE'"
-          :label="t('standard.contentBody')"
-          required
-        >
-          <a-textarea v-model="versionContent" :auto-size="{ minRows: 8, maxRows: 14 }" />
-        </a-form-item>
-        <a-form-item
-          v-else
           :label="t('standard.newVersionFile')"
           required
           :extra="t('standard.newFileHint')"
@@ -1394,14 +1215,8 @@ watch(
       @ok="submitRelation"
     >
       <a-form :model="relationForm" layout="vertical">
-        <a-form-item
-          :label="t('standard.relationType')"
-          required
-        >
-          <a-select
-            v-model="relationForm.relationType"
-            :options="localizedRelationTypeOptions"
-          />
+        <a-form-item :label="t('standard.relationType')" required>
+          <a-select v-model="relationForm.relationType" :options="localizedRelationTypeOptions" />
         </a-form-item>
         <a-form-item :label="t('standard.targetStandard')" required>
           <a-select
@@ -1409,11 +1224,7 @@ watch(
             allow-search
             :placeholder="t('standard.targetPlaceholder')"
           >
-            <a-option
-              v-for="item in relationCandidates"
-              :key="item.id"
-              :value="item.id"
-            >
+            <a-option v-for="item in relationCandidates" :key="item.id" :value="item.id">
               {{ item.code }} · {{ item.name }}
             </a-option>
           </a-select>
@@ -1585,33 +1396,6 @@ watch(
 .detail-section header > span {
   color: var(--color-text-3);
   font-size: 12px;
-}
-
-.online-content {
-  margin-top: 8px;
-  border: 1px solid var(--color-border-2);
-  background: var(--color-fill-1);
-}
-.online-content > div {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--color-border-2);
-}
-.online-content span {
-  color: var(--color-text-3);
-  font-size: 12px;
-}
-.online-content pre {
-  max-height: 320px;
-  margin: 0;
-  padding: 12px;
-  overflow: auto;
-  color: var(--color-text-2);
-  font:
-    12px/1.7 Consolas,
-    monospace;
-  white-space: pre-wrap;
 }
 
 .relation-list {

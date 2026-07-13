@@ -926,6 +926,7 @@ model MigrationException {
 
   @@unique([domain, entityType, entityId, code])
   @@index([domain, status])
+  @@index([domain, code, status], map: "migration_exceptions_domain_code_status_idx")
   @@map("migration_exceptions")
 }
 
@@ -1081,8 +1082,12 @@ model StandardVersion {
   standardId        String    @map("standard_id") @db.VarChar(36)
   version           String    @db.VarChar(20)
   fileVersionId     String?   @map("file_version_id") @db.VarChar(36)
+  /// Transitional, read-only migration source. New standard content is file-only;
+  /// remove this field only after strict content verification passes in production.
   structuredContent Json?     @map("structured_content")
+  /// Transitional, read-only migration source retained during the file backfill.
   applicability     Json?
+  /// Transitional audit snapshot; never expose it through public API responses.
   legacySnapshot    Json?     @map("legacy_snapshot")
   status            String    @default("DRAFT") @db.VarChar(20)
   revision          Int       @default(1)
@@ -1103,6 +1108,7 @@ model StandardVersion {
   @@unique([standardId, version])
   @@index([standardId, status])
   @@index([fileVersionId])
+  @@index([status, archivedAt], map: "standard_versions_status_archived_at_idx")
   @@map("standard_versions")
 }
 
@@ -1287,6 +1293,7 @@ model KnowledgeVersion {
   @@unique([knowledgeItemId, version])
   @@index([knowledgeItemId, status])
   @@index([fileVersionId])
+  @@index([contentType, status, archivedAt], map: "knowledge_versions_v2_content_type_status_archived_idx")
   @@map("knowledge_versions_v2")
 }
 
@@ -1489,23 +1496,6 @@ model Language {
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@map("languages")
-}
-
-model Translation {
-  id           String   @id @default(uuid())
-  contentType  String   @map("content_type") @db.VarChar(50)
-  contentId    String   @map("content_id") @db.VarChar(120)
-  fieldName    String   @map("field_name") @db.VarChar(100)
-  languageCode String   @map("language_code") @db.VarChar(10)
-  fieldValue   String   @map("field_value") @db.Text
-  version      String   @default("V1.0") @db.VarChar(10)
-  reviewStatus String   @default("Draft") @map("review_status") @db.VarChar(20)
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
-
-  @@unique([contentType, contentId, fieldName, languageCode])
-  @@index([contentType, contentId])
-  @@map("translations")
 }
 
 // ============================================================

@@ -64,11 +64,11 @@ export const standardApi = {
     return request.patch<StandardVersion>(`/standard-versions/${versionId}`, data)
   },
 
-  submitReview(versionId: string, approvalTemplateId?: string) {
-    return request.post<ReviewSubmissionResult>(
-      `/standard-versions/${versionId}/submit-review`,
-      approvalTemplateId ? { approvalTemplateId } : {},
-    )
+  submitReview(versionId: string, revision: number, approvalTemplateId?: string) {
+    return request.post<ReviewSubmissionResult>(`/standard-versions/${versionId}/submit-review`, {
+      revision,
+      ...(approvalTemplateId ? { approvalTemplateId } : {}),
+    })
   },
 
   getRelations(id: string) {

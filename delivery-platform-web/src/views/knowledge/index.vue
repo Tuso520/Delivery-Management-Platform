@@ -6,7 +6,13 @@ import { Message, Modal } from '@arco-design/web-vue'
 import type { TableColumnData } from '@arco-design/web-vue'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 
-import { knowledgeApi } from '@/api/knowledge'
+import {
+  knowledgeApi,
+  type CreateKnowledgeItemPayload,
+  type CreateKnowledgeVersionPayload,
+  type KnowledgePrimaryContentPayload,
+  type UpdateKnowledgeVersionPayload,
+} from '@/api/knowledge'
 import {
   useKnowledgeCategoriesQuery,
   useKnowledgeDetailQuery,
@@ -18,8 +24,6 @@ import { queryKeys } from '@/query/keys'
 import { firstRouteParam, preservedRouteQuery } from '@/router/query-state'
 import { usePermissionStore } from '@/store/permission'
 import type {
-  CreateKnowledgeItemDto,
-  CreateKnowledgeVersionDto,
   KnowledgeCategory,
   KnowledgeContentType,
   KnowledgeItem,
@@ -185,7 +189,9 @@ const canArchive = computed(() => permissionStore.hasPermission('knowledge:archi
 const canDownload = computed(() => permissionStore.hasPermission('knowledge:download'))
 const hasActiveDraftVersion = computed(() =>
   Boolean(
-    detail.value?.versions?.some((version) => ['DRAFT', 'IN_REVIEW'].includes(version.status)),
+    detail.value?.versions?.some((version) =>
+      ['DRAFT', 'IN_REVIEW', 'REJECTED'].includes(version.status),
+    ),
   ),
 )
 
@@ -389,11 +395,28 @@ function contentPayload(
   fileVersionId: string,
   markdownContent: string,
   externalUrl: string,
-): Pick<CreateKnowledgeItemDto, 'fileVersionId' | 'markdownContent' | 'externalUrl'> {
+): KnowledgePrimaryContentPayload {
+  if (contentType === 'FILE') {
+    return {
+      contentType,
+      fileVersionId: fileVersionId.trim(),
+      markdownContent: null,
+      externalUrl: null,
+    }
+  }
+  if (contentType === 'MARKDOWN') {
+    return {
+      contentType,
+      fileVersionId: null,
+      markdownContent: markdownContent.trim(),
+      externalUrl: null,
+    }
+  }
   return {
-    fileVersionId: contentType === 'FILE' ? fileVersionId.trim() : null,
-    markdownContent: contentType === 'MARKDOWN' ? markdownContent.trim() : null,
-    externalUrl: contentType === 'LINK' ? externalUrl.trim() : null,
+    contentType,
+    fileVersionId: null,
+    markdownContent: null,
+    externalUrl: externalUrl.trim(),
   }
 }
 
@@ -417,7 +440,7 @@ const uploadDraftMutation = useMutation({
 })
 
 const createKnowledgeMutation = useMutation({
-  mutationFn: (data: CreateKnowledgeItemDto) => knowledgeApi.create(data),
+  mutationFn: (data: CreateKnowledgeItemPayload) => knowledgeApi.create(data),
   retry: false,
   onSuccess: (created) => invalidateKnowledge(created.id),
 })
@@ -429,26 +452,27 @@ const updateKnowledgeMutation = useMutation({
   onSuccess: (_, variables) => invalidateKnowledge(variables.id),
 })
 
+type SaveKnowledgeVersionCommand =
+  | { kind: 'create'; itemId: string; data: CreateKnowledgeVersionPayload }
+  | {
+      kind: 'update'
+      itemId: string
+      versionId: string
+      data: UpdateKnowledgeVersionPayload
+    }
+
 const saveVersionMutation = useMutation({
-  mutationFn: ({
-    itemId,
-    versionId,
-    data,
-  }: {
-    itemId: string
-    versionId?: string
-    data: CreateKnowledgeVersionDto
-  }) =>
-    versionId
-      ? knowledgeApi.updateVersion(versionId, data)
-      : knowledgeApi.createVersion(itemId, data),
+  mutationFn: (command: SaveKnowledgeVersionCommand) =>
+    command.kind === 'update'
+      ? knowledgeApi.updateVersion(command.versionId, command.data)
+      : knowledgeApi.createVersion(command.itemId, command.data),
   retry: false,
-  onSuccess: (_, variables) => invalidateKnowledge(variables.itemId),
+  onSuccess: (_, command) => invalidateKnowledge(command.itemId),
 })
 
 const submitReviewMutation = useMutation({
-  mutationFn: ({ versionId }: { itemId: string; versionId: string }) =>
-    knowledgeApi.submitReview(versionId),
+  mutationFn: ({ versionId, revision }: { itemId: string; versionId: string; revision: number }) =>
+    knowledgeApi.submitReview(versionId, revision),
   retry: false,
   onSuccess: (_, variables) => invalidateKnowledge(variables.itemId),
 })
@@ -496,11 +520,10 @@ async function submitCreate(): Promise<void> {
       ...(await uploadSupportingFiles(createSupportingFiles.value, createForm.changeDescription)),
     ]
   }
-  const created = await createKnowledgeMutation.mutateAsync({
+  const payload: CreateKnowledgeItemPayload = {
     title: createForm.title.trim(),
     categoryId: createForm.categoryId,
     summary: createForm.summary.trim() || undefined,
-    contentType: createForm.contentType,
     effectiveAt: createForm.effectiveAt || undefined,
     version: createForm.version.trim() || undefined,
     changeDescription: createForm.changeDescription.trim() || undefined,
@@ -511,7 +534,8 @@ async function submitCreate(): Promise<void> {
       createForm.markdownContent,
       createForm.externalUrl,
     ),
-  })
+  }
+  const created = await createKnowledgeMutation.mutateAsync(payload)
   Message.success(t('knowledge.messages.created'))
   createVisible.value = false
   await router.replace({
@@ -548,7 +572,8 @@ function handleDetailVisibility(visible: boolean): void {
 }
 
 function openEdit(): void {
-  if (!detail.value || !canEdit.value || detail.value.status === 'ARCHIVED') return
+  if (!detail.value || !canEdit.value || !['DRAFT', 'REJECTED'].includes(detail.value.status))
+    return
   Object.assign(editForm, {
     title: detail.value.title,
     categoryId: detail.value.categoryId,
@@ -639,12 +664,8 @@ async function submitVersion(): Promise<void> {
       ...(await uploadSupportingFiles(versionSupportingFiles.value, versionForm.changeDescription)),
     ]
   }
-  const payload: CreateKnowledgeVersionDto = {
-    revision: editingVersionId.value
-      ? detail.value.versions?.find((version) => version.id === editingVersionId.value)?.revision
-      : undefined,
+  const payload: CreateKnowledgeVersionPayload = {
     version: versionForm.version.trim() || undefined,
-    contentType: versionForm.contentType,
     changeDescription: versionForm.changeDescription.trim() || undefined,
     supportingFileVersionIds: Array.from(new Set(versionForm.supportingFileVersionIds)),
     ...contentPayload(
@@ -654,14 +675,24 @@ async function submitVersion(): Promise<void> {
       versionForm.externalUrl,
     ),
   }
-  await saveVersionMutation.mutateAsync({
-    itemId: detail.value.id,
-    versionId: editingVersionId.value || undefined,
-    data: payload,
-  })
   if (editingVersionId.value) {
+    const revision = detail.value.versions?.find(
+      (version) => version.id === editingVersionId.value,
+    )?.revision
+    if (revision === undefined) return
+    await saveVersionMutation.mutateAsync({
+      kind: 'update',
+      itemId: detail.value.id,
+      versionId: editingVersionId.value,
+      data: { ...payload, revision },
+    })
     Message.success(t('knowledge.messages.versionUpdated'))
   } else {
+    await saveVersionMutation.mutateAsync({
+      kind: 'create',
+      itemId: detail.value.id,
+      data: payload,
+    })
     Message.success(t('knowledge.messages.versionCreated'))
   }
   versionVisible.value = false
@@ -678,6 +709,7 @@ function submitReview(version: KnowledgeVersion): void {
       await submitReviewMutation.mutateAsync({
         itemId: detail.value.id,
         versionId: version.id,
+        revision: version.revision,
       })
       Message.success(t('knowledge.messages.reviewSubmitted'))
     },
@@ -809,9 +841,7 @@ watch(
       </div>
       <a-space size="small">
         <a-button size="small" :loading="loading" @click="refreshPage">
-          {{
-            t('knowledge.refresh')
-          }}
+          {{ t('knowledge.refresh') }}
         </a-button>
         <a-button
           v-if="canCreate"
@@ -819,9 +849,7 @@ watch(
           type="primary"
           @click="openCreate"
         >
-          {{
-            t('knowledge.create')
-          }}
+          {{ t('knowledge.create') }}
         </a-button>
       </a-space>
     </header>
@@ -902,9 +930,7 @@ watch(
           {{ contentTypeLabel(record.contentType) }}
         </template>
         <template #version="{ record }">
-          {{
-            record.currentPublishedVersion?.version || '-'
-          }}
+          {{ record.currentPublishedVersion?.version || '-' }}
         </template>
         <template #status="{ record }">
           <a-tag :color="statusColor(record.status)" size="small">
@@ -920,9 +946,7 @@ watch(
         <template #actions="{ record }">
           <a-space size="mini" :wrap="false">
             <a-button type="text" size="mini" @click="openDetail(record)">
-              {{
-                t('common.view')
-              }}
+              {{ t('common.view') }}
             </a-button>
             <a-button
               v-if="canDownload && record.currentPublishedVersion?.contentType === 'FILE'"
@@ -984,7 +1008,7 @@ watch(
           <div class="detail-command-bar">
             <a-space size="small">
               <a-button
-                v-if="canEdit && detail.status !== 'ARCHIVED'"
+                v-if="canEdit && ['DRAFT', 'REJECTED'].includes(detail.status)"
                 size="small"
                 @click="openEdit"
               >
@@ -1017,46 +1041,30 @@ watch(
             class="master-detail"
           >
             <a-descriptions-item :label="t('knowledge.fields.category')">
-              {{
-                detail.category?.name || '-'
-              }}
+              {{ detail.category?.name || '-' }}
             </a-descriptions-item>
             <a-descriptions-item :label="t('knowledge.fields.contentType')">
-              {{
-                contentTypeLabel(detail.contentType)
-              }}
+              {{ contentTypeLabel(detail.contentType) }}
             </a-descriptions-item>
             <a-descriptions-item :label="t('common.status')">
               <a-tag :color="statusMeta[detail.status].color" size="small">
-                {{
-                  t(statusMeta[detail.status].label)
-                }}
+                {{ t(statusMeta[detail.status].label) }}
               </a-tag>
             </a-descriptions-item>
             <a-descriptions-item :label="t('knowledge.fields.effectiveAt')">
-              {{
-                formatDate(detail.effectiveAt)
-              }}
+              {{ formatDate(detail.effectiveAt) }}
             </a-descriptions-item>
             <a-descriptions-item :label="t('knowledge.fields.creator')">
-              {{
-                detail.creator?.realName || '-'
-              }}
+              {{ detail.creator?.realName || '-' }}
             </a-descriptions-item>
             <a-descriptions-item :label="t('knowledge.fields.updater')">
-              {{
-                detail.updater?.realName || '-'
-              }}
+              {{ detail.updater?.realName || '-' }}
             </a-descriptions-item>
             <a-descriptions-item :label="t('common.updatedAt')">
-              {{
-                formatDate(detail.updatedAt)
-              }}
+              {{ formatDate(detail.updatedAt) }}
             </a-descriptions-item>
             <a-descriptions-item :label="t('knowledge.fields.summary')" :span="3">
-              {{
-                detail.summary || '-'
-              }}
+              {{ detail.summary || '-' }}
             </a-descriptions-item>
           </a-descriptions>
 
@@ -1077,9 +1085,7 @@ watch(
               size="small"
             >
               <template #contentType="{ record }">
-                {{
-                  contentTypeLabel(record.contentType)
-                }}
+                {{ contentTypeLabel(record.contentType) }}
               </template>
               <template #content="{ record }">
                 <span class="content-summary">{{ versionContentLabel(record) }}</span>
@@ -1090,17 +1096,13 @@ watch(
                 </a-tag>
               </template>
               <template #changeDescription="{ record }">
-                {{
-                  record.changeDescription || '-'
-                }}
+                {{ record.changeDescription || '-' }}
               </template>
               <template #submitter="{ record }">
                 {{ record.submitter?.realName || '-' }}
               </template>
               <template #createdAt="{ record }">
-                {{
-                  formatDate(record.publishedAt || record.createdAt)
-                }}
+                {{ formatDate(record.publishedAt || record.createdAt) }}
               </template>
               <template #actions="{ record }">
                 <a-space size="mini" :wrap="false">
@@ -1191,21 +1193,12 @@ watch(
       <a-form :model="createForm" layout="vertical">
         <a-grid :cols="2" :col-gap="12" :row-gap="0">
           <a-grid-item>
-            <a-form-item
-              :label="t('knowledge.fields.title')"
-              required
-            >
-              <a-input
-                v-model="createForm.title"
-                :placeholder="t('knowledge.titlePlaceholder')"
-              />
+            <a-form-item :label="t('knowledge.fields.title')" required>
+              <a-input v-model="createForm.title" :placeholder="t('knowledge.titlePlaceholder')" />
             </a-form-item>
           </a-grid-item>
           <a-grid-item>
-            <a-form-item
-              :label="t('knowledge.fields.category')"
-              required
-            >
+            <a-form-item :label="t('knowledge.fields.category')" required>
               <a-select
                 v-model="createForm.categoryId"
                 :options="categoryOptions"
@@ -1230,18 +1223,12 @@ watch(
           </a-grid-item>
         </a-grid>
         <a-form-item :label="t('knowledge.fields.summary')">
-          <a-textarea
-            v-model="createForm.summary"
-            :auto-size="{ minRows: 2, maxRows: 3 }"
-          />
+          <a-textarea v-model="createForm.summary" :auto-size="{ minRows: 2, maxRows: 3 }" />
         </a-form-item>
         <a-form-item :label="t('knowledge.fields.changeDescription')">
           <a-input v-model="createForm.changeDescription" />
         </a-form-item>
-        <a-form-item
-          :label="t('knowledge.fields.contentType')"
-          required
-        >
+        <a-form-item :label="t('knowledge.fields.contentType')" required>
           <a-radio-group
             v-model="createForm.contentType"
             type="button"
@@ -1305,39 +1292,20 @@ watch(
       @ok="submitEdit"
     >
       <a-alert type="info" show-icon class="modal-note">
-        {{
-          t('knowledge.editMasterHint')
-        }}
+        {{ t('knowledge.editMasterHint') }}
       </a-alert>
       <a-form :model="editForm" layout="vertical">
-        <a-form-item
-          :label="t('knowledge.fields.title')"
-          required
-        >
+        <a-form-item :label="t('knowledge.fields.title')" required>
           <a-input v-model="editForm.title" />
         </a-form-item>
-        <a-form-item
-          :label="t('knowledge.fields.category')"
-          required
-        >
-          <a-select
-            v-model="editForm.categoryId"
-            :options="categoryOptions"
-            allow-search
-          />
+        <a-form-item :label="t('knowledge.fields.category')" required>
+          <a-select v-model="editForm.categoryId" :options="categoryOptions" allow-search />
         </a-form-item>
         <a-form-item :label="t('knowledge.fields.summary')">
-          <a-textarea
-            v-model="editForm.summary"
-            :auto-size="{ minRows: 2, maxRows: 4 }"
-          />
+          <a-textarea v-model="editForm.summary" :auto-size="{ minRows: 2, maxRows: 4 }" />
         </a-form-item>
         <a-form-item :label="t('knowledge.fields.effectiveAt')">
-          <a-date-picker
-            v-model="editForm.effectiveAt"
-            format="YYYY-MM-DD"
-            style="width: 100%"
-          />
+          <a-date-picker v-model="editForm.effectiveAt" format="YYYY-MM-DD" style="width: 100%" />
         </a-form-item>
       </a-form>
     </a-modal>
@@ -1351,9 +1319,7 @@ watch(
       @ok="submitVersion"
     >
       <a-alert type="info" show-icon class="modal-note">
-        {{
-          t('knowledge.versionDraftHint')
-        }}
+        {{ t('knowledge.versionDraftHint') }}
       </a-alert>
       <a-form :model="versionForm" layout="vertical">
         <a-form-item :label="t('knowledge.fields.version')">
@@ -1406,11 +1372,7 @@ watch(
             :auto-size="{ minRows: 10, maxRows: 16 }"
           />
         </a-form-item>
-        <a-form-item
-          v-else
-          :label="t('knowledge.externalLink')"
-          required
-        >
+        <a-form-item v-else :label="t('knowledge.externalLink')" required>
           <a-input v-model="versionForm.externalUrl" />
         </a-form-item>
         <a-form-item

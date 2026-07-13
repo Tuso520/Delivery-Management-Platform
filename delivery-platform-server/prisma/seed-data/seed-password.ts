@@ -21,18 +21,6 @@ const passwordEnvKeys: Record<SeedPasswordKey, string> = {
   partner: 'SEED_PARTNER_PASSWORD',
 };
 
-const developmentPasswords: Record<SeedPasswordKey, string> = {
-  admin: 'Admin@123',
-  delivery_mgr: 'Delivery@123',
-  pm: 'Pm@123456',
-  elec: 'Elec@123',
-  sw: 'Sw@123456',
-  purchase: 'Purch@123',
-  finance: 'Fin@12345',
-  standard: 'Std@12345',
-  partner: 'Partner@1',
-};
-
 export function resolveSeedPassword(
   key: SeedPasswordKey,
   environment: NodeJS.ProcessEnv = process.env,
@@ -41,19 +29,21 @@ export function resolveSeedPassword(
   const value =
     environment[environmentKey] ??
     (key === 'admin' ? undefined : environment.SEED_DEFAULT_PASSWORD);
-  const placeholder = !value || value.startsWith('CHANGE_ME');
-  if (environment.NODE_ENV === 'production' && placeholder) {
-    throw new Error(`生产环境首次初始化必须配置 ${environmentKey}`);
+  if (!value || !value.trim() || value.trim().toUpperCase().startsWith('CHANGE_ME')) {
+    const acceptedEnvironmentKeys =
+      key === 'admin' ? environmentKey : `${environmentKey} or SEED_DEFAULT_PASSWORD`;
+    throw new Error(
+      `Seed password must be explicitly configured through ${acceptedEnvironmentKeys}; placeholder values are rejected`,
+    );
   }
-  return placeholder ? developmentPasswords[key] : value;
+
+  return value;
 }
 
 export function shouldResetExistingSeedUserPasswords(
   environment: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  const configured = environment.SEED_RESET_EXISTING_USER_PASSWORDS
-    ?.trim()
-    .toLowerCase();
+  const configured = environment.SEED_RESET_EXISTING_USER_PASSWORDS?.trim().toLowerCase();
 
   if (configured === 'true' || configured === '1' || configured === 'yes') {
     return true;
@@ -63,5 +53,5 @@ export function shouldResetExistingSeedUserPasswords(
     return false;
   }
 
-  return environment.NODE_ENV !== 'production';
+  return false;
 }

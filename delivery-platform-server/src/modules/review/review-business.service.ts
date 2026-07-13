@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 export const REGISTERED_REVIEW_SOURCE_TYPES = [
@@ -12,6 +17,8 @@ export const REGISTERED_REVIEW_SOURCE_TYPES = [
 export type RegisteredReviewSourceType = (typeof REGISTERED_REVIEW_SOURCE_TYPES)[number];
 
 const registeredSources = new Set<string>(REGISTERED_REVIEW_SOURCE_TYPES);
+const claimableFileVersionStatuses = ['DRAFT', 'UPLOADED', 'REJECTED'] as const;
+const claimableFileVersionStatusSet = new Set<string>(claimableFileVersionStatuses);
 
 interface ReviewBusinessDecisionInput {
   sourceType: string;
@@ -20,6 +27,13 @@ interface ReviewBusinessDecisionInput {
   decision: 'APPROVED' | 'REJECTED';
   actorUserId: string;
   decidedAt: Date;
+}
+
+interface BusinessFileVersionState {
+  id: string;
+  logicalFileId: string;
+  status: string;
+  archivedAt: Date | null;
 }
 
 @Injectable()
@@ -60,6 +74,7 @@ export class ReviewBusinessService {
       sourceType: string;
       sourceId: string;
       fileVersionId: string | null;
+      sourceRevision: number | null;
       submittedAt: Date;
       submittedBy: string;
     },
@@ -111,45 +126,102 @@ export class ReviewBusinessService {
     }
 
     if (input.sourceType === 'STANDARD') {
+      await this.lockActiveContentMaster(tx, 'standards', input.sourceId, '标准');
       const version = await tx.standardVersion.findUnique({
         where: { id: input.sourceId },
-        select: { status: true, fileVersionId: true, standardId: true },
+        select: {
+          status: true,
+          revision: true,
+          fileVersionId: true,
+          standardId: true,
+        },
       });
       if (!version || !['DRAFT', 'REJECTED'].includes(version.status)) {
         throw new BadRequestException('标准版本当前状态不能提交审核');
       }
-      await tx.standardVersion.update({
-        where: { id: input.sourceId },
+      const sourceRevision = this.assertSourceSnapshot(
+        input.sourceRevision,
+        version.revision,
+        input.fileVersionId,
+        version.fileVersionId,
+        '标准版本',
+      );
+      const claimed = await tx.standardVersion.updateMany({
+        where: {
+          id: input.sourceId,
+          revision: sourceRevision,
+          status: { in: ['DRAFT', 'REJECTED'] },
+          fileVersionId: version.fileVersionId,
+          archivedAt: null,
+        },
         data: {
           status: 'IN_REVIEW',
           submittedAt: input.submittedAt,
           revision: { increment: 1 },
         },
       });
+      if (claimed.count !== 1) {
+        throw new ConflictException('标准版本已变更，请刷新后重试');
+      }
+      await this.claimFileVersionsForReview(tx, [version.fileVersionId]);
       await tx.standard.updateMany({
         where: { id: version.standardId, currentPublishedVersionId: null },
         data: { status: 'IN_REVIEW', updatedBy: input.submittedBy },
       });
-      await this.markFileVersionReviewing(tx, version.fileVersionId);
       return;
     }
 
     if (input.sourceType === 'KNOWLEDGE') {
+      await this.lockActiveContentMaster(
+        tx,
+        'knowledge_items',
+        input.sourceId,
+        '知识条目',
+      );
       const version = await tx.knowledgeVersion.findUnique({
         where: { id: input.sourceId },
-        select: { status: true, fileVersionId: true, knowledgeItemId: true },
+        select: {
+          status: true,
+          revision: true,
+          fileVersionId: true,
+          knowledgeItemId: true,
+          supportingFiles: {
+            select: { fileVersionId: true },
+            orderBy: { sortOrder: 'asc' },
+          },
+        },
       });
       if (!version || !['DRAFT', 'REJECTED'].includes(version.status)) {
         throw new BadRequestException('知识版本当前状态不能提交审核');
       }
-      await tx.knowledgeVersion.update({
-        where: { id: input.sourceId },
+      const sourceRevision = this.assertSourceSnapshot(
+        input.sourceRevision,
+        version.revision,
+        input.fileVersionId,
+        version.fileVersionId,
+        '知识版本',
+      );
+      const claimed = await tx.knowledgeVersion.updateMany({
+        where: {
+          id: input.sourceId,
+          revision: sourceRevision,
+          status: { in: ['DRAFT', 'REJECTED'] },
+          fileVersionId: version.fileVersionId,
+          archivedAt: null,
+        },
         data: {
           status: 'IN_REVIEW',
           submittedAt: input.submittedAt,
           revision: { increment: 1 },
         },
       });
+      if (claimed.count !== 1) {
+        throw new ConflictException('知识版本已变更，请刷新后重试');
+      }
+      await this.claimFileVersionsForReview(tx, [
+        version.fileVersionId,
+        ...version.supportingFiles.map((file) => file.fileVersionId),
+      ]);
       await tx.knowledgeItem.updateMany({
         where: {
           id: version.knowledgeItemId,
@@ -157,7 +229,6 @@ export class ReviewBusinessService {
         },
         data: { status: 'IN_REVIEW', updatedBy: input.submittedBy },
       });
-      await this.markFileVersionReviewing(tx, version.fileVersionId);
       return;
     }
 
@@ -319,37 +390,57 @@ export class ReviewBusinessService {
     tx: Prisma.TransactionClient,
     input: ReviewBusinessDecisionInput,
   ): Promise<void> {
-    if (input.decision === 'REJECTED') {
-      const version = await tx.standardVersion.update({
-        where: { id: input.sourceId },
-        data: { status: 'REJECTED', revision: { increment: 1 } },
-        select: { fileVersionId: true, standardId: true },
-      });
-      await tx.standard.updateMany({
-        where: { id: version.standardId, currentPublishedVersionId: null },
-        data: { status: 'REJECTED', updatedBy: input.actorUserId },
-      });
-      await this.applyGenericFileVersionDecision(
-        tx,
-        version.fileVersionId,
-        input.decision,
-        input.decidedAt,
-      );
-      return;
-    }
-    const version = await tx.standardVersion.update({
+    const version = await tx.standardVersion.findUnique({
       where: { id: input.sourceId },
-      data: {
-        status: 'PUBLISHED',
-        publishedAt: input.decidedAt,
-        revision: { increment: 1 },
-      },
       select: {
+        status: true,
         standardId: true,
         fileVersionId: true,
         effectiveAt: true,
       },
     });
+    if (!version) {
+      throw new NotFoundException('标准版本不存在');
+    }
+    if (version.status !== 'IN_REVIEW') {
+      throw new ConflictException('标准版本已不在审核中');
+    }
+    this.assertPrimaryFileSnapshot(input.fileVersionId, version.fileVersionId, '标准版本');
+
+    const settled = await tx.standardVersion.updateMany({
+      where: {
+        id: input.sourceId,
+        status: 'IN_REVIEW',
+        fileVersionId: version.fileVersionId,
+        archivedAt: null,
+      },
+      data:
+        input.decision === 'APPROVED'
+          ? {
+              status: 'PUBLISHED',
+              publishedAt: input.decidedAt,
+              revision: { increment: 1 },
+            }
+          : { status: 'REJECTED', revision: { increment: 1 } },
+    });
+    if (settled.count !== 1) {
+      throw new ConflictException('标准版本审核状态已变更，请刷新后重试');
+    }
+
+    await this.applyClaimedFileVersionDecision(
+      tx,
+      [version.fileVersionId],
+      input.decision,
+      input.decidedAt,
+    );
+
+    if (input.decision === 'REJECTED') {
+      await tx.standard.updateMany({
+        where: { id: version.standardId, currentPublishedVersionId: null },
+        data: { status: 'REJECTED', updatedBy: input.actorUserId },
+      });
+      return;
+    }
     await tx.standard.update({
       where: { id: version.standardId },
       data: {
@@ -359,24 +450,61 @@ export class ReviewBusinessService {
         updatedBy: input.actorUserId,
       },
     });
-    await this.applyGenericFileVersionDecision(
-      tx,
-      version.fileVersionId,
-      input.decision,
-      input.decidedAt,
-    );
   }
 
   private async applyKnowledgeDecision(
     tx: Prisma.TransactionClient,
     input: ReviewBusinessDecisionInput,
   ): Promise<void> {
+    const version = await tx.knowledgeVersion.findUnique({
+      where: { id: input.sourceId },
+      select: {
+        status: true,
+        knowledgeItemId: true,
+        fileVersionId: true,
+        contentType: true,
+        supportingFiles: {
+          select: { fileVersionId: true },
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
+    });
+    if (!version) {
+      throw new NotFoundException('知识版本不存在');
+    }
+    if (version.status !== 'IN_REVIEW') {
+      throw new ConflictException('知识版本已不在审核中');
+    }
+    this.assertPrimaryFileSnapshot(input.fileVersionId, version.fileVersionId, '知识版本');
+
+    const settled = await tx.knowledgeVersion.updateMany({
+      where: {
+        id: input.sourceId,
+        status: 'IN_REVIEW',
+        fileVersionId: version.fileVersionId,
+        archivedAt: null,
+      },
+      data:
+        input.decision === 'APPROVED'
+          ? {
+              status: 'PUBLISHED',
+              publishedAt: input.decidedAt,
+              revision: { increment: 1 },
+            }
+          : { status: 'REJECTED', revision: { increment: 1 } },
+    });
+    if (settled.count !== 1) {
+      throw new ConflictException('知识版本审核状态已变更，请刷新后重试');
+    }
+
+    await this.applyClaimedFileVersionDecision(
+      tx,
+      [version.fileVersionId, ...version.supportingFiles.map((file) => file.fileVersionId)],
+      input.decision,
+      input.decidedAt,
+    );
+
     if (input.decision === 'REJECTED') {
-      const version = await tx.knowledgeVersion.update({
-        where: { id: input.sourceId },
-        data: { status: 'REJECTED', revision: { increment: 1 } },
-        select: { fileVersionId: true, knowledgeItemId: true },
-      });
       await tx.knowledgeItem.updateMany({
         where: {
           id: version.knowledgeItemId,
@@ -384,27 +512,8 @@ export class ReviewBusinessService {
         },
         data: { status: 'REJECTED', updatedBy: input.actorUserId },
       });
-      await this.applyGenericFileVersionDecision(
-        tx,
-        version.fileVersionId,
-        input.decision,
-        input.decidedAt,
-      );
       return;
     }
-    const version = await tx.knowledgeVersion.update({
-      where: { id: input.sourceId },
-      data: {
-        status: 'PUBLISHED',
-        publishedAt: input.decidedAt,
-        revision: { increment: 1 },
-      },
-      select: {
-        knowledgeItemId: true,
-        fileVersionId: true,
-        contentType: true,
-      },
-    });
     await tx.knowledgeItem.update({
       where: { id: version.knowledgeItemId },
       data: {
@@ -415,45 +524,228 @@ export class ReviewBusinessService {
         updatedBy: input.actorUserId,
       },
     });
-    await this.applyGenericFileVersionDecision(
-      tx,
-      version.fileVersionId,
-      input.decision,
-      input.decidedAt,
-    );
   }
 
-  private async markFileVersionReviewing(
+  private assertSourceSnapshot(
+    sourceRevision: number | null,
+    actualRevision: number,
+    taskFileVersionId: string | null,
+    actualFileVersionId: string | null,
+    sourceLabel: string,
+  ): number {
+    if (sourceRevision === null || !Number.isInteger(sourceRevision) || sourceRevision < 1) {
+      throw new BadRequestException(`${sourceLabel}提交审核缺少有效的修订号快照`);
+    }
+    if (sourceRevision !== actualRevision) {
+      throw new ConflictException(`${sourceLabel}已变更，请刷新后重试`);
+    }
+    this.assertPrimaryFileSnapshot(taskFileVersionId, actualFileVersionId, sourceLabel);
+    return sourceRevision;
+  }
+
+  private assertPrimaryFileSnapshot(
+    taskFileVersionId: string | null,
+    actualFileVersionId: string | null,
+    sourceLabel: string,
+  ): void {
+    if (taskFileVersionId !== actualFileVersionId) {
+      throw new ConflictException(`${sourceLabel}主文件已变更，请重新提交审核`);
+    }
+  }
+
+  /**
+   * A business review never adopts an already REVIEWING file. Therefore a
+   * REVIEWING reference on an immutable IN_REVIEW source is evidence that this
+   * source transaction claimed it; APPROVED references are immutable reuse and
+   * intentionally remain untouched for submission and either terminal result.
+   */
+  private async claimFileVersionsForReview(
     tx: Prisma.TransactionClient,
-    fileVersionId: string | null,
+    candidateIds: Array<string | null>,
   ): Promise<void> {
-    if (!fileVersionId) return;
-    await tx.fileVersion.update({
-      where: { id: fileVersionId },
-      data: { status: 'REVIEWING' },
+    const versions = await this.loadBusinessFileVersions(tx, candidateIds);
+    const toClaim = versions.filter((version) => {
+      if (version.archivedAt || version.status === 'ARCHIVED') {
+        throw new ConflictException('审核文件已归档，不能提交审核');
+      }
+      if (version.status === 'APPROVED') return false;
+      if (!claimableFileVersionStatusSet.has(version.status)) {
+        throw new ConflictException(
+          `文件版本 ${version.id} 当前状态 ${version.status} 不能提交审核`,
+        );
+      }
+      return true;
     });
+    this.assertDistinctClaimedLogicalFiles(toClaim);
+    if (toClaim.length === 0) return;
+
+    const claimed = await tx.fileVersion.updateMany({
+      where: {
+        id: { in: toClaim.map((version) => version.id) },
+        status: { in: [...claimableFileVersionStatuses] },
+        archivedAt: null,
+      },
+      data: { status: 'REVIEWING', approvedAt: null },
+    });
+    if (claimed.count !== toClaim.length) {
+      throw new ConflictException('审核文件状态已变更，请刷新后重试');
+    }
   }
 
-  private async applyGenericFileVersionDecision(
+  private async lockActiveContentMaster(
     tx: Prisma.TransactionClient,
-    fileVersionId: string | null,
+    table: 'standards' | 'knowledge_items',
+    sourceVersionId: string,
+    label: string,
+  ): Promise<void> {
+    const rows =
+      table === 'standards'
+        ? await tx.$queryRaw<Array<{ id: string; archived_at: Date | null }>>(Prisma.sql`
+            SELECT id, archived_at
+            FROM standards
+            WHERE id = (
+              SELECT standard_id
+              FROM standard_versions
+              WHERE id = ${sourceVersionId}
+            )
+            FOR UPDATE
+          `)
+        : await tx.$queryRaw<Array<{ id: string; archived_at: Date | null }>>(Prisma.sql`
+            SELECT id, archived_at
+            FROM knowledge_items
+            WHERE id = (
+              SELECT knowledge_item_id
+              FROM knowledge_versions_v2
+              WHERE id = ${sourceVersionId}
+            )
+            FOR UPDATE
+          `);
+    if (rows.length !== 1 || rows[0].archived_at) {
+      throw new ConflictException(`${label}已归档或不存在，不能提交审核`);
+    }
+  }
+
+  private async applyClaimedFileVersionDecision(
+    tx: Prisma.TransactionClient,
+    candidateIds: Array<string | null>,
     decision: 'APPROVED' | 'REJECTED',
     decidedAt: Date,
   ): Promise<void> {
-    if (!fileVersionId) return;
-    const version = await tx.fileVersion.update({
-      where: { id: fileVersionId },
+    const versions = await this.loadBusinessFileVersions(tx, candidateIds);
+    const claimedByThisReview = versions.filter((version) => {
+      if (version.archivedAt || version.status === 'ARCHIVED') {
+        throw new ConflictException('审核文件已归档，无法写入审核结果');
+      }
+      if (version.status === 'APPROVED') return false;
+      if (version.status !== 'REVIEWING') {
+        throw new ConflictException(`文件版本 ${version.id} 不属于当前审核任务的可结算状态`);
+      }
+      return true;
+    });
+    this.assertDistinctClaimedLogicalFiles(claimedByThisReview);
+    if (claimedByThisReview.length === 0) return;
+
+    const settled = await tx.fileVersion.updateMany({
+      where: {
+        id: { in: claimedByThisReview.map((version) => version.id) },
+        status: 'REVIEWING',
+        archivedAt: null,
+      },
       data:
         decision === 'APPROVED'
           ? { status: 'APPROVED', approvedAt: decidedAt }
-          : { status: 'REJECTED' },
-      select: { logicalFileId: true },
+          : { status: 'REJECTED', approvedAt: null },
     });
-    if (decision === 'APPROVED') {
-      await tx.logicalFile.update({
-        where: { id: version.logicalFileId },
-        data: { currentVersionId: fileVersionId, status: 'APPROVED' },
+    if (settled.count !== claimedByThisReview.length) {
+      throw new ConflictException('审核文件状态已被其他任务变更，请刷新后重试');
+    }
+
+    const versionsByLogicalFile = [...claimedByThisReview].sort((left, right) =>
+      left.logicalFileId.localeCompare(right.logicalFileId),
+    );
+    if (decision === 'REJECTED') {
+      await this.rejectClaimedLogicalFiles(tx, versionsByLogicalFile);
+      return;
+    }
+    for (const version of versionsByLogicalFile) {
+      const promoted = await tx.logicalFile.updateMany({
+        where: { id: version.logicalFileId, archivedAt: null },
+        data: { currentVersionId: version.id, status: 'APPROVED' },
       });
+      if (promoted.count !== 1) {
+        throw new ConflictException('审核文件对应的逻辑文件已归档或不存在');
+      }
+    }
+  }
+
+  private async rejectClaimedLogicalFiles(
+    tx: Prisma.TransactionClient,
+    versions: BusinessFileVersionState[],
+  ): Promise<void> {
+    for (const version of versions) {
+      const logicalFile = await tx.logicalFile.findUnique({
+        where: { id: version.logicalFileId },
+        select: {
+          currentVersionId: true,
+          archivedAt: true,
+          currentVersion: { select: { status: true } },
+        },
+      });
+      if (!logicalFile || logicalFile.archivedAt) {
+        throw new ConflictException('审核文件对应的逻辑文件已归档或不存在');
+      }
+      if (logicalFile.currentVersion?.status === 'APPROVED') continue;
+
+      const rejected = await tx.logicalFile.updateMany({
+        where: {
+          id: version.logicalFileId,
+          archivedAt: null,
+          currentVersionId: logicalFile.currentVersionId,
+        },
+        data: { status: 'REJECTED' },
+      });
+      if (rejected.count !== 1) {
+        throw new ConflictException('审核文件对应的逻辑文件状态已变更，请刷新后重试');
+      }
+    }
+  }
+
+  private async loadBusinessFileVersions(
+    tx: Prisma.TransactionClient,
+    candidateIds: Array<string | null>,
+  ): Promise<BusinessFileVersionState[]> {
+    const ids = [...new Set(candidateIds.filter((id): id is string => Boolean(id)))].sort();
+    if (ids.length === 0) return [];
+    const lockedRows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT id
+      FROM file_versions
+      WHERE id IN (${Prisma.join(ids)})
+      ORDER BY id
+      FOR UPDATE
+    `);
+    const lockedIds = new Set(lockedRows.map((row) => row.id));
+    if (
+      lockedRows.length !== ids.length ||
+      lockedIds.size !== ids.length ||
+      ids.some((id) => !lockedIds.has(id))
+    ) {
+      throw new ConflictException('审核文件不存在或关联已变更');
+    }
+    const versions = await tx.fileVersion.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, logicalFileId: true, status: true, archivedAt: true },
+      orderBy: { id: 'asc' },
+    });
+    if (versions.length !== ids.length) {
+      throw new ConflictException('审核文件不存在或关联已变更');
+    }
+    return versions;
+  }
+
+  private assertDistinctClaimedLogicalFiles(versions: BusinessFileVersionState[]): void {
+    const logicalFileIds = new Set(versions.map((version) => version.logicalFileId));
+    if (logicalFileIds.size !== versions.length) {
+      throw new ConflictException('同一审核不能同时包含同一逻辑文件的多个待审版本');
     }
   }
 }

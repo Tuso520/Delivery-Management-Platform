@@ -33,6 +33,7 @@ export const TARGET_PROJECT_DELIVERY_STAGES = [
 export interface MigrationOptions {
   apply: boolean;
   actorUserId?: string;
+  actorUsername?: string;
   help: boolean;
   scopes: ReadonlySet<MigrationScope>;
   strict: boolean;
@@ -46,7 +47,8 @@ Default mode is DRY_RUN and performs no writes.
 
 Options:
   --apply                         Persist target rows and MigrationException records.
-  --actor-user-id=<active-id>     Required with --apply; identifies the migration operator.
+  --actor-user-id=<active-id>     Required with --apply unless --actor-username is used.
+  --actor-username=<username>     Required with --apply unless --actor-user-id is used.
   --scope=projects,archive,reviews
                                   Limit phases (default: all phases).
   --strict                        Exit with code 2 when findings remain.
@@ -59,13 +61,14 @@ Safe rollout:
   3. Run prisma:migrate-target-content first when Standard/Knowledge approvals exist.
   4. Run this command without --apply and review the JSON report.
   5. Resolve ERROR findings or accept them into the exception queue.
-  6. Run with --apply and an active actor user id.
+  6. Run with --apply and exactly one active migration actor.
   7. Re-run with --verify --strict to validate counts and references read-only.
 `;
 
 export function parseMigrationOptions(args: readonly string[]): MigrationOptions {
   let apply = false;
   let actorUserId: string | undefined;
+  let actorUsername: string | undefined;
   let help = false;
   let strict = false;
   let verify = false;
@@ -95,6 +98,13 @@ export function parseMigrationOptions(args: readonly string[]): MigrationOptions
       }
       continue;
     }
+    if (arg.startsWith('--actor-username=')) {
+      actorUsername = arg.slice('--actor-username='.length).trim();
+      if (!actorUsername) {
+        throw new Error('--actor-username must not be empty');
+      }
+      continue;
+    }
     if (arg.startsWith('--scope=')) {
       const requested = arg
         .slice('--scope='.length)
@@ -116,14 +126,20 @@ export function parseMigrationOptions(args: readonly string[]): MigrationOptions
     throw new Error(`Unknown argument: ${arg}`);
   }
 
-  if (apply && !actorUserId && !help) {
-    throw new Error('--apply requires --actor-user-id=<active-user-id>');
+  if (actorUserId && actorUsername) {
+    throw new Error('Use only one of --actor-user-id or --actor-username');
   }
-  if (apply && verify && !help) {
+  if (apply && verify) {
     throw new Error('--apply and --verify are mutually exclusive');
   }
+  if (apply && !actorUserId && !actorUsername && !help) {
+    throw new Error('--apply requires an active --actor-user-id or --actor-username');
+  }
+  if (verify && (actorUserId || actorUsername)) {
+    throw new Error('--verify does not accept a migration actor');
+  }
 
-  return { apply, actorUserId, help, scopes, strict, verify };
+  return { apply, actorUserId, actorUsername, help, scopes, strict, verify };
 }
 
 export function foundationId(seed: string): string {

@@ -20,7 +20,6 @@ export const STANDARD_RELATION_TYPES = [
 ] as const
 
 export type StandardRelationType = (typeof STANDARD_RELATION_TYPES)[number]
-export type JsonObject = Record<string, unknown>
 
 export interface StandardFileAsset {
   id: string
@@ -42,10 +41,8 @@ export interface StandardVersion {
   id: string
   standardId: string
   version: string
-  fileVersionId: string | null
-  fileVersion: StandardFileVersion | null
-  structuredContent: JsonObject | null
-  applicability: JsonObject | null
+  fileVersionId: string
+  fileVersion: StandardFileVersion
   status: StandardStatus
   revision: number
   effectiveAt: string | null
@@ -111,9 +108,7 @@ export interface CreateStandardDto {
   category?: string
   effectiveAt?: string
   version?: string
-  fileVersionId?: string | null
-  structuredContent?: JsonObject | null
-  applicability?: JsonObject | null
+  fileVersionId: string
   changeDescription?: string
 }
 
@@ -128,9 +123,7 @@ export interface UpdateStandardDto {
 export interface CreateStandardVersionDto {
   revision?: number
   version?: string
-  fileVersionId?: string | null
-  structuredContent?: JsonObject | null
-  applicability?: JsonObject | null
+  fileVersionId?: string
   effectiveAt?: string | null
   changeDescription?: string
 }

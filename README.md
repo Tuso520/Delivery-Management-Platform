@@ -6,7 +6,7 @@
 
 - 项目概览：维护生命周期、固定交付阶段、风险、原币/折算金额、成员、验收和回款；写命令具备幂等或并发保护。
 - 项目档案：创建项目时复制已发布档案模版快照，提供两级目录、临时项、只新增同步、版本留痕和统一审核。
-- 标准与知识：交付流程、检查标准和文档模版统一进入标准库；知识支持文件、Markdown 和链接版本。
+- 标准与知识：交付流程、检查标准和文档模版统一进入仅文件化的标准库；知识版本在文件、Markdown 和链接中严格选择一个主内容源。
 - 在线预览：统一只读预览 Office、PDF、图片、大图、Markdown、XMind、视频和音频；CAD/Visio 等使用异步转换产物。
 - 权限体系：按角色和权限点控制菜单、按钮、接口和项目数据访问范围。
 - 通知集成：站内、飞书和企业微信通过 Outbox Worker 幂等投递并保留逐通道回执。
@@ -43,6 +43,8 @@
 ```powershell
 pnpm --filter ./delivery-platform-server type-check
 pnpm --dir delivery-platform-web build
+$env:LOCAL_TEST_ADMIN_PASSWORD = Read-Host '请输入本地模拟管理员密码'
+$env:LOCAL_TEST_PM_PASSWORD = Read-Host '请输入本地模拟项目经理密码'
 node scripts/local-test-server.mjs
 ```
 
@@ -50,13 +52,17 @@ node scripts/local-test-server.mjs
 
 - 平台地址：`http://127.0.0.1:18080`
 - 管理员账号：`admin`
-- 管理员密码：`Admin@123`
+- 模拟账号只用于页面开发，不是 NestJS/Prisma 种子账号；模拟密码也必须通过上述本地环境变量显式提供，仓库和真实环境均不提供默认密码。
 
 本地 Docker 测试：
 
 ```powershell
+Copy-Item .env.local.example .env.local
+# 在被 Git 忽略的 .env.local 中替换所有 CHANGE_ME 占位值
 powershell -ExecutionPolicy Bypass -File .\scripts\local-docker.ps1 up -Build
 ```
+
+`SEED_ADMIN_PASSWORD` 和 `SEED_DEFAULT_PASSWORD` 必须由每个运行环境显式注入；缺失、空白或 `CHANGE_ME...` 占位值都会使 seed 失败。既有种子账号默认保留原密码，只有受控轮换时才显式设置 `SEED_RESET_EXISTING_USER_PASSWORDS=true`。
 
 ## 文档入口
 
@@ -94,7 +100,7 @@ cd /www/wwwroot/delivery-platform
 BRANCH=main bash deploy-git.sh deploy
 ```
 
-部署脚本会保留服务器独立的 `.env`、备份目录和 Docker 命名卷，并在数据库迁移前备份 MySQL 和 MinIO。
+部署脚本会保留服务器独立的 `.env`、备份目录和 Docker 命名卷，并在数据库迁移前成对备份 MySQL 和 MinIO。迁移容器按固定顺序执行 schema、标准/知识内容、项目档案/文件/审核基础数据以及集成 Secret 迁移，并在全部只读严格校验通过后才启动 API 和 Worker。GitHub 部署成功后还会在部署锁内清理未被容器、当前/上一发布或 checksummed v3 备份引用的旧镜像；该清理不使用强制删除，也不清理 Docker volume。
 
 ## 贡献与安全
 

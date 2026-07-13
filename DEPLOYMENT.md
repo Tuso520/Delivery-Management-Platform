@@ -19,8 +19,10 @@ BRANCH=main bash deploy-git.sh deploy
 6. 在迁移前先停止 File Worker 与 Outbox Worker，再停止后端和前端写入。
 7. 在业务写入停止后确认 `INTEGRATION_SECRET_ENCRYPTION_KEY` 是独立的 32 字节 Base64 密钥并在迁移容器、API 与 Outbox Worker 一致；缺失时由服务器生成仅限当前部署进程的候选值，并且仅在确认无既有密文后持久化启用，审计账号 `INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME` 必须有效。
 8. 备份 MySQL、MinIO 和源版本 `.env`，记录 source/target revision、解码后集成密钥指纹、精确表计数、外键孤儿报告和所有 checksum。
-9. 运行 `backend-migrate` 门禁：受保护 schema migration、bootstrap seed、集成 Secret dry-run/apply/verify、第二次幂等 seed和 Target foundation strict verify；随后拒绝旧表消失、行数减少或任何外键孤儿。首次旧架构升级还要按完整文档执行目标数据 dry-run/apply/verify。
+9. 运行 `backend-migrate` 门禁：受保护 schema migration、bootstrap seed、档案迁移 ERROR 预审、标准/知识内容 strict dry-run/apply、项目档案/文件/审核基础数据 strict dry-run/apply、集成 Secret dry-run/apply、第二次幂等 seed 和同顺序只读严格校验；任何不可自动判断的 finding 都必须在对应 apply 前阻断，随后继续拒绝旧表消失、行数减少或任何外键孤儿。
 10. 按 API、两个 Worker、前端的顺序切换并核验依赖就绪、Worker 状态、前端响应和四个发布标签。源码切换后、写库前失败会恢复来源环境、源码和基础设施；源码尚未切换时绝不对未知 dirty worktree 执行 `reset --hard`。migration 可能写库后，禁止单独回滚代码或密钥，默认保留目标版本并停服。只有 v3 备份的 MySQL、MinIO、完整环境、Prisma migration 清单、源 Compose 拓扑和不可变镜像身份全部通过校验，才允许以 `--no-build` 成对恢复。
+
+服务器 `.env` 必须显式提供非空、非占位的 `SEED_ADMIN_PASSWORD` 和 `SEED_DEFAULT_PASSWORD`；仓库不提供任何运行环境的默认密码。`SEED_RESET_EXISTING_USER_PASSWORDS` 默认为 `false`，只有受控密码轮换时才允许显式启用。
 
 ## 健康检查
 
@@ -30,6 +32,8 @@ curl -fsS http://127.0.0.1:8080/api/v1/health
 curl -fsS http://127.0.0.1:8080/api/v1/ready
 docker compose ps
 ```
+
+GitHub 自动部署成功后会执行受保护的 `bash deploy-git.sh prune-unused-images`：只删除未被任何容器、当前/上一成功发布或受管理 v3 备份引用的镜像，并在清理前后核对磁盘占用和服务健康。该命令不使用强制删除，不清理容器、网络、备份或任何 Docker volume；保护元数据无法严格验证时不会删除任何镜像。
 
 `/api/v1/health` 只确认后端进程响应；`/api/v1/ready` 还会检查 MySQL、Redis 和 MinIO。`build-info.json` 中的 `releaseId` 必须和 `git rev-parse --short=12 HEAD` 一致，`file-worker` 与 `outbox-worker` 也必须处于 running。完整迁移顺序和回滚边界见 [docs/deployment.md](docs/deployment.md)。
 

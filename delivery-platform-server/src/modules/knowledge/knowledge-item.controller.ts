@@ -25,6 +25,7 @@ import {
   QueryKnowledgeItemDto,
   SubmitKnowledgeReviewDto,
   UpdateKnowledgeItemDto,
+  UpdateKnowledgeVersionDto,
 } from './dto/knowledge-item.dto';
 import { KnowledgeItemService } from './knowledge-item.service';
 
@@ -98,7 +99,7 @@ export class KnowledgeItemController {
   @ApiOperation({ summary: '更新草稿或已驳回的知识版本内容与辅助文件' })
   updateVersion(
     @Param('id') id: string,
-    @Body() dto: CreateKnowledgeVersionDto,
+    @Body() dto: UpdateKnowledgeVersionDto,
     @CurrentUser() actor: JwtPayload,
   ) {
     return this.knowledgeItems.updateVersion(id, dto, actor);

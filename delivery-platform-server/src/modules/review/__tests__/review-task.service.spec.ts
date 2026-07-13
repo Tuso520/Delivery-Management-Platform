@@ -71,6 +71,7 @@ describe('ReviewTaskService', () => {
       sourceType: 'PROJECT_ARCHIVE',
       sourceId: 'archive-file-1',
       sourceVersionId: 'version-1',
+      sourceRevision: 7,
       projectId: 'project-1',
       fileVersionId: 'version-1',
       title: '设计图纸 V1.0',
@@ -102,6 +103,7 @@ describe('ReviewTaskService', () => {
       expect.objectContaining({
         sourceType: 'PROJECT_ARCHIVE',
         fileVersionId: 'version-1',
+        sourceRevision: 7,
       }),
     );
     expect(systemConfig.getSettings).toHaveBeenCalledTimes(1);

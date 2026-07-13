@@ -7,6 +7,7 @@
 - `.env`
 - JWT 密钥
 - 数据库账号密码
+- 种子账号密码及任何可直接登录的默认密码
 - MinIO 账号密码
 - SSH 凭据
 - GitHub Token

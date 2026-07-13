@@ -47,6 +47,7 @@ describe('standard and knowledge target flows', () => {
 
   it('uses target standard APIs for summary, versions, relations and review', () => {
     const source = readSource('src/views/standard/index.vue')
+    const types = readSource('src/types/standard.ts')
     const queries = readSource('src/composables/queries/useContentQueries.ts')
 
     expect(source).toContain('useStandardSummaryQuery()')
@@ -63,10 +64,44 @@ describe('standard and knowledge target flows', () => {
     expect(source).not.toContain('workflowApi.')
     expect(source).not.toContain('checklistApi.')
     expect(source).not.toContain('legacySource')
+    expect(source).not.toContain('ONLINE')
+    expect(source).not.toContain('structuredContent')
+    expect(source).not.toContain('applicability')
+    expect(types).not.toContain('structuredContent')
+    expect(types).not.toContain('applicability')
+    expect(types).toContain('fileVersionId: string')
+  })
+
+  it('removes the retired online-standard copy from both locales', () => {
+    for (const file of ['src/locales/zh-CN.json', 'src/locales/en-US.json']) {
+      const locale = JSON.parse(readSource(file)) as {
+        standard: {
+          fields: Record<string, unknown>
+          validation: Record<string, unknown>
+          messages: Record<string, unknown>
+          [key: string]: unknown
+        }
+      }
+
+      expect(locale.standard).not.toHaveProperty('readonly')
+      expect(locale.standard).not.toHaveProperty('onlineContent')
+      expect(locale.standard).not.toHaveProperty('managedFile')
+      expect(locale.standard).not.toHaveProperty('noContent')
+      expect(locale.standard).not.toHaveProperty('standardContent')
+      expect(locale.standard).not.toHaveProperty('contentBody')
+      expect(locale.standard).not.toHaveProperty('contentMode')
+      expect(locale.standard).not.toHaveProperty('markdownPlaceholder')
+      expect(locale.standard.fields).not.toHaveProperty('content')
+      expect(locale.standard.fields).toHaveProperty('fileName')
+      expect(locale.standard.validation).not.toHaveProperty('contentRequired')
+      expect(locale.standard.validation).not.toHaveProperty('versionContentRequired')
+      expect(locale.standard.messages).not.toHaveProperty('onlineNoDownload')
+    }
   })
 
   it('supports all three knowledge content types with explicit versions', () => {
     const source = readSource('src/views/knowledge/index.vue')
+    const api = readSource('src/api/knowledge.ts')
 
     expect(source).toContain("{ value: 'FILE', label: 'knowledge.contentTypes.FILE' }")
     expect(source).toContain("{ value: 'MARKDOWN', label: 'Markdown' }")
@@ -79,6 +114,12 @@ describe('standard and knowledge target flows', () => {
     expect(source).not.toContain('approvalApi.')
     expect(source).toContain('firstRouteParam(route.params.id)')
     expect(source).toContain("name: 'KnowledgeDetail'")
+    expect(source).toContain("kind: 'create'")
+    expect(source).toContain("kind: 'update'")
+    expect(source).toContain("['DRAFT', 'REJECTED'].includes(detail.value.status)")
+    expect(api).toContain('export type KnowledgePrimaryContentPayload')
+    expect(api).toContain('supportingFileVersionIds: string[]')
+    expect(api).toContain('UpdateKnowledgeVersionPayload')
   })
 
   it('drives standard and knowledge detail drawers from path params', () => {

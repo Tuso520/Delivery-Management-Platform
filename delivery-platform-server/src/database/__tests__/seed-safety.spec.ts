@@ -6,7 +6,10 @@ import * as bcrypt from 'bcrypt';
 
 import { seedProjects } from '../../../prisma/seed-data/projects';
 import { seedRoles } from '../../../prisma/seed-data/roles';
-import { resolveSeedPassword } from '../../../prisma/seed-data/seed-password';
+import {
+  resolveSeedPassword,
+  shouldResetExistingSeedUserPasswords,
+} from '../../../prisma/seed-data/seed-password';
 import { seedSystemOperations } from '../../../prisma/seed-data/system-operations';
 import { seedTargetKnowledge } from '../../../prisma/seed-data/target-knowledge';
 import { seedTargetDictionaries } from '../../../prisma/seed-data/target-platform';
@@ -24,6 +27,7 @@ describe('deployment seed safety', () => {
     const activeFiles = [
       'seed.ts',
       'seed-data/archive-templates.ts',
+      'seed-data/languages.ts',
       'seed-data/projects.ts',
       'seed-data/system-operations.ts',
       'seed-data/target-platform.ts',
@@ -48,6 +52,8 @@ describe('deployment seed safety', () => {
       expect(entry).not.toContain(retiredImport);
     }
     expect(source).not.toMatch(/\.deleteMany\s*\(/);
+    expect(source).not.toContain('seedUiTranslations');
+    expect(source).not.toMatch(/prisma\.translation\./);
     expect(source).not.toMatch(
       /prisma\.(workflowCategory|workflowDocument|checklistTemplate|checklistTemplateItem|knowledgeArticle|attachment|dailyReport|okrObjective|keyResult|projectRetrospective|skillDefinition|trainingPlan|backupRecord|approvalTask|externalContactCandidate|projectArchiveItem)\./,
     );
@@ -60,6 +66,27 @@ describe('deployment seed safety', () => {
       expect(source).toContain(`'${businessType}'`);
     }
     expect(source).not.toContain("'PROJECT_CREATE'");
+  });
+
+  it('retires database UI translations without deleting production rows', () => {
+    const migration = readFileSync(
+      join(
+        __dirname,
+        '../../../prisma/migrations/20260713100000_retire_database_ui_translations/migration.sql',
+      ),
+      'utf8',
+    );
+
+    expect(migration).toContain("`content_type` <> ''ui''");
+    expect(migration).toContain("`field_name` <> ''label''");
+    expect(migration).toContain("`language_code` NOT IN (''zh-CN'', ''en-US'')");
+    expect(migration).toContain('PREPARE translation_retirement_guard_statement');
+    expect(migration).toContain('PREPARE translation_state_guard_statement');
+    expect(migration).toContain(
+      'RENAME TABLE `translations` TO `retired_ui_translations_20260713`',
+    );
+    expect(migration).not.toMatch(/\bDROP\s+TABLE\b/iu);
+    expect(migration).not.toMatch(/\bDELETE\s+FROM\b/iu);
   });
 
   it('does not overwrite existing projects', async () => {
@@ -223,13 +250,122 @@ describe('deployment seed safety', () => {
     }
   });
 
-  it('requires explicit seed passwords in production', () => {
-    expect(() =>
+  it('requires explicit non-placeholder seed passwords in every environment', () => {
+    for (const nodeEnv of [undefined, 'development', 'test', 'production']) {
+      expect(() => resolveSeedPassword('admin', { NODE_ENV: nodeEnv })).toThrow(
+        'SEED_ADMIN_PASSWORD',
+      );
+      expect(() =>
+        resolveSeedPassword('admin', {
+          NODE_ENV: nodeEnv,
+          SEED_ADMIN_PASSWORD: '   ',
+        }),
+      ).toThrow('SEED_ADMIN_PASSWORD');
+      expect(() =>
+        resolveSeedPassword('pm', {
+          NODE_ENV: nodeEnv,
+          SEED_DEFAULT_PASSWORD: 'CHANGE_ME_DEMO_USER_PASSWORD',
+        }),
+      ).toThrow('SEED_PM_PASSWORD or SEED_DEFAULT_PASSWORD');
+      expect(() =>
+        resolveSeedPassword('pm', {
+          NODE_ENV: nodeEnv,
+          SEED_DEFAULT_PASSWORD: '   ',
+        }),
+      ).toThrow('SEED_PM_PASSWORD or SEED_DEFAULT_PASSWORD');
+    }
+
+    expect(
       resolveSeedPassword('admin', {
-        NODE_ENV: 'production',
-        SEED_ADMIN_PASSWORD: 'CHANGE_ME_ADMIN_PASSWORD',
+        NODE_ENV: 'development',
+        SEED_ADMIN_PASSWORD: 'unit-test-admin-secret',
       }),
-    ).toThrow('生产环境首次初始化必须配置 SEED_ADMIN_PASSWORD');
+    ).toBe('unit-test-admin-secret');
+    expect(
+      resolveSeedPassword('pm', {
+        NODE_ENV: 'development',
+        SEED_DEFAULT_PASSWORD: 'unit-test-user-secret',
+      }),
+    ).toBe('unit-test-user-secret');
+    expect(
+      resolveSeedPassword('admin', {
+        NODE_ENV: 'test',
+        SEED_ADMIN_PASSWORD: '  intentionally-spaced-unit-test-secret  ',
+      }),
+    ).toBe('  intentionally-spaced-unit-test-secret  ');
+  });
+
+  it('contains no runtime password fallback and requires Compose seed inputs', () => {
+    const seedPasswordSource = readFileSync(
+      join(__dirname, '../../../prisma/seed-data/seed-password.ts'),
+      'utf8',
+    );
+    expect(seedPasswordSource).not.toContain('developmentPasswords');
+    expect(seedPasswordSource).not.toContain("environment.NODE_ENV !== 'production'");
+
+    const repositoryRoot = join(__dirname, '../../../..');
+    const localMockSource = readFileSync(
+      join(repositoryRoot, 'scripts/local-test-server.mjs'),
+      'utf8',
+    );
+    expect(localMockSource).toContain('LOCAL_TEST_ADMIN_PASSWORD');
+    expect(localMockSource).toContain('LOCAL_TEST_PM_PASSWORD');
+    expect(localMockSource).not.toMatch(/Admin@123|Pm@123456/u);
+
+    for (const composeFile of ['docker-compose.yml', 'docker-compose.test.yml']) {
+      const source = readFileSync(join(repositoryRoot, composeFile), 'utf8');
+      expect(source).toContain('${SEED_ADMIN_PASSWORD:?SEED_ADMIN_PASSWORD is required}');
+      expect(source).toContain('${SEED_DEFAULT_PASSWORD:?SEED_DEFAULT_PASSWORD is required}');
+      expect(source).toContain('${SEED_RESET_EXISTING_USER_PASSWORDS:-false}');
+      expect(source).not.toContain('${SEED_RESET_EXISTING_USER_PASSWORDS:-true}');
+    }
+
+    for (const exampleFile of ['.env.example', '.env.local.example']) {
+      const source = readFileSync(join(repositoryRoot, exampleFile), 'utf8');
+      expect(source).toMatch(/^SEED_ADMIN_PASSWORD=CHANGE_ME_.+$/mu);
+      expect(source).toMatch(/^SEED_DEFAULT_PASSWORD=CHANGE_ME_.+$/mu);
+      expect(source).toContain('SEED_RESET_EXISTING_USER_PASSWORDS=false');
+      expect(source).not.toContain('SEED_RESET_EXISTING_USER_PASSWORDS=true');
+    }
+  });
+
+  it('never resets existing seed passwords unless reset is explicitly enabled', () => {
+    for (const nodeEnv of [undefined, 'development', 'test', 'production']) {
+      expect(shouldResetExistingSeedUserPasswords({ NODE_ENV: nodeEnv })).toBe(false);
+    }
+    expect(
+      shouldResetExistingSeedUserPasswords({
+        NODE_ENV: 'production',
+        SEED_RESET_EXISTING_USER_PASSWORDS: 'true',
+      }),
+    ).toBe(true);
+  });
+
+  it('fails seed-user password preflight before the first database read', async () => {
+    const originalAdminPassword = process.env.SEED_ADMIN_PASSWORD;
+    const originalDefaultPassword = process.env.SEED_DEFAULT_PASSWORD;
+    delete process.env.SEED_ADMIN_PASSWORD;
+    delete process.env.SEED_DEFAULT_PASSWORD;
+    const findUnique = jest.fn();
+
+    try {
+      await expect(seedUsers({ user: { findUnique } } as unknown as PrismaClient)).rejects.toThrow(
+        'SEED_ADMIN_PASSWORD',
+      );
+    } finally {
+      if (originalAdminPassword === undefined) {
+        delete process.env.SEED_ADMIN_PASSWORD;
+      } else {
+        process.env.SEED_ADMIN_PASSWORD = originalAdminPassword;
+      }
+      if (originalDefaultPassword === undefined) {
+        delete process.env.SEED_DEFAULT_PASSWORD;
+      } else {
+        process.env.SEED_DEFAULT_PASSWORD = originalDefaultPassword;
+      }
+    }
+
+    expect(findUnique).not.toHaveBeenCalled();
   });
 
   it('seeds target dictionaries without retired workforce domains', async () => {
@@ -262,11 +398,15 @@ describe('deployment seed safety', () => {
     );
   });
 
-  it('resets existing seeded user passwords outside production without reviving accounts', async () => {
+  it('resets existing seeded user passwords only when explicitly enabled without reviving accounts', async () => {
     const originalNodeEnv = process.env.NODE_ENV;
     const originalReset = process.env.SEED_RESET_EXISTING_USER_PASSWORDS;
+    const originalAdminPassword = process.env.SEED_ADMIN_PASSWORD;
+    const originalDefaultPassword = process.env.SEED_DEFAULT_PASSWORD;
     process.env.NODE_ENV = 'development';
-    delete process.env.SEED_RESET_EXISTING_USER_PASSWORDS;
+    process.env.SEED_RESET_EXISTING_USER_PASSWORDS = 'true';
+    process.env.SEED_ADMIN_PASSWORD = 'unit-test-admin-secret';
+    process.env.SEED_DEFAULT_PASSWORD = 'unit-test-user-secret';
     jest.clearAllMocks();
 
     const userUpdate = jest.fn(({ where, data }) =>
@@ -308,6 +448,18 @@ describe('deployment seed safety', () => {
       } else {
         process.env.SEED_RESET_EXISTING_USER_PASSWORDS = originalReset;
       }
+
+      if (originalAdminPassword === undefined) {
+        delete process.env.SEED_ADMIN_PASSWORD;
+      } else {
+        process.env.SEED_ADMIN_PASSWORD = originalAdminPassword;
+      }
+
+      if (originalDefaultPassword === undefined) {
+        delete process.env.SEED_DEFAULT_PASSWORD;
+      } else {
+        process.env.SEED_DEFAULT_PASSWORD = originalDefaultPassword;
+      }
     }
 
     expect(prisma.user.create).not.toHaveBeenCalled();
@@ -315,7 +467,7 @@ describe('deployment seed safety', () => {
       expect.objectContaining({
         where: { id: 'user-admin' },
         data: {
-          password: 'hashed:Admin@123',
+          password: 'hashed:unit-test-admin-secret',
         },
       }),
     );
@@ -323,18 +475,22 @@ describe('deployment seed safety', () => {
       expect.objectContaining({
         where: { id: 'user-pm_wang' },
         data: expect.objectContaining({
-          password: 'hashed:Pm@123456',
+          password: 'hashed:unit-test-user-secret',
         }),
       }),
     );
-    expect(bcrypt.hash).toHaveBeenCalledWith('Admin@123', 12);
+    expect(bcrypt.hash).toHaveBeenCalledWith('unit-test-admin-secret', 12);
   });
 
   it('does not reset existing seeded user passwords in production by default', async () => {
     const originalNodeEnv = process.env.NODE_ENV;
     const originalReset = process.env.SEED_RESET_EXISTING_USER_PASSWORDS;
+    const originalAdminPassword = process.env.SEED_ADMIN_PASSWORD;
+    const originalDefaultPassword = process.env.SEED_DEFAULT_PASSWORD;
     process.env.NODE_ENV = 'production';
     delete process.env.SEED_RESET_EXISTING_USER_PASSWORDS;
+    process.env.SEED_ADMIN_PASSWORD = 'unit-test-admin-secret';
+    process.env.SEED_DEFAULT_PASSWORD = 'unit-test-user-secret';
     jest.clearAllMocks();
 
     const prisma = {
@@ -372,6 +528,18 @@ describe('deployment seed safety', () => {
         delete process.env.SEED_RESET_EXISTING_USER_PASSWORDS;
       } else {
         process.env.SEED_RESET_EXISTING_USER_PASSWORDS = originalReset;
+      }
+
+      if (originalAdminPassword === undefined) {
+        delete process.env.SEED_ADMIN_PASSWORD;
+      } else {
+        process.env.SEED_ADMIN_PASSWORD = originalAdminPassword;
+      }
+
+      if (originalDefaultPassword === undefined) {
+        delete process.env.SEED_DEFAULT_PASSWORD;
+      } else {
+        process.env.SEED_DEFAULT_PASSWORD = originalDefaultPassword;
       }
     }
 

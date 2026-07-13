@@ -620,6 +620,8 @@ docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.p
 UI 冒烟可在构建后启动本地模拟服务：
 
 ```powershell
+$env:LOCAL_TEST_ADMIN_PASSWORD = Read-Host '请输入本地模拟管理员密码'
+$env:LOCAL_TEST_PM_PASSWORD = Read-Host '请输入本地模拟项目经理密码'
 node scripts/local-test-server.mjs
 ```
 

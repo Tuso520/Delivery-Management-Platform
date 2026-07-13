@@ -32,6 +32,12 @@ export interface CreateUnifiedReviewTaskInput {
   sourceType: string;
   sourceId: string;
   sourceVersionId?: string;
+  /**
+   * Optimistic-lock snapshot of the submitted business version. Standard and
+   * knowledge submissions must provide it so the transaction cannot create a
+   * task for one revision while moving a newer revision into review.
+   */
+  sourceRevision?: number;
   projectId?: string;
   fileVersionId?: string;
   approvalTemplateId?: string;
@@ -240,6 +246,7 @@ export class ReviewTaskService {
       sourceType: input.sourceType,
       sourceId: input.sourceId,
       fileVersionId: input.fileVersionId ?? null,
+      sourceRevision: input.sourceRevision ?? null,
       submittedAt,
       submittedBy: input.submittedBy,
     });

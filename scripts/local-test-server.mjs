@@ -25,9 +25,24 @@ const localStorageRoot = join(projectRoot, "storage", "local-test");
 const port = Number(process.env.LOCAL_TEST_PORT || 18080);
 const host = process.env.LOCAL_TEST_HOST || "127.0.0.1";
 const now = () => new Date().toISOString();
+
+function requireLocalCredential(environmentKey) {
+  const value = process.env[environmentKey];
+  if (
+    !value ||
+    !value.trim() ||
+    value.trim().toUpperCase().startsWith("CHANGE_ME")
+  ) {
+    throw new Error(
+      `${environmentKey} must be explicitly configured for the local mock server`,
+    );
+  }
+  return value;
+}
+
 const demoCredentials = new Map([
-  ["admin", "Admin@123"],
-  ["pm_wang", "Pm@123456"],
+  ["admin", requireLocalCredential("LOCAL_TEST_ADMIN_PASSWORD")],
+  ["pm_wang", requireLocalCredential("LOCAL_TEST_PM_PASSWORD")],
 ]);
 
 const adminUser = {
@@ -4530,6 +4545,5 @@ const server = createServer(async (req, res) => {
 
 server.listen(port, host, () => {
   console.log(`Delivery platform local test server: http://localhost:${port}`);
-  console.log("Login: admin / Admin@123");
-  console.log("Login: pm_wang / Pm@123456");
+  console.log("Login accounts: admin, pm_wang (passwords supplied through local environment)");
 });

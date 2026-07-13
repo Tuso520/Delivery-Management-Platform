@@ -20,6 +20,7 @@ import {
   QueryKnowledgeItemDto,
   SubmitKnowledgeReviewDto,
   UpdateKnowledgeItemDto,
+  UpdateKnowledgeVersionDto,
 } from './dto/knowledge-item.dto';
 
 type KnowledgeActor = Pick<JwtPayload, 'sub' | 'permissions'>;
@@ -30,6 +31,25 @@ interface KnowledgeContent {
   fileVersionId: string | null;
   markdownContent: string | null;
   externalUrl: string | null;
+}
+
+interface LockedKnowledgeItemRow {
+  id: string;
+  status: string;
+  created_by: string;
+  current_published_version_id: string | null;
+  archived_at: Date | null;
+}
+
+interface LockedKnowledgeVersionRow {
+  id: string;
+  status: string;
+  archived_at: Date | null;
+}
+
+interface LockedKnowledgeReviewTaskRow {
+  id: string;
+  status: string;
 }
 
 interface KnowledgeCategoryNode {
@@ -46,6 +66,200 @@ interface KnowledgeCategoryNode {
 
 const editableVersionStatuses = new Set(['DRAFT', 'REJECTED']);
 const managerPermissions = new Set(['knowledge:publish', 'knowledge:archive']);
+
+const publicKnowledgeFileAssetSelect = {
+  id: true,
+  originalName: true,
+  extension: true,
+  mimeType: true,
+  size: true,
+} satisfies Prisma.FileAssetSelect;
+
+const publicKnowledgeFileVersionSelect = {
+  id: true,
+  logicalFileId: true,
+  version: true,
+  status: true,
+  asset: { select: publicKnowledgeFileAssetSelect },
+} satisfies Prisma.FileVersionSelect;
+
+const publicKnowledgeSupportingFileSelect = {
+  id: true,
+  fileVersionId: true,
+  role: true,
+  sortOrder: true,
+  fileVersion: { select: publicKnowledgeFileVersionSelect },
+} satisfies Prisma.KnowledgeVersionFileSelect;
+
+const publicKnowledgeVersionSelect = {
+  id: true,
+  knowledgeItemId: true,
+  version: true,
+  contentType: true,
+  fileVersionId: true,
+  markdownContent: true,
+  externalUrl: true,
+  status: true,
+  revision: true,
+  changeDescription: true,
+  submittedBy: true,
+  publishedAt: true,
+  archivedAt: true,
+  createdAt: true,
+  updatedAt: true,
+  fileVersion: { select: publicKnowledgeFileVersionSelect },
+  supportingFiles: {
+    select: publicKnowledgeSupportingFileSelect,
+    orderBy: { sortOrder: 'asc' },
+  },
+  submitter: { select: { id: true, realName: true } },
+} satisfies Prisma.KnowledgeVersionSelect;
+
+const publicKnowledgeItemSelect = {
+  id: true,
+  title: true,
+  categoryId: true,
+  summary: true,
+  contentType: true,
+  status: true,
+  currentPublishedVersionId: true,
+  effectiveAt: true,
+  createdBy: true,
+  updatedBy: true,
+  archivedAt: true,
+  createdAt: true,
+  updatedAt: true,
+  category: { select: { id: true, name: true } },
+  creator: { select: { id: true, realName: true } },
+  updater: { select: { id: true, realName: true } },
+  currentPublishedVersion: {
+    select: {
+      id: true,
+      version: true,
+      contentType: true,
+      status: true,
+      publishedAt: true,
+    },
+  },
+} satisfies Prisma.KnowledgeItemSelect;
+
+const publicKnowledgeCategorySelect = {
+  id: true,
+  name: true,
+  description: true,
+  parentId: true,
+  sortOrder: true,
+  status: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.KnowledgeCategorySelect;
+
+type PublicKnowledgeItemRecord = Prisma.KnowledgeItemGetPayload<{
+  select: typeof publicKnowledgeItemSelect;
+}>;
+type PublicKnowledgeVersionRecord = Prisma.KnowledgeVersionGetPayload<{
+  select: typeof publicKnowledgeVersionSelect;
+}>;
+type PublicKnowledgeCategoryRecord = Prisma.KnowledgeCategoryGetPayload<{
+  select: typeof publicKnowledgeCategorySelect;
+}>;
+
+function mapPublicKnowledgeFileVersion(
+  record: NonNullable<PublicKnowledgeVersionRecord['fileVersion']>,
+) {
+  return {
+    id: record.id,
+    logicalFileId: record.logicalFileId,
+    version: record.version,
+    status: record.status,
+    asset: {
+      id: record.asset.id,
+      originalName: record.asset.originalName,
+      extension: record.asset.extension,
+      mimeType: record.asset.mimeType,
+      size: record.asset.size,
+    },
+  };
+}
+
+function mapPublicKnowledgeVersion(record: PublicKnowledgeVersionRecord) {
+  return {
+    id: record.id,
+    knowledgeItemId: record.knowledgeItemId,
+    version: record.version,
+    contentType: record.contentType,
+    fileVersionId: record.fileVersionId,
+    fileVersion: record.fileVersion ? mapPublicKnowledgeFileVersion(record.fileVersion) : null,
+    markdownContent: record.markdownContent,
+    externalUrl: record.externalUrl,
+    supportingFiles: record.supportingFiles.map((file) => ({
+      id: file.id,
+      fileVersionId: file.fileVersionId,
+      role: file.role,
+      sortOrder: file.sortOrder,
+      fileVersion: mapPublicKnowledgeFileVersion(file.fileVersion),
+    })),
+    status: record.status,
+    revision: record.revision,
+    changeDescription: record.changeDescription,
+    submittedBy: record.submittedBy,
+    submitter: record.submitter
+      ? { id: record.submitter.id, realName: record.submitter.realName }
+      : null,
+    publishedAt: record.publishedAt,
+    archivedAt: record.archivedAt,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+}
+
+function mapPublicKnowledgeItem(
+  record: PublicKnowledgeItemRecord,
+  versions?: PublicKnowledgeVersionRecord[],
+) {
+  return {
+    id: record.id,
+    title: record.title,
+    categoryId: record.categoryId,
+    summary: record.summary,
+    contentType: record.contentType,
+    status: record.status,
+    currentPublishedVersionId: record.currentPublishedVersionId,
+    currentPublishedVersion: record.currentPublishedVersion
+      ? {
+          id: record.currentPublishedVersion.id,
+          version: record.currentPublishedVersion.version,
+          contentType: record.currentPublishedVersion.contentType,
+          status: record.currentPublishedVersion.status,
+          publishedAt: record.currentPublishedVersion.publishedAt,
+        }
+      : null,
+    effectiveAt: record.effectiveAt,
+    createdBy: record.createdBy,
+    updatedBy: record.updatedBy,
+    category: { id: record.category.id, name: record.category.name },
+    creator: record.creator ? { id: record.creator.id, realName: record.creator.realName } : null,
+    updater: record.updater ? { id: record.updater.id, realName: record.updater.realName } : null,
+    archivedAt: record.archivedAt,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    ...(versions === undefined ? {} : { versions: versions.map(mapPublicKnowledgeVersion) }),
+  };
+}
+
+function mapPublicKnowledgeCategory(record: PublicKnowledgeCategoryRecord): KnowledgeCategoryNode {
+  return {
+    id: record.id,
+    name: record.name,
+    description: record.description,
+    parentId: record.parentId,
+    sortOrder: record.sortOrder,
+    status: record.status,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    children: [],
+  };
+}
 
 @Injectable()
 export class KnowledgeItemService {
@@ -138,39 +352,14 @@ export class KnowledgeItemService {
       this.prisma.knowledgeItem.count({ where }),
       this.prisma.knowledgeItem.findMany({
         where,
-        select: {
-          id: true,
-          title: true,
-          categoryId: true,
-          summary: true,
-          contentType: true,
-          status: true,
-          effectiveAt: true,
-          createdBy: true,
-          updatedBy: true,
-          archivedAt: true,
-          createdAt: true,
-          updatedAt: true,
-          category: { select: { id: true, name: true } },
-          creator: { select: { id: true, realName: true } },
-          updater: { select: { id: true, realName: true } },
-          currentPublishedVersion: {
-            select: {
-              id: true,
-              version: true,
-              contentType: true,
-              status: true,
-              publishedAt: true,
-            },
-          },
-        },
+        select: publicKnowledgeItemSelect,
         skip: (page - 1) * pageSize,
         take: pageSize,
         orderBy: { updatedAt: 'desc' },
       }),
     ]);
     return {
-      items: list,
+      items: list.map((item) => mapPublicKnowledgeItem(item)),
       page,
       pageSize,
       total,
@@ -180,20 +369,11 @@ export class KnowledgeItemService {
   async findCategories(): Promise<KnowledgeCategoryNode[]> {
     const categories = await this.prisma.knowledgeCategory.findMany({
       where: { status: 'Active' },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        parentId: true,
-        sortOrder: true,
-        status: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: publicKnowledgeCategorySelect,
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     });
     const nodes = new Map<string, KnowledgeCategoryNode>(
-      categories.map((category) => [category.id, { ...category, children: [] }]),
+      categories.map((category) => [category.id, mapPublicKnowledgeCategory(category)]),
     );
     const roots: KnowledgeCategoryNode[] = [];
     for (const category of categories) {
@@ -214,7 +394,7 @@ export class KnowledgeItemService {
       markdownContent: dto.markdownContent ?? null,
       externalUrl: dto.externalUrl ?? null,
     });
-    const supportingIds = Array.from(new Set(dto.supportingFileVersionIds ?? []));
+    const supportingIds = this.normalizeSupportingFileIds(dto.supportingFileVersionIds, false);
     this.assertSupportingFiles(content.fileVersionId, supportingIds);
     await this.assertFileVersionsAccessible(
       [content.fileVersionId, ...supportingIds].filter((id): id is string => Boolean(id)),
@@ -273,24 +453,7 @@ export class KnowledgeItemService {
     const visibility = await this.buildVisibilityWhere(actor);
     const item = await this.prisma.knowledgeItem.findFirst({
       where: { AND: [{ id }, visibility] },
-      select: {
-        id: true,
-        title: true,
-        categoryId: true,
-        summary: true,
-        contentType: true,
-        status: true,
-        currentPublishedVersionId: true,
-        effectiveAt: true,
-        createdBy: true,
-        updatedBy: true,
-        archivedAt: true,
-        createdAt: true,
-        updatedAt: true,
-        category: { select: { id: true, name: true } },
-        creator: { select: { id: true, realName: true } },
-        updater: { select: { id: true, realName: true } },
-      },
+      select: publicKnowledgeItemSelect,
     });
     if (!item) {
       throw new NotFoundException('知识条目不存在');
@@ -309,43 +472,10 @@ export class KnowledgeItemService {
               ],
             }),
       },
-      include: {
-        fileVersion: {
-          include: {
-            asset: {
-              select: {
-                id: true,
-                originalName: true,
-                extension: true,
-                mimeType: true,
-                size: true,
-              },
-            },
-          },
-        },
-        supportingFiles: {
-          include: {
-            fileVersion: {
-              include: {
-                asset: {
-                  select: {
-                    id: true,
-                    originalName: true,
-                    extension: true,
-                    mimeType: true,
-                    size: true,
-                  },
-                },
-              },
-            },
-          },
-          orderBy: { sortOrder: 'asc' },
-        },
-        submitter: { select: { id: true, realName: true } },
-      },
+      select: publicKnowledgeVersionSelect,
       orderBy: { createdAt: 'desc' },
     });
-    return { ...item, versions };
+    return mapPublicKnowledgeItem(item, versions);
   }
 
   async update(id: string, dto: UpdateKnowledgeItemDto, actor: KnowledgeActor) {
@@ -371,69 +501,19 @@ export class KnowledgeItemService {
   }
 
   async createVersion(itemId: string, dto: CreateKnowledgeVersionDto, actor: KnowledgeActor) {
-    const item = await this.findEditableMaster(itemId, actor, true);
-    const activeDraft = await this.prisma.knowledgeVersion.findFirst({
-      where: {
-        knowledgeItemId: itemId,
-        archivedAt: null,
-        status: { in: ['DRAFT', 'IN_REVIEW'] },
-      },
-      select: { id: true },
-    });
-    if (activeDraft) {
-      throw new ConflictException('该知识条目已有草稿或审核中版本');
-    }
-    const source = item.currentPublishedVersionId
-      ? await this.prisma.knowledgeVersion.findUnique({
-          where: { id: item.currentPublishedVersionId },
-          include: {
-            supportingFiles: {
-              select: { fileVersionId: true, role: true, sortOrder: true },
-              orderBy: { sortOrder: 'asc' },
-            },
-          },
-        })
-      : await this.prisma.knowledgeVersion.findFirst({
-          where: { knowledgeItemId: itemId, archivedAt: null },
-          include: {
-            supportingFiles: {
-              select: { fileVersionId: true, role: true, sortOrder: true },
-              orderBy: { sortOrder: 'asc' },
-            },
-          },
-          orderBy: { createdAt: 'desc' },
-        });
-    if (!source) {
-      throw new NotFoundException('知识条目源版本不存在');
-    }
-    const contentType = (dto.contentType ?? source.contentType) as KnowledgeContentType;
-    const sameType = contentType === source.contentType;
+    await this.findEditableMaster(itemId, actor, true);
     const content = this.normalizeContent({
-      contentType,
-      fileVersionId:
-        dto.fileVersionId === undefined
-          ? sameType
-            ? source.fileVersionId
-            : null
-          : dto.fileVersionId,
-      markdownContent:
-        dto.markdownContent === undefined
-          ? sameType
-            ? source.markdownContent
-            : null
-          : dto.markdownContent,
-      externalUrl:
-        dto.externalUrl === undefined ? (sameType ? source.externalUrl : null) : dto.externalUrl,
+      contentType: dto.contentType,
+      fileVersionId: dto.fileVersionId ?? null,
+      markdownContent: dto.markdownContent ?? null,
+      externalUrl: dto.externalUrl ?? null,
     });
-    const supportingFiles =
-      dto.supportingFileVersionIds === undefined
-        ? source.supportingFiles
-        : Array.from(new Set(dto.supportingFileVersionIds)).map((fileVersionId, sortOrder) => ({
-            fileVersionId,
-            role: 'SUPPORTING',
-            sortOrder,
-          }));
-    const supportingIds = supportingFiles.map((file) => file.fileVersionId);
+    const supportingIds = this.normalizeSupportingFileIds(dto.supportingFileVersionIds);
+    const supportingFiles = supportingIds.map((fileVersionId, sortOrder) => ({
+      fileVersionId,
+      role: 'SUPPORTING',
+      sortOrder,
+    }));
     this.assertSupportingFiles(content.fileVersionId, supportingIds);
     await this.assertFileVersionsAccessible(
       [content.fileVersionId, ...supportingIds].filter((id): id is string => Boolean(id)),
@@ -442,6 +522,17 @@ export class KnowledgeItemService {
     const version = dto.version?.trim() || (await this.nextVersion(itemId));
     await this.assertVersionAvailable(itemId, version);
     const created = await this.prisma.$transaction(async (tx) => {
+      const lockedItem = await this.lockKnowledgeItem(tx, itemId);
+      this.assertLockedItemEditable(lockedItem, actor, true);
+      const lockedVersions = await this.lockKnowledgeVersions(tx, itemId);
+      if (
+        lockedVersions.some(
+          (candidate) =>
+            candidate.archived_at === null && ['DRAFT', 'IN_REVIEW'].includes(candidate.status),
+        )
+      ) {
+        throw new ConflictException('该知识条目已有草稿或审核中版本');
+      }
       const record = await tx.knowledgeVersion.create({
         data: {
           knowledgeItemId: itemId,
@@ -454,6 +545,7 @@ export class KnowledgeItemService {
           changeDescription: dto.changeDescription,
           submittedBy: actor.sub,
         },
+        select: { id: true },
       });
       if (supportingFiles.length > 0) {
         await tx.knowledgeVersionFile.createMany({
@@ -473,23 +565,37 @@ export class KnowledgeItemService {
       );
       await tx.knowledgeItem.update({
         where: { id: itemId },
-        data: { updatedBy: actor.sub, updatedAt: new Date() },
+        data: {
+          ...(lockedItem.current_published_version_id
+            ? {}
+            : { contentType: content.contentType }),
+          updatedBy: actor.sub,
+          updatedAt: new Date(),
+        },
       });
-      return record;
+      const createdVersion = await tx.knowledgeVersion.findUnique({
+        where: { id: record.id },
+        select: publicKnowledgeVersionSelect,
+      });
+      if (!createdVersion) {
+        throw new NotFoundException('知识版本不存在');
+      }
+      return createdVersion;
     });
-    return created;
+    return mapPublicKnowledgeVersion(created);
   }
 
-  async updateVersion(versionId: string, dto: CreateKnowledgeVersionDto, actor: KnowledgeActor) {
+  async updateVersion(versionId: string, dto: UpdateKnowledgeVersionDto, actor: KnowledgeActor) {
     const current = await this.prisma.knowledgeVersion.findUnique({
       where: { id: versionId },
       include: {
         knowledgeItem: {
-          select: { id: true, createdBy: true, archivedAt: true },
-        },
-        supportingFiles: {
-          select: { fileVersionId: true, role: true, sortOrder: true },
-          orderBy: { sortOrder: 'asc' },
+          select: {
+            id: true,
+            createdBy: true,
+            archivedAt: true,
+            currentPublishedVersionId: true,
+          },
         },
       },
     });
@@ -502,33 +608,17 @@ export class KnowledgeItemService {
     ) {
       throw new NotFoundException('可编辑知识版本不存在');
     }
-    if (dto.revision === undefined || dto.revision !== current.revision) {
+    if (dto.revision !== current.revision) {
       throw new ConflictException('知识版本已被其他用户更新，请刷新后重试');
     }
 
-    const contentType = (dto.contentType ?? current.contentType) as KnowledgeContentType;
-    const sameType = contentType === current.contentType;
     const content = this.normalizeContent({
-      contentType,
-      fileVersionId:
-        dto.fileVersionId === undefined
-          ? sameType
-            ? current.fileVersionId
-            : null
-          : dto.fileVersionId,
-      markdownContent:
-        dto.markdownContent === undefined
-          ? sameType
-            ? current.markdownContent
-            : null
-          : dto.markdownContent,
-      externalUrl:
-        dto.externalUrl === undefined ? (sameType ? current.externalUrl : null) : dto.externalUrl,
+      contentType: dto.contentType,
+      fileVersionId: dto.fileVersionId ?? null,
+      markdownContent: dto.markdownContent ?? null,
+      externalUrl: dto.externalUrl ?? null,
     });
-    const supportingIds =
-      dto.supportingFileVersionIds === undefined
-        ? current.supportingFiles.map((file) => file.fileVersionId)
-        : Array.from(new Set(dto.supportingFileVersionIds));
+    const supportingIds = this.normalizeSupportingFileIds(dto.supportingFileVersionIds);
     this.assertSupportingFiles(content.fileVersionId, supportingIds);
     const allFileIds = [content.fileVersionId, ...supportingIds].filter((id): id is string =>
       Boolean(id),
@@ -563,42 +653,52 @@ export class KnowledgeItemService {
       if (claimed.count !== 1) {
         throw new ConflictException('知识版本已被其他用户更新，请刷新后重试');
       }
-      if (dto.supportingFileVersionIds !== undefined) {
-        await tx.knowledgeVersionFile.deleteMany({
-          where: { knowledgeVersionId: versionId },
+      await tx.knowledgeVersionFile.deleteMany({
+        where: { knowledgeVersionId: versionId },
+      });
+      if (supportingIds.length > 0) {
+        await tx.knowledgeVersionFile.createMany({
+          data: supportingIds.map((fileVersionId, sortOrder) => ({
+            knowledgeVersionId: versionId,
+            fileVersionId,
+            role: 'SUPPORTING',
+            sortOrder,
+          })),
         });
-        if (supportingIds.length > 0) {
-          await tx.knowledgeVersionFile.createMany({
-            data: supportingIds.map((fileVersionId, sortOrder) => ({
-              knowledgeVersionId: versionId,
-              fileVersionId,
-              role: 'SUPPORTING',
-              sortOrder,
-            })),
-          });
-        }
       }
       await this.bindFileVersions(tx, allFileIds, current.knowledgeItem.id, actor.sub);
       await tx.knowledgeItem.update({
         where: { id: current.knowledgeItem.id },
         data: {
-          contentType: content.contentType,
+          ...(current.knowledgeItem.currentPublishedVersionId
+            ? {}
+            : { contentType: content.contentType }),
           updatedBy: actor.sub,
           updatedAt: new Date(),
         },
       });
       const updated = await tx.knowledgeVersion.findUnique({
         where: { id: versionId },
+        select: publicKnowledgeVersionSelect,
       });
       if (!updated) throw new NotFoundException('知识版本不存在');
-      return updated;
+      return mapPublicKnowledgeVersion(updated);
     });
   }
 
   async submitReview(versionId: string, dto: SubmitKnowledgeReviewDto, actor: KnowledgeActor) {
     const version = await this.prisma.knowledgeVersion.findUnique({
       where: { id: versionId },
-      include: {
+      select: {
+        id: true,
+        version: true,
+        contentType: true,
+        fileVersionId: true,
+        markdownContent: true,
+        externalUrl: true,
+        status: true,
+        revision: true,
+        archivedAt: true,
         knowledgeItem: {
           select: {
             id: true,
@@ -633,10 +733,11 @@ export class KnowledgeItemService {
     );
     const approvalTemplateId = await this.resolveApprovalTemplateId(dto.approvalTemplateId);
     const configuration = await this.reviewConfiguration.resolve(approvalTemplateId, actor.sub);
-    return this.reviewTasks.createTask({
+    const task = await this.reviewTasks.createTask({
       sourceType: 'KNOWLEDGE',
       sourceId: version.id,
       sourceVersionId: version.id,
+      sourceRevision: dto.revision,
       fileVersionId: version.fileVersionId ?? undefined,
       approvalTemplateId: configuration.approvalTemplateId,
       approvalTemplateVersion: configuration.approvalTemplateVersion,
@@ -646,40 +747,63 @@ export class KnowledgeItemService {
       submittedBy: actor.sub,
       steps: configuration.steps,
     });
+    return { id: task.id, status: task.status };
   }
 
   async archive(id: string, actor: KnowledgeActor) {
     if (!actor.permissions.includes('knowledge:archive')) {
       throw new ForbiddenException('无权归档知识条目');
     }
-    const item = await this.prisma.knowledgeItem.findFirst({
-      where: { id, archivedAt: null },
-      select: { id: true },
-    });
-    if (!item) {
-      throw new NotFoundException('知识条目不存在');
-    }
-    const inReview = await this.prisma.knowledgeVersion.findFirst({
-      where: { knowledgeItemId: id, status: 'IN_REVIEW', archivedAt: null },
-      select: { id: true },
-    });
-    if (inReview) {
-      throw new ConflictException('知识条目存在审核中版本，不能归档');
-    }
-    const archivedAt = new Date();
-    await this.prisma.$transaction(async (tx) => {
-      await tx.knowledgeItem.update({
-        where: { id },
-        data: { status: 'ARCHIVED', archivedAt, updatedBy: actor.sub },
+    const archivedAt = await this.prisma.$transaction(async (tx) => {
+      const item = await this.lockKnowledgeItem(tx, id);
+      if (!item || item.archived_at) {
+        throw new NotFoundException('知识条目不存在');
+      }
+      const versions = await this.lockKnowledgeVersions(tx, id);
+      const activeReviewTasks = await this.lockActiveKnowledgeReviewTasks(
+        tx,
+        id,
+        versions.map((version) => version.id),
+      );
+      if (
+        item.status === 'IN_REVIEW' ||
+        versions.some(
+          (version) => version.archived_at === null && version.status === 'IN_REVIEW',
+        ) ||
+        activeReviewTasks.length > 0
+      ) {
+        throw new ConflictException('知识条目存在审核中版本，不能归档');
+      }
+
+      const claimedAt = new Date();
+      const itemClaim = await tx.knowledgeItem.updateMany({
+        where: { id, archivedAt: null, status: { not: 'IN_REVIEW' } },
+        data: { status: 'ARCHIVED', archivedAt: claimedAt, updatedBy: actor.sub },
       });
-      await tx.knowledgeVersion.updateMany({
-        where: {
-          knowledgeItemId: id,
-          status: { in: ['DRAFT', 'REJECTED'] },
-          archivedAt: null,
-        },
-        data: { status: 'ARCHIVED', archivedAt },
-      });
+      if (itemClaim.count !== 1) {
+        throw new ConflictException('知识条目状态已变更，请刷新后重试');
+      }
+
+      const archivableVersionIds = versions
+        .filter(
+          (version) =>
+            version.archived_at === null && ['DRAFT', 'REJECTED'].includes(version.status),
+        )
+        .map((version) => version.id);
+      if (archivableVersionIds.length > 0) {
+        const versionClaim = await tx.knowledgeVersion.updateMany({
+          where: {
+            id: { in: archivableVersionIds },
+            knowledgeItemId: id,
+            status: { in: ['DRAFT', 'REJECTED'] },
+            archivedAt: null,
+          },
+          data: { status: 'ARCHIVED', archivedAt: claimedAt },
+        });
+        if (versionClaim.count !== archivableVersionIds.length) {
+          throw new ConflictException('知识版本状态已变更，请刷新后重试');
+        }
+      }
       await tx.operationLog.create({
         data: {
           userId: actor.sub,
@@ -689,8 +813,81 @@ export class KnowledgeItemService {
           targetId: id,
         },
       });
+      return claimedAt;
     });
     return { id, status: 'ARCHIVED', archivedAt };
+  }
+
+  private async lockKnowledgeItem(
+    tx: Prisma.TransactionClient,
+    itemId: string,
+  ): Promise<LockedKnowledgeItemRow | undefined> {
+    const [item] = await tx.$queryRaw<LockedKnowledgeItemRow[]>(Prisma.sql`
+      SELECT
+        id,
+        status,
+        created_by,
+        current_published_version_id,
+        archived_at
+      FROM knowledge_items
+      WHERE id = ${itemId}
+      FOR UPDATE
+    `);
+    return item;
+  }
+
+  private assertLockedItemEditable(
+    item: LockedKnowledgeItemRow | undefined,
+    actor: KnowledgeActor,
+    allowPublished: boolean,
+  ): asserts item is LockedKnowledgeItemRow {
+    if (!item || item.archived_at || (!this.isManager(actor) && item.created_by !== actor.sub)) {
+      throw new NotFoundException('知识条目不存在');
+    }
+    if (
+      !allowPublished &&
+      (item.current_published_version_id !== null || !editableVersionStatuses.has(item.status))
+    ) {
+      throw new ConflictException('已发布或审核中的知识条目必须通过明确的新版本修改');
+    }
+  }
+
+  private async lockKnowledgeVersions(
+    tx: Prisma.TransactionClient,
+    itemId: string,
+  ): Promise<LockedKnowledgeVersionRow[]> {
+    return tx.$queryRaw<LockedKnowledgeVersionRow[]>(Prisma.sql`
+      SELECT id, status, archived_at
+      FROM knowledge_versions_v2
+      WHERE knowledge_item_id = ${itemId}
+      ORDER BY id
+      FOR UPDATE
+    `);
+  }
+
+  private async lockActiveKnowledgeReviewTasks(
+    tx: Prisma.TransactionClient,
+    itemId: string,
+    versionIds: string[],
+  ): Promise<LockedKnowledgeReviewTaskRow[]> {
+    const sourceFilter =
+      versionIds.length > 0
+        ? Prisma.sql`(
+            source_id = ${itemId}
+            OR source_version_id IN (${Prisma.join(versionIds)})
+            OR source_id IN (${Prisma.join(versionIds)})
+          )`
+        : Prisma.sql`source_id = ${itemId}`;
+    return tx.$queryRaw<LockedKnowledgeReviewTaskRow[]>(Prisma.sql`
+      SELECT id, status
+      FROM review_tasks
+      WHERE source_type = 'KNOWLEDGE'
+        AND archived_at IS NULL
+        AND (active_review_key IS NOT NULL OR status = 'PENDING')
+        AND ${sourceFilter}
+      ORDER BY id
+      FOR UPDATE
+    `);
   }
 
   private async findEditableMaster(id: string, actor: KnowledgeActor, allowPublished = false) {
@@ -703,12 +900,14 @@ export class KnowledgeItemService {
         currentPublishedVersionId: true,
       },
     });
-    if (
-      !item ||
-      (!this.isManager(actor) && item.createdBy !== actor.sub) ||
-      (!allowPublished && item.status === 'ARCHIVED')
-    ) {
+    if (!item || (!this.isManager(actor) && item.createdBy !== actor.sub)) {
       throw new NotFoundException('知识条目不存在');
+    }
+    if (
+      !allowPublished &&
+      (item.currentPublishedVersionId !== null || !editableVersionStatuses.has(item.status))
+    ) {
+      throw new ConflictException('已发布或审核中的知识条目必须通过明确的新版本修改');
     }
     return item;
   }
@@ -774,7 +973,31 @@ export class KnowledgeItemService {
         'FILE、MARKDOWN、LINK 内容必须且只能填写对应的一种主内容',
       );
     }
+    if (normalized.contentType === 'LINK' && normalized.externalUrl) {
+      try {
+        const url = new URL(normalized.externalUrl);
+        if (!['http:', 'https:'].includes(url.protocol)) {
+          throw new Error('unsupported protocol');
+        }
+      } catch {
+        throw new UnprocessableEntityException('知识链接仅允许有效的 HTTP 或 HTTPS URL');
+      }
+    }
     return normalized;
+  }
+
+  private normalizeSupportingFileIds(ids: string[] | undefined, requireExplicit = true): string[] {
+    if (ids === undefined) {
+      if (requireExplicit) {
+        throw new UnprocessableEntityException('创建或更新知识版本必须明确提交辅助文件列表');
+      }
+      return [];
+    }
+    const uniqueIds = new Set(ids);
+    if (uniqueIds.size !== ids.length) {
+      throw new UnprocessableEntityException('辅助文件版本不能重复');
+    }
+    return [...ids];
   }
 
   private assertSupportingFiles(

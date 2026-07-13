@@ -117,6 +117,15 @@ df -h
 
 确认服务配置和数据卷正确后，才可执行 `docker compose up -d minio`；不得通过跳过 MinIO、伪造空归档或只保留数据库备份绕过成对恢复门禁。
 
+成功发布后，GitHub Actions 会在同一 SSH 会话中显式执行 `bash deploy-git.sh prune-unused-images`。该命令先获取部署锁并建立保护清单：所有运行中或已停止容器引用的 Image ID、`.deploy/last_successful_rev` 和 `.deploy/previous_successful_rev` 对应的不可变发布镜像，以及每个受管理 v3 备份中经 checksum 验证的 `retained-images.tsv` 都必须保留。任一备份路径、符号链接、格式、checksum、镜像标签或 OCI release label 无法严格验证时，在第一次删除前即 fail closed。候选镜像只通过不带 `--force` 的 `docker image rm` 删除；脚本从不执行 `docker system prune`、`docker volume prune`、`docker compose down -v`，也不删除容器、网络、备份或 MySQL/Redis/MinIO 命名卷。清理前后都会输出 `docker system df`，并再次验证 API readiness、两个 Worker、前端和发布标签。
+
+如需人工重复执行同一安全清理：
+
+```bash
+cd /www/wwwroot/delivery-platform
+bash deploy-git.sh prune-unused-images
+```
+
 脚本对每张表执行精确 `COUNT(*)`，迁移后拒绝旧表消失或行数减少，并逐条检查 `information_schema.KEY_COLUMN_USAGE` 中的外键是否存在孤儿记录；任何 SQL 或报告写入失败都会阻断切换。数据库、MinIO、完整环境、revision、源 Compose 拓扑、不可变镜像 ID/OCI release label 和审计报告均进入 checksum 清单。上一运行版本没有不可变 tag 时，只允许从仍存在且 release label 匹配的运行容器捕获精确 Image ID 并补 tag，禁止通过重新构建旧 Dockerfile 伪造回滚镜像。
 
 `restore-data` 是显式破坏性操作，必须同时提供 `CONFIRM_RESTORE=YES` 和备份路径。脚本会在任何 `DROP DATABASE` 前重新从 `git-revision.txt` 解包并解析源 Compose，核对 Worker 拓扑、完整环境中的 release id、集成密钥指纹、不可变镜像 tag/Image ID/OCI label、所有 checksum 及 MinIO 压缩包，并确认 MinIO 已成功停止、数据卷可定位。随后原子写入 database mutation marker 和 `.deploy/data-restore-incomplete` 才允许替换数据库；后者绑定备份绝对路径、checksum 清单摘要和 revision，跨进程保留恢复未完成事实。导入后要求表计数、Prisma migration 清单与备份完全一致，外键孤儿为零且既有密文通过 `--verify` 真正解密；再 checkout 已验证 revision，加载 checksummed image override，并使用 `--no-build` 启动。破坏前预检失败会恢复原运行时；破坏阶段开始后的任一失败都会保持停服，不会用不匹配代码或现场重建镜像启动已恢复数据。
@@ -133,15 +142,15 @@ df -h
 - 禁止在生产环境执行 `prisma db push --accept-data-loss`。
 - 删除表、删除列、收紧唯一约束等变更必须先评审，并在测试环境演练。
 - 种子脚本必须幂等，禁止截断或清空业务表。
-- 生产环境必须显式配置种子账号密码；除非确实要重置已有种子账号密码，否则不要启用 `SEED_RESET_EXISTING_USER_PASSWORDS`。
+- development、test、production 都必须显式配置 `SEED_ADMIN_PASSWORD` 和 `SEED_DEFAULT_PASSWORD`（或对应账号组的专用变量）；缺失、空白和 `CHANGE_ME...` 占位值均 fail fast。既有种子账号在所有环境默认保留原密码，只有受控轮换才显式设置 `SEED_RESET_EXISTING_USER_PASSWORDS=true`。GitHub integration 使用每次运行动态生成且立即遮罩的临时值，并仅在其隔离数据库中显式轮换，工作流和日志不得输出具体值。
 
 默认 Compose 的 `backend-migrate` 是启动门禁，固定执行：
 
 ```text
-prepare-migrate → prisma migrate deploy → bootstrap 幂等 seed → Secret dry-run → Secret apply（单事务）→ 第二次幂等 seed → Secret verify → Target foundation strict verify
+prepare-migrate → prisma migrate deploy → bootstrap seed → Archive audit ERROR gate → Standard/Knowledge 内容 strict dry-run/apply → Project/Archive/File/Review foundation strict dry-run/apply → Secret dry-run/apply → 第二次幂等 seed → 内容 strict verify → foundation strict verify → Secret verify
 ```
 
-首次空库需要 bootstrap seed 创建迁移审计账号；第二次 seed 用于验证幂等性。Secret apply 会先验证所有既有密文都能由同一密钥解密，再把配置更新和成功审计放在同一个事务内；`--verify` 是只读严格门禁，要求 `plaintextSecretRows=0` 且 `planned=0`。最后的 Target foundation strict verify 会再次拒绝开放迁移异常、旧审核残留或目标关联不完整。`backend`、`file-worker` 和 `outbox-worker` 都等待该容器成功；任何一步失败都不得启动业务流量。API、Outbox Worker 和迁移容器必须使用同一个 `INTEGRATION_SECRET_ENCRYPTION_KEY`，迁移审计账号由 `INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME` 指定且必须处于启用状态。File Worker 不持有集成 Secret。
+首次空库需要 bootstrap seed 创建迁移审计账号；第二次 seed 用于验证幂等性且不得重建已退役的数据库 UI 翻译或无文件标准。档案预审先输出完整报告并按 finding fail closed：所有 ERROR 都阻断；`STORED_LEVEL_MISMATCH` 可由父子关系确定性重建层级，`FOLDER_WITH_DIRECT_FILES` 可确定性拆分为目录和同名合成档案项，因此这两个 REVIEW 只报告；任何其他或未来新增的 REVIEW 默认阻断。三个 migrator 都先只读报告、再以同一个启用账号写入；内容与 foundation 的 dry-run 均使用 strict 门禁，foundation apply 也使用 strict，确定性拆分只计入计划数量，其余仍需人工判断的 ERROR/REVIEW 都会在 apply 前阻断，apply 期间新出现的 finding 也只能记录失败审计并中止。内容迁移把旧标准结构化正文和知识内容收敛为 FILE/MARKDOWN/LINK 单主内容源，foundation 迁移再收敛项目档案、文件和审核关联。Secret apply 会先验证所有既有密文都能由同一密钥解密，再把配置更新和成功审计放在同一个事务内。最后三组 verify 均为只读门禁，拒绝待迁移内容、开放迁移异常、旧审核残留、目标关联不完整、明文 Secret 或待重写密文。`backend`、`file-worker` 和 `outbox-worker` 都等待该容器成功；任何一步失败都不得启动业务流量。API、Outbox Worker 和迁移容器必须使用同一个 `INTEGRATION_SECRET_ENCRYPTION_KEY`，迁移审计账号由 `INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME` 指定且必须处于启用状态。File Worker 不持有集成 Secret。
 
 ### 整体重构既有库升级
 
@@ -149,17 +158,20 @@ prepare-migrate → prisma migrate deploy → bootstrap 幂等 seed → Secret d
 
 ```bash
 pnpm --filter ./delivery-platform-server prisma:audit-archive-migration
-pnpm --filter ./delivery-platform-server prisma:migrate-target-content
-pnpm --filter ./delivery-platform-server prisma:migrate-target-content -- --apply --actor-user-id="$MIGRATION_ACTOR_ID"
-pnpm --filter ./delivery-platform-server prisma:migrate-target-foundation
-pnpm --filter ./delivery-platform-server prisma:migrate-target-foundation -- --apply --actor-user-id="$MIGRATION_ACTOR_ID"
+pnpm --filter ./delivery-platform-server prisma:migrate-target-content -- --strict
+pnpm --filter ./delivery-platform-server prisma:migrate-target-content -- --apply --actor-username="$MIGRATION_ACTOR_USERNAME"
+pnpm --filter ./delivery-platform-server prisma:migrate-target-content -- --verify --strict
+pnpm --filter ./delivery-platform-server prisma:migrate-target-foundation -- --strict
+pnpm --filter ./delivery-platform-server prisma:migrate-target-foundation -- --apply --actor-username="$MIGRATION_ACTOR_USERNAME" --strict
 pnpm --filter ./delivery-platform-server prisma:migrate-target-foundation -- --verify --strict
 pnpm --filter ./delivery-platform-server prisma:migrate-integration-secrets
-pnpm --filter ./delivery-platform-server prisma:migrate-integration-secrets -- --apply --actor-user-id="$MIGRATION_ACTOR_ID"
+pnpm --filter ./delivery-platform-server prisma:migrate-integration-secrets -- --apply --actor-username="$MIGRATION_ACTOR_USERNAME"
 pnpm --filter ./delivery-platform-server prisma:migrate-integration-secrets -- --verify
 ```
 
-若通过 Compose 执行发布，上述三条 Secret 命令已经由 `backend-migrate` 使用 `INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME` 执行；人工命令只用于保存报告或非 Compose 环境，不得对不同密钥重复 apply。若不存在旧标准/知识或旧集成配置，dry-run 会报告 0 项，仍应保存报告。加密密钥不得复用 JWT、数据库、Redis 或 MinIO 密钥。完成后再运行一次幂等 seed、比较业务表计数并完成 strict verify，之后才启动 API 和 Worker。
+若通过 Compose 执行发布，上述三组命令已经由 `backend-migrate` 使用 `INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME` 自动执行；人工命令只用于预先保存报告、处理迁移异常或非 Compose 恢复，不得在自动流程外对不同密钥重复 apply。若不存在旧标准/知识或旧集成配置，dry-run 会报告 0 项，仍应保存报告。加密密钥不得复用 JWT、数据库、Redis 或 MinIO 密钥。只有二次 seed、精确表计数、外键检查和全部 strict verify 完成后，才允许启动 API 和 Worker。
+
+迁移 `20260713100000_retire_database_ui_translations` 不删除生产翻译数据，而是将旧 `translations` 表幂等归档为 `retired_ui_translations_20260713`；Prisma 运行时模型和 seed 已移除该业务表。归档表只用于审计和人工核验，不得恢复为运行时双轨翻译来源。
 
 迁移 094 删除旧项目运行时列前会将原状态写入 `project_legacy_state_archive` 并执行状态 preflight；出现异常必须中止，禁止绕过校验手工删列。旧业务表只读保留，不要在常规发布中物理删除。
 

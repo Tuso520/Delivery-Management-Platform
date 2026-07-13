@@ -2,8 +2,9 @@ import request from './request'
 import { runIdempotentUpload } from './upload-idempotency'
 import type {
   KnowledgeCategory,
-  CreateKnowledgeItemDto,
-  CreateKnowledgeVersionDto,
+  CreateKnowledgeItemDto as BaseCreateKnowledgeItemDto,
+  CreateKnowledgeVersionDto as BaseCreateKnowledgeVersionDto,
+  KnowledgeContentType,
   KnowledgeItem,
   KnowledgeItemPage,
   KnowledgeReviewSubmissionResult,
@@ -13,6 +14,65 @@ import type {
   KnowledgeVersion,
   KnowledgeDraftFileUploadResult,
 } from '@/types/knowledge'
+
+export type KnowledgePrimaryContentPayload =
+  | {
+      contentType: 'FILE'
+      fileVersionId: string
+      markdownContent: null
+      externalUrl: null
+    }
+  | {
+      contentType: 'MARKDOWN'
+      fileVersionId: null
+      markdownContent: string
+      externalUrl: null
+    }
+  | {
+      contentType: 'LINK'
+      fileVersionId: null
+      markdownContent: null
+      externalUrl: string
+    }
+
+type ExplicitKnowledgeVersionFields =
+  | 'contentType'
+  | 'fileVersionId'
+  | 'markdownContent'
+  | 'externalUrl'
+  | 'supportingFileVersionIds'
+  | 'revision'
+
+export type CreateKnowledgeItemPayload = Omit<
+  BaseCreateKnowledgeItemDto,
+  'contentType' | 'fileVersionId' | 'markdownContent' | 'externalUrl' | 'supportingFileVersionIds'
+> &
+  KnowledgePrimaryContentPayload & { supportingFileVersionIds: string[] }
+
+export type CreateKnowledgeVersionPayload = Omit<
+  BaseCreateKnowledgeVersionDto,
+  ExplicitKnowledgeVersionFields
+> &
+  KnowledgePrimaryContentPayload & { supportingFileVersionIds: string[] }
+
+export type UpdateKnowledgeVersionPayload = CreateKnowledgeVersionPayload & { revision: number }
+
+const validKnowledgeContentTypes: ReadonlySet<KnowledgeContentType> = new Set([
+  'FILE',
+  'MARKDOWN',
+  'LINK',
+])
+
+function assertExplicitVersionPayload(
+  data: CreateKnowledgeVersionPayload | UpdateKnowledgeVersionPayload,
+): void {
+  if (
+    !validKnowledgeContentTypes.has(data.contentType) ||
+    !Array.isArray(data.supportingFileVersionIds)
+  ) {
+    throw new TypeError('Knowledge version content and supporting files must be explicit')
+  }
+}
 
 export const knowledgeApi = {
   uploadDraftFile(file: File, changeDescription?: string) {
@@ -48,7 +108,7 @@ export const knowledgeApi = {
     return request.get<KnowledgeItem>(`/knowledge/${id}`)
   },
 
-  create(data: CreateKnowledgeItemDto) {
+  create(data: CreateKnowledgeItemPayload) {
     return request.post<KnowledgeItem>('/knowledge', data)
   },
 
@@ -56,18 +116,20 @@ export const knowledgeApi = {
     return request.patch<KnowledgeItem>(`/knowledge/${id}`, data)
   },
 
-  createVersion(id: string, data: CreateKnowledgeVersionDto) {
+  createVersion(id: string, data: CreateKnowledgeVersionPayload) {
+    assertExplicitVersionPayload(data)
     return request.post<KnowledgeVersion>(`/knowledge/${id}/versions`, data)
   },
 
-  updateVersion(versionId: string, data: CreateKnowledgeVersionDto) {
+  updateVersion(versionId: string, data: UpdateKnowledgeVersionPayload) {
+    assertExplicitVersionPayload(data)
     return request.patch<KnowledgeVersion>(`/knowledge-versions/${versionId}`, data)
   },
 
-  submitReview(versionId: string, approvalTemplateId?: string) {
+  submitReview(versionId: string, revision: number, approvalTemplateId?: string) {
     return request.post<KnowledgeReviewSubmissionResult>(
       `/knowledge-versions/${versionId}/submit-review`,
-      approvalTemplateId ? { approvalTemplateId } : {},
+      { revision, ...(approvalTemplateId ? { approvalTemplateId } : {}) },
     )
   },
 

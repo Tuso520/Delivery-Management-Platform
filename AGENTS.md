@@ -32,6 +32,8 @@
 8. 公共组件、Service、DTO 和工具函数优先复用，避免复制业务逻辑。
 9. TypeScript 严格模式下禁止新增无约束 `any`。
 10. 文档只维护在 `README.md`、`DEPLOYMENT.md`、`CONTRIBUTING.md`、`SECURITY.md`、`THIRD_PARTY_NOTICES.md`、`CHANGELOG.md` 和 `docs/`。
+11. 标准版本只允许统一 `FileVersion` 作为正文；知识版本必须在 FILE、MARKDOWN、LINK 中严格选择一个主内容源，支持文件必须显式提交完整集合。
+12. 生产升级固定执行 schema migration、三个数据 migrator 的 dry-run/apply/只读 verify 和二次幂等 seed；旧迁移源不得重新接入运行时双读或双写。
 
 ## 目录结构
 
@@ -94,6 +96,7 @@ docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.p
 - 提交格式：Conventional Commits，例如 `docs(project): update Chinese documentation`。
 - 推送目标：`origin/main`。
 - 禁止提交 `.env`、密钥、Token、数据库备份、发布包、截图产物和本地测试日志。
+- README、示例配置和种子说明不得写入可直接使用的默认密码；所有环境的初始化密码只能通过显式环境变量注入，缺失、空白和占位值必须 fail fast，既有账号默认不得自动重置密码。
 - 生产部署采用 Git 拉取部署，流程见 `docs/deployment.md`。
 
 ## 标准开发流程

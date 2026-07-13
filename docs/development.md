@@ -15,6 +15,8 @@ pnpm install
 ## 本地模拟服务
 
 ```powershell
+$env:LOCAL_TEST_ADMIN_PASSWORD = Read-Host '请输入本地模拟管理员密码'
+$env:LOCAL_TEST_PM_PASSWORD = Read-Host '请输入本地模拟项目经理密码'
 node scripts/local-test-server.mjs
 ```
 
@@ -22,14 +24,14 @@ node scripts/local-test-server.mjs
 
 - `http://127.0.0.1:18080`
 
-默认模拟账号：
+本地模拟账号：
 
-- `admin / Admin@123`
-- `pm_wang / Pm@123456`
+- `admin`
+- `pm_wang`
 
-这些账号只由 `scripts/local-test-server.mjs` 提供，用于本地浏览器联调。任意密码登录已禁用；生产和共享测试环境不得依赖上述固定密码，种子账号密码必须通过环境变量配置。
+这些账号只由 `scripts/local-test-server.mjs` 提供，用于本地浏览器联调；密码必须分别由 `LOCAL_TEST_ADMIN_PASSWORD`、`LOCAL_TEST_PM_PASSWORD` 显式注入，缺失、空白或占位值会拒绝启动。生产和共享测试环境不得使用模拟账号，种子账号密码必须通过各自环境变量配置。
 
-Docker 本地测试默认允许种子脚本把已有种子账号密码同步为本地环境变量中的值；生产环境默认不重置已有账号。仅在明确执行密码轮换时才设置 `SEED_RESET_EXISTING_USER_PASSWORDS=true`，该操作只更新密码，不会重新启用已停用或软删除的账号。
+真实 NestJS/Prisma 环境不提供开发密码回退。启动 Docker 本地测试前，将 `.env.local.example` 复制为被 Git 忽略的 `.env.local`，并显式替换 `SEED_ADMIN_PASSWORD`、`SEED_DEFAULT_PASSWORD` 的 `CHANGE_ME...` 占位值；缺失、空白或占位值在 development、test、production 都会使 seed 失败。所有环境默认保留既有种子账号密码；仅在明确执行受控密码轮换时才设置 `SEED_RESET_EXISTING_USER_PASSWORDS=true`，该操作只更新密码，不会重新启用已停用或软删除的账号。
 
 ## 前端开发
 

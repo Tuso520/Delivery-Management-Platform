@@ -21,6 +21,8 @@ docker compose --env-file .env.local.example -f docker-compose.test.yml config -
 
 Lint 命令会修正可自动修复的格式；执行后必须重新检查工作区差异。生产构建允许报告分块体积警告，但不允许类型、测试、Lint 或构建错误。
 
+真实 Docker/集成测试必须从 `.env.local.example` 创建被 Git 忽略的 `.env.local`，并显式注入非空、非 `CHANGE_ME...` 的 `SEED_ADMIN_PASSWORD` 和 `SEED_DEFAULT_PASSWORD`。测试 Compose 默认不重置既有种子账号；需要验证密码轮换时，必须在隔离数据库中显式设置 `SEED_RESET_EXISTING_USER_PASSWORDS=true`。
+
 ## 真实 API E2E
 
 `delivery-platform-server/test/real-api.e2e-spec.ts` 只连接已经启动的真实 NestJS、MySQL、Redis 和 MinIO，不使用页面模拟服务。账号通过临时环境变量提供，不写入仓库：
@@ -71,7 +73,9 @@ pnpm --dir delivery-platform-web test:smoke:api
 5. 项目最终状态只能是 `DRAFT / ACTIVE / PAUSED / COMPLETED / CANCELLED`；待审和归档分别由 ReviewTask 与 `archivedAt` 表达，阶段只能使用九个目标阶段。
 6. 档案模板聚合状态只能是 `DRAFT / IN_REVIEW / PUBLISHED / REJECTED / DISABLED`。
 7. 集成 Secret 迁移后，公开配置中不得残留明文 Secret；密钥、API 和 Outbox Worker 使用同一个加密密钥。
-8. 迁移失败不得继续启动 API 或 Worker；回滚必须成对恢复数据库和 MinIO。
+8. 标准历史结构化正文必须物化为经流式 checksum 校验的真实 MinIO 文件；每个有效 StandardVersion 都有唯一主文件。KnowledgeVersion 必须严格满足 FILE/MARKDOWN/LINK 三选一，支持文件归属和 published pointer 一致。
+9. UI 翻译退役只允许把 `translations` 原子归档为 `retired_ui_translations_20260713`，部署表计数报告必须证明行数未减少；运行时 Prisma、seed 和 API 不再读写该表。
+10. 迁移失败不得继续启动 API 或 Worker；回滚必须成对恢复数据库和 MinIO。
 
 ## 权限与数据范围矩阵
 
@@ -85,9 +89,13 @@ pnpm --dir delivery-platform-web test:smoke:api
 - 文件审核动作只允许当前步骤指派人执行，多人会签并发只能产生一个终态。
 - 设置只读账号落到第一个可访问设置页；无任何可访问页时进入 `/forbidden`，不清除有效会话。
 
-## 2026-07-13 本轮真实验收记录
+## 2026-07-13 验收记录
 
-本轮在隔离临时 MySQL、Redis、MinIO 和真实 NestJS API 上完成：
+本轮最终工作区已完成不依赖 Docker daemon 的合并门禁：前端 lint、类型检查、40 个 Vitest 文件 / 175 个用例和生产构建通过；后端 lint、类型检查、67 个 Jest 套件 / 464 个用例、Prisma schema/client 生成和生产构建通过；三组 Compose 静态解析、Bash 语法、ShellCheck 与完整部署契约通过。前端构建仅保留既有分块体积和 user store 动静态导入警告。
+
+以下真实 MySQL、Redis、MinIO 和浏览器结果是新增两条 migration 前的 26 migration 基线；最终 28 migration、内容物化和共享服务器发布必须由同一目标提交的 GitHub `integration`/`deploy` 或服务器复验补充，不能用该基线替代：
+
+基线在隔离临时 MySQL、Redis、MinIO 和真实 NestJS API 上完成：
 
 - 前端 lint、TypeScript 检查和生产构建通过；Vitest 40 个测试文件、173 个用例全部通过。
 - 后端 lint、TypeScript 检查和生产构建通过；Jest 63 个测试套件、369 个用例全部通过，Prisma schema 校验通过。
@@ -105,7 +113,7 @@ pnpm --dir delivery-platform-web test:smoke:api
 - 项目物理删除对有关联项目返回包含阻断计数的 409 并记录失败审计；无关联测试项目删除成功并保留成功审计。
 - 浏览器验证管理员和项目经理登录、项目、档案、审核深链、PDF Canvas、模板、日志、角色权限矩阵、标准和知识页面；项目经理只看到 7 个范围内项目，金额为空且无物理删除按钮，最终项目页控制台无警告或错误。
 
-该记录只证明本地隔离环境中的当前工作区；没有推送或共享环境部署成功记录时，不得把它表述为生产或测试服务器已发布。
+该记录只证明明确标注的本地门禁与隔离环境基线；没有同一提交的共享环境部署成功记录时，不得把它表述为生产或测试服务器已发布。
 
 ## GitHub 部署验收
 
@@ -115,7 +123,7 @@ pnpm --dir delivery-platform-web test:smoke:api
 2. Environment 使用固定核验的 SSH host key，目标提交与 Git bundle 中的 `HEAD` 一致。
 3. 服务器 Git HEAD、`build-info.json.releaseId` 和工作流目标提交一致。
 4. `/api/v1/ready`、API E2E、浏览器关键路径通过，File Worker 与 Outbox Worker 均保持 running，且容器 ID 和重启次数在稳定窗口内不变。
-5. `scripts/test-deploy-git.sh`、ShellCheck 和 Actionlint 必须通过；契约至少覆盖部署锁内的 Git bundle/环境上传、远端八参数位置契约、Dockerfile syntax frontend 禁用、数据库变更边界、MinIO 停止门禁、跨进程 incomplete-restore 标记及绑定备份重试、完整 MySQL/MinIO 备份、精确 migration runtime 与 code-only rollback 选择、未知 dirty worktree 保留、继承密钥不得掩盖 `.env` 缺项、MySQL 就绪等待不得丢失已准备密钥、API/Worker 停写必须早于密文检查和密钥持久化、密钥失败恢复、人工备份/代码回滚顺序、旧备份拒绝、密钥严格解密、跨拓扑 Worker 和 restore `--no-build`。
+5. `scripts/test-deploy-git.sh`、ShellCheck 和 Actionlint 必须通过；契约至少覆盖部署锁内的 Git bundle/环境上传、远端八参数位置契约、Dockerfile syntax frontend 禁用、数据库变更边界、MinIO 停止门禁、跨进程 incomplete-restore 标记及绑定备份重试、完整 MySQL/MinIO 备份、精确 migration runtime 与 code-only rollback 选择、未知 dirty worktree 保留、继承密钥不得掩盖 `.env` 缺项、MySQL 就绪等待不得丢失已准备密钥、API/Worker 停写必须早于密文检查和密钥持久化、密钥失败恢复、人工备份/代码回滚顺序、旧备份拒绝、密钥严格解密、跨拓扑 Worker、restore `--no-build`，以及部署后未使用镜像清理只删除容器、当前/上一发布和 checksummed v3 备份均未引用的 Image ID。
 6. migration 可能写库后的失败不得启动旧代码；日志必须明确显示“保留目标并停服”或“v3 成对数据/环境/不可变运行时已验证恢复”，不能只以 `/ready` 作为旧版本兼容证据。
 7. 失败时保存诊断与回滚事实；“工作流已配置”不等于“当前版本部署成功”。
 

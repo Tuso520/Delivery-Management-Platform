@@ -26,6 +26,183 @@ type StandardActor = Pick<JwtPayload, 'sub' | 'permissions'>;
 const editableVersionStatuses = new Set(['DRAFT', 'REJECTED']);
 const managerPermissions = new Set(['standard:publish', 'standard:archive']);
 
+const publicStandardFileAssetSelect = {
+  id: true,
+  originalName: true,
+  extension: true,
+  mimeType: true,
+  size: true,
+} satisfies Prisma.FileAssetSelect;
+
+const publicStandardFileVersionSelect = {
+  id: true,
+  logicalFileId: true,
+  version: true,
+  status: true,
+  asset: { select: publicStandardFileAssetSelect },
+} satisfies Prisma.FileVersionSelect;
+
+const publicStandardVersionSelect = {
+  id: true,
+  standardId: true,
+  version: true,
+  fileVersionId: true,
+  status: true,
+  revision: true,
+  effectiveAt: true,
+  changeDescription: true,
+  submittedBy: true,
+  publishedAt: true,
+  archivedAt: true,
+  createdAt: true,
+  updatedAt: true,
+  fileVersion: { select: publicStandardFileVersionSelect },
+  submitter: { select: { id: true, realName: true } },
+} satisfies Prisma.StandardVersionSelect;
+
+const publicStandardSelect = {
+  id: true,
+  code: true,
+  name: true,
+  type: true,
+  category: true,
+  status: true,
+  currentPublishedVersionId: true,
+  effectiveAt: true,
+  createdBy: true,
+  updatedBy: true,
+  archivedAt: true,
+  createdAt: true,
+  updatedAt: true,
+  creator: { select: { id: true, realName: true } },
+  updater: { select: { id: true, realName: true } },
+  currentPublishedVersion: {
+    select: {
+      id: true,
+      version: true,
+      status: true,
+      effectiveAt: true,
+      publishedAt: true,
+    },
+  },
+} satisfies Prisma.StandardSelect;
+
+const publicStandardRelationSelect = {
+  id: true,
+  sourceStandardId: true,
+  targetStandardId: true,
+  relationType: true,
+  createdBy: true,
+  createdAt: true,
+} satisfies Prisma.StandardRelationSelect;
+
+const publicStandardRelationTargetSelect = {
+  id: true,
+  code: true,
+  name: true,
+  type: true,
+  status: true,
+} satisfies Prisma.StandardSelect;
+
+type PublicStandardRecord = Prisma.StandardGetPayload<{ select: typeof publicStandardSelect }>;
+type PublicStandardVersionRecord = Prisma.StandardVersionGetPayload<{
+  select: typeof publicStandardVersionSelect;
+}>;
+type PublicStandardRelationRecord = Prisma.StandardRelationGetPayload<{
+  select: typeof publicStandardRelationSelect;
+}>;
+type PublicStandardRelationTargetRecord = Prisma.StandardGetPayload<{
+  select: typeof publicStandardRelationTargetSelect;
+}>;
+
+function mapPublicStandardVersion(record: PublicStandardVersionRecord) {
+  if (!record.fileVersionId || !record.fileVersion) {
+    throw new UnprocessableEntityException('标准版本文件关联缺失');
+  }
+  return {
+    id: record.id,
+    standardId: record.standardId,
+    version: record.version,
+    fileVersionId: record.fileVersionId,
+    fileVersion: {
+      id: record.fileVersion.id,
+      logicalFileId: record.fileVersion.logicalFileId,
+      version: record.fileVersion.version,
+      status: record.fileVersion.status,
+      asset: {
+        id: record.fileVersion.asset.id,
+        originalName: record.fileVersion.asset.originalName,
+        extension: record.fileVersion.asset.extension,
+        mimeType: record.fileVersion.asset.mimeType,
+        size: record.fileVersion.asset.size,
+      },
+    },
+    status: record.status,
+    revision: record.revision,
+    effectiveAt: record.effectiveAt,
+    changeDescription: record.changeDescription,
+    submittedBy: record.submittedBy,
+    submitter: record.submitter
+      ? { id: record.submitter.id, realName: record.submitter.realName }
+      : null,
+    publishedAt: record.publishedAt,
+    archivedAt: record.archivedAt,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+}
+
+function mapPublicStandard(record: PublicStandardRecord, versions?: PublicStandardVersionRecord[]) {
+  return {
+    id: record.id,
+    code: record.code,
+    name: record.name,
+    type: record.type,
+    category: record.category,
+    status: record.status,
+    currentPublishedVersionId: record.currentPublishedVersionId,
+    currentPublishedVersion: record.currentPublishedVersion
+      ? {
+          id: record.currentPublishedVersion.id,
+          version: record.currentPublishedVersion.version,
+          status: record.currentPublishedVersion.status,
+          effectiveAt: record.currentPublishedVersion.effectiveAt,
+          publishedAt: record.currentPublishedVersion.publishedAt,
+        }
+      : null,
+    effectiveAt: record.effectiveAt,
+    createdBy: record.createdBy,
+    updatedBy: record.updatedBy,
+    creator: record.creator ? { id: record.creator.id, realName: record.creator.realName } : null,
+    updater: record.updater ? { id: record.updater.id, realName: record.updater.realName } : null,
+    archivedAt: record.archivedAt,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    ...(versions === undefined ? {} : { versions: versions.map(mapPublicStandardVersion) }),
+  };
+}
+
+function mapPublicStandardRelation(
+  relation: PublicStandardRelationRecord,
+  targetStandard: PublicStandardRelationTargetRecord,
+) {
+  return {
+    id: relation.id,
+    sourceStandardId: relation.sourceStandardId,
+    targetStandardId: relation.targetStandardId,
+    relationType: relation.relationType,
+    createdBy: relation.createdBy,
+    createdAt: relation.createdAt,
+    targetStandard: {
+      id: targetStandard.id,
+      code: targetStandard.code,
+      name: targetStandard.name,
+      type: targetStandard.type,
+      status: targetStandard.status,
+    },
+  };
+}
+
 @Injectable()
 export class StandardService {
   constructor(
@@ -93,38 +270,14 @@ export class StandardService {
       this.prisma.standard.count({ where }),
       this.prisma.standard.findMany({
         where,
-        select: {
-          id: true,
-          code: true,
-          name: true,
-          type: true,
-          category: true,
-          status: true,
-          effectiveAt: true,
-          createdBy: true,
-          updatedBy: true,
-          archivedAt: true,
-          createdAt: true,
-          updatedAt: true,
-          creator: { select: { id: true, realName: true } },
-          updater: { select: { id: true, realName: true } },
-          currentPublishedVersion: {
-            select: {
-              id: true,
-              version: true,
-              status: true,
-              effectiveAt: true,
-              publishedAt: true,
-            },
-          },
-        },
+        select: publicStandardSelect,
         skip: (page - 1) * pageSize,
         take: pageSize,
         orderBy: { updatedAt: 'desc' },
       }),
     ]);
     return {
-      items: list,
+      items: list.map((standard) => mapPublicStandard(standard)),
       page,
       pageSize,
       total,
@@ -133,9 +286,8 @@ export class StandardService {
 
   async create(dto: CreateStandardDto, actor: StandardActor) {
     await this.assertCodeAvailable(dto.code);
-    const fileVersionId = dto.fileVersionId ?? null;
-    this.assertStandardContent(fileVersionId, dto.structuredContent ?? null);
-    await this.assertFileVersionsAccessible(fileVersionId ? [fileVersionId] : [], actor);
+    const fileVersionId = this.requireFileVersionId(dto.fileVersionId);
+    await this.assertFileVersionsAccessible([fileVersionId], actor);
     const standardId = await this.prisma.$transaction(async (tx) => {
       const standard = await tx.standard.create({
         data: {
@@ -155,15 +307,13 @@ export class StandardService {
           standardId: standard.id,
           version: dto.version?.trim() || 'V1.0',
           fileVersionId,
-          structuredContent: this.toNullableJson(dto.structuredContent),
-          applicability: this.toNullableJson(dto.applicability),
           status: 'DRAFT',
           effectiveAt: dto.effectiveAt ? new Date(dto.effectiveAt) : undefined,
           changeDescription: dto.changeDescription,
           submittedBy: actor.sub,
         },
       });
-      await this.bindFileVersions(tx, fileVersionId ? [fileVersionId] : [], standard.id, actor.sub);
+      await this.bindFileVersions(tx, [fileVersionId], standard.id, actor.sub);
       return standard.id;
     });
     return this.findById(standardId, actor);
@@ -173,23 +323,7 @@ export class StandardService {
     const visibility = await this.buildVisibilityWhere(actor);
     const standard = await this.prisma.standard.findFirst({
       where: { AND: [{ id }, visibility] },
-      select: {
-        id: true,
-        code: true,
-        name: true,
-        type: true,
-        category: true,
-        status: true,
-        currentPublishedVersionId: true,
-        effectiveAt: true,
-        createdBy: true,
-        updatedBy: true,
-        archivedAt: true,
-        createdAt: true,
-        updatedAt: true,
-        creator: { select: { id: true, realName: true } },
-        updater: { select: { id: true, realName: true } },
-      },
+      select: publicStandardSelect,
     });
     if (!standard) {
       throw new NotFoundException('标准不存在');
@@ -208,25 +342,10 @@ export class StandardService {
               ],
             }),
       },
-      include: {
-        fileVersion: {
-          include: {
-            asset: {
-              select: {
-                id: true,
-                originalName: true,
-                extension: true,
-                mimeType: true,
-                size: true,
-              },
-            },
-          },
-        },
-        submitter: { select: { id: true, realName: true } },
-      },
+      select: publicStandardVersionSelect,
       orderBy: { createdAt: 'desc' },
     });
-    return { ...standard, versions };
+    return mapPublicStandard(standard, versions);
   }
 
   async update(id: string, dto: UpdateStandardDto, actor: StandardActor) {
@@ -253,49 +372,42 @@ export class StandardService {
   }
 
   async createVersion(standardId: string, dto: CreateStandardVersionDto, actor: StandardActor) {
-    const standard = await this.findEditableMaster(standardId, actor, true);
-    const activeDraft = await this.prisma.standardVersion.findFirst({
-      where: {
-        standardId,
-        archivedAt: null,
-        status: { in: ['DRAFT', 'IN_REVIEW'] },
-      },
-      select: { id: true },
-    });
-    if (activeDraft) {
-      throw new ConflictException('该标准已有草稿或审核中版本');
-    }
-    const source = standard.currentPublishedVersionId
-      ? await this.prisma.standardVersion.findUnique({
-          where: { id: standard.currentPublishedVersionId },
-          select: {
-            fileVersionId: true,
-            structuredContent: true,
-            applicability: true,
-            effectiveAt: true,
-          },
-        })
-      : null;
-    const fileVersionId =
-      dto.fileVersionId === undefined ? (source?.fileVersionId ?? null) : dto.fileVersionId;
-    const structuredContent =
-      dto.structuredContent === undefined
-        ? (source?.structuredContent ?? null)
-        : dto.structuredContent;
-    this.assertStandardContent(fileVersionId, structuredContent);
-    await this.assertFileVersionsAccessible(fileVersionId ? [fileVersionId] : [], actor);
-    const version = dto.version?.trim() || (await this.nextVersion(standardId));
-    await this.assertVersionAvailable(standardId, version);
+    await this.findEditableMaster(standardId, actor, true);
     const created = await this.prisma.$transaction(async (tx) => {
+      await this.lockActiveStandard(tx, standardId);
+      const activeDraft = await tx.standardVersion.findFirst({
+        where: {
+          standardId,
+          archivedAt: null,
+          status: { in: ['DRAFT', 'IN_REVIEW'] },
+        },
+        select: { id: true },
+      });
+      if (activeDraft) {
+        throw new ConflictException('该标准已有草稿或审核中版本');
+      }
+      const lockedStandard = await tx.standard.findUnique({
+        where: { id: standardId },
+        select: { currentPublishedVersionId: true },
+      });
+      const source = lockedStandard?.currentPublishedVersionId
+        ? await tx.standardVersion.findUnique({
+            where: { id: lockedStandard.currentPublishedVersionId },
+            select: {
+              fileVersionId: true,
+              effectiveAt: true,
+            },
+          })
+        : null;
+      const fileVersionId = this.requireFileVersionId(dto.fileVersionId ?? source?.fileVersionId);
+      await this.assertFileVersionsAccessible([fileVersionId], actor, standardId, tx);
+      const version = dto.version?.trim() || (await this.nextVersion(standardId, tx));
+      await this.assertVersionAvailable(standardId, version, tx);
       const record = await tx.standardVersion.create({
         data: {
           standardId,
           version,
           fileVersionId,
-          structuredContent: this.toNullableJson(structuredContent),
-          applicability: this.toNullableJson(
-            dto.applicability === undefined ? source?.applicability : dto.applicability,
-          ),
           status: 'DRAFT',
           effectiveAt:
             dto.effectiveAt === undefined
@@ -306,21 +418,30 @@ export class StandardService {
           changeDescription: dto.changeDescription,
           submittedBy: actor.sub,
         },
+        select: publicStandardVersionSelect,
       });
-      await this.bindFileVersions(tx, fileVersionId ? [fileVersionId] : [], standardId, actor.sub);
+      await this.bindFileVersions(tx, [fileVersionId], standardId, actor.sub);
       await tx.standard.update({
         where: { id: standardId },
         data: { updatedBy: actor.sub, updatedAt: new Date() },
       });
       return record;
     });
-    return created;
+    return mapPublicStandardVersion(created);
   }
 
   async updateVersion(versionId: string, dto: CreateStandardVersionDto, actor: StandardActor) {
     const current = await this.prisma.standardVersion.findUnique({
       where: { id: versionId },
-      include: {
+      select: {
+        id: true,
+        version: true,
+        fileVersionId: true,
+        status: true,
+        revision: true,
+        effectiveAt: true,
+        changeDescription: true,
+        archivedAt: true,
         standard: {
           select: { id: true, createdBy: true, archivedAt: true },
         },
@@ -339,12 +460,8 @@ export class StandardService {
       throw new ConflictException('标准版本已被其他用户更新，请刷新后重试');
     }
 
-    const fileVersionId =
-      dto.fileVersionId === undefined ? current.fileVersionId : dto.fileVersionId;
-    const structuredContent =
-      dto.structuredContent === undefined ? current.structuredContent : dto.structuredContent;
-    this.assertStandardContent(fileVersionId, structuredContent);
-    await this.assertFileVersionsAccessible(fileVersionId ? [fileVersionId] : [], actor);
+    const fileVersionId = this.requireFileVersionId(dto.fileVersionId ?? current.fileVersionId);
+    await this.assertFileVersionsAccessible([fileVersionId], actor, current.standard.id);
     const nextVersion = dto.version?.trim() || current.version;
     if (nextVersion !== current.version) {
       await this.assertVersionAvailable(current.standard.id, nextVersion);
@@ -361,11 +478,6 @@ export class StandardService {
           revision: { increment: 1 },
           version: nextVersion,
           fileVersionId,
-          structuredContent: this.toNullableJson(structuredContent),
-          applicability:
-            dto.applicability === undefined
-              ? (current.applicability ?? Prisma.JsonNull)
-              : this.toNullableJson(dto.applicability),
           effectiveAt:
             dto.effectiveAt === undefined
               ? current.effectiveAt
@@ -382,28 +494,30 @@ export class StandardService {
       if (claimed.count !== 1) {
         throw new ConflictException('标准版本已被其他用户更新，请刷新后重试');
       }
-      await this.bindFileVersions(
-        tx,
-        fileVersionId ? [fileVersionId] : [],
-        current.standard.id,
-        actor.sub,
-      );
+      await this.bindFileVersions(tx, [fileVersionId], current.standard.id, actor.sub);
       await tx.standard.update({
         where: { id: current.standard.id },
         data: { updatedBy: actor.sub, updatedAt: new Date() },
       });
       const updated = await tx.standardVersion.findUnique({
         where: { id: versionId },
+        select: publicStandardVersionSelect,
       });
       if (!updated) throw new NotFoundException('标准版本不存在');
-      return updated;
+      return mapPublicStandardVersion(updated);
     });
   }
 
   async submitReview(versionId: string, dto: SubmitStandardReviewDto, actor: StandardActor) {
     const version = await this.prisma.standardVersion.findUnique({
       where: { id: versionId },
-      include: {
+      select: {
+        id: true,
+        version: true,
+        status: true,
+        revision: true,
+        fileVersionId: true,
+        archivedAt: true,
         standard: {
           select: {
             id: true,
@@ -426,17 +540,21 @@ export class StandardService {
     if (!editableVersionStatuses.has(version.status)) {
       throw new ConflictException('当前标准版本不能提交审核');
     }
-    this.assertStandardContent(version.fileVersionId, version.structuredContent);
+    if (dto.revision !== version.revision) {
+      throw new ConflictException('标准版本已被其他用户更新，请刷新后重试');
+    }
+    const fileVersionId = this.requireFileVersionId(version.fileVersionId);
     const approvalTemplateId = await this.resolveApprovalTemplateId(
       dto.approvalTemplateId,
       'STANDARD',
     );
     const configuration = await this.reviewConfiguration.resolve(approvalTemplateId, actor.sub);
-    return this.reviewTasks.createTask({
+    const task = await this.reviewTasks.createTask({
       sourceType: 'STANDARD',
       sourceId: version.id,
       sourceVersionId: version.id,
-      fileVersionId: version.fileVersionId ?? undefined,
+      sourceRevision: dto.revision,
+      fileVersionId,
       approvalTemplateId: configuration.approvalTemplateId,
       approvalTemplateVersion: configuration.approvalTemplateVersion,
       approvalSnapshot: configuration.snapshot,
@@ -445,12 +563,14 @@ export class StandardService {
       submittedBy: actor.sub,
       steps: configuration.steps,
     });
+    return { id: task.id, status: task.status };
   }
 
   async findRelations(standardId: string, actor: StandardActor) {
     await this.findVisibleMaster(standardId, actor);
     const relations = await this.prisma.standardRelation.findMany({
       where: { sourceStandardId: standardId },
+      select: publicStandardRelationSelect,
       orderBy: { createdAt: 'asc' },
     });
     if (relations.length === 0) return [];
@@ -459,18 +579,12 @@ export class StandardService {
       where: {
         AND: [visibility, { id: { in: relations.map((relation) => relation.targetStandardId) } }],
       },
-      select: {
-        id: true,
-        code: true,
-        name: true,
-        type: true,
-        status: true,
-      },
+      select: publicStandardRelationTargetSelect,
     });
     const targetById = new Map(targets.map((target) => [target.id, target]));
     return relations.flatMap((relation) => {
       const target = targetById.get(relation.targetStandardId);
-      return target ? [{ ...relation, targetStandard: target }] : [];
+      return target ? [mapPublicStandardRelation(relation, target)] : [];
     });
   }
 
@@ -484,7 +598,7 @@ export class StandardService {
       where: {
         AND: [{ id: dto.targetStandardId, archivedAt: null }, visibility],
       },
-      select: { id: true },
+      select: publicStandardRelationTargetSelect,
     });
     if (!target) {
       throw new NotFoundException('目标标准不存在');
@@ -502,14 +616,16 @@ export class StandardService {
     if (duplicate) {
       throw new ConflictException('标准关系已存在');
     }
-    return this.prisma.standardRelation.create({
+    const relation = await this.prisma.standardRelation.create({
       data: {
         sourceStandardId: standardId,
         targetStandardId: dto.targetStandardId,
         relationType: dto.relationType,
         createdBy: actor.sub,
       },
+      select: publicStandardRelationSelect,
     });
+    return mapPublicStandardRelation(relation, target);
   }
 
   async deleteRelation(
@@ -532,26 +648,36 @@ export class StandardService {
     if (!actor.permissions.includes('standard:archive')) {
       throw new ForbiddenException('无权归档标准');
     }
-    const standard = await this.prisma.standard.findFirst({
-      where: { id, archivedAt: null },
-      select: { id: true },
-    });
-    if (!standard) {
-      throw new NotFoundException('标准不存在');
-    }
-    const inReview = await this.prisma.standardVersion.findFirst({
-      where: { standardId: id, status: 'IN_REVIEW', archivedAt: null },
-      select: { id: true },
-    });
-    if (inReview) {
-      throw new ConflictException('标准存在审核中版本，不能归档');
-    }
     const archivedAt = new Date();
     await this.prisma.$transaction(async (tx) => {
-      await tx.standard.update({
-        where: { id },
+      await this.lockActiveStandard(tx, id);
+      const inReview = await tx.standardVersion.findFirst({
+        where: { standardId: id, status: 'IN_REVIEW', archivedAt: null },
+        select: { id: true },
+      });
+      const versionIds = await tx.standardVersion.findMany({
+        where: { standardId: id },
+        select: { id: true },
+      });
+      const activeTask = await tx.reviewTask.findFirst({
+        where: {
+          sourceType: 'STANDARD',
+          status: 'PENDING',
+          archivedAt: null,
+          sourceVersionId: { in: versionIds.map((version) => version.id) },
+        },
+        select: { id: true },
+      });
+      if (inReview || activeTask) {
+        throw new ConflictException('标准存在审核中版本，不能归档');
+      }
+      const claimed = await tx.standard.updateMany({
+        where: { id, archivedAt: null },
         data: { status: 'ARCHIVED', archivedAt, updatedBy: actor.sub },
       });
+      if (claimed.count !== 1) {
+        throw new ConflictException('标准状态已变化，请刷新后重试');
+      }
       await tx.standardVersion.updateMany({
         where: {
           standardId: id,
@@ -654,8 +780,12 @@ export class StandardService {
     }
   }
 
-  private async assertVersionAvailable(standardId: string, version: string) {
-    const duplicate = await this.prisma.standardVersion.findUnique({
+  private async assertVersionAvailable(
+    standardId: string,
+    version: string,
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
+    const duplicate = await client.standardVersion.findUnique({
       where: { standardId_version: { standardId, version } },
       select: { id: true },
     });
@@ -664,26 +794,48 @@ export class StandardService {
     }
   }
 
-  private async assertFileVersionsAccessible(ids: string[], actor: StandardActor): Promise<void> {
+  private async assertFileVersionsAccessible(
+    ids: string[],
+    actor: StandardActor,
+    standardId?: string,
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<void> {
     const uniqueIds = Array.from(new Set(ids));
     if (uniqueIds.length === 0) return;
-    const count = await this.prisma.fileVersion.count({
+    const count = await client.fileVersion.count({
       where: {
         id: { in: uniqueIds },
         archivedAt: null,
         logicalFile: { archivedAt: null },
+        asset: {
+          archivedAt: null,
+          status: 'AVAILABLE',
+          storageProvider: 'minio',
+          checksum: { not: null },
+        },
         ...(this.isManager(actor)
           ? {}
           : {
               OR: [
                 { uploadedBy: actor.sub },
                 { logicalFile: { createdBy: actor.sub, archivedAt: null } },
+                ...(standardId
+                  ? [
+                      {
+                        logicalFile: {
+                          ownerType: 'STANDARD',
+                          ownerId: standardId,
+                          archivedAt: null,
+                        },
+                      },
+                    ]
+                  : []),
               ],
             }),
       },
     });
     if (count !== uniqueIds.length) {
-      throw new UnprocessableEntityException('文件版本不存在、已归档或当前用户无权引用');
+      throw new UnprocessableEntityException('文件版本不存在、不可用、已归档或当前用户无权引用');
     }
   }
 
@@ -696,7 +848,17 @@ export class StandardService {
     const uniqueIds = Array.from(new Set(ids));
     if (uniqueIds.length === 0) return;
     const versions = await tx.fileVersion.findMany({
-      where: { id: { in: uniqueIds }, archivedAt: null },
+      where: {
+        id: { in: uniqueIds },
+        archivedAt: null,
+        logicalFile: { archivedAt: null },
+        asset: {
+          archivedAt: null,
+          status: 'AVAILABLE',
+          storageProvider: 'minio',
+          checksum: { not: null },
+        },
+      },
       select: {
         id: true,
         assetId: true,
@@ -706,7 +868,7 @@ export class StandardService {
       },
     });
     if (versions.length !== uniqueIds.length) {
-      throw new UnprocessableEntityException('标准引用的文件版本不存在或已归档');
+      throw new UnprocessableEntityException('标准引用的文件版本不存在、不可用或已归档');
     }
     for (const version of versions) {
       const owner = version.logicalFile;
@@ -728,13 +890,11 @@ export class StandardService {
     }
   }
 
-  private assertStandardContent(
-    fileVersionId: string | null,
-    structuredContent: Prisma.JsonValue | Prisma.InputJsonValue | null,
-  ): void {
-    if (!fileVersionId && structuredContent === null) {
-      throw new UnprocessableEntityException('标准版本必须包含文件版本或结构化内容');
+  private requireFileVersionId(fileVersionId: string | null | undefined): string {
+    if (!fileVersionId) {
+      throw new UnprocessableEntityException('标准版本必须关联有效文件版本');
     }
+    return fileVersionId;
   }
 
   private async resolveApprovalTemplateId(
@@ -750,8 +910,11 @@ export class StandardService {
     return template?.id;
   }
 
-  private async nextVersion(standardId: string): Promise<string> {
-    const versions = await this.prisma.standardVersion.findMany({
+  private async nextVersion(
+    standardId: string,
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<string> {
+    const versions = await client.standardVersion.findMany({
       where: { standardId },
       select: { version: true },
     });
@@ -770,12 +933,19 @@ export class StandardService {
     return minor < 0 ? 'V1.0' : `V${major}.${minor + 1}`;
   }
 
-  private toNullableJson(
-    value: Prisma.JsonValue | Prisma.InputJsonValue | null | undefined,
-  ): Prisma.InputJsonValue | Prisma.NullTypes.DbNull | undefined {
-    if (value === undefined) return undefined;
-    if (value === null) return Prisma.DbNull;
-    return value as Prisma.InputJsonValue;
+  private async lockActiveStandard(
+    tx: Prisma.TransactionClient,
+    standardId: string,
+  ): Promise<void> {
+    const rows = await tx.$queryRaw<Array<{ id: string; archived_at: Date | null }>>(Prisma.sql`
+      SELECT id, archived_at
+      FROM standards
+      WHERE id = ${standardId}
+      FOR UPDATE
+    `);
+    if (rows.length !== 1 || rows[0].archived_at) {
+      throw new NotFoundException('标准不存在');
+    }
   }
 
   private isManager(actor: StandardActor): boolean {

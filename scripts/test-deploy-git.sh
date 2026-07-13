@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The contract harness intentionally mocks functions sourced at runtime and exercises
 # them in isolated subshells, which makes these data-flow warnings false positives.
-# shellcheck disable=SC1091,SC2030,SC2031,SC2034,SC2119,SC2120,SC2317,SC2329
+# shellcheck disable=SC1091,SC2016,SC2030,SC2031,SC2034,SC2119,SC2120,SC2317,SC2329
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -361,6 +361,114 @@ test_inherited_key_cannot_mask_missing_env_assignment() (
   [ "$PREPARED_INTEGRATION_SECRET_KEY" != "$inherited_key" ] || fail "inherited key was silently adopted"
 )
 
+test_dotenv_loader_treats_shell_syntax_as_data() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  temp_dir="$(mktemp -d)"
+  trap 'rm -rf "$temp_dir"' EXIT
+  APP_DIR="$temp_dir"
+  command_marker="$temp_dir/command-ran"
+  redirect_marker="$temp_dir/redirection-ran"
+  literal_value='literal $(touch command-ran) > redirection-ran # data; $HOME'
+  chmod() { :; }
+  mkdir -p "$APP_DIR/.deploy"
+  {
+    printf 'IGNORED_COMMAND=$(touch "%s")\n' "$command_marker"
+    printf 'IGNORED_REDIRECT=>"%s"\n' "$redirect_marker"
+    printf "JWT_SECRET='%s'\n" "$literal_value"
+    printf '%s\n' 'MYSQL_DATABASE="delivery # primary"'
+    printf '%s\n' 'MYSQL_USER_PASSWORD="quote: \"ok\"; slash: \\; dollar: \$HOME"'
+    printf '%s\n' "export FRONTEND_PORT = '8181'"
+    printf '%s\n' 'BACKEND_PORT=3100 # deployment endpoint'
+    printf '%s\n' 'APP_ENV=must-not-load'
+  } > "$APP_DIR/.env"
+  export APP_ENV="inherited-and-unchanged"
+  cd "$APP_DIR"
+
+  source_env
+  [ "$JWT_SECRET" = "$literal_value" ] || fail "single-quoted dotenv special characters were changed"
+  [ "$MYSQL_DATABASE" = "delivery # primary" ] || fail "double-quoted dotenv hash was treated as a comment"
+  [ "$MYSQL_USER_PASSWORD" = 'quote: "ok"; slash: \; dollar: $HOME' ] || \
+    fail "double-quoted dotenv escapes were decoded incorrectly"
+  [ "$FRONTEND_PORT" = "8181" ] || fail "export-style dotenv assignment was not parsed"
+  [ "$BACKEND_PORT" = "3100" ] || fail "unquoted dotenv comment was not removed"
+  [ "$APP_ENV" = "inherited-and-unchanged" ] || fail "an unneeded dotenv key was loaded into the deployment shell"
+  [ ! -e "$command_marker" ] || fail "dotenv command substitution was executed"
+  [ ! -e "$redirect_marker" ] || fail "dotenv redirection was executed"
+
+  write_env_assignment .env FRONTEND_PORT "8282"
+  [ "$(grep -Ec '^[[:space:]]*(export[[:space:]]+)?FRONTEND_PORT[[:space:]]*=' .env)" = "1" ] || \
+    fail "export-style dotenv assignment was duplicated while persisting a value"
+  grep -Fxq 'FRONTEND_PORT=8282' .env || fail "persisted dotenv assignment was not normalized"
+  source_env
+  [ "$FRONTEND_PORT" = "8282" ] || fail "normalized dotenv assignment could not be reloaded"
+)
+
+test_dotenv_loader_rejects_invalid_and_duplicate_keys_transactionally() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  temp_dir="$(mktemp -d)"
+  trap 'rm -rf "$temp_dir"' EXIT
+  APP_DIR="$temp_dir"
+  marker="$temp_dir/command-ran"
+  output_file="$temp_dir/output"
+  mkdir -p "$APP_DIR/.deploy"
+  cd "$APP_DIR"
+
+  export JWT_SECRET="original-value"
+  {
+    printf '%s\n' 'JWT_SECRET=first-sensitive-value'
+    printf 'JWT_SECRET=$(touch "%s")\n' "$marker"
+  } > .env
+  if source_env > "$output_file" 2>&1; then
+    fail "duplicate critical dotenv assignments were accepted"
+  fi
+  [ "$JWT_SECRET" = "original-value" ] || fail "a rejected dotenv file partially changed the shell"
+  [ ! -e "$marker" ] || fail "a duplicate dotenv value executed command substitution"
+  if grep -Eq 'first-sensitive-value|touch' "$output_file"; then
+    fail "dotenv rejection output leaked assignment values"
+  fi
+
+  printf '%s\n' 'BAD-NAME=value' > .env
+  if source_env >/dev/null 2>&1; then
+    fail "an illegal dotenv key was accepted"
+  fi
+
+  printf 'touch "%s" > "%s"\n' "$marker" "$temp_dir/redirection-ran" > .env
+  if source_env >/dev/null 2>&1; then
+    fail "a shell command was accepted as dotenv syntax"
+  fi
+  [ ! -e "$marker" ] || fail "an invalid dotenv command was executed"
+  [ ! -e "$temp_dir/redirection-ran" ] || fail "an invalid dotenv redirection was executed"
+)
+
+test_previous_env_reader_never_executes_backup_content() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  temp_dir="$(mktemp -d)"
+  trap 'rm -rf "$temp_dir"' EXIT
+  APP_DIR="$temp_dir"
+  DEPLOY_RUN_ID="previous-env-reader"
+  marker="$temp_dir/backup-command-ran"
+  local_key="YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXpBQkNERUY="
+  mkdir -p "$APP_DIR/.deploy"
+  {
+    printf 'IGNORED_COMMAND=$(touch "%s")\n' "$marker"
+    printf "INTEGRATION_SECRET_ENCRYPTION_KEY='%s'\n" "$local_key"
+  } > "$APP_DIR/.deploy/env.before-deploy"
+  printf '%s\n' "$DEPLOY_RUN_ID" > "$APP_DIR/.deploy/env.backup-owner"
+
+  read_previous_integration_secret_key || fail "safe previous environment key was not read"
+  [ "$DOTENV_VALUE" = "$local_key" ] || fail "previous environment key changed while parsing"
+  [ ! -e "$marker" ] || fail "previous environment content executed command substitution"
+
+  printf 'INTEGRATION_SECRET_ENCRYPTION_KEY=%s\nINTEGRATION_SECRET_ENCRYPTION_KEY=%s\n' \
+    "$local_key" "$local_key" > "$APP_DIR/.deploy/env.before-deploy"
+  if read_previous_integration_secret_key >/dev/null 2>&1; then
+    fail "duplicate encryption keys in the previous environment were accepted"
+  fi
+)
+
 test_environment_cannot_override_deployment_state() (
   # shellcheck source=../deploy-git.sh
   source "$ROOT_DIR/deploy-git.sh"
@@ -476,6 +584,21 @@ test_exact_table_count_gate() (
   printf 'users\t4\n' > "$after"
   if verify_table_counts_preserved "$before" "$after" "$report"; then
     fail "removed audited table was accepted"
+  fi
+
+  printf 'translations\t86\nusers\t4\n' > "$before"
+  printf 'retired_ui_translations_20260713\t86\nusers\t4\n' > "$after"
+  verify_table_counts_preserved "$before" "$after" "$report" || \
+    fail "verified UI translation table retirement was rejected"
+  grep -Fxq $'translations->retired_ui_translations_20260713\t86\t86\t0' "$report" || \
+    fail "translation retirement count mapping was not recorded"
+  if grep -Fq $'retired_ui_translations_20260713\tNEW' "$report"; then
+    fail "retired translation table was double-counted as a new table"
+  fi
+
+  printf 'retired_ui_translations_20260713\t85\nusers\t4\n' > "$after"
+  if verify_table_counts_preserved "$before" "$after" "$report"; then
+    fail "translation retirement with a reduced row count was accepted"
   fi
 )
 
@@ -1504,6 +1627,132 @@ EXPECTED
 )"
 )
 
+test_workflow_runs_protected_image_cleanup_after_deploy() {
+  local workflow="$ROOT_DIR/.github/workflows/deploy.yml"
+  local deploy_line prune_line status_line
+  deploy_line="$(grep -nF 'bash "$DEPLOY_SCRIPT" deploy' "$workflow" | tail -1 | cut -d: -f1)"
+  prune_line="$(grep -nF 'bash "$DEPLOY_SCRIPT" prune-unused-images' "$workflow" | tail -1 | cut -d: -f1)"
+  status_line="$(grep -nF 'bash "$DEPLOY_SCRIPT" status' "$workflow" | tail -1 | cut -d: -f1)"
+  [ -n "$deploy_line" ] && [ -n "$prune_line" ] && [ -n "$status_line" ] || \
+    fail "workflow is missing deploy, protected image cleanup or status verification"
+  [ "$deploy_line" -lt "$prune_line" ] && [ "$prune_line" -lt "$status_line" ] || \
+    fail "workflow does not clean images strictly between deployment and final status verification"
+  if grep -Eq 'docker[[:space:]]+(system|volume|container|network)[[:space:]]+prune|docker[[:space:]]+compose[[:space:]]+down[[:space:]].*-v|docker[[:space:]]+image[[:space:]]+rm[[:space:]].*(-f|--force)' "$ROOT_DIR/deploy-git.sh"; then
+    fail "protected image cleanup contains a force, system, volume, container or network prune"
+  fi
+}
+
+test_prune_removes_only_unreferenced_unprotected_images() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  local root calls deleted backup
+  local container_image backup_image unused_image current_backend current_frontend previous_backend previous_frontend
+  local current_revision previous_revision
+  root="$(mktemp -d)"
+  calls="$root/calls"
+  deleted="$root/deleted"
+  backup="$root/backups/git-deploy/verified"
+  trap 'rm -rf "$root"' EXIT
+  mkdir -p "$root/.deploy" "$root/backups/git-deploy"
+  : > "$calls"
+  : > "$deleted"
+
+  container_image="sha256:$(printf '1%.0s' {1..64})"
+  backup_image="sha256:$(printf '2%.0s' {1..64})"
+  unused_image="sha256:$(printf '3%.0s' {1..64})"
+  current_backend="sha256:$(printf '4%.0s' {1..64})"
+  current_frontend="sha256:$(printf '5%.0s' {1..64})"
+  previous_backend="sha256:$(printf '6%.0s' {1..64})"
+  previous_frontend="sha256:$(printf '7%.0s' {1..64})"
+  current_revision="$(printf 'a%.0s' {1..40})"
+  previous_revision="$(printf 'b%.0s' {1..40})"
+  printf '%s\n' "$current_revision" > "$root/.deploy/last_successful_rev"
+  printf '%s\n' "$previous_revision" > "$root/.deploy/previous_successful_rev"
+
+  APP_DIR="$root"
+  mkdir -p "$backup"
+  printf '3\n' > "$backup/backup-format-version"
+  printf 'backend\tdelivery-platform-backend:aaaaaaaaaaaa\t%s\tdelivery-platform-backend\taaaaaaaaaaaa\n' \
+    "$backup_image" > "$backup/retained-images.tsv"
+
+  init_or_adopt_repo() { cd "$APP_DIR"; }
+  acquire_lock() { :; }
+  detect_compose() { :; }
+  require_command() { :; }
+  chmod() { :; }
+  source_env() { :; }
+  compose() { :; }
+  load_app_topology() {
+    WORKER_SERVICES=(file-worker outbox-worker)
+    APPLICATION_SERVICES=(backend file-worker outbox-worker frontend)
+  }
+  verify_retained_images_checksum_for_prune() { :; }
+  validate_retained_runtime_images() { :; }
+  check_url() { :; }
+  check_service_stable() { :; }
+  verify_release_version() { :; }
+  verify_service_release() { :; }
+  log() { :; }
+  err() { fail "$*"; }
+  image_identity() {
+    case "$1" in
+      delivery-platform-backend:aaaaaaaaaaaa)
+        printf '%s\tdelivery-platform-backend\taaaaaaaaaaaa\n' "$current_backend"
+        ;;
+      delivery-platform-frontend:aaaaaaaaaaaa)
+        printf '%s\tdelivery-platform-frontend\taaaaaaaaaaaa\n' "$current_frontend"
+        ;;
+      delivery-platform-backend:bbbbbbbbbbbb)
+        printf '%s\tdelivery-platform-backend\tbbbbbbbbbbbb\n' "$previous_backend"
+        ;;
+      delivery-platform-frontend:bbbbbbbbbbbb)
+        printf '%s\tdelivery-platform-frontend\tbbbbbbbbbbbb\n' "$previous_frontend"
+        ;;
+      *) return 1 ;;
+    esac
+  }
+  docker() {
+    if [ "$1" = "system" ] && [ "$2" = "df" ]; then
+      printf 'disk-usage\n'
+      return 0
+    fi
+    if [ "$1" = "ps" ]; then
+      printf 'container-a\n'
+      return 0
+    fi
+    if [ "$1" = "inspect" ] && [ "$2" = "container-a" ]; then
+      printf '%s\n' "$container_image"
+      return 0
+    fi
+    if [ "$1" = "image" ] && [ "$2" = "ls" ]; then
+      printf '%s\n' \
+        "$container_image" "$backup_image" "$unused_image" \
+        "$current_backend" "$current_frontend" "$previous_backend" "$previous_frontend"
+      return 0
+    fi
+    if [ "$1" = "image" ] && [ "$2" = "inspect" ]; then
+      if [ "$3" = "$unused_image" ] && [ -s "$deleted" ]; then
+        return 1
+      fi
+      if [ "${4:-}" = "--format" ] && [ "$3" = "$unused_image" ]; then
+        printf 'temporary-unused:test\n'
+      fi
+      return 0
+    fi
+    if [ "$1" = "image" ] && [ "$2" = "rm" ]; then
+      printf 'image-rm %s\n' "$3" >> "$calls"
+      [ "$3" = "temporary-unused:test" ] || return 1
+      printf 'deleted\n' > "$deleted"
+      return 0
+    fi
+    fail "unexpected docker call: $*"
+  }
+
+  manual_prune_unused_images
+  [ "$(cat "$calls")" = "image-rm temporary-unused:test" ] || \
+    fail "cleanup removed a protected image or did not remove the sole unused image"
+)
+
 test_failure_rollback_order() {
   calls_file="$(mktemp)"
   trap 'rm -f "$calls_file"' RETURN
@@ -1544,6 +1793,9 @@ test_release_label_gate
 test_integration_secret_key_gate
 test_prepared_key_survives_env_reload
 test_inherited_key_cannot_mask_missing_env_assignment
+test_dotenv_loader_treats_shell_syntax_as_data
+test_dotenv_loader_rejects_invalid_and_duplicate_keys_transactionally
+test_previous_env_reader_never_executes_backup_content
 test_environment_cannot_override_deployment_state
 test_env_backup_run_ownership
 test_environment_upload_is_installed_inside_owned_transaction
@@ -1578,5 +1830,7 @@ test_manual_restore_preflight_failure_restarts_infrastructure
 test_unexpected_exit_respects_database_mutation_boundary
 test_run_migrations_marks_mutation_before_compose
 test_success_revision_commits_before_env_cleanup
+test_workflow_runs_protected_image_cleanup_after_deploy
+test_prune_removes_only_unreferenced_unprotected_images
 test_failure_rollback_order
 printf 'deploy-git contract tests passed\n'

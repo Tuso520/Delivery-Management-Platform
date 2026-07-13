@@ -177,14 +177,26 @@ function isActiveLegacyFile(file: LegacyFile): boolean {
   return legacyFileArchivedAt(file) === null;
 }
 
-async function assertActor(prisma: PrismaClient, actorUserId: string): Promise<void> {
+async function assertActor(
+  prisma: PrismaClient,
+  actorUserId?: string,
+  actorUsername?: string,
+): Promise<string> {
+  if (!actorUserId && !actorUsername) {
+    throw new Error('--apply requires an active --actor-user-id or --actor-username');
+  }
   const actor = await prisma.user.findFirst({
-    where: { id: actorUserId, status: 'Active', deletedAt: null },
+    where: {
+      ...(actorUserId ? { id: actorUserId } : { username: actorUsername }),
+      status: 'Active',
+      deletedAt: null,
+    },
     select: { id: true },
   });
   if (!actor) {
     throw new Error('Migration actor does not exist or is not active');
   }
+  return actor.id;
 }
 
 async function collectTargetCounts(prisma: PrismaClient): Promise<Record<string, number>> {
@@ -517,14 +529,7 @@ async function migrateArchiveStructure(
       const leaves = children.length > 0 ? [...children] : [root];
       if (children.length > 0 && root.files.length > 0) {
         leaves.push(root);
-        addFinding(
-          'REVIEW',
-          'ARCHIVE',
-          'ProjectArchiveItem',
-          root.id,
-          'FOLDER_WITH_DIRECT_FILES_MAPPED_TO_SYNTHETIC_ITEM',
-          { childCount: children.length, fileCount: root.files.length },
-        );
+        increment(report.planned, 'deterministicSyntheticArchiveEntries');
       }
       for (const item of leaves) {
         if (!byId.has(item.id)) continue;
@@ -1138,7 +1143,12 @@ async function migrateArchiveFiles(
     }
 
     for (const plannedAsset of plannedAssets.values()) {
-      if (!plannedAsset.existing) continue;
+      if (
+        !plannedAsset.existing ||
+        plannedAsset.id === assetId(plannedAsset.file.id)
+      ) {
+        continue;
+      }
       addFinding('REVIEW', 'FILE', 'File', plannedAsset.file.id, 'REUSED_EXISTING_PHYSICAL_ASSET', {
         targetAssetId: plannedAsset.id,
         storageBucket: plannedAsset.file.storageBucket,
@@ -1996,7 +2006,7 @@ interface ApprovalAssigneePlan {
   createdAt: Date;
   legacyActionIds: string[];
   resolvedFromType: string;
-  resolvedFromValue: string;
+  resolvedFromValue: string | null;
   status: string;
 }
 
@@ -2490,7 +2500,7 @@ async function migrateApprovalTasks(
                 reviewStepId: stepId,
                 assigneeUserId: assignee.userId,
                 resolvedFromType: assignee.resolvedFromType.slice(0, 30),
-                resolvedFromValue: assignee.resolvedFromValue.slice(0, 100),
+                resolvedFromValue: assignee.resolvedFromValue?.slice(0, 100) ?? null,
                 status: assignee.status,
                 decision: assignee.decision,
                 actedAt: assignee.actedAt,
@@ -2914,12 +2924,12 @@ async function recordFindings(prisma: PrismaClient): Promise<void> {
 async function run(options: MigrationOptions): Promise<void> {
   const prisma = new PrismaClient();
   report.mode = options.apply ? 'APPLY' : options.verify ? 'VERIFY' : 'DRY_RUN';
-  report.actorUserId = options.actorUserId ?? null;
   report.scopes = [...options.scopes];
   try {
     if (options.apply) {
-      await assertActor(prisma, options.actorUserId!);
+      options.actorUserId = await assertActor(prisma, options.actorUserId, options.actorUsername);
     }
+    report.actorUserId = options.actorUserId ?? null;
     report.targetCountsBefore = await collectTargetCounts(prisma);
 
     if (options.scopes.has('projects')) {
@@ -2946,6 +2956,7 @@ async function run(options: MigrationOptions): Promise<void> {
     }
     report.targetCountsAfter = await collectTargetCounts(prisma);
     if (options.apply) {
+      const findingCount = report.findings.length;
       await prisma.operationLog.create({
         data: {
           userId: options.actorUserId!,
@@ -2960,9 +2971,13 @@ async function run(options: MigrationOptions): Promise<void> {
             writtenOrVerified: report.writtenOrVerified,
             validation: report.validation,
             targetCountsAfter: report.targetCountsAfter,
-            findingCount: report.findings.length,
+            findingCount,
           },
-          result: 'success',
+          result: findingCount === 0 ? 'success' : 'failure',
+          errorReason:
+            findingCount === 0
+              ? null
+              : `Target foundation apply completed with ${findingCount} unresolved finding(s)`,
           traceId: `target-foundation:${Date.now()}`,
         },
       });

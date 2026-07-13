@@ -1,5 +1,4 @@
 import type { PrismaClient } from '@prisma/client';
-import { seedUiTranslations } from './ui-translations';
 
 export async function seedLanguages(prisma: PrismaClient) {
   const languages = [
@@ -48,6 +47,5 @@ export async function seedLanguages(prisma: PrismaClient) {
     });
   }
 
-  await seedUiTranslations(prisma);
   console.log(`Seeded ${languages.length} languages`);
 }

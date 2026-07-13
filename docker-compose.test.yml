@@ -88,9 +88,9 @@ services:
     environment:
       NODE_ENV: development
       DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_USER_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
-      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
-      SEED_DEFAULT_PASSWORD: ${SEED_DEFAULT_PASSWORD}
-      SEED_RESET_EXISTING_USER_PASSWORDS: ${SEED_RESET_EXISTING_USER_PASSWORDS:-true}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?SEED_ADMIN_PASSWORD is required}
+      SEED_DEFAULT_PASSWORD: ${SEED_DEFAULT_PASSWORD:?SEED_DEFAULT_PASSWORD is required}
+      SEED_RESET_EXISTING_USER_PASSWORDS: ${SEED_RESET_EXISTING_USER_PASSWORDS:-false}
       INTEGRATION_SECRET_ENCRYPTION_KEY: ${INTEGRATION_SECRET_ENCRYPTION_KEY:?INTEGRATION_SECRET_ENCRYPTION_KEY is required}
       INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME: ${INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME:-admin}
       MINIO_ENDPOINT: minio
@@ -103,8 +103,7 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
-    command: >
-      sh -c "node prisma/prepare-migrate.js && ./node_modules/.bin/prisma migrate deploy && ./node_modules/.bin/ts-node --transpile-only prisma/seed.ts && ./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts && ./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts --apply --actor-username=$${INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME} && ./node_modules/.bin/ts-node --transpile-only prisma/seed.ts && ./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts --verify && ./node_modules/.bin/ts-node --transpile-only prisma/migrate-target-foundation.ts --verify --strict"
+    command: ["sh", "prisma/run-deployment-migrations.sh"]
     networks:
       - delivery-local-network
 

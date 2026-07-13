@@ -38,6 +38,9 @@ DEPLOY_ACTIVE="NO"
 DEPLOY_SUCCEEDED="NO"
 INTEGRATION_SECRET_KEY_SOURCE="existing"
 PREPARED_INTEGRATION_SECRET_KEY=""
+DOTENV_PARSED_KEY=""
+DOTENV_PARSED_VALUE=""
+DOTENV_VALUE=""
 DECLARED_COMPOSE_SERVICES=""
 APPLICATION_SERVICES=()
 WORKER_SERVICES=()
@@ -57,6 +60,9 @@ PRE_MUTATION_RUNTIME_RECOVERED="NO"
 PAIRED_RUNTIME_HEALTHY="NO"
 SOURCE_SWITCH_STARTED="NO"
 ALLOW_INCOMPLETE_RESTORE_RETRY="NO"
+PRUNE_PROTECTED_IMAGES_FILE=""
+PRUNE_CANDIDATE_IMAGES_FILE=""
+PRUNE_INVENTORY_SCRATCH_FILE=""
 
 log() { echo -e "${GREEN}[deploy]${NC} $*"; }
 warn() { echo -e "${YELLOW}[warn]${NC} $*"; }
@@ -193,6 +199,9 @@ on_exit() {
     fi
   fi
   [ -z "$RESTORE_ENV_CANDIDATE" ] || rm -f "$RESTORE_ENV_CANDIDATE"
+  [ -z "$PRUNE_PROTECTED_IMAGES_FILE" ] || rm -f "$PRUNE_PROTECTED_IMAGES_FILE"
+  [ -z "$PRUNE_CANDIDATE_IMAGES_FILE" ] || rm -f "$PRUNE_CANDIDATE_IMAGES_FILE"
+  [ -z "$PRUNE_INVENTORY_SCRATCH_FILE" ] || rm -f "$PRUNE_INVENTORY_SCRATCH_FILE"
   [ -n "$LOCK_DIR" ] && rmdir "$LOCK_DIR" 2>/dev/null
   return "$status"
 }
@@ -352,11 +361,7 @@ write_release_metadata() {
   export RELEASE_ID="$id"
   printf '%s\n' "$id" > RELEASE_ID
   ensure_env
-  if grep -q '^RELEASE_ID=' .env; then
-    sed -i "s|^RELEASE_ID=.*|RELEASE_ID=$id|" .env
-  else
-    printf '\nRELEASE_ID=%s\n' "$id" >> .env
-  fi
+  write_env_assignment .env RELEASE_ID "$id" || err "release metadata could not be written to .env safely"
   git ls-files > RELEASE_MANIFEST.txt
   log "release id: $id"
 }
@@ -372,25 +377,185 @@ ensure_env() {
   fi
 }
 
-validate_no_reserved_env_assignments() {
-  local reserved
-  reserved='APP_DIR|REPO_URL|BRANCH|REF|COMPOSE_FILES|ADOPT_EXISTING_PACKAGE|ALLOW_DIRTY|SKIP_GIT_FETCH|ROLLBACK_DATA_ON_FAILURE|CONFIRM_RESTORE|BACKUP_PATH|DEPLOY_RUN_ID|DEPLOY_ENV_UPLOAD_PATH|DEPLOY_ENV_UPLOAD_SHA256|DEPLOY_GIT_BUNDLE_PATH|ALLOW_RELEASE_OVERLAY_RECOVERY|LOCK_DIR|CURRENT_BACKUP_DIR|DEPLOY_ACTIVE|DEPLOY_SUCCEEDED|INTEGRATION_SECRET_KEY_SOURCE|PREPARED_INTEGRATION_SECRET_KEY|DECLARED_COMPOSE_SERVICES|APPLICATION_SERVICES|WORKER_SERVICES|APP_SWITCH_STARTED|RESTORE_INTEGRATION_SECRET_KEY|RESTORE_ENV_CANDIDATE|RESTORED_BACKUP_DIR|DATA_RESTORE_STARTED|DATA_RESTORE_COMPLETED|DATABASE_MUTATION_STARTED|DEPLOY_ENV_ROLLBACK_DISABLED|PAIRED_RESTORE_AVAILABLE|BACKUP_RUNTIME_REVISION|BACKUP_RUNTIME_SELECTION|RESTORE_RUNTIME_ACTIVE|PRE_MUTATION_RUNTIME_RECOVERED|PAIRED_RUNTIME_HEALTHY|SOURCE_SWITCH_STARTED|ALLOW_INCOMPLETE_RESTORE_RETRY'
-  if grep -Eq "^[[:space:]]*(export[[:space:]]+)?(${reserved})=" .env; then
-    warn ".env contains a reserved deployment-control assignment"
-    return 1
+dotenv_trim() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  DOTENV_PARSED_VALUE="$value"
+}
+
+dotenv_is_loaded_key() {
+  case "$1" in
+    BACKUP_RETENTION_DAYS|COMPOSE_PROJECT_NAME|RELEASE_ID|FRONTEND_PORT|BACKEND_PORT|\
+    MYSQL_ROOT_PASSWORD|MYSQL_DATABASE|MYSQL_USER|MYSQL_USER_PASSWORD|\
+    REDIS_PASSWORD|MINIO_ROOT_USER|MINIO_ROOT_PASSWORD|MINIO_BUCKET|MINIO_IMAGE|MINIO_MC_IMAGE|\
+    JWT_SECRET|SEED_ADMIN_PASSWORD|SEED_DEFAULT_PASSWORD|\
+    INTEGRATION_SECRET_ENCRYPTION_KEY|INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+dotenv_is_reserved_key() {
+  case "$1" in
+    APP_DIR|REPO_URL|BRANCH|REF|COMPOSE_FILES|ADOPT_EXISTING_PACKAGE|ALLOW_DIRTY|SKIP_GIT_FETCH|\
+    ROLLBACK_DATA_ON_FAILURE|CONFIRM_RESTORE|BACKUP_PATH|DEPLOY_RUN_ID|DEPLOY_ENV_UPLOAD_PATH|\
+    DEPLOY_ENV_UPLOAD_SHA256|DEPLOY_GIT_BUNDLE_PATH|ALLOW_RELEASE_OVERLAY_RECOVERY|LOCK_DIR|\
+    CURRENT_BACKUP_DIR|DEPLOY_ACTIVE|DEPLOY_SUCCEEDED|INTEGRATION_SECRET_KEY_SOURCE|\
+    PREPARED_INTEGRATION_SECRET_KEY|DOTENV_PARSED_KEY|DOTENV_PARSED_VALUE|DOTENV_VALUE|\
+    DECLARED_COMPOSE_SERVICES|APPLICATION_SERVICES|WORKER_SERVICES|APP_SWITCH_STARTED|\
+    RESTORE_INTEGRATION_SECRET_KEY|RESTORE_ENV_CANDIDATE|RESTORED_BACKUP_DIR|DATA_RESTORE_STARTED|\
+    DATA_RESTORE_COMPLETED|DATABASE_MUTATION_STARTED|DEPLOY_ENV_ROLLBACK_DISABLED|\
+    PAIRED_RESTORE_AVAILABLE|BACKUP_RUNTIME_REVISION|BACKUP_RUNTIME_SELECTION|RESTORE_RUNTIME_ACTIVE|\
+    PRE_MUTATION_RUNTIME_RECOVERED|PAIRED_RUNTIME_HEALTHY|SOURCE_SWITCH_STARTED|\
+    ALLOW_INCOMPLETE_RESTORE_RETRY) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Parse one dotenv assignment as data. No shell expansion, command substitution,
+# redirection or variable interpolation is performed. Blank/comment lines return 2.
+parse_dotenv_line() {
+  local line="$1"
+  local first_line="${2:-NO}"
+  local body key raw value tail char next previous
+  local index length closed="NO"
+
+  DOTENV_PARSED_KEY=""
+  DOTENV_PARSED_VALUE=""
+  line="${line%$'\r'}"
+  if [ "$first_line" = "YES" ]; then
+    line="${line#$'\357\273\277'}"
   fi
+  dotenv_trim "$line"
+  body="$DOTENV_PARSED_VALUE"
+  [ -n "$body" ] || return 2
+  [[ "$body" == \#* ]] && return 2
+
+  if [[ "$body" =~ ^export[[:space:]]+(.+)$ ]]; then
+    body="${BASH_REMATCH[1]}"
+  fi
+  [[ "$body" == *=* ]] || return 1
+  key="${body%%=*}"
+  raw="${body#*=}"
+  dotenv_trim "$key"
+  key="$DOTENV_PARSED_VALUE"
+  [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 1
+  dotenv_trim "$raw"
+  raw="$DOTENV_PARSED_VALUE"
+
+  case "${raw:0:1}" in
+    "'")
+      value=""
+      length=${#raw}
+      for ((index = 1; index < length; index++)); do
+        char="${raw:index:1}"
+        if [ "$char" = "'" ]; then
+          closed="YES"
+          index=$((index + 1))
+          break
+        fi
+        value+="$char"
+      done
+      [ "$closed" = "YES" ] || return 1
+      tail="${raw:index}"
+      ;;
+    '"')
+      value=""
+      length=${#raw}
+      for ((index = 1; index < length; index++)); do
+        char="${raw:index:1}"
+        if [ "$char" = '"' ]; then
+          closed="YES"
+          index=$((index + 1))
+          break
+        fi
+        if [ "$char" = "\\" ]; then
+          index=$((index + 1))
+          [ "$index" -lt "$length" ] || return 1
+          next="${raw:index:1}"
+          if [[ "$next" == '"' || "$next" == \\ || "$next" == '$' || "$next" == '`' ]]; then
+            value+="$next"
+          else
+            value+="\\$next"
+          fi
+        else
+          value+="$char"
+        fi
+      done
+      [ "$closed" = "YES" ] || return 1
+      tail="${raw:index}"
+      ;;
+    *)
+      value="$raw"
+      length=${#value}
+      previous=""
+      for ((index = 0; index < length; index++)); do
+        char="${value:index:1}"
+        if [ "$char" = "#" ] && [[ "$previous" =~ [[:space:]] ]]; then
+          value="${value:0:index}"
+          break
+        fi
+        previous="$char"
+      done
+      dotenv_trim "$value"
+      value="$DOTENV_PARSED_VALUE"
+      tail=""
+      ;;
+  esac
+
+  if [ -n "$tail" ]; then
+    dotenv_trim "$tail"
+    tail="$DOTENV_PARSED_VALUE"
+    [ -z "$tail" ] || [[ "$tail" == \#* ]] || return 1
+  fi
+  DOTENV_PARSED_KEY="$key"
+  DOTENV_PARSED_VALUE="$value"
+}
+
+load_deployment_dotenv() {
+  local file="$1"
+  local line line_number=0 status key first_line
+  local -A values=()
+  local -A seen=()
+  [ -f "$file" ] || return 1
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    line_number=$((line_number + 1))
+    first_line="NO"
+    [ "$line_number" = "1" ] && first_line="YES"
+    if parse_dotenv_line "$line" "$first_line"; then
+      key="$DOTENV_PARSED_KEY"
+    else
+      status=$?
+      [ "$status" = "2" ] && continue
+      warn "invalid dotenv syntax at $file:$line_number"
+      return 1
+    fi
+    if dotenv_is_reserved_key "$key"; then
+      warn "$file contains a reserved deployment-control assignment at line $line_number"
+      return 1
+    fi
+    dotenv_is_loaded_key "$key" || continue
+    if [ "${seen[$key]+present}" = "present" ]; then
+      warn "$file contains a duplicate critical assignment for $key"
+      return 1
+    fi
+    seen[$key]="YES"
+    values[$key]="$DOTENV_PARSED_VALUE"
+  done < "$file"
+
+  # The deployment environment file is authoritative for the encryption key.
+  # An inherited shell value must not make a missing key look persistent.
+  unset INTEGRATION_SECRET_ENCRYPTION_KEY
+  for key in "${!values[@]}"; do
+    printf -v "$key" '%s' "${values[$key]}"
+    export "${key?}"
+  done
 }
 
 source_env() {
   ensure_env
-  validate_no_reserved_env_assignments || return 1
-  # The deployment environment file is authoritative for the encryption key.
-  # An inherited shell value must not make a missing key look persistent.
-  unset INTEGRATION_SECRET_ENCRYPTION_KEY
-  set -a
-  # shellcheck disable=SC1091
-  . ./.env
-  set +a
+  load_deployment_dotenv .env
 }
 
 mysql_query() {
@@ -416,14 +581,7 @@ read_previous_integration_secret_key() {
   local file="$APP_DIR/.deploy/env.before-deploy"
   env_backup_owned_by_current_run || return 1
   [ -f "$file" ] || return 1
-  (
-    unset INTEGRATION_SECRET_ENCRYPTION_KEY
-    set -a
-    # shellcheck disable=SC1090
-    . "$file" >/dev/null 2>&1
-    set +a
-    printf '%s' "${INTEGRATION_SECRET_ENCRYPTION_KEY:-}"
-  )
+  read_env_assignment "$file" INTEGRATION_SECRET_ENCRYPTION_KEY
 }
 
 prepare_integration_secret_key() {
@@ -432,7 +590,9 @@ prepare_integration_secret_key() {
   require_command openssl
 
   if [ -z "$configured" ] || [[ "$configured" == CHANGE_ME* ]]; then
-    previous="$(read_previous_integration_secret_key 2>/dev/null || true)"
+    if read_previous_integration_secret_key 2>/dev/null; then
+      previous="$DOTENV_VALUE"
+    fi
     if [ -n "$previous" ] && [[ "$previous" != CHANGE_ME* ]]; then
       valid_integration_secret_key "$previous" || {
         warn "the pre-deployment INTEGRATION_SECRET_ENCRYPTION_KEY is not a canonical 32-byte Base64 value"
@@ -460,14 +620,50 @@ write_env_assignment() {
   local name="$2"
   local value="$3"
   local temporary="${file}.tmp.$$"
+  local line line_number=0 status key first_line match_count=0
+  local -A seen=()
   [ -f "$file" ] || return 1
+  dotenv_is_loaded_key "$name" || return 1
   : > "$temporary" || return 1
   while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in
-      "$name="*) ;;
-      *) printf '%s\n' "$line" >> "$temporary" || return 1 ;;
-    esac
+    line_number=$((line_number + 1))
+    first_line="NO"
+    [ "$line_number" = "1" ] && first_line="YES"
+    if parse_dotenv_line "$line" "$first_line"; then
+      key="$DOTENV_PARSED_KEY"
+    else
+      status=$?
+      if [ "$status" = "2" ]; then
+        printf '%s\n' "$line" >> "$temporary" || return 1
+        continue
+      fi
+      warn "invalid dotenv syntax at $file:$line_number"
+      rm -f "$temporary"
+      return 1
+    fi
+    if dotenv_is_reserved_key "$key"; then
+      warn "$file contains a reserved deployment-control assignment at line $line_number"
+      rm -f "$temporary"
+      return 1
+    fi
+    if dotenv_is_loaded_key "$key"; then
+      if [ "${seen[$key]+present}" = "present" ]; then
+        warn "$file contains a duplicate critical assignment for $key"
+        rm -f "$temporary"
+        return 1
+      fi
+      seen[$key]="YES"
+    fi
+    if [ "$key" = "$name" ]; then
+      match_count=$((match_count + 1))
+      continue
+    fi
+    printf '%s\n' "$line" >> "$temporary" || return 1
   done < "$file"
+  [ "$match_count" -le 1 ] || {
+    rm -f "$temporary"
+    return 1
+  }
   printf '%s=%s\n' "$name" "$value" >> "$temporary" || return 1
   chmod 600 "$temporary" || return 1
   mv -f "$temporary" "$file" || return 1
@@ -505,7 +701,9 @@ persist_prepared_integration_secret_key() {
     return 1
   }
   export INTEGRATION_SECRET_ENCRYPTION_KEY="$PREPARED_INTEGRATION_SECRET_KEY"
-  previous_key="$(read_previous_integration_secret_key 2>/dev/null || true)"
+  if read_previous_integration_secret_key 2>/dev/null; then
+    previous_key="$DOTENV_VALUE"
+  fi
   if [ -n "$previous_key" ] && valid_integration_secret_key "$previous_key" && [ "$previous_key" != "$PREPARED_INTEGRATION_SECRET_KEY" ]; then
     ciphertext_count="$(encrypted_integration_config_count)" || {
       warn "could not verify existing integration ciphertext before changing its encryption key"
@@ -866,13 +1064,21 @@ write_foreign_key_audit() {
   return "$status"
 }
 
+audited_table_successor() {
+  case "$1" in
+    translations) printf '%s\n' retired_ui_translations_20260713 ;;
+    *) return 1 ;;
+  esac
+}
+
 verify_table_counts_preserved() {
   local before="$1"
   local after="$2"
   local output="$3"
-  local table count extra before_count after_count delta status=0
+  local table count extra before_count after_count delta successor status=0
   local -A after_counts=()
-  local -A before_tables=()
+  local -A before_counts=()
+  local -A migrated_successors=()
   if [ ! -f "$before" ] || [ ! -f "$after" ]; then
     return 1
   fi
@@ -892,9 +1098,28 @@ verify_table_counts_preserved() {
     [[ "$table" =~ ^[A-Za-z0-9_]+$ ]] || return 1
     [[ "$before_count" =~ ^[0-9]+$ ]] || return 1
     [ -z "$extra" ] || return 1
-    [ -z "${before_tables[$table]+set}" ] || return 1
-    before_tables["$table"]="$before_count"
+    [ -z "${before_counts[$table]+set}" ] || return 1
+    before_counts["$table"]="$before_count"
+  done < "$before"
+
+  while IFS=$'\t' read -r table before_count extra; do
+    [ -n "$table" ] || continue
     if [ -z "${after_counts[$table]+set}" ]; then
+      successor="$(audited_table_successor "$table" 2>/dev/null || true)"
+      if [ -n "$successor" ] && \
+        [ -z "${before_counts[$successor]+set}" ] && \
+        [ -n "${after_counts[$successor]+set}" ]; then
+        after_count="${after_counts[$successor]}"
+        delta=$((after_count - before_count))
+        printf '%s->%s\t%s\t%s\t%s\n' \
+          "$table" "$successor" "$before_count" "$after_count" "$delta" >> "$output" || return 1
+        migrated_successors["$successor"]="$table"
+        if [ "$delta" -lt 0 ]; then
+          warn "database migration reduced renamed table $table row count from $before_count to $after_count"
+          status=1
+        fi
+        continue
+      fi
       printf '%s\t%s\tMISSING\tMISSING\n' "$table" "$before_count" >> "$output" || return 1
       warn "database migration removed audited table $table"
       status=1
@@ -911,7 +1136,8 @@ verify_table_counts_preserved() {
 
   while IFS=$'\t' read -r table after_count extra; do
     [ -n "$table" ] || continue
-    if [ -z "${before_tables[$table]+set}" ]; then
+    if [ -z "${before_counts[$table]+set}" ] && \
+      [ -z "${migrated_successors[$table]+set}" ]; then
       printf '%s\tNEW\t%s\tNEW\n' "$table" "$after_count" >> "$output" || return 1
     fi
   done < "$after"
@@ -1195,26 +1421,40 @@ write_retained_runtime_images() {
 validate_retained_runtime_images() {
   local backup_dir="$1"
   local revision runtime_id service tag expected_id expected_title expected_version extra identity actual_id title version
-  local expected_tag expected_service_title
+  local expected_tag expected_service_title backend_id=""
   local seen_backend="NO" seen_frontend="NO" seen_file_worker="NO" seen_outbox_worker="NO"
   revision="$(tr -d '[:space:]' < "$backup_dir/git-revision.txt")" || return 1
+  [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || return 1
   runtime_id="${revision:0:12}"
   while IFS=$'\t' read -r service tag expected_id expected_title expected_version extra; do
-    [ -n "$service" ] || continue
+    [ -n "$service" ] || return 1
     [[ "$service" =~ ^(backend|file-worker|outbox-worker|frontend)$ ]] || return 1
     [[ "$expected_id" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
     [ -z "$extra" ] || return 1
     if [ "$service" = "frontend" ]; then
       expected_tag="delivery-platform-frontend:$runtime_id"
       expected_service_title="delivery-platform-frontend"
+      [ "$seen_frontend" = "NO" ] || return 1
       seen_frontend="YES"
     else
       expected_tag="delivery-platform-backend:$runtime_id"
       expected_service_title="delivery-platform-backend"
       case "$service" in
-        backend) seen_backend="YES" ;;
-        file-worker) seen_file_worker="YES" ;;
-        outbox-worker) seen_outbox_worker="YES" ;;
+        backend)
+          [ "$seen_backend" = "NO" ] || return 1
+          seen_backend="YES"
+          backend_id="$expected_id"
+          ;;
+        file-worker)
+          [ "$seen_file_worker" = "NO" ] || return 1
+          [ -n "$backend_id" ] && [ "$expected_id" = "$backend_id" ] || return 1
+          seen_file_worker="YES"
+          ;;
+        outbox-worker)
+          [ "$seen_outbox_worker" = "NO" ] || return 1
+          [ -n "$backend_id" ] && [ "$expected_id" = "$backend_id" ] || return 1
+          seen_outbox_worker="YES"
+          ;;
       esac
     fi
     [ "$tag" = "$expected_tag" ] || return 1
@@ -1458,21 +1698,51 @@ clear_incomplete_data_restore_marker() {
 read_env_assignment() {
   local file="$1"
   local name="$2"
-  local count line
+  local line line_number=0 status key first_line count=0
+  local -A seen=()
+  DOTENV_VALUE=""
   [ -f "$file" ] || return 1
-  count="$(grep -c "^${name}=" "$file" 2>/dev/null || true)"
-  [ "$count" = "1" ] || return 1
-  line="$(grep -m1 "^${name}=" "$file")" || return 1
-  printf '%s' "${line#*=}"
+  dotenv_is_loaded_key "$name" || return 1
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    line_number=$((line_number + 1))
+    first_line="NO"
+    [ "$line_number" = "1" ] && first_line="YES"
+    if parse_dotenv_line "$line" "$first_line"; then
+      key="$DOTENV_PARSED_KEY"
+    else
+      status=$?
+      [ "$status" = "2" ] && continue
+      warn "invalid dotenv syntax at $file:$line_number"
+      return 1
+    fi
+    if dotenv_is_reserved_key "$key"; then
+      warn "$file contains a reserved deployment-control assignment at line $line_number"
+      return 1
+    fi
+    if dotenv_is_loaded_key "$key"; then
+      if [ "${seen[$key]+present}" = "present" ]; then
+        warn "$file contains a duplicate critical assignment for $key"
+        return 1
+      fi
+      seen[$key]="YES"
+    fi
+    if [ "$key" = "$name" ]; then
+      count=$((count + 1))
+      DOTENV_VALUE="$DOTENV_PARSED_VALUE"
+    fi
+  done < "$file"
+  [ "$count" = "1" ]
 }
 
 prepare_restore_environment() {
   local backup_dir="$1"
   local expected_fingerprint actual_fingerprint candidate
-  RESTORE_INTEGRATION_SECRET_KEY="$(read_env_assignment "$backup_dir/env.snapshot" INTEGRATION_SECRET_ENCRYPTION_KEY)" || {
+  read_env_assignment "$backup_dir/env.snapshot" INTEGRATION_SECRET_ENCRYPTION_KEY || {
     warn "backup environment does not contain exactly one integration encryption key"
     return 1
   }
+  RESTORE_INTEGRATION_SECRET_KEY="$DOTENV_VALUE"
   valid_integration_secret_key "$RESTORE_INTEGRATION_SECRET_KEY" || {
     warn "backup integration encryption key is invalid"
     return 1
@@ -1789,6 +2059,225 @@ rotate_backups() {
   done < <(find "$backup_root" -mindepth 1 -maxdepth 1 -type d -mtime +"$BACKUP_RETENTION_DAYS" -print0)
 }
 
+append_prune_protected_image() {
+  local image_id="$1"
+  [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+    warn "refusing image cleanup because a protected Docker image id is invalid"
+    return 1
+  }
+  printf '%s\n' "$image_id" >> "$PRUNE_PROTECTED_IMAGES_FILE" || return 1
+}
+
+protect_container_images_for_prune() {
+  local container_id image_id
+  local -a container_ids=()
+  docker ps --all --quiet > "$PRUNE_INVENTORY_SCRATCH_FILE" || return 1
+  mapfile -t container_ids < "$PRUNE_INVENTORY_SCRATCH_FILE" || return 1
+  for container_id in "${container_ids[@]}"; do
+    [ -n "$container_id" ] || continue
+    image_id="$(docker inspect "$container_id" --format '{{.Image}}')" || return 1
+    append_prune_protected_image "$image_id" || return 1
+  done
+}
+
+protect_release_pointer_images_for_prune() {
+  local pointer revision runtime_id component tag expected_title identity image_id title version extra
+  for pointer in .deploy/last_successful_rev .deploy/previous_successful_rev; do
+    [ ! -e "$pointer" ] || [ -f "$pointer" ] || {
+      warn "refusing image cleanup because a release pointer is not a regular file: $pointer"
+      return 1
+    }
+    [ -e "$pointer" ] || continue
+    revision="$(read_single_line_file "$pointer")" || {
+      warn "refusing image cleanup because a release pointer is invalid: $pointer"
+      return 1
+    }
+    [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || {
+      warn "refusing image cleanup because a release pointer is not a commit id: $pointer"
+      return 1
+    }
+    runtime_id="${revision:0:12}"
+    for component in backend frontend; do
+      if [ "$component" = "backend" ]; then
+        expected_title="delivery-platform-backend"
+      else
+        expected_title="delivery-platform-frontend"
+      fi
+      tag="${expected_title}:${runtime_id}"
+      identity="$(image_identity "$tag")" || {
+        warn "refusing image cleanup because the protected release image is missing: $tag"
+        return 1
+      }
+      IFS=$'\t' read -r image_id title version extra <<< "$identity"
+      [ "$title" = "$expected_title" ] && [ "$version" = "$runtime_id" ] && [ -z "$extra" ] || {
+        warn "refusing image cleanup because protected release image metadata is inconsistent: $tag"
+        return 1
+      }
+      append_prune_protected_image "$image_id" || return 1
+    done
+  done
+}
+
+verify_retained_images_checksum_for_prune() {
+  local backup="$1" expected actual
+  local -a checksum_lines=()
+  if [ ! -f "$backup/checksums.sha256" ] || [ -L "$backup/checksums.sha256" ]; then
+    warn "refusing image cleanup because a backup checksum manifest is missing or unsafe: ${backup##*/}"
+    return 1
+  fi
+  backup_checksum_manifest_is_safe "$backup" || return 1
+  mapfile -t checksum_lines < <(
+    grep -E '^[0-9a-f]{64} [ *]retained-images\.tsv$' "$backup/checksums.sha256" || true
+  )
+  [ "${#checksum_lines[@]}" -eq 1 ] || {
+    warn "refusing image cleanup because retained-images.tsv has no unique checksum: ${backup##*/}"
+    return 1
+  }
+  expected="${checksum_lines[0]%% *}"
+  actual="$(sha256sum -- "$backup/retained-images.tsv" | awk '{print $1}')" || return 1
+  [ "$actual" = "$expected" ] || {
+    warn "refusing image cleanup because retained-images.tsv checksum validation failed: ${backup##*/}"
+    return 1
+  }
+}
+
+protect_backup_images_for_prune() {
+  local backup_root candidate canonical format image_id
+  [ -e "$APP_DIR/backups/git-deploy" ] || return 0
+  if [ ! -d "$APP_DIR/backups/git-deploy" ] || [ -L "$APP_DIR/backups/git-deploy" ]; then
+    warn "refusing image cleanup because the managed backup root is unsafe"
+    return 1
+  fi
+  backup_root="$(cd "$APP_DIR/backups/git-deploy" && pwd -P)" || return 1
+  find "$backup_root" -mindepth 1 -maxdepth 1 -print0 > "$PRUNE_INVENTORY_SCRATCH_FILE" || {
+    warn "refusing image cleanup because the managed backup inventory could not be read"
+    return 1
+  }
+  while IFS= read -r -d '' candidate; do
+    if [ ! -d "$candidate" ] || [ -L "$candidate" ]; then
+      warn "refusing image cleanup because the managed backup root contains an unsafe entry"
+      return 1
+    fi
+    canonical="$(cd "$candidate" && pwd -P)" || return 1
+    [ "${canonical%/*}" = "$backup_root" ] || {
+      warn "refusing image cleanup because a backup resolves outside the managed root"
+      return 1
+    }
+    format="$(read_single_line_file "$canonical/backup-format-version")" || {
+      warn "refusing image cleanup because a backup format marker is invalid: ${canonical##*/}"
+      return 1
+    }
+    [ "$format" = "3" ] || {
+      warn "refusing image cleanup because an unsupported backup format cannot protect rollback images: ${canonical##*/}"
+      return 1
+    }
+    verify_retained_images_checksum_for_prune "$canonical" || return 1
+    validate_retained_runtime_images "$canonical" || {
+      warn "refusing image cleanup because retained rollback image metadata is invalid: ${canonical##*/}"
+      return 1
+    }
+    while IFS=$'\t' read -r _ _ image_id _ _ _; do
+      [ -n "$image_id" ] || continue
+      append_prune_protected_image "$image_id" || return 1
+    done < "$canonical/retained-images.tsv"
+  done < "$PRUNE_INVENTORY_SCRATCH_FILE"
+}
+
+collect_prune_protected_images() {
+  : > "$PRUNE_PROTECTED_IMAGES_FILE" || return 1
+  protect_container_images_for_prune || return 1
+  protect_release_pointer_images_for_prune || return 1
+  protect_backup_images_for_prune || return 1
+  sort -u -o "$PRUNE_PROTECTED_IMAGES_FILE" "$PRUNE_PROTECTED_IMAGES_FILE" || return 1
+}
+
+remove_unprotected_image_without_force() {
+  local image_id="$1" tag
+  local -a tags=()
+  mapfile -t tags < <(
+    docker image inspect "$image_id" --format '{{range .RepoTags}}{{println .}}{{end}}' 2>/dev/null || true
+  )
+  for tag in "${tags[@]}"; do
+    [ -n "$tag" ] && [ "$tag" != "<none>:<none>" ] || continue
+    docker image rm "$tag" >/dev/null || return 1
+  done
+  if docker image inspect "$image_id" >/dev/null 2>&1; then
+    docker image rm "$image_id" >/dev/null || return 1
+  fi
+}
+
+manual_prune_unused_images() {
+  local image_id pass protected_count candidate_count remaining_count=0 service
+  local -a image_ids=()
+  init_or_adopt_repo
+  acquire_lock
+  detect_compose
+  require_command awk
+  require_command find
+  require_command grep
+  require_command mktemp
+  require_command sha256sum
+  require_command sort
+  require_command tr
+  require_command wc
+  source_env
+  compose config -q >/dev/null || err "Compose configuration is invalid; refusing image cleanup"
+  load_app_topology required || err "application topology is invalid; refusing image cleanup"
+  PRUNE_PROTECTED_IMAGES_FILE="$(mktemp "$APP_DIR/.deploy/prune-protected-images.XXXXXX")"
+  PRUNE_CANDIDATE_IMAGES_FILE="$(mktemp "$APP_DIR/.deploy/prune-candidate-images.XXXXXX")"
+  PRUNE_INVENTORY_SCRATCH_FILE="$(mktemp "$APP_DIR/.deploy/prune-inventory.XXXXXX")"
+  chmod 600 "$PRUNE_PROTECTED_IMAGES_FILE" "$PRUNE_CANDIDATE_IMAGES_FILE" \
+    "$PRUNE_INVENTORY_SCRATCH_FILE" || err "image cleanup manifests could not be protected"
+
+  log "Docker disk usage before unused-image cleanup"
+  docker system df || err "Docker disk usage could not be read"
+  collect_prune_protected_images || err "protected runtime and rollback images could not be proven; no image was deleted"
+  docker image ls --no-trunc --quiet | sort -u > "$PRUNE_CANDIDATE_IMAGES_FILE" || \
+    err "Docker image inventory could not be read; no image was deleted"
+  mapfile -t image_ids < "$PRUNE_CANDIDATE_IMAGES_FILE"
+  for image_id in "${image_ids[@]}"; do
+    [ -n "$image_id" ] || continue
+    [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || err "Docker returned an invalid image id; no image was deleted"
+  done
+  protected_count="$(wc -l < "$PRUNE_PROTECTED_IMAGES_FILE" | tr -d '[:space:]')"
+  candidate_count="$(wc -l < "$PRUNE_CANDIDATE_IMAGES_FILE" | tr -d '[:space:]')"
+  log "image cleanup inventory: total=$candidate_count protected=$protected_count"
+
+  # Two non-forced passes allow child images to disappear before their unused
+  # parents. Docker still refuses any image that gains a container reference.
+  for pass in 1 2; do
+    log "unused image removal pass $pass"
+    for image_id in "${image_ids[@]}"; do
+      [ -n "$image_id" ] || continue
+      grep -Fxq "$image_id" "$PRUNE_PROTECTED_IMAGES_FILE" && continue
+      docker image inspect "$image_id" >/dev/null 2>&1 || continue
+      remove_unprotected_image_without_force "$image_id" || true
+    done
+  done
+
+  for image_id in "${image_ids[@]}"; do
+    [ -n "$image_id" ] || continue
+    grep -Fxq "$image_id" "$PRUNE_PROTECTED_IMAGES_FILE" && continue
+    if docker image inspect "$image_id" >/dev/null 2>&1; then
+      remaining_count=$((remaining_count + 1))
+    fi
+  done
+  [ "$remaining_count" -eq 0 ] || err "Docker retained $remaining_count unprotected images; cleanup stopped without forcing deletion"
+
+  log "Docker disk usage after unused-image cleanup"
+  docker system df || err "Docker disk usage could not be verified after cleanup"
+  check_url "backend readiness after image cleanup" "http://127.0.0.1:${BACKEND_PORT:-3000}/api/v1/ready" || \
+    err "backend health verification failed after image cleanup"
+  for service in "${WORKER_SERVICES[@]}"; do
+    check_service_stable "$service" || err "$service stability verification failed after image cleanup"
+  done
+  check_url "frontend after image cleanup" "http://127.0.0.1:${FRONTEND_PORT:-8080}" || \
+    err "frontend health verification failed after image cleanup"
+  verify_release_version || err "frontend release verification failed after image cleanup"
+  verify_service_release "${APPLICATION_SERVICES[@]}" || err "container release verification failed after image cleanup"
+  log "unused Docker image cleanup completed without deleting containers, volumes, networks or backups"
+}
+
 build_images() {
   log "building application images"
   compose build backend backend-migrate frontend
@@ -2067,10 +2556,11 @@ validate_backup_for_restore() {
     return 1
   }
   source_id="${revision:0:12}"
-  release_id="$(read_env_assignment "$backup/env.snapshot" RELEASE_ID)" || {
+  read_env_assignment "$backup/env.snapshot" RELEASE_ID || {
     warn "backup environment does not contain exactly one release id"
     return 1
   }
+  release_id="$DOTENV_VALUE"
   [ "$release_id" = "$source_id" ] || {
     warn "backup environment release id does not match its runtime revision"
     return 1
@@ -2432,6 +2922,7 @@ main() {
     deploy) deploy ;;
     preflight) init_or_adopt_repo; acquire_lock; preflight ;;
     backup) manual_backup ;;
+    prune-unused-images) manual_prune_unused_images ;;
     status) show_status ;;
     logs) show_logs ;;
     rollback-code) manual_rollback_code ;;
@@ -2442,6 +2933,7 @@ Usage:
   bash deploy-git.sh deploy
   bash deploy-git.sh status
   bash deploy-git.sh backup
+  bash deploy-git.sh prune-unused-images
   bash deploy-git.sh rollback-code
   CONFIRM_RESTORE=YES BACKUP_PATH=backups/git-deploy/<stamp> bash deploy-git.sh restore-data
 

@@ -28,14 +28,16 @@ describe('standard target API contract', () => {
   })
 
   it('creates explicit versions, submits unified review and archives softly', () => {
-    const version = { version: 'V2.0', structuredContent: { markdown: '# 修订' } }
+    const version = { version: 'V2.0', fileVersionId: 'file-version-2' }
 
     standardApi.createVersion('standard-1', version)
-    standardApi.submitReview('version-2')
+    standardApi.submitReview('version-2', 3)
     standardApi.archive('standard-1')
 
     expect(mocks.post).toHaveBeenNthCalledWith(1, '/standards/standard-1/versions', version)
-    expect(mocks.post).toHaveBeenNthCalledWith(2, '/standard-versions/version-2/submit-review', {})
+    expect(mocks.post).toHaveBeenNthCalledWith(2, '/standard-versions/version-2/submit-review', {
+      revision: 3,
+    })
     expect(mocks.post).toHaveBeenNthCalledWith(3, '/standards/standard-1/archive')
   })
 
@@ -44,7 +46,7 @@ describe('standard target API contract', () => {
       code: 'SOP-001',
       name: '交付作业规范',
       type: 'SOP',
-      structuredContent: { markdown: '# 正文' },
+      fileVersionId: 'file-version-1',
     }
 
     standardApi.create(createPayload)
@@ -110,17 +112,23 @@ describe('knowledge target API contract', () => {
       fileVersionId: null,
       markdownContent: null,
       externalUrl: 'https://example.com/guide',
+      supportingFileVersionIds: [],
     }
 
     knowledgeApi.createVersion('knowledge-1', payload)
-    knowledgeApi.submitReview('knowledge-version-2')
+    knowledgeApi.updateVersion('knowledge-version-draft', { ...payload, revision: 4 })
+    knowledgeApi.submitReview('knowledge-version-2', 5)
     knowledgeApi.archive('knowledge-1')
 
     expect(mocks.post).toHaveBeenNthCalledWith(1, '/knowledge/knowledge-1/versions', payload)
+    expect(mocks.patch).toHaveBeenCalledWith('/knowledge-versions/knowledge-version-draft', {
+      ...payload,
+      revision: 4,
+    })
     expect(mocks.post).toHaveBeenNthCalledWith(
       2,
       '/knowledge-versions/knowledge-version-2/submit-review',
-      {},
+      { revision: 5 },
     )
     expect(mocks.post).toHaveBeenNthCalledWith(3, '/knowledge/knowledge-1/archive')
   })
@@ -130,7 +138,10 @@ describe('knowledge target API contract', () => {
       title: '现场调试指南',
       categoryId: 'category-1',
       contentType: 'MARKDOWN' as const,
+      fileVersionId: null,
       markdownContent: '# 调试步骤',
+      externalUrl: null,
+      supportingFileVersionIds: [],
     }
 
     knowledgeApi.create(createPayload)
@@ -140,6 +151,20 @@ describe('knowledge target API contract', () => {
     expect(mocks.patch).toHaveBeenCalledWith('/knowledge/knowledge-1', {
       summary: '适用于现场交付',
     })
+  })
+
+  it('refuses to create a version when the complete attachment list is omitted', () => {
+    const incomplete = {
+      contentType: 'MARKDOWN',
+      fileVersionId: null,
+      markdownContent: '# 调试步骤',
+      externalUrl: null,
+    } as unknown as Parameters<typeof knowledgeApi.createVersion>[1]
+
+    expect(() => knowledgeApi.createVersion('knowledge-1', incomplete)).toThrow(
+      'Knowledge version content and supporting files must be explicit',
+    )
+    expect(mocks.post).not.toHaveBeenCalled()
   })
 
   it('uploads controlled knowledge drafts with the required owner type', async () => {

@@ -10,13 +10,19 @@ describe('file upload controllers', () => {
     } as unknown as UnifiedFileService;
     const controller = new FileController(unifiedFiles);
     const file = pdfFile();
+    const currentUser = actor(['standard:create']);
 
-    await controller.uploadDraft(file, { ownerType: 'STANDARD' }, 'user-1', 'draft-key-0001');
+    await controller.uploadDraft(
+      file,
+      { ownerType: 'STANDARD' },
+      currentUser,
+      'draft-key-0001',
+    );
 
     expect(unifiedFiles.uploadDraftFile).toHaveBeenCalledWith(
       file,
       { ownerType: 'STANDARD' },
-      'user-1',
+      currentUser,
       'draft-key-0001',
     );
   });
@@ -27,13 +33,14 @@ describe('file upload controllers', () => {
     } as unknown as UnifiedFileService;
     const controller = new ProjectArchiveFileController(unifiedFiles);
     const file = pdfFile();
+    const currentUser = actor(['archive:upload']);
 
     await controller.upload(
       'project-1',
       'item-1',
       file,
       { uploadMode: 'NEW_VERSION', revisionLevel: 'MINOR' },
-      'user-1',
+      currentUser,
       'archive-key-0001',
     );
 
@@ -42,7 +49,7 @@ describe('file upload controllers', () => {
       'item-1',
       file,
       { uploadMode: 'NEW_VERSION', revisionLevel: 'MINOR' },
-      'user-1',
+      currentUser,
       'archive-key-0001',
     );
   });
@@ -80,6 +87,18 @@ describe('file upload controllers', () => {
       path: '',
       buffer,
       stream: Readable.from(buffer),
+    };
+  }
+
+  function actor(permissions: string[]) {
+    return {
+      sub: 'user-1',
+      username: 'user',
+      realName: '测试用户',
+      email: null,
+      roles: [],
+      permissions,
+      permissionVersion: 1,
     };
   }
 });

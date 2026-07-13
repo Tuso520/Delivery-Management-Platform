@@ -1,11 +1,9 @@
-import type { Prisma } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsDateString,
   IsIn,
   IsInt,
   IsNotEmpty,
-  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -98,17 +96,8 @@ export class CreateStandardDto {
   @MaxLength(20)
   version?: string;
 
-  @ValidateIf((_object, value: unknown) => value !== undefined && value !== null)
   @IsUUID()
-  fileVersionId?: string | null;
-
-  @ValidateIf((_object, value: unknown) => value !== undefined && value !== null)
-  @IsObject()
-  structuredContent?: Prisma.InputJsonObject | null;
-
-  @ValidateIf((_object, value: unknown) => value !== undefined && value !== null)
-  @IsObject()
-  applicability?: Prisma.InputJsonObject | null;
+  fileVersionId: string;
 
   @IsOptional()
   @IsString()
@@ -157,17 +146,9 @@ export class CreateStandardVersionDto {
   @MaxLength(20)
   version?: string;
 
-  @ValidateIf((_object, value: unknown) => value !== undefined && value !== null)
+  @IsOptional()
   @IsUUID()
-  fileVersionId?: string | null;
-
-  @ValidateIf((_object, value: unknown) => value !== undefined && value !== null)
-  @IsObject()
-  structuredContent?: Prisma.InputJsonObject | null;
-
-  @ValidateIf((_object, value: unknown) => value !== undefined && value !== null)
-  @IsObject()
-  applicability?: Prisma.InputJsonObject | null;
+  fileVersionId?: string;
 
   @ValidateIf((_object, value: unknown) => value !== undefined && value !== null)
   @IsDateString()
@@ -180,6 +161,10 @@ export class CreateStandardVersionDto {
 }
 
 export class SubmitStandardReviewDto {
+  @IsInt()
+  @Min(1)
+  revision: number;
+
   @IsOptional()
   @IsUUID()
   approvalTemplateId?: string;

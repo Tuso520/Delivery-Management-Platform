@@ -81,11 +81,11 @@ export class FileController {
   uploadDraft(
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: UploadDraftFileDto,
-    @CurrentUser('sub') userId: string,
+    @CurrentUser() actor: JwtPayload,
     @Headers('idempotency-key') idempotencyKey?: string,
   ) {
     if (!file) throw new BadRequestException('请选择要上传的文件');
-    return this.unifiedFiles.uploadDraftFile(file, dto, userId, idempotencyKey);
+    return this.unifiedFiles.uploadDraftFile(file, dto, actor, idempotencyKey);
   }
 
   @Get(':id')
@@ -248,7 +248,7 @@ export class ProjectArchiveFileController {
     @Param('itemId') itemId: string,
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: UploadProjectArchiveFileDto,
-    @CurrentUser('sub') userId: string,
+    @CurrentUser() actor: JwtPayload,
     @Headers('idempotency-key') idempotencyKey?: string,
   ) {
     if (!file) throw new BadRequestException('请选择要上传的文件');
@@ -257,7 +257,7 @@ export class ProjectArchiveFileController {
       itemId,
       file,
       dto,
-      userId,
+      actor,
       idempotencyKey,
     );
   }
