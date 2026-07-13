@@ -2626,7 +2626,7 @@ test_prune_removes_only_unreferenced_unprotected_images() (
 test_prune_protects_container_reference_and_build_images() (
   # shellcheck source=../deploy-git.sh
   source "$ROOT_DIR/deploy-git.sh"
-  local root container_image node_image buildkit_image unused_image
+  local root container_image missing_container_image node_image buildkit_image unused_image
   root="$(mktemp -d)"
   trap 'rm -rf "$root"' EXIT
   PRUNE_PROTECTED_IMAGES_FILE="$root/protected"
@@ -2634,6 +2634,7 @@ test_prune_protects_container_reference_and_build_images() (
   PRUNE_INVENTORY_SCRATCH_FILE="$root/inventory"
   : > "$PRUNE_PROTECTED_IMAGES_FILE"
   container_image="sha256:$(printf '8%.0s' {1..64})"
+  missing_container_image="sha256:$(printf 'c%.0s' {1..64})"
   node_image="sha256:$(printf '9%.0s' {1..64})"
   buildkit_image="sha256:$(printf 'a%.0s' {1..64})"
   unused_image="sha256:$(printf 'b%.0s' {1..64})"
@@ -2641,7 +2642,7 @@ test_prune_protects_container_reference_and_build_images() (
     "$PRUNE_CANDIDATE_IMAGES_FILE"
   docker() {
     if [ "$1" = "ps" ]; then
-      printf 'mysql-container\n'
+      printf 'mysql-container\nmissing-container\n'
       return 0
     fi
     if [ "$1" = "inspect" ] && [ "$2" = "mysql-container" ]; then
@@ -2652,15 +2653,30 @@ test_prune_protects_container_reference_and_build_images() (
       fi
       return 0
     fi
+    if [ "$1" = "inspect" ] && [ "$2" = "missing-container" ]; then
+      if [[ "$*" == *'.Config.Image'* ]]; then
+        printf 'missing-runtime:test\n'
+      else
+        printf '%s\n' "$missing_container_image"
+      fi
+      return 0
+    fi
     if [ "$1" = "image" ] && [ "$2" = "inspect" ] && [ "$3" = "mysql:8.0" ]; then
       printf '%s\n' "$container_image"
       return 0
+    fi
+    if [ "$1" = "image" ] && [ "$2" = "inspect" ] && \
+       { [ "$3" = "$missing_container_image" ] || [ "$3" = "missing-runtime:test" ]; }; then
+      return 1
     fi
     if [ "$1" = "image" ] && [ "$2" = "inspect" ] && [ "${4:-}" = "--format" ]; then
       case "$3" in
         "$node_image") printf 'node:20-bookworm-slim\n' ;;
         "$buildkit_image") printf 'docker/dockerfile:1.7\n' ;;
       esac
+      return 0
+    fi
+    if [ "$1" = "image" ] && [ "$2" = "inspect" ] && [ "$3" = "$container_image" ]; then
       return 0
     fi
     fail "unexpected Docker call while classifying protected images: $*"
@@ -2677,6 +2693,9 @@ test_prune_protects_container_reference_and_build_images() (
     fail "BuildKit frontend image was not protected"
   if grep -Fxq "$unused_image" "$PRUNE_PROTECTED_IMAGES_FILE"; then
     fail "unknown unused image was incorrectly protected"
+  fi
+  if grep -Fxq "$missing_container_image" "$PRUNE_PROTECTED_IMAGES_FILE"; then
+    fail "a baseline-missing container image was added to the verifiable protected inventory"
   fi
 )
 

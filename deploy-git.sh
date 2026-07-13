@@ -2358,7 +2358,11 @@ protect_container_images_for_prune() {
   for container_id in "${container_ids[@]}"; do
     [ -n "$container_id" ] || continue
     image_id="$(docker inspect "$container_id" --format '{{.Image}}')" || return 1
-    append_prune_protected_image "$image_id" || return 1
+    if docker image inspect "$image_id" >/dev/null 2>&1; then
+      append_prune_protected_image "$image_id" || return 1
+    else
+      warn "container $container_id references an image already absent before cleanup: $image_id"
+    fi
     # Some Docker versions expose a manifest/config image id through .Image while
     # `docker image ls` reports the id resolved from the container's original
     # image reference. Protect both identities so an active mysql/redis/minio
