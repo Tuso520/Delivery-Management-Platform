@@ -1369,7 +1369,7 @@ runtime_service_container_id() {
 image_identity() {
   local image="$1"
   docker image inspect "$image" \
-    --format '{{.Id}}{{"\t"}}{{index .Config.Labels "org.opencontainers.image.title"}}{{"\t"}}{{index .Config.Labels "org.opencontainers.image.version"}}'
+    --format '{{.Id}}{{"\t"}}{{with (index .Config "Labels")}}{{with (index . "org.opencontainers.image.title")}}{{.}}{{end}}{{end}}{{"\t"}}{{with (index .Config "Labels")}}{{with (index . "org.opencontainers.image.version")}}{{.}}{{end}}{{end}}'
 }
 
 write_retained_runtime_images() {

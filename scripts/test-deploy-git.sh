@@ -2007,13 +2007,30 @@ test_image_identity_uses_real_tab_template() (
   docker() {
     [ "$1" = image ] && [ "$2" = inspect ] && [ "$3" = fixture ] && [ "$4" = --format ] || \
       fail "image identity issued an unexpected Docker command: $*"
-    [ "$5" = '{{.Id}}{{"\t"}}{{index .Config.Labels "org.opencontainers.image.title"}}{{"\t"}}{{index .Config.Labels "org.opencontainers.image.version"}}' ] || \
-      fail "image identity does not ask Docker to render real tab delimiters"
+    [ "$5" = '{{.Id}}{{"\t"}}{{with (index .Config "Labels")}}{{with (index . "org.opencontainers.image.title")}}{{.}}{{end}}{{end}}{{"\t"}}{{with (index .Config "Labels")}}{{with (index . "org.opencontainers.image.version")}}{{.}}{{end}}{{end}}' ] || \
+      fail "image identity is not safe for unlabeled images or real tab delimiters"
     printf '%s\tdelivery-platform-backend\tfixture-release\n' "$expected_id"
   }
   output="$(image_identity fixture)"
   [ "$output" = "$expected_id"$'\t''delivery-platform-backend'$'\t''fixture-release' ] || \
     fail "image identity changed the tab-delimited output contract"
+)
+
+test_image_identity_allows_missing_labels() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  local expected_id output
+  expected_id="sha256:$(printf 'b%.0s' {1..64})"
+  docker() {
+    [ "$1" = image ] && [ "$2" = inspect ] && [ "$3" = unlabeled ] && [ "$4" = --format ] || \
+      fail "unlabeled image identity issued an unexpected Docker command: $*"
+    [[ "$5" == *'with (index .Config "Labels")'* ]] || \
+      fail "image identity dereferences a missing Config.Labels map"
+    printf '%s\t\t\n' "$expected_id"
+  }
+  output="$(image_identity unlabeled)"
+  [ "$output" = "$expected_id"$'\t\t' ] || \
+    fail "unlabeled image identity did not preserve empty label fields"
 )
 
 test_docker_disk_usage_timeout_contract() (
@@ -2713,6 +2730,7 @@ test_workflow_runs_protected_image_cleanup_after_deploy
 test_workflow_diagnoses_backend_migration_failure
 test_workflow_resolves_one_immutable_commit_for_all_jobs
 test_image_identity_uses_real_tab_template
+test_image_identity_allows_missing_labels
 test_docker_disk_usage_timeout_contract
 test_prune_missing_current_pointer_fails_before_image_delete
 test_prune_release_pointer_and_symlink_contracts
