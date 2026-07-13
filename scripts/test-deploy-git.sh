@@ -25,6 +25,19 @@ record_call() {
   printf '%s\n' "$*" >> "$calls_file"
 }
 
+# Deployment contract tests mock Docker as a shell function. Preserve the
+# production timeout call shape while executing the mock in-process.
+timeout() {
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --kill-after=*) shift ;;
+      *s) shift; break ;;
+      *) break ;;
+    esac
+  done
+  "$@"
+}
+
 create_complete_format_three_backup_fixture() {
   local backup_dir="$1"
   local file payload
@@ -1967,6 +1980,26 @@ test_workflow_resolves_one_immutable_commit_for_all_jobs() {
   fi
 }
 
+test_docker_disk_usage_timeout_contract() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  local calls status
+  calls="$(mktemp)"
+  trap 'rm -f "$calls"' EXIT
+  DOCKER_DISK_USAGE_TIMEOUT_SECONDS=7
+  timeout() {
+    printf '%s\n' "$*" > "$calls"
+    return 124
+  }
+  set +e
+  docker_system_df_with_timeout >/dev/null 2>&1
+  status="$?"
+  set -e
+  [ "$status" -eq 124 ] || fail "Docker disk usage timeout did not preserve the timeout exit status"
+  [ "$(cat "$calls")" = "--kill-after=5s 7s docker system df" ] || \
+    fail "Docker disk usage is not bounded by the configured timeout"
+)
+
 test_prune_missing_current_pointer_fails_before_image_delete() {
   local root calls status
   root="$(mktemp -d)"
@@ -2642,6 +2675,7 @@ test_post_migration_audit_never_mutates_published_backup
 test_success_revision_commits_before_env_cleanup
 test_workflow_runs_protected_image_cleanup_after_deploy
 test_workflow_resolves_one_immutable_commit_for_all_jobs
+test_docker_disk_usage_timeout_contract
 test_prune_missing_current_pointer_fails_before_image_delete
 test_prune_release_pointer_and_symlink_contracts
 test_prune_rejects_symlinked_managed_parent_directories

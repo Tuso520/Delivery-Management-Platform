@@ -12,6 +12,7 @@ REF="${REF:-}"
 COMPOSE_FILES="${COMPOSE_FILES:-docker-compose.yml}"
 COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-delivery-platform}"
 BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
+DOCKER_DISK_USAGE_TIMEOUT_SECONDS="${DOCKER_DISK_USAGE_TIMEOUT_SECONDS:-30}"
 ADOPT_EXISTING_PACKAGE="${ADOPT_EXISTING_PACKAGE:-NO}"
 ALLOW_DIRTY="${ALLOW_DIRTY:-NO}"
 SKIP_GIT_FETCH="${SKIP_GIT_FETCH:-NO}"
@@ -67,6 +68,12 @@ PRUNE_INVENTORY_SCRATCH_FILE=""
 log() { echo -e "${GREEN}[deploy]${NC} $*"; }
 warn() { echo -e "${YELLOW}[warn]${NC} $*"; }
 err() { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
+
+docker_system_df_with_timeout() {
+  local timeout_seconds="$DOCKER_DISK_USAGE_TIMEOUT_SECONDS"
+  [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || timeout_seconds=30
+  timeout --kill-after=5s "${timeout_seconds}s" docker system df
+}
 
 env_backup_owned_by_current_run() {
   local deploy_dir="${APP_DIR}/.deploy"
@@ -2698,6 +2705,7 @@ manual_prune_unused_images() {
   require_command sha256sum
   require_command sort
   require_command tar
+  require_command timeout
   require_command tr
   require_command wc
   if [ "$mode" = "runtime" ]; then
@@ -2713,7 +2721,8 @@ manual_prune_unused_images() {
     "$PRUNE_INVENTORY_SCRATCH_FILE" || err "image cleanup manifests could not be protected"
 
   log "Docker disk usage before unused-image cleanup"
-  docker system df || err "Docker disk usage could not be read"
+  docker_system_df_with_timeout || \
+    warn "Docker disk usage timed out or failed; continuing with the authoritative image inventory"
   collect_prune_protected_images "$mode" || err "protected runtime and rollback images could not be proven; no image was deleted"
   docker image ls --no-trunc --quiet | sort -u > "$PRUNE_CANDIDATE_IMAGES_FILE" || \
     err "Docker image inventory could not be read; no image was deleted"
@@ -2747,7 +2756,8 @@ manual_prune_unused_images() {
     [ "$remaining_count" -lt "$remaining_before" ] || break
   done
   log "Docker disk usage after unused-image cleanup"
-  docker system df || err "Docker disk usage could not be verified after cleanup"
+  docker_system_df_with_timeout || \
+    warn "Docker disk usage timed out or failed after cleanup; candidate verification remains authoritative"
   [ "$remaining_count" -eq 0 ] || err "Docker retained $remaining_count unprotected images; cleanup stopped without forcing deletion"
 
   if [ "$mode" = "predeploy" ]; then
@@ -3047,7 +3057,7 @@ write_storage_diagnostics() {
   fi
   echo
   echo "===== docker disk usage ====="
-  docker system df || true
+  docker_system_df_with_timeout || true
   echo
   echo "===== MinIO backup source ====="
   compose ps -a minio || true

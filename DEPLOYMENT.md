@@ -35,7 +35,9 @@ docker compose ps
 
 GitHub 自动部署成功后会执行受保护的 `bash deploy-git.sh prune-unused-images`：只删除未被任何容器、当前/上一成功发布或受管理 v3 备份引用的镜像，并在清理前后核对磁盘占用和服务健康。该命令不使用强制删除，不清理容器、网络、备份或任何 Docker volume；保护元数据无法严格验证时不会删除任何镜像。
 
-镜像清理不新增环境开关或 Secret，沿用既有 `APP_DIR`、`COMPOSE_FILES`、`COMPOSE_PROJECT_NAME` 和服务器 `.env`；`BACKUP_RETENTION_DAYS` 只控制备份目录保留期，不改变镜像保护边界。
+`docker system df` 只读诊断默认限时 30 秒，可通过部署进程变量 `DOCKER_DISK_USAGE_TIMEOUT_SECONDS` 调整；超时不会绕过 Image ID 保护和剩余候选校验。
+
+镜像清理不新增 Secret，沿用既有 `APP_DIR`、`COMPOSE_FILES`、`COMPOSE_PROJECT_NAME` 和服务器 `.env`；`BACKUP_RETENTION_DAYS` 只控制备份目录保留期，不改变镜像保护边界。
 
 `/api/v1/health` 只确认后端进程响应；`/api/v1/ready` 还会检查 MySQL、Redis 和 MinIO。`build-info.json` 中的 `releaseId` 必须和 `git rev-parse --short=12 HEAD` 一致，`file-worker` 与 `outbox-worker` 也必须处于 running。完整迁移顺序和回滚边界见 [docs/deployment.md](docs/deployment.md)。
 
