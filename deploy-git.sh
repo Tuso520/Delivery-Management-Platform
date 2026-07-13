@@ -1353,7 +1353,8 @@ render_revision_compose() (
   done < "$raw_config"
   (
     cd "$tree"
-    "${COMPOSE[@]}" --env-file "$env_file" -p "$COMPOSE_PROJECT_NAME" "${args[@]}" config --services
+    "${COMPOSE[@]}" --env-file "$env_file" -p "$COMPOSE_PROJECT_NAME" "${args[@]}" \
+      config --services | LC_ALL=C sort -u
   ) > "$services_output" || return 1
   grep -Fxq backend "$services_output" || return 1
   grep -Fxq frontend "$services_output" || return 1
@@ -2067,6 +2068,7 @@ populate_backup_staging() {
   chmod 700 "$CURRENT_BACKUP_DIR" || return 1
   printf '3\n' > "$CURRENT_BACKUP_DIR/backup-format-version" || return 1
   select_backup_runtime_revision "$source_revision" "$target_revision" "$CURRENT_BACKUP_DIR" || return 1
+  log "backup stage complete: migration/runtime binding"
   runtime_id="${BACKUP_RUNTIME_REVISION:0:12}"
   source_env_file="$APP_DIR/.env"
   if [ "$BACKUP_RUNTIME_SELECTION" != "target" ] && env_backup_owned_by_current_run && [ -f "$APP_DIR/.deploy/env.before-deploy" ]; then
@@ -2082,33 +2084,49 @@ populate_backup_staging() {
   printf '%s\n' "$source_revision" > "$CURRENT_BACKUP_DIR/previous-successful-revision.txt" || return 1
   printf '%s\n' "$target_revision" > "$CURRENT_BACKUP_DIR/target-git-revision.txt" || return 1
   printf '%s\n' "$COMPOSE_FILES" > "$CURRENT_BACKUP_DIR/compose-files.txt" || return 1
+  log "backup stage complete: environment and revision metadata"
   compose config > "$CURRENT_BACKUP_DIR/docker-compose.resolved.yml" || return 1
   chmod 600 "$CURRENT_BACKUP_DIR/docker-compose.resolved.yml" || return 1
+  log "backup stage complete: live Compose snapshot"
   runtime_config="$CURRENT_BACKUP_DIR/runtime-compose.resolved.yml"
   runtime_services="$CURRENT_BACKUP_DIR/runtime-topology.services"
   render_revision_compose \
     "$BACKUP_RUNTIME_REVISION" "$CURRENT_BACKUP_DIR/env.snapshot" "$COMPOSE_FILES" \
     "$runtime_config" "$runtime_services" || return 1
+  log "backup stage complete: revision Compose snapshot"
   write_retained_runtime_images \
     "$CURRENT_BACKUP_DIR" "$BACKUP_RUNTIME_REVISION" "$BACKUP_RUNTIME_SELECTION" "$runtime_services" || return 1
+  log "backup stage complete: immutable runtime image binding"
   runtime_config_with_images="$CURRENT_BACKUP_DIR/runtime-compose-with-images.resolved.yml"
   runtime_services_with_images="$CURRENT_BACKUP_DIR/runtime-topology-with-images.services"
   render_revision_compose \
     "$BACKUP_RUNTIME_REVISION" "$CURRENT_BACKUP_DIR/env.snapshot" "$COMPOSE_FILES" \
     "$runtime_config_with_images" "$runtime_services_with_images" \
-    "$APP_DIR/$CURRENT_BACKUP_DIR/restore-images.override.yml" || return 1
-  cmp -s "$runtime_services" "$runtime_services_with_images" || return 1
+    "$APP_DIR/$CURRENT_BACKUP_DIR/restore-images.override.yml" || {
+      warn "backup restore Compose snapshot could not be rendered"
+      return 1
+    }
+  cmp -s "$runtime_services" "$runtime_services_with_images" || {
+    warn "backup restore Compose override changed the declared service topology"
+    return 1
+  }
   rm -f "$runtime_services_with_images"
+  log "backup stage complete: restore Compose snapshot"
   write_table_audit "$CURRENT_BACKUP_DIR/table-counts.before.tsv" || return 1
   write_foreign_key_audit "$CURRENT_BACKUP_DIR/foreign-keys.before.tsv" || return 1
+  log "backup stage complete: database counts and foreign keys"
   backup_database || return 1
+  log "backup stage complete: MySQL archive"
   backup_minio || return 1
+  log "backup stage complete: MinIO archive"
   write_backup_checksums "$CURRENT_BACKUP_DIR" || return 1
+  log "backup stage complete: checksum manifest"
   if [ "$ROLLBACK_DATA_ON_FAILURE" = "YES" ] && [ "$PAIRED_RESTORE_AVAILABLE" != "YES" ]; then
     warn "automatic paired rollback was requested, but no code revision exactly matches the current database migration state"
     return 1
   fi
   validate_backup_for_publish "$CURRENT_BACKUP_DIR" || return 1
+  log "backup stage complete: publication validation"
 }
 
 validate_backup_for_publish() {

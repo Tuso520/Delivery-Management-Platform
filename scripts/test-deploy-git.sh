@@ -751,7 +751,7 @@ test_revision_compose_resolves_relative_backup_environment() (
     [ "$2" = "$expected_env" ] || return 1
     case "${*: -1}" in
       config) printf 'services: {}\n' ;;
-      --services) printf 'backend\nfrontend\n' ;;
+      --services) printf 'frontend\nbackend\nbackend\n' ;;
       *) return 1 ;;
     esac
   }
@@ -762,6 +762,8 @@ test_revision_compose_resolves_relative_backup_environment() (
   [ "$(wc -l < "$calls" | tr -d '[:space:]')" = "2" ] || \
     fail "revision Compose did not use the absolute backup environment for both renders"
   [ -s "$output" ] || fail "revision Compose config was not rendered"
+  [ "$(cat "$services")" = $'backend\nfrontend' ] || \
+    fail "revision Compose service topology was not canonicalized"
   grep -Fxq backend "$services" || fail "revision Compose services were not rendered"
   grep -Fxq frontend "$services" || fail "revision Compose services were not rendered"
 )
