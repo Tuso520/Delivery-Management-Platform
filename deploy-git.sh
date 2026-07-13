@@ -1423,10 +1423,11 @@ validate_retained_runtime_images() {
   local revision runtime_id service tag expected_id expected_title expected_version extra identity actual_id title version
   local expected_tag expected_service_title backend_id=""
   local seen_backend="NO" seen_frontend="NO" seen_file_worker="NO" seen_outbox_worker="NO"
-  revision="$(tr -d '[:space:]' < "$backup_dir/git-revision.txt")" || return 1
+  revision="$(read_single_line_file "$backup_dir/git-revision.txt")" || return 1
   [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || return 1
   runtime_id="${revision:0:12}"
-  while IFS=$'\t' read -r service tag expected_id expected_title expected_version extra; do
+  while IFS=$'\t' read -r service tag expected_id expected_title expected_version extra || \
+    [ -n "$service$tag$expected_id$expected_title$expected_version$extra" ]; do
     [ -n "$service" ] || return 1
     [[ "$service" =~ ^(backend|file-worker|outbox-worker|frontend)$ ]] || return 1
     [[ "$expected_id" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
@@ -2083,11 +2084,21 @@ protect_container_images_for_prune() {
 protect_release_pointer_images_for_prune() {
   local pointer revision runtime_id component tag expected_title identity image_id title version extra
   for pointer in .deploy/last_successful_rev .deploy/previous_successful_rev; do
-    [ ! -e "$pointer" ] || [ -f "$pointer" ] || {
+    if [ -L "$pointer" ]; then
+      warn "refusing image cleanup because a release pointer is a symbolic link: $pointer"
+      return 1
+    fi
+    if [ ! -e "$pointer" ]; then
+      if [ "$pointer" = ".deploy/last_successful_rev" ]; then
+        warn "refusing image cleanup because the current successful release pointer is missing"
+        return 1
+      fi
+      continue
+    fi
+    [ -f "$pointer" ] || {
       warn "refusing image cleanup because a release pointer is not a regular file: $pointer"
       return 1
     }
-    [ -e "$pointer" ] || continue
     revision="$(read_single_line_file "$pointer")" || {
       warn "refusing image cleanup because a release pointer is invalid: $pointer"
       return 1
@@ -2118,33 +2129,40 @@ protect_release_pointer_images_for_prune() {
   done
 }
 
-verify_retained_images_checksum_for_prune() {
-  local backup="$1" expected actual
+verify_backup_prune_metadata_checksums() {
+  local backup="$1" artifact escaped expected actual
   local -a checksum_lines=()
   if [ ! -f "$backup/checksums.sha256" ] || [ -L "$backup/checksums.sha256" ]; then
     warn "refusing image cleanup because a backup checksum manifest is missing or unsafe: ${backup##*/}"
     return 1
   fi
   backup_checksum_manifest_is_safe "$backup" || return 1
-  mapfile -t checksum_lines < <(
-    grep -E '^[0-9a-f]{64} [ *]retained-images\.tsv$' "$backup/checksums.sha256" || true
-  )
-  [ "${#checksum_lines[@]}" -eq 1 ] || {
-    warn "refusing image cleanup because retained-images.tsv has no unique checksum: ${backup##*/}"
-    return 1
-  }
-  expected="${checksum_lines[0]%% *}"
-  actual="$(sha256sum -- "$backup/retained-images.tsv" | awk '{print $1}')" || return 1
-  [ "$actual" = "$expected" ] || {
-    warn "refusing image cleanup because retained-images.tsv checksum validation failed: ${backup##*/}"
-    return 1
-  }
+  for artifact in backup-format-version git-revision.txt runtime-topology.services retained-images.tsv; do
+    escaped="${artifact//./\\.}"
+    mapfile -t checksum_lines < <(
+      grep -E "^[0-9a-f]{64} [ *]${escaped}$" "$backup/checksums.sha256" || true
+    )
+    [ "${#checksum_lines[@]}" -eq 1 ] || {
+      warn "refusing image cleanup because $artifact has no unique checksum: ${backup##*/}"
+      return 1
+    }
+    expected="${checksum_lines[0]%% *}"
+    actual="$(sha256sum -- "$backup/$artifact" | awk '{print $1}')" || return 1
+    [ "$actual" = "$expected" ] || {
+      warn "refusing image cleanup because $artifact checksum validation failed: ${backup##*/}"
+      return 1
+    }
+  done
 }
 
 protect_backup_images_for_prune() {
-  local backup_root candidate canonical format image_id
+  local backup_root candidate canonical format service tag image_id title version extra
+  if [ -L "$APP_DIR/backups/git-deploy" ]; then
+    warn "refusing image cleanup because the managed backup root is a symbolic link"
+    return 1
+  fi
   [ -e "$APP_DIR/backups/git-deploy" ] || return 0
-  if [ ! -d "$APP_DIR/backups/git-deploy" ] || [ -L "$APP_DIR/backups/git-deploy" ]; then
+  if [ ! -d "$APP_DIR/backups/git-deploy" ]; then
     warn "refusing image cleanup because the managed backup root is unsafe"
     return 1
   fi
@@ -2163,6 +2181,7 @@ protect_backup_images_for_prune() {
       warn "refusing image cleanup because a backup resolves outside the managed root"
       return 1
     }
+    verify_backup_prune_metadata_checksums "$canonical" || return 1
     format="$(read_single_line_file "$canonical/backup-format-version")" || {
       warn "refusing image cleanup because a backup format marker is invalid: ${canonical##*/}"
       return 1
@@ -2171,12 +2190,12 @@ protect_backup_images_for_prune() {
       warn "refusing image cleanup because an unsupported backup format cannot protect rollback images: ${canonical##*/}"
       return 1
     }
-    verify_retained_images_checksum_for_prune "$canonical" || return 1
     validate_retained_runtime_images "$canonical" || {
       warn "refusing image cleanup because retained rollback image metadata is invalid: ${canonical##*/}"
       return 1
     }
-    while IFS=$'\t' read -r _ _ image_id _ _ _; do
+    while IFS=$'\t' read -r service tag image_id title version extra || \
+      [ -n "$service$tag$image_id$title$version$extra" ]; do
       [ -n "$image_id" ] || continue
       append_prune_protected_image "$image_id" || return 1
     done < "$canonical/retained-images.tsv"
@@ -2189,6 +2208,34 @@ collect_prune_protected_images() {
   protect_release_pointer_images_for_prune || return 1
   protect_backup_images_for_prune || return 1
   sort -u -o "$PRUNE_PROTECTED_IMAGES_FILE" "$PRUNE_PROTECTED_IMAGES_FILE" || return 1
+}
+
+validate_prune_managed_paths() {
+  local app_root child path canonical
+  app_root="$(cd "$APP_DIR" && pwd -P)" || return 1
+  for child in .deploy backups; do
+    path="$APP_DIR/$child"
+    if [ -L "$path" ]; then
+      warn "refusing image cleanup because $child is a symbolic link"
+      return 1
+    fi
+    if [ ! -e "$path" ]; then
+      if [ "$child" = ".deploy" ]; then
+        warn "refusing image cleanup because the deployment metadata directory is missing"
+        return 1
+      fi
+      continue
+    fi
+    if [ ! -d "$path" ]; then
+      warn "refusing image cleanup because $child is not a directory"
+      return 1
+    fi
+    canonical="$(cd "$path" && pwd -P)" || return 1
+    [ "${canonical%/*}" = "$app_root" ] || {
+      warn "refusing image cleanup because $child resolves outside the application root"
+      return 1
+    }
+  done
 }
 
 remove_unprotected_image_without_force() {
@@ -2210,7 +2257,9 @@ manual_prune_unused_images() {
   local image_id pass protected_count candidate_count remaining_count=0 service
   local -a image_ids=()
   init_or_adopt_repo
+  validate_prune_managed_paths || err "managed deployment paths are unsafe; no image was deleted"
   acquire_lock
+  validate_prune_managed_paths || err "managed deployment paths changed while acquiring the lock; no image was deleted"
   detect_compose
   require_command awk
   require_command find
@@ -2262,10 +2311,10 @@ manual_prune_unused_images() {
       remaining_count=$((remaining_count + 1))
     fi
   done
-  [ "$remaining_count" -eq 0 ] || err "Docker retained $remaining_count unprotected images; cleanup stopped without forcing deletion"
-
   log "Docker disk usage after unused-image cleanup"
   docker system df || err "Docker disk usage could not be verified after cleanup"
+  [ "$remaining_count" -eq 0 ] || err "Docker retained $remaining_count unprotected images; cleanup stopped without forcing deletion"
+
   check_url "backend readiness after image cleanup" "http://127.0.0.1:${BACKEND_PORT:-3000}/api/v1/ready" || \
     err "backend health verification failed after image cleanup"
   for service in "${WORKER_SERVICES[@]}"; do

@@ -117,7 +117,7 @@ df -h
 
 确认服务配置和数据卷正确后，才可执行 `docker compose up -d minio`；不得通过跳过 MinIO、伪造空归档或只保留数据库备份绕过成对恢复门禁。
 
-成功发布后，GitHub Actions 会在同一 SSH 会话中显式执行 `bash deploy-git.sh prune-unused-images`。该命令先获取部署锁并建立保护清单：所有运行中或已停止容器引用的 Image ID、`.deploy/last_successful_rev` 和 `.deploy/previous_successful_rev` 对应的不可变发布镜像，以及每个受管理 v3 备份中经 checksum 验证的 `retained-images.tsv` 都必须保留。任一备份路径、符号链接、格式、checksum、镜像标签或 OCI release label 无法严格验证时，在第一次删除前即 fail closed。候选镜像只通过不带 `--force` 的 `docker image rm` 删除；脚本从不执行 `docker system prune`、`docker volume prune`、`docker compose down -v`，也不删除容器、网络、备份或 MySQL/Redis/MinIO 命名卷。清理前后都会输出 `docker system df`，并再次验证 API readiness、两个 Worker、前端和发布标签。
+成功发布后，GitHub Actions 会在同一 SSH 会话中先输出一次服务器状态，再显式执行 `bash deploy-git.sh prune-unused-images`，最后无论清理成功或失败都再次输出状态并保留清理命令的失败码。该命令先获取部署锁并建立保护清单：所有运行中或已停止容器引用的 Image ID、必须存在的 `.deploy/last_successful_rev` 和可选的 `.deploy/previous_successful_rev` 对应的不可变发布镜像，以及每个受管理 v3 备份中经 checksum 验证的 `retained-images.tsv` 都必须保留。任一发布或备份路径、断链/普通符号链接、格式、checksum、镜像标签或 OCI release label 无法严格验证时，在第一次删除前即 fail closed。候选镜像只通过不带 `--force` 的 `docker image rm` 删除；脚本从不执行 `docker system prune`、`docker volume prune`、`docker compose down -v`，也不删除容器、网络、备份或 MySQL/Redis/MinIO 命名卷。清理前后都会输出 `docker system df`，并再次验证 API readiness、两个 Worker、前端和发布标签。
 
 如需人工重复执行同一安全清理：
 
@@ -125,6 +125,8 @@ df -h
 cd /www/wwwroot/delivery-platform
 bash deploy-git.sh prune-unused-images
 ```
+
+该清理命令不新增环境开关或 Secret，沿用既有 `APP_DIR`、`COMPOSE_FILES`、`COMPOSE_PROJECT_NAME` 和服务器 `.env` 解析 Compose。`BACKUP_RETENTION_DAYS` 只控制已严格校验备份目录的保留期，不扩大镜像候选范围，也不会放宽当前发布、上一发布、容器或备份镜像的保护条件。
 
 脚本对每张表执行精确 `COUNT(*)`，迁移后拒绝旧表消失或行数减少，并逐条检查 `information_schema.KEY_COLUMN_USAGE` 中的外键是否存在孤儿记录；任何 SQL 或报告写入失败都会阻断切换。数据库、MinIO、完整环境、revision、源 Compose 拓扑、不可变镜像 ID/OCI release label 和审计报告均进入 checksum 清单。上一运行版本没有不可变 tag 时，只允许从仍存在且 release label 匹配的运行容器捕获精确 Image ID 并补 tag，禁止通过重新构建旧 Dockerfile 伪造回滚镜像。
 

@@ -1629,18 +1629,235 @@ EXPECTED
 
 test_workflow_runs_protected_image_cleanup_after_deploy() {
   local workflow="$ROOT_DIR/.github/workflows/deploy.yml"
-  local deploy_line prune_line status_line
+  local deploy_line prune_line first_status_line final_status_line
+  local -a status_lines=()
   deploy_line="$(grep -nF 'bash "$DEPLOY_SCRIPT" deploy' "$workflow" | tail -1 | cut -d: -f1)"
   prune_line="$(grep -nF 'bash "$DEPLOY_SCRIPT" prune-unused-images' "$workflow" | tail -1 | cut -d: -f1)"
-  status_line="$(grep -nF 'bash "$DEPLOY_SCRIPT" status' "$workflow" | tail -1 | cut -d: -f1)"
-  [ -n "$deploy_line" ] && [ -n "$prune_line" ] && [ -n "$status_line" ] || \
-    fail "workflow is missing deploy, protected image cleanup or status verification"
-  [ "$deploy_line" -lt "$prune_line" ] && [ "$prune_line" -lt "$status_line" ] || \
-    fail "workflow does not clean images strictly between deployment and final status verification"
+  mapfile -t status_lines < <(grep -nF 'bash "$DEPLOY_SCRIPT" status' "$workflow" | cut -d: -f1)
+  [ -n "$deploy_line" ] && [ -n "$prune_line" ] && [ "${#status_lines[@]}" -eq 2 ] || \
+    fail "workflow is missing deploy, protected image cleanup or its two status verifications"
+  first_status_line="${status_lines[0]}"
+  final_status_line="${status_lines[1]}"
+  [ "$deploy_line" -lt "$first_status_line" ] && [ "$first_status_line" -lt "$prune_line" ] && \
+    [ "$prune_line" -lt "$final_status_line" ] || \
+    fail "workflow does not verify status before and after protected image cleanup"
+  grep -Fq 'bash "$DEPLOY_SCRIPT" prune-unused-images || prune_status="$?"' "$workflow" || \
+    fail "workflow does not preserve the protected image cleanup exit status"
+  grep -Fq 'bash "$DEPLOY_SCRIPT" status || final_status="$?"' "$workflow" || \
+    fail "workflow does not run final status verification after cleanup failure"
   if grep -Eq 'docker[[:space:]]+(system|volume|container|network)[[:space:]]+prune|docker[[:space:]]+compose[[:space:]]+down[[:space:]].*-v|docker[[:space:]]+image[[:space:]]+rm[[:space:]].*(-f|--force)' "$ROOT_DIR/deploy-git.sh"; then
     fail "protected image cleanup contains a force, system, volume, container or network prune"
   fi
 }
+
+test_prune_missing_current_pointer_fails_before_image_delete() {
+  local root calls status
+  root="$(mktemp -d)"
+  calls="$root/docker-calls"
+  mkdir -p "$root/.deploy"
+  : > "$calls"
+  set +e
+  (
+    APP_DIR="$root"
+    # shellcheck source=../deploy-git.sh
+    source "$ROOT_DIR/deploy-git.sh"
+    init_or_adopt_repo() { cd "$APP_DIR"; }
+    validate_prune_managed_paths() { :; }
+    acquire_lock() { :; }
+    detect_compose() { :; }
+    require_command() { :; }
+    source_env() { :; }
+    compose() { :; }
+    load_app_topology() {
+      WORKER_SERVICES=()
+      APPLICATION_SERVICES=(backend frontend)
+    }
+    docker() {
+      if [ "$1" = "system" ] && [ "$2" = "df" ]; then
+        return 0
+      fi
+      if [ "$1" = "ps" ]; then
+        return 0
+      fi
+      if [ "$1" = "image" ] && [ "$2" = "rm" ]; then
+        printf 'image-rm %s\n' "$3" >> "$calls"
+        return 0
+      fi
+      fail "unexpected Docker call before current release pointer validation: $*"
+    }
+    manual_prune_unused_images
+  ) >/dev/null 2>&1
+  status="$?"
+  set -e
+  [ "$status" -ne 0 ] || fail "image cleanup accepted a missing current successful release pointer"
+  [ ! -s "$calls" ] || fail "image cleanup deleted an image before validating the current release pointer"
+  rm -rf "$root"
+}
+
+test_prune_release_pointer_and_symlink_contracts() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  local root revision backend_image frontend_image
+  root="$(mktemp -d)"
+  trap 'rm -rf "$root"' EXIT
+  mkdir -p "$root/.deploy"
+  APP_DIR="$root"
+  cd "$APP_DIR"
+  PRUNE_PROTECTED_IMAGES_FILE="$root/protected-images"
+  : > "$PRUNE_PROTECTED_IMAGES_FILE"
+  revision="$(printf 'a%.0s' {1..40})"
+  backend_image="sha256:$(printf '1%.0s' {1..64})"
+  frontend_image="sha256:$(printf '2%.0s' {1..64})"
+  image_identity() {
+    case "$1" in
+      delivery-platform-backend:aaaaaaaaaaaa)
+        printf '%s\tdelivery-platform-backend\taaaaaaaaaaaa\n' "$backend_image"
+        ;;
+      delivery-platform-frontend:aaaaaaaaaaaa)
+        printf '%s\tdelivery-platform-frontend\taaaaaaaaaaaa\n' "$frontend_image"
+        ;;
+      *) return 1 ;;
+    esac
+  }
+
+  printf '%s\n' "$revision" > .deploy/last_successful_rev
+  protect_release_pointer_images_for_prune || fail "image cleanup rejected an absent optional previous release pointer"
+  [ "$(sort -u "$PRUNE_PROTECTED_IMAGES_FILE" | wc -l | tr -d '[:space:]')" = "2" ] || \
+    fail "current release images were not protected"
+
+  if command -v ln >/dev/null 2>&1; then
+    rm -f .deploy/last_successful_rev
+    if ln -s missing-current-revision .deploy/last_successful_rev 2>/dev/null; then
+      if protect_release_pointer_images_for_prune >/dev/null 2>&1; then
+        fail "image cleanup accepted a dangling current release pointer"
+      fi
+    fi
+  fi
+)
+
+test_prune_rejects_symlinked_managed_parent_directories() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  local root external
+  command -v ln >/dev/null 2>&1 || return 0
+  root="$(mktemp -d)"
+  external="$(mktemp -d)"
+  trap 'rm -rf "$root" "$external"' EXIT
+  APP_DIR="$root"
+  mkdir -p "$root/.git" "$external/deploy" "$external/backups"
+
+  if ln -s "$external/deploy" "$root/.deploy" 2>/dev/null; then
+    if validate_prune_managed_paths >/dev/null 2>&1; then
+      fail "image cleanup accepted a symlinked .deploy parent directory"
+    fi
+    rm -f "$root/.deploy"
+  fi
+  mkdir -p "$root/.deploy"
+  if ln -s "$external/backups" "$root/backups" 2>/dev/null; then
+    if validate_prune_managed_paths >/dev/null 2>&1; then
+      fail "image cleanup accepted a symlinked backups parent directory"
+    fi
+  fi
+)
+
+test_prune_backup_metadata_contracts() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  local root backup revision backend_image frontend_image case_dir artifact
+  root="$(mktemp -d)"
+  trap 'rm -rf "$root"' EXIT
+  mkdir -p "$root/backups"
+  APP_DIR="$root"
+  PRUNE_PROTECTED_IMAGES_FILE="$root/protected-images"
+  PRUNE_INVENTORY_SCRATCH_FILE="$root/inventory"
+  : > "$PRUNE_PROTECTED_IMAGES_FILE"
+  : > "$PRUNE_INVENTORY_SCRATCH_FILE"
+  revision="$(printf 'a%.0s' {1..40})"
+  backend_image="sha256:$(printf '3%.0s' {1..64})"
+  frontend_image="sha256:$(printf '4%.0s' {1..64})"
+  image_identity() {
+    case "$1" in
+      delivery-platform-backend:aaaaaaaaaaaa)
+        printf '%s\tdelivery-platform-backend\taaaaaaaaaaaa\n' "$backend_image"
+        ;;
+      delivery-platform-frontend:aaaaaaaaaaaa)
+        printf '%s\tdelivery-platform-frontend\taaaaaaaaaaaa\n' "$frontend_image"
+        ;;
+      *) return 1 ;;
+    esac
+  }
+  docker() {
+    if [ "$1" = "image" ] && [ "$2" = "rm" ]; then
+      fail "backup metadata validation attempted to delete an image"
+    fi
+    fail "unexpected Docker call while validating malformed backup metadata: $*"
+  }
+
+  if command -v ln >/dev/null 2>&1; then
+    if ln -s missing-backup-root "$root/backups/git-deploy" 2>/dev/null; then
+      if protect_backup_images_for_prune >/dev/null 2>&1; then
+        fail "image cleanup accepted a dangling managed backup root"
+      fi
+      rm -f "$root/backups/git-deploy"
+    fi
+  fi
+
+  backup="$root/backups/git-deploy/format-two"
+  create_complete_format_three_backup_fixture "$backup"
+  printf '2\n' > "$backup/backup-format-version"
+  write_backup_checksums "$backup"
+  if protect_backup_images_for_prune >/dev/null 2>&1; then
+    fail "image cleanup accepted a checksummed legacy backup format"
+  fi
+  rm -rf "$root/backups/git-deploy"
+
+  for artifact in backup-format-version git-revision.txt runtime-topology.services retained-images.tsv; do
+    case_dir="$root/checksum-$artifact"
+    create_complete_format_three_backup_fixture "$case_dir"
+    printf '%s\n' "$revision" > "$case_dir/git-revision.txt"
+    printf 'backend\nfrontend\n' > "$case_dir/runtime-topology.services"
+    printf 'backend\tdelivery-platform-backend:aaaaaaaaaaaa\t%s\tdelivery-platform-backend\taaaaaaaaaaaa\n' \
+      "$backend_image" > "$case_dir/retained-images.tsv"
+    printf 'frontend\tdelivery-platform-frontend:aaaaaaaaaaaa\t%s\tdelivery-platform-frontend\taaaaaaaaaaaa\n' \
+      "$frontend_image" >> "$case_dir/retained-images.tsv"
+    write_backup_checksums "$case_dir"
+    printf 'tampered' >> "$case_dir/$artifact"
+    if verify_backup_prune_metadata_checksums "$case_dir" >/dev/null 2>&1; then
+      fail "image cleanup accepted tampered checksummed metadata: $artifact"
+    fi
+  done
+
+  backup="$root/retained-contract"
+  mkdir -p "$backup"
+  printf '%s\n' "$revision" > "$backup/git-revision.txt"
+  printf 'backend\nfrontend\n' > "$backup/runtime-topology.services"
+  printf 'backend\tdelivery-platform-backend:aaaaaaaaaaaa\t%s\tdelivery-platform-backend\taaaaaaaaaaaa\n' \
+    "$backend_image" > "$backup/retained-images.tsv"
+  printf 'backend\tdelivery-platform-backend:aaaaaaaaaaaa\t%s\tdelivery-platform-backend\taaaaaaaaaaaa\n' \
+    "$backend_image" >> "$backup/retained-images.tsv"
+  printf 'frontend\tdelivery-platform-frontend:aaaaaaaaaaaa\t%s\tdelivery-platform-frontend\taaaaaaaaaaaa\n' \
+    "$frontend_image" >> "$backup/retained-images.tsv"
+  if validate_retained_runtime_images "$backup" >/dev/null 2>&1; then
+    fail "image cleanup accepted a duplicate retained image row"
+  fi
+
+  printf 'backend\tdelivery-platform-backend:aaaaaaaaaaaa\t%s\tdelivery-platform-backend\taaaaaaaaaaaa\textra\n' \
+    "$backend_image" > "$backup/retained-images.tsv"
+  printf 'frontend\tdelivery-platform-frontend:aaaaaaaaaaaa\t%s\tdelivery-platform-frontend\taaaaaaaaaaaa\n' \
+    "$frontend_image" >> "$backup/retained-images.tsv"
+  if validate_retained_runtime_images "$backup" >/dev/null 2>&1; then
+    fail "image cleanup accepted an over-wide retained image row"
+  fi
+
+  printf 'backend\tdelivery-platform-backend:aaaaaaaaaaaa\t%s\tdelivery-platform-backend\taaaaaaaaaaaa\n' \
+    "$backend_image" > "$backup/retained-images.tsv"
+  printf 'frontend\tdelivery-platform-frontend:aaaaaaaaaaaa\t%s\tdelivery-platform-frontend\taaaaaaaaaaaa\n' \
+    "$frontend_image" >> "$backup/retained-images.tsv"
+  printf 'malformed-eof-row' >> "$backup/retained-images.tsv"
+  if validate_retained_runtime_images "$backup" >/dev/null 2>&1; then
+    fail "image cleanup ignored a malformed retained image row without a trailing newline"
+  fi
+)
 
 test_prune_removes_only_unreferenced_unprotected_images() (
   # shellcheck source=../deploy-git.sh
@@ -1676,6 +1893,7 @@ test_prune_removes_only_unreferenced_unprotected_images() (
     "$backup_image" > "$backup/retained-images.tsv"
 
   init_or_adopt_repo() { cd "$APP_DIR"; }
+  validate_prune_managed_paths() { :; }
   acquire_lock() { :; }
   detect_compose() { :; }
   require_command() { :; }
@@ -1686,7 +1904,7 @@ test_prune_removes_only_unreferenced_unprotected_images() (
     WORKER_SERVICES=(file-worker outbox-worker)
     APPLICATION_SERVICES=(backend file-worker outbox-worker frontend)
   }
-  verify_retained_images_checksum_for_prune() { :; }
+  verify_backup_prune_metadata_checksums() { :; }
   validate_retained_runtime_images() { :; }
   check_url() { :; }
   check_service_stable() { :; }
@@ -1831,6 +2049,10 @@ test_unexpected_exit_respects_database_mutation_boundary
 test_run_migrations_marks_mutation_before_compose
 test_success_revision_commits_before_env_cleanup
 test_workflow_runs_protected_image_cleanup_after_deploy
+test_prune_missing_current_pointer_fails_before_image_delete
+test_prune_release_pointer_and_symlink_contracts
+test_prune_rejects_symlinked_managed_parent_directories
+test_prune_backup_metadata_contracts
 test_prune_removes_only_unreferenced_unprotected_images
 test_failure_rollback_order
 printf 'deploy-git contract tests passed\n'

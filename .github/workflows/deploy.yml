@@ -375,6 +375,13 @@ jobs:
           fi
 
           bash "$DEPLOY_SCRIPT" deploy
-          bash "$DEPLOY_SCRIPT" prune-unused-images
           bash "$DEPLOY_SCRIPT" status
+          prune_status=0
+          final_status=0
+          bash "$DEPLOY_SCRIPT" prune-unused-images || prune_status="$?"
+          bash "$DEPLOY_SCRIPT" status || final_status="$?"
+          if [ "$prune_status" -ne 0 ]; then
+            exit "$prune_status"
+          fi
+          exit "$final_status"
           REMOTE

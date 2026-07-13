@@ -35,6 +35,8 @@ docker compose ps
 
 GitHub 自动部署成功后会执行受保护的 `bash deploy-git.sh prune-unused-images`：只删除未被任何容器、当前/上一成功发布或受管理 v3 备份引用的镜像，并在清理前后核对磁盘占用和服务健康。该命令不使用强制删除，不清理容器、网络、备份或任何 Docker volume；保护元数据无法严格验证时不会删除任何镜像。
 
+镜像清理不新增环境开关或 Secret，沿用既有 `APP_DIR`、`COMPOSE_FILES`、`COMPOSE_PROJECT_NAME` 和服务器 `.env`；`BACKUP_RETENTION_DAYS` 只控制备份目录保留期，不改变镜像保护边界。
+
 `/api/v1/health` 只确认后端进程响应；`/api/v1/ready` 还会检查 MySQL、Redis 和 MinIO。`build-info.json` 中的 `releaseId` 必须和 `git rev-parse --short=12 HEAD` 一致，`file-worker` 与 `outbox-worker` 也必须处于 running。完整迁移顺序和回滚边界见 [docs/deployment.md](docs/deployment.md)。
 
 `rollback-code` 仅在不存在数据库 mutation recovery marker，且目标提交的 Prisma migration 名称与 checksum 和在线数据库完全一致时允许执行；否则必须继续向前修复或使用成对数据/运行时恢复。
