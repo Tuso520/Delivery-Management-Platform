@@ -115,7 +115,7 @@ pnpm --dir delivery-platform-web test:smoke:api
 2. Environment 使用固定核验的 SSH host key，目标提交与 Git bundle 中的 `HEAD` 一致。
 3. 服务器 Git HEAD、`build-info.json.releaseId` 和工作流目标提交一致。
 4. `/api/v1/ready`、API E2E、浏览器关键路径通过，File Worker 与 Outbox Worker 均保持 running，且容器 ID 和重启次数在稳定窗口内不变。
-5. `scripts/test-deploy-git.sh`、ShellCheck 和 Actionlint 必须通过；契约至少覆盖部署锁内的 Git bundle/环境上传、远端八参数位置契约、Dockerfile syntax frontend 禁用、数据库变更边界、MinIO 停止门禁、跨进程 incomplete-restore 标记及绑定备份重试、完整 MySQL/MinIO 备份、精确 migration runtime 与 code-only rollback 选择、未知 dirty worktree 保留、继承密钥不得掩盖 `.env` 缺项、旧备份拒绝、密钥严格解密、跨拓扑 Worker 和 restore `--no-build`。
+5. `scripts/test-deploy-git.sh`、ShellCheck 和 Actionlint 必须通过；契约至少覆盖部署锁内的 Git bundle/环境上传、远端八参数位置契约、Dockerfile syntax frontend 禁用、数据库变更边界、MinIO 停止门禁、跨进程 incomplete-restore 标记及绑定备份重试、完整 MySQL/MinIO 备份、精确 migration runtime 与 code-only rollback 选择、未知 dirty worktree 保留、继承密钥不得掩盖 `.env` 缺项、MySQL 就绪等待不得丢失已准备密钥、API/Worker 停写必须早于密文检查和密钥持久化、密钥失败恢复、人工备份/代码回滚顺序、旧备份拒绝、密钥严格解密、跨拓扑 Worker 和 restore `--no-build`。
 6. migration 可能写库后的失败不得启动旧代码；日志必须明确显示“保留目标并停服”或“v3 成对数据/环境/不可变运行时已验证恢复”，不能只以 `/ready` 作为旧版本兼容证据。
 7. 失败时保存诊断与回滚事实；“工作流已配置”不等于“当前版本部署成功”。
 

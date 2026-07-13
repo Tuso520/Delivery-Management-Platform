@@ -11,6 +11,7 @@
 - 修复 GitHub 自动部署在解压发布包后污染服务器 Git 工作区、又因脏工作区门禁无法切换提交的问题；改为校验并导入固定 SHA 的 Git bundle，且在切换前同时保护受跟踪和未跟踪源码。
 - Dockerfile 改用 Docker/BuildKit 内置解析器，移除对 `docker/dockerfile:1.7` 外部 frontend 镜像的强制构建时依赖，同时保留内置 BuildKit 支持的依赖缓存挂载，兼容受限镜像源的部署服务器。
 - API、File Worker 与 Outbox Worker 统一使用同一 release 后端镜像；部署在 migration 前按 Worker→API 顺序静默，切换后按 API→Worker→前端顺序启动并校验四个容器的 release 标签，避免新旧进程混跑。
+- 修复生产 `.env` 缺少集成加密密钥时 MySQL 就绪等待丢失候选密钥的问题；密文检查与密钥持久化改为在 API/Worker 停写后、备份和 migration 前执行，并为自动部署、人工备份和代码回滚补齐顺序与恢复契约测试。
 
 ## 2026-07-08
 

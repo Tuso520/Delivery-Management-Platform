@@ -709,6 +709,177 @@ test_start_infra_returns_failure() (
   fi
 )
 
+test_start_infra_preserves_prepared_integration_key() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  local_key="$(printf 'abcdefghijklmnopqrstuvwxyzABCDEF' | openssl base64 -A)"
+  temp_dir="$(mktemp -d)"
+  trap 'rm -rf "$temp_dir"' EXIT
+  APP_DIR="$temp_dir"
+  mkdir -p "$APP_DIR/.deploy"
+  printf 'OTHER_SETTING=present\n' > "$APP_DIR/.env"
+  PREPARED_INTEGRATION_SECRET_KEY="$local_key"
+  export INTEGRATION_SECRET_ENCRYPTION_KEY="$local_key"
+  cd "$APP_DIR"
+
+  compose() {
+    case "$*" in
+      "up -d mysql redis minio"|"up -d minio-init") return 0 ;;
+      "ps --all --quiet minio-init") printf '%s\n' minio-init-id ;;
+      "exec -T mysql "*)
+        [ "${INTEGRATION_SECRET_ENCRYPTION_KEY:-}" = "$local_key" ]
+        ;;
+      *) return 1 ;;
+    esac
+  }
+  docker() {
+    [ "$*" = "wait minio-init-id" ] || return 1
+    printf '0\n'
+  }
+  sleep() { :; }
+
+  start_infra || fail "prepared integration key was discarded before MySQL readiness"
+  [ ! -v INTEGRATION_SECRET_ENCRYPTION_KEY ] && fail "prepared integration key disappeared during infrastructure startup"
+  [ "$INTEGRATION_SECRET_ENCRYPTION_KEY" = "$local_key" ] || fail "prepared integration key changed during infrastructure startup"
+)
+
+test_deploy_quiesces_before_persisting_integration_key() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  calls_file="$(mktemp)"
+  trap 'rm -f "$calls_file"' EXIT
+  init_or_adopt_repo() { :; }
+  acquire_lock() { :; }
+  assert_no_incomplete_data_restore() { :; }
+  prepare_deployment_source() { :; }
+  install_deployment_env_upload() { :; }
+  checkout_target() { :; }
+  preflight() { :; }
+  build_images() { :; }
+  start_infra() { record_call "start-infra"; }
+  quiesce_app() { record_call "quiesce"; }
+  persist_prepared_integration_secret_key() { record_call "persist-key"; }
+  create_backup() { record_call "backup"; }
+  run_migrations() { record_call "migrate"; }
+  switch_app() { record_call "switch"; }
+  mark_deployment_successful() { :; }
+  discard_deployment_env_backup() { :; }
+  rotate_backups() { :; }
+  log() { :; }
+
+  deploy
+  assert_calls "$(cat <<'EXPECTED'
+start-infra
+quiesce
+persist-key
+backup
+migrate
+switch
+EXPECTED
+)"
+)
+
+test_persist_failure_after_quiesce_recovers_runtime() {
+  calls_file="$(mktemp)"
+  trap 'rm -f "$calls_file"' RETURN
+  set +e
+  (
+    # shellcheck source=../deploy-git.sh
+    source "$ROOT_DIR/deploy-git.sh"
+    init_or_adopt_repo() { :; }
+    acquire_lock() { :; }
+    assert_no_incomplete_data_restore() { :; }
+    prepare_deployment_source() { SOURCE_SWITCH_STARTED="YES"; }
+    install_deployment_env_upload() { :; }
+    checkout_target() { :; }
+    preflight() { :; }
+    build_images() { :; }
+    start_infra() { record_call "start-infra"; }
+    quiesce_app() { record_call "quiesce"; }
+    persist_prepared_integration_secret_key() { record_call "persist-key"; return 1; }
+    capture_failure_diagnostics() { record_call "capture"; }
+    restore_deployment_env() { record_call "restore-env"; }
+    rollback_source_to_last_successful() { record_call "rollback-source"; }
+    detect_compose() { record_call "detect-compose"; }
+    resume_existing_app() { record_call "resume $*"; }
+    log() { record_call "log $*"; }
+    err() { record_call "error $*"; exit 1; }
+    deploy
+  ) >/dev/null 2>&1
+  status="$?"
+  set -e
+  [ "$status" -ne 0 ] || fail "integration-key persistence failure returned success"
+  assert_calls "$(cat <<'EXPECTED'
+start-infra
+quiesce
+persist-key
+capture
+restore-env
+rollback-source
+detect-compose
+start-infra
+resume compatible
+log pre-deployment runtime recovered
+error integration secret encryption key preflight failed
+EXPECTED
+)"
+}
+
+test_manual_backup_quiesces_before_persisting_integration_key() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  calls_file="$(mktemp)"
+  trap 'rm -f "$calls_file"' EXIT
+  init_or_adopt_repo() { :; }
+  acquire_lock() { :; }
+  preflight() { :; }
+  start_infra() { record_call "start-infra"; }
+  quiesce_app() { record_call "quiesce $*"; }
+  persist_prepared_integration_secret_key() { record_call "persist-key"; }
+  create_backup() { record_call "backup"; }
+  resume_existing_app() { record_call "resume $*"; }
+
+  manual_backup
+  assert_calls "$(cat <<'EXPECTED'
+start-infra
+quiesce compatible
+persist-key
+backup
+resume compatible
+EXPECTED
+)"
+)
+
+test_manual_rollback_quiesces_before_persisting_integration_key() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  calls_file="$(mktemp)"
+  trap 'rm -f "$calls_file"' EXIT
+  init_or_adopt_repo() { :; }
+  acquire_lock() { :; }
+  preflight() { :; }
+  start_infra() { record_call "start-infra"; }
+  validate_code_only_rollback_revision() { record_call "validate $*"; }
+  quiesce_app() { record_call "quiesce $*"; }
+  persist_prepared_integration_secret_key() { record_call "persist-key"; }
+  rollback_source_to_previous_successful() { record_call "rollback-source"; }
+  switch_app() { record_call "switch $*"; }
+  mark_deployment_successful() { record_call "mark-success"; }
+  log() { :; }
+
+  manual_rollback_code
+  assert_calls "$(cat <<'EXPECTED'
+start-infra
+validate .deploy/previous_successful_rev previous successful
+quiesce compatible
+persist-key
+rollback-source
+switch compatible
+mark-success
+EXPECTED
+)"
+)
+
 test_pre_mutation_failure_recovers_infrastructure() {
   calls_file="$(mktemp)"
   trap 'rm -f "$calls_file"' RETURN
@@ -1226,6 +1397,11 @@ test_retained_image_manifest_binds_exact_image_ids
 test_format_three_requires_minio
 test_ciphertext_restore_uses_strict_verify
 test_start_infra_returns_failure
+test_start_infra_preserves_prepared_integration_key
+test_deploy_quiesces_before_persisting_integration_key
+test_persist_failure_after_quiesce_recovers_runtime
+test_manual_backup_quiesces_before_persisting_integration_key
+test_manual_rollback_quiesces_before_persisting_integration_key
 test_pre_mutation_failure_recovers_infrastructure
 test_exit_before_source_switch_preserves_worktree
 test_database_mutation_state_and_restore_gate

@@ -742,7 +742,10 @@ start_infra() {
 }
 
 wait_mysql() {
-  source_env
+  # Every public operation performs preflight/source_env before starting
+  # infrastructure. Reloading .env here would discard a freshly prepared
+  # integration key before it can be checked against live ciphertext and
+  # persisted atomically.
   local remaining=60
   while [ "$remaining" -gt 0 ]; do
     # Variables in this command are intentionally expanded by the MySQL container shell.
@@ -1985,11 +1988,11 @@ deploy() {
   if ! start_infra; then
     handle_pre_quiesce_failure "infrastructure startup failed"
   fi
-  if ! persist_prepared_integration_secret_key; then
-    handle_pre_quiesce_failure "integration secret encryption key preflight failed"
-  fi
   if ! quiesce_app; then
     handle_deploy_failure "workers or application containers could not be stopped safely"
+  fi
+  if ! persist_prepared_integration_secret_key; then
+    handle_pre_quiesce_failure "integration secret encryption key preflight failed"
   fi
   if ! create_backup; then
     handle_deploy_failure "backup failed"
@@ -2035,13 +2038,12 @@ manual_backup() {
   if ! start_infra; then
     handle_pre_quiesce_failure "infrastructure startup failed"
   fi
-  if ! persist_prepared_integration_secret_key; then
-    capture_failure_diagnostics || true
-    err "integration secret encryption key preflight failed"
-  fi
   if ! quiesce_app compatible; then
     resume_existing_app available || true
     err "workers or application containers could not be stopped safely"
+  fi
+  if ! persist_prepared_integration_secret_key; then
+    handle_pre_quiesce_failure "integration secret encryption key preflight failed"
   fi
   if ! create_backup; then
     resume_existing_app available || true
@@ -2062,14 +2064,14 @@ manual_rollback_code() {
   if ! start_infra; then
     handle_pre_quiesce_failure "infrastructure startup failed before code rollback"
   fi
-  if ! persist_prepared_integration_secret_key; then
-    handle_pre_quiesce_failure "integration secret encryption key preflight failed before code rollback"
-  fi
   if ! validate_code_only_rollback_revision .deploy/previous_successful_rev "previous successful"; then
     handle_pre_quiesce_failure "code-only rollback refused because the target runtime does not exactly match the live database"
   fi
   if ! quiesce_app compatible; then
     handle_deploy_failure "application containers could not be stopped for code rollback" NO
+  fi
+  if ! persist_prepared_integration_secret_key; then
+    handle_pre_quiesce_failure "integration secret encryption key preflight failed before code rollback"
   fi
   if ! rollback_source_to_previous_successful; then
     handle_deploy_failure "previous successful source revision is unavailable" NO
