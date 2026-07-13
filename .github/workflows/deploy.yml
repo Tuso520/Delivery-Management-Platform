@@ -76,6 +76,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.sha }}
+          fetch-depth: 0
       - name: 校验 Compose 配置
         run: |
           docker compose --env-file .env.local.example -f docker-compose.test.yml config -q
@@ -86,9 +89,121 @@ jobs:
           bash -n deploy-git.sh
           bash scripts/test-deploy-git.sh
 
+  integration:
+    name: 真实依赖与核心 E2E
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: delivery-platform-ci
+      MYSQL_DATABASE: delivery_platform
+      MYSQL_USER: delivery_user
+      MINIO_ROOT_USER: delivery_minio
+      MINIO_BUCKET: delivery-platform
+      INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME: admin
+      SEED_RESET_EXISTING_USER_PASSWORDS: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.sha }}
+          fetch-depth: 0
+      - name: 固定真实验收提交
+        run: |
+          resolved_ref="$(git rev-parse HEAD)"
+          printf 'RELEASE_ID=ci-%s\n' "$resolved_ref" >> "$GITHUB_ENV"
+      - name: 生成隔离验收凭据
+        run: |
+          set_secret() {
+            name="$1"
+            value="$2"
+            echo "::add-mask::$value"
+            printf '%s=%s\n' "$name" "$value" >> "$GITHUB_ENV"
+          }
+          set_secret MYSQL_ROOT_PASSWORD "$(openssl rand -hex 24)"
+          set_secret MYSQL_USER_PASSWORD "$(openssl rand -hex 24)"
+          set_secret REDIS_PASSWORD "$(openssl rand -hex 24)"
+          set_secret MINIO_ROOT_PASSWORD "$(openssl rand -hex 24)"
+          set_secret JWT_SECRET "$(openssl rand -base64 48 | tr -d '\r\n')"
+          set_secret INTEGRATION_SECRET_ENCRYPTION_KEY "$(openssl rand -base64 32 | tr -d '\r\n')"
+          set_secret SEED_ADMIN_PASSWORD "$(openssl rand -base64 24 | tr -d '\r\n')"
+          set_secret SEED_DEFAULT_PASSWORD "$(openssl rand -base64 24 | tr -d '\r\n')"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.4
+      - name: 安装真实验收依赖
+        run: |
+          pnpm --dir delivery-platform-server install --frozen-lockfile
+          pnpm --dir delivery-platform-web install --frozen-lockfile
+          pnpm --dir delivery-platform-web exec playwright install --with-deps chrome
+      - name: 启动真实依赖与应用
+        run: |
+          docker compose --env-file .env.local.example -f docker-compose.test.yml up -d --build
+          for _ in $(seq 1 60); do
+            if curl -fsS --connect-timeout 3 --max-time 10 http://127.0.0.1:13000/api/v1/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 5
+          done
+          docker compose --env-file .env.local.example -f docker-compose.test.yml ps
+          exit 1
+      - name: 验证异步 Worker 稳定
+        run: |
+          compose=(docker compose --env-file .env.local.example -f docker-compose.test.yml)
+          for service in file-worker outbox-worker; do
+            stable=0
+            for _ in $(seq 1 20); do
+              container_id="$("${compose[@]}" ps --status running --quiet "$service" 2>/dev/null || true)"
+              if [ -n "$container_id" ]; then
+                initial_restarts="$(docker inspect "$container_id" --format '{{.RestartCount}}' 2>/dev/null || true)"
+                sleep 5
+                stable_container_id="$("${compose[@]}" ps --status running --quiet "$service" 2>/dev/null || true)"
+                final_restarts="$(docker inspect "$container_id" --format '{{.RestartCount}}' 2>/dev/null || true)"
+                if [ "$stable_container_id" = "$container_id" ] &&
+                  [ -n "$initial_restarts" ] && [ "$final_restarts" = "$initial_restarts" ]; then
+                  stable=1
+                  break
+                fi
+              fi
+              sleep 3
+            done
+            if [ "$stable" -ne 1 ]; then
+              echo "::error::$service did not remain stable"
+              "${compose[@]}" logs --no-color --tail=200 "$service" || true
+              exit 1
+            fi
+          done
+      - name: 真实 NestJS API E2E
+        working-directory: delivery-platform-server
+        env:
+          E2E_API_BASE_URL: http://127.0.0.1:13000/api/v1
+          E2E_USERNAME: admin
+        run: E2E_PASSWORD="$SEED_ADMIN_PASSWORD" pnpm test:e2e --runInBand
+      - name: 真实依赖就绪冒烟
+        working-directory: delivery-platform-web
+        env:
+          PLAYWRIGHT_API_BASE_URL: http://127.0.0.1:13000
+        run: pnpm test:smoke:api
+      - name: 真实浏览器权限与数据范围 E2E
+        working-directory: delivery-platform-web
+        env:
+          PLAYWRIGHT_WEB_BASE_URL: http://127.0.0.1:18080
+          E2E_ADMIN_USERNAME: admin
+          E2E_LIMITED_USERNAME: pm_wang
+        run: |
+          E2E_ADMIN_PASSWORD="$SEED_ADMIN_PASSWORD" \
+          E2E_LIMITED_PASSWORD="$SEED_DEFAULT_PASSWORD" \
+          pnpm test:e2e
+      - name: 输出容器状态
+        if: ${{ always() }}
+        run: docker compose --env-file .env.local.example -f docker-compose.test.yml ps
+      - name: 清理真实验收环境
+        if: ${{ always() }}
+        run: docker compose --env-file .env.local.example -f docker-compose.test.yml down -v --remove-orphans
+
   deploy:
     name: 部署到服务器
-    needs: [quality, validate]
+    needs: [quality, validate, integration]
     runs-on: ubuntu-latest
     environment: test
     env:
@@ -179,81 +294,8 @@ jobs:
           }
           trap cleanup_failed_upload EXIT
 
-          git -C "$APP_DIR" fetch "$REMOTE_BUNDLE" HEAD
-          fetched_ref="$(git -C "$APP_DIR" rev-parse FETCH_HEAD)"
-          test "$fetched_ref" = "$DEPLOY_REF"
-          git -C "$APP_DIR" cat-file -e "${DEPLOY_REF}^{commit}"
-
-          # One-time recovery for the previous archive-based workflow. It is
-          # allowed only when every changed source file exactly matches one
-          # imported historical release; unknown server edits still fail closed.
-          recover_release_overlay() {
-            local -a overlay_paths=()
-            local -a untracked_paths=()
-            local actual_hashes expected_hashes candidate revision path
-            local stamp recovery_dir destination candidate_short
-
-            git -C "$APP_DIR" diff --cached --quiet || return 1
-            mapfile -d '' -t overlay_paths < <(
-              git -C "$APP_DIR" diff --name-only -z
-              git -C "$APP_DIR" ls-files --others --exclude-standard -z
-            )
-            [ "${#overlay_paths[@]}" -gt 0 ] || return 1
-            for path in "${overlay_paths[@]}"; do
-              [ -f "$APP_DIR/$path" ] || return 1
-              case "$path" in
-                *$'\n'*) return 1 ;;
-              esac
-            done
-            actual_hashes="$(printf '%s\n' "${overlay_paths[@]}" | git -C "$APP_DIR" hash-object --stdin-paths)" || return 1
-
-            candidate=""
-            while IFS= read -r revision; do
-              expected_hashes="$({
-                for path in "${overlay_paths[@]}"; do
-                  printf '%s:%s\n' "$revision" "$path"
-                done
-              } | git -C "$APP_DIR" cat-file --batch-check='%(objectname)')" || return 1
-              if [ "$actual_hashes" = "$expected_hashes" ]; then
-                candidate="$revision"
-                break
-              fi
-            done < <(git -C "$APP_DIR" rev-list --max-count=32 "$DEPLOY_REF")
-            [ -n "$candidate" ] || return 1
-
-            stamp="$(date +%Y%m%d_%H%M%S)"
-            candidate_short="${candidate:0:12}"
-            recovery_dir="$APP_DIR/.deploy/recovered-overlays/${stamp}-${candidate_short}"
-            mkdir -p "$recovery_dir/untracked"
-            git -C "$APP_DIR" status --porcelain=v1 -z --untracked-files=normal > "$recovery_dir/status.z"
-            git -C "$APP_DIR" diff --binary > "$recovery_dir/tracked.patch"
-            mapfile -d '' -t untracked_paths < <(git -C "$APP_DIR" ls-files --others --exclude-standard -z)
-            for path in "${untracked_paths[@]}"; do
-              destination="$recovery_dir/untracked/$path"
-              mkdir -p "$(dirname "$destination")" || return 1
-              mv "$APP_DIR/$path" "$destination" || return 1
-            done
-            git -C "$APP_DIR" restore --source=HEAD --worktree -- . || return 1
-            [ -z "$(git -C "$APP_DIR" status --porcelain --untracked-files=normal)" ] || return 1
-            printf '%s\n' "$candidate" > "$recovery_dir/recovered-release.txt"
-            echo "recovered exact archive overlay from release $candidate_short"
-          }
-
-          if [ -n "$(git -C "$APP_DIR" status --porcelain --untracked-files=normal)" ]; then
-            recover_release_overlay || {
-              echo "::error::the server worktree contains changes that do not exactly match a historical release; refusing deployment" >&2
-              git -C "$APP_DIR" status --short --untracked-files=normal >&2
-              exit 1
-            }
-          fi
-
-          if [ ! -s "$APP_DIR/.deploy/last_successful_rev" ]; then
-            current_revision="$(git -C "$APP_DIR" rev-parse --verify HEAD 2>/dev/null || true)"
-            if [ -n "$current_revision" ]; then
-              printf '%s\n' "$current_revision" > "$APP_DIR/.deploy/last_successful_rev.tmp"
-              mv -f "$APP_DIR/.deploy/last_successful_rev.tmp" "$APP_DIR/.deploy/last_successful_rev"
-            fi
-          fi
+          # Bundle import, worktree validation and the one-time exact-overlay
+          # recovery are performed by deploy-git.sh after it owns the server lock.
           trap - EXIT
           REMOTE
 
@@ -299,16 +341,17 @@ jobs:
           EXPECTED_ENV_SHA="$6"
           DEPLOY_SCRIPT="$7"
           REMOTE_BUNDLE="$8"
+          DEPLOY_RUN_ID="${DEPLOY_REF:0:12}-$(date +%s)-$$"
+          export DEPLOY_RUN_ID
           if [ "$REMOTE_ENV" = "__NOT_SET__" ]; then
             REMOTE_ENV=""
           fi
           if [ "$EXPECTED_ENV_SHA" = "__NOT_SET__" ]; then
             EXPECTED_ENV_SHA=""
           fi
-          ENV_REPLACED="NO"
           umask 077
 
-          restore_env_on_exit() {
+          cleanup_remote_files() {
             status="$?"
             trap - EXIT
             set +e
@@ -316,37 +359,17 @@ jobs:
               rm -f "$REMOTE_ENV"
             fi
             rm -f "$DEPLOY_SCRIPT" "$REMOTE_BUNDLE"
-            if [ "$status" -ne 0 ] && [ "$ENV_REPLACED" = "YES" ]; then
-              if [ -f "$APP_DIR/.deploy/env.before-deploy" ]; then
-                mv -f "$APP_DIR/.deploy/env.before-deploy" "$APP_DIR/.env"
-                rm -f "$APP_DIR/.deploy/env.was_absent"
-              elif [ -f "$APP_DIR/.deploy/env.was_absent" ]; then
-                rm -f "$APP_DIR/.env" "$APP_DIR/.deploy/env.was_absent"
-              fi
-            fi
             exit "$status"
           }
-          trap restore_env_on_exit EXIT
-
-          if [ -n "$REMOTE_ENV" ]; then
-            chmod 600 "$REMOTE_ENV"
-            actual_sha="$(sha256sum "$REMOTE_ENV" | awk '{print $1}')"
-            test "$actual_sha" = "$EXPECTED_ENV_SHA"
-            if [ -f "$APP_DIR/.env" ]; then
-              cp -p "$APP_DIR/.env" "$APP_DIR/.deploy/env.before-deploy"
-              chmod 600 "$APP_DIR/.deploy/env.before-deploy"
-              rm -f "$APP_DIR/.deploy/env.was_absent"
-            else
-              rm -f "$APP_DIR/.deploy/env.before-deploy"
-              install -m 600 /dev/null "$APP_DIR/.deploy/env.was_absent"
-            fi
-            mv -f "$REMOTE_ENV" "$APP_DIR/.env"
-            ENV_REPLACED="YES"
-          fi
+          trap cleanup_remote_files EXIT
 
           cd "$APP_DIR"
           export APP_DIR BRANCH COMPOSE_FILES
           export SKIP_GIT_FETCH=YES
+          export DEPLOY_ENV_UPLOAD_PATH="$REMOTE_ENV"
+          export DEPLOY_ENV_UPLOAD_SHA256="$EXPECTED_ENV_SHA"
+          export DEPLOY_GIT_BUNDLE_PATH="$REMOTE_BUNDLE"
+          export ALLOW_RELEASE_OVERLAY_RECOVERY=YES
           if [ -n "$DEPLOY_REF" ]; then
             export REF="$DEPLOY_REF"
           fi

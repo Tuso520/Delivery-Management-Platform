@@ -228,7 +228,7 @@ services:
       mysql:
         condition: service_healthy
     command: >
-      sh -c "node prisma/prepare-migrate.js && ./node_modules/.bin/prisma migrate deploy && ./node_modules/.bin/ts-node --transpile-only prisma/seed.ts && ./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts && ./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts --apply --actor-username=$${INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME} && ./node_modules/.bin/ts-node --transpile-only prisma/seed.ts && ./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts --verify"
+      sh -c "node prisma/prepare-migrate.js && ./node_modules/.bin/prisma migrate deploy && ./node_modules/.bin/ts-node --transpile-only prisma/seed.ts && ./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts && ./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts --apply --actor-username=$${INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME} && ./node_modules/.bin/ts-node --transpile-only prisma/seed.ts && ./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts --verify && ./node_modules/.bin/ts-node --transpile-only prisma/migrate-target-foundation.ts --verify --strict"
     networks:
       - delivery-network
 

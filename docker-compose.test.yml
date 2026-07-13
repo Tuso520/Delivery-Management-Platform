@@ -3,7 +3,6 @@ name: delivery-platform-local
 services:
   mysql:
     image: mysql:8.0
-    container_name: delivery-local-mysql
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
@@ -31,7 +30,6 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: delivery-local-redis
     restart: unless-stopped
     ports:
       - "127.0.0.1:${REDIS_PORT:-16379}:6379"
@@ -48,7 +46,6 @@ services:
 
   minio:
     image: ${MINIO_IMAGE:-quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z}
-    container_name: delivery-local-minio
     restart: unless-stopped
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
@@ -64,7 +61,6 @@ services:
 
   minio-init:
     image: ${MINIO_MC_IMAGE:-quay.io/minio/mc:RELEASE.2025-07-21T05-28-08Z}
-    container_name: delivery-local-minio-init
     depends_on:
       minio:
         condition: service_started
@@ -88,7 +84,6 @@ services:
       args:
         RELEASE_ID: ${RELEASE_ID:-local-test}
     image: delivery-platform-backend-migrate:test-${RELEASE_ID:-local}
-    container_name: delivery-local-backend-migrate
     restart: "no"
     environment:
       NODE_ENV: development
@@ -109,7 +104,7 @@ services:
       minio-init:
         condition: service_completed_successfully
     command: >
-      sh -c "node prisma/prepare-migrate.js && ./node_modules/.bin/prisma migrate deploy && ./node_modules/.bin/ts-node --transpile-only prisma/seed.ts && ./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts && ./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts --apply --actor-username=$${INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME} && ./node_modules/.bin/ts-node --transpile-only prisma/seed.ts && ./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts --verify"
+      sh -c "node prisma/prepare-migrate.js && ./node_modules/.bin/prisma migrate deploy && ./node_modules/.bin/ts-node --transpile-only prisma/seed.ts && ./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts && ./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts --apply --actor-username=$${INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME} && ./node_modules/.bin/ts-node --transpile-only prisma/seed.ts && ./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts --verify && ./node_modules/.bin/ts-node --transpile-only prisma/migrate-target-foundation.ts --verify --strict"
     networks:
       - delivery-local-network
 
@@ -120,7 +115,6 @@ services:
       args:
         RELEASE_ID: ${RELEASE_ID:-local-test}
     image: delivery-platform-backend:test-${RELEASE_ID:-local}
-    container_name: delivery-local-backend
     restart: unless-stopped
     ports:
       - "127.0.0.1:${BACKEND_PORT:-13000}:3000"
@@ -153,6 +147,60 @@ services:
     networks:
       - delivery-local-network
 
+  file-worker:
+    image: delivery-platform-backend:test-${RELEASE_ID:-local}
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 330s
+    command: ["node", "dist/workers/file-processing.worker"]
+    environment:
+      NODE_ENV: test
+      DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_USER_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+      FILE_CONVERTER_URL: ${FILE_CONVERTER_URL:-}
+      FILE_CONVERTER_TOKEN: ${FILE_CONVERTER_TOKEN:-}
+      FILE_CONVERTER_TIMEOUT_MS: ${FILE_CONVERTER_TIMEOUT_MS:-120000}
+      FILE_CONVERTER_MAX_OUTPUT_BYTES: ${FILE_CONVERTER_MAX_OUTPUT_BYTES:-209715200}
+      FILE_PROCESSING_MAX_ATTEMPTS: ${FILE_PROCESSING_MAX_ATTEMPTS:-3}
+      FILE_PROCESSING_LEASE_MS: ${FILE_PROCESSING_LEASE_MS:-300000}
+      FILE_PROCESSING_RETRY_BASE_MS: ${FILE_PROCESSING_RETRY_BASE_MS:-5000}
+      FILE_PROCESSING_RETRY_MAX_MS: ${FILE_PROCESSING_RETRY_MAX_MS:-900000}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      backend-migrate:
+        condition: service_completed_successfully
+    networks:
+      - delivery-local-network
+
+  outbox-worker:
+    image: delivery-platform-backend:test-${RELEASE_ID:-local}
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 75s
+    command: ["node", "dist/workers/outbox-dispatch.worker"]
+    environment:
+      NODE_ENV: test
+      DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_USER_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
+      INTEGRATION_SECRET_ENCRYPTION_KEY: ${INTEGRATION_SECRET_ENCRYPTION_KEY:?INTEGRATION_SECRET_ENCRYPTION_KEY is required}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      backend-migrate:
+        condition: service_completed_successfully
+    networks:
+      - delivery-local-network
+
   frontend:
     build:
       context: ./delivery-platform-web
@@ -160,7 +208,6 @@ services:
       args:
         RELEASE_ID: ${RELEASE_ID:-local-test}
     image: delivery-platform-frontend:test-${RELEASE_ID:-local}
-    container_name: delivery-local-frontend
     restart: unless-stopped
     ports:
       - "${FRONTEND_PORT:-18080}:80"

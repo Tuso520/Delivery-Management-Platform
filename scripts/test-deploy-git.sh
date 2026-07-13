@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# The contract harness intentionally mocks functions sourced at runtime and exercises
+# them in isolated subshells, which makes these data-flow warnings false positives.
+# shellcheck disable=SC1091,SC2030,SC2031,SC2034,SC2119,SC2120,SC2317
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -28,6 +31,62 @@ current_services() {
 
 legacy_services() {
   printf '%s\n' mysql redis minio minio-init backend backend-migrate frontend
+}
+
+test_dockerfiles_do_not_require_external_syntax_frontend() {
+  local dockerfile
+  for dockerfile in \
+    "$ROOT_DIR/delivery-platform-server/Dockerfile" \
+    "$ROOT_DIR/delivery-platform-web/Dockerfile"; do
+    if grep -Eq '^[[:space:]]*#[[:space:]]*syntax=docker/dockerfile:' "$dockerfile"; then
+      fail "Dockerfile depends on an external docker/dockerfile syntax frontend: $dockerfile"
+    fi
+  done
+}
+
+test_workflow_remote_argument_contract() {
+  local workflow="$ROOT_DIR/.github/workflows/deploy.yml"
+  local index position expected
+  local remote_env_pattern env_sha_pattern first_six_pattern deploy_script_pattern bundle_pattern
+  local -a names=(
+    APP_DIR BRANCH COMPOSE_FILES DEPLOY_REF REMOTE_ENV EXPECTED_ENV_SHA DEPLOY_SCRIPT REMOTE_BUNDLE
+  )
+  remote_env_pattern="$(cat <<'EXPECTED'
+remote_env_arg="${remote_env:-__NOT_SET__}"
+EXPECTED
+)"
+  env_sha_pattern="$(cat <<'EXPECTED'
+env_sha_arg="${env_sha:-__NOT_SET__}"
+EXPECTED
+)"
+  first_six_pattern="$(cat <<'EXPECTED'
+"$APP_DIR" "$BRANCH" "$COMPOSE_FILES" "$DEPLOY_REF" "$remote_env_arg" "$env_sha_arg" \
+EXPECTED
+)"
+  deploy_script_pattern="$(cat <<'EXPECTED'
+"/tmp/delivery-platform-deploy-${DEPLOY_REF}.sh" \
+EXPECTED
+)"
+  bundle_pattern="$(cat <<'EXPECTED'
+"/tmp/delivery-platform-release-${DEPLOY_REF}.bundle" <<'REMOTE'
+EXPECTED
+)"
+  grep -Fq "$remote_env_pattern" "$workflow" || \
+    fail "workflow does not preserve the optional remote environment argument"
+  grep -Fq "$env_sha_pattern" "$workflow" || \
+    fail "workflow does not preserve the optional environment checksum argument"
+  grep -Fq "$first_six_pattern" "$workflow" || \
+    fail "workflow remote invocation does not pass the first six positional arguments"
+  grep -Fq "$deploy_script_pattern" "$workflow" || \
+    fail "workflow remote invocation does not pass the deployment script as argument seven"
+  grep -Fq "$bundle_pattern" "$workflow" || \
+    fail "workflow remote invocation does not pass the release bundle as argument eight"
+  for index in "${!names[@]}"; do
+    position=$((index + 1))
+    expected="${names[$index]}=\"\$$position\""
+    grep -Fq "$expected" "$workflow" || \
+      fail "workflow remote receiver is missing positional assignment: $expected"
+  done
 }
 
 test_switch_order() (
@@ -221,6 +280,19 @@ test_integration_secret_key_gate() (
   case "$output" in
     *"$local_key"*) fail "secret key leaked into deployment output" ;;
   esac
+
+  previous_key="$(printf 'abcdefghijklmnopqrstuvwxyzABCDEF' | openssl base64 -A)"
+  DEPLOY_RUN_ID="key-mismatch-test"
+  printf 'INTEGRATION_SECRET_ENCRYPTION_KEY=%s\n' "$local_key" > "$APP_DIR/.env"
+  printf 'INTEGRATION_SECRET_ENCRYPTION_KEY=%s\n' "$previous_key" > "$APP_DIR/.deploy/env.before-deploy"
+  printf '%s\n' "$DEPLOY_RUN_ID" > "$APP_DIR/.deploy/env.backup-owner"
+  PREPARED_INTEGRATION_SECRET_KEY="$local_key"
+  INTEGRATION_SECRET_KEY_SOURCE="existing"
+  encrypted_integration_config_count() { printf '1\n'; }
+  output="$(persist_prepared_integration_secret_key 2>&1)" && fail "different valid key was accepted while ciphertext exists"
+  case "$output" in
+    *"$local_key"*|*"$previous_key"*) fail "key mismatch output leaked an encryption key" ;;
+  esac
 )
 
 test_prepared_key_survives_env_reload() (
@@ -230,9 +302,11 @@ test_prepared_key_survives_env_reload() (
   temp_dir="$(mktemp -d)"
   trap 'rm -rf "$temp_dir"' EXIT
   APP_DIR="$temp_dir"
+  DEPLOY_RUN_ID="prepared-key-test"
   mkdir -p "$APP_DIR/.deploy"
   printf 'INTEGRATION_SECRET_ENCRYPTION_KEY=CHANGE_ME\n' > "$APP_DIR/.env"
   printf 'INTEGRATION_SECRET_ENCRYPTION_KEY=%s\n' "$local_key" > "$APP_DIR/.deploy/env.before-deploy"
+  printf '%s\n' "$DEPLOY_RUN_ID" > "$APP_DIR/.deploy/env.backup-owner"
   cd "$APP_DIR"
 
   source_env
@@ -243,6 +317,858 @@ test_prepared_key_survives_env_reload() (
   persist_prepared_integration_secret_key
   [ "$INTEGRATION_SECRET_ENCRYPTION_KEY" = "$local_key" ] || fail "prepared key was not restored after env reload"
   grep -Fxq "INTEGRATION_SECRET_ENCRYPTION_KEY=$local_key" "$APP_DIR/.env" || fail "prepared key was not persisted after reload"
+)
+
+test_inherited_key_cannot_mask_missing_env_assignment() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  inherited_key="$(printf 'abcdefghijklmnopqrstuvwxyzABCDEF' | openssl base64 -A)"
+  temp_dir="$(mktemp -d)"
+  trap 'rm -rf "$temp_dir"' EXIT
+  APP_DIR="$temp_dir"
+  mkdir -p "$APP_DIR/.deploy"
+  printf 'OTHER_SETTING=present\n' > "$APP_DIR/.env"
+  export INTEGRATION_SECRET_ENCRYPTION_KEY="$inherited_key"
+  cd "$APP_DIR"
+
+  source_env
+  [ -z "${INTEGRATION_SECRET_ENCRYPTION_KEY:-}" ] || fail "inherited shell key masked a missing environment assignment"
+  prepare_integration_secret_key
+  [ "$INTEGRATION_SECRET_KEY_SOURCE" = "generated" ] || fail "missing environment key was not treated as missing"
+  encrypted_integration_config_count() { printf '0\n'; }
+  persist_prepared_integration_secret_key
+  grep -Fxq "INTEGRATION_SECRET_ENCRYPTION_KEY=$PREPARED_INTEGRATION_SECRET_KEY" "$APP_DIR/.env" || \
+    fail "generated environment key was not persisted"
+  [ "$PREPARED_INTEGRATION_SECRET_KEY" != "$inherited_key" ] || fail "inherited key was silently adopted"
+)
+
+test_environment_cannot_override_deployment_state() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  temp_dir="$(mktemp -d)"
+  trap 'rm -rf "$temp_dir"' EXIT
+  APP_DIR="$temp_dir"
+  DEPLOY_ACTIVE="YES"
+  mkdir -p "$APP_DIR/.deploy"
+  printf 'DATABASE_MUTATION_STARTED=NO\n' > "$APP_DIR/.env"
+  cd "$APP_DIR"
+
+  if source_env >/dev/null 2>&1; then
+    fail "environment file overrode a reserved deployment state variable"
+  fi
+  [ "$DEPLOY_ACTIVE" = "YES" ] || fail "reserved deployment state changed after environment rejection"
+)
+
+test_env_backup_run_ownership() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  temp_dir="$(mktemp -d)"
+  trap 'rm -rf "$temp_dir"' EXIT
+  APP_DIR="$temp_dir"
+  DEPLOY_RUN_ID="current-run"
+  mkdir -p "$APP_DIR/.deploy"
+  printf 'VALUE=current\n' > "$APP_DIR/.env"
+  printf 'VALUE=stale\n' > "$APP_DIR/.deploy/env.before-deploy"
+  printf 'old-run\n' > "$APP_DIR/.deploy/env.backup-owner"
+  cd "$APP_DIR"
+  restore_deployment_env
+  grep -Fxq 'VALUE=current' "$APP_DIR/.env" || fail "stale environment backup replaced the current environment"
+  [ -f "$APP_DIR/.deploy/env.before-deploy" ] || fail "stale environment backup was unexpectedly deleted"
+
+  printf '%s\n' "$DEPLOY_RUN_ID" > "$APP_DIR/.deploy/env.backup-owner"
+  restore_deployment_env
+  grep -Fxq 'VALUE=stale' "$APP_DIR/.env" || fail "owned environment backup was not restored"
+  [ ! -e "$APP_DIR/.deploy/env.backup-owner" ] || fail "owned environment marker was not removed"
+)
+
+test_environment_upload_is_installed_inside_owned_transaction() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  temp_dir="$(mktemp -d)"
+  trap 'rm -rf "$temp_dir"' EXIT
+  APP_DIR="$temp_dir"
+  DEPLOY_RUN_ID="upload-run"
+  mkdir -p "$APP_DIR/.deploy"
+  printf 'SOURCE_ENV=yes\n' > "$APP_DIR/.env"
+  DEPLOY_ENV_UPLOAD_PATH="$APP_DIR/.deploy/env-release.upload"
+  printf 'TARGET_ENV=yes\n' > "$DEPLOY_ENV_UPLOAD_PATH"
+  DEPLOY_ENV_UPLOAD_SHA256="$(sha256sum "$DEPLOY_ENV_UPLOAD_PATH" | awk '{print $1}')"
+  log() { :; }
+  install_deployment_env_upload
+  grep -Fxq 'TARGET_ENV=yes' "$APP_DIR/.env" || fail "uploaded environment was not installed"
+  grep -Fxq 'SOURCE_ENV=yes' "$APP_DIR/.deploy/env.before-deploy" || fail "source environment was not preserved"
+  [ "$(cat "$APP_DIR/.deploy/env.backup-owner")" = "$DEPLOY_RUN_ID" ] || fail "environment backup ownership was not recorded"
+
+  printf 'SECOND_TARGET=yes\n' > "$APP_DIR/.deploy/env-second.upload"
+  DEPLOY_ENV_UPLOAD_PATH="$APP_DIR/.deploy/env-second.upload"
+  DEPLOY_ENV_UPLOAD_SHA256="$(sha256sum "$DEPLOY_ENV_UPLOAD_PATH" | awk '{print $1}')"
+  if install_deployment_env_upload >/dev/null 2>&1; then
+    fail "an active environment transaction was overwritten"
+  fi
+  grep -Fxq 'TARGET_ENV=yes' "$APP_DIR/.env" || fail "failed concurrent upload changed the active environment"
+)
+
+test_git_bundle_is_imported_after_target_binding() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  calls_file="$(mktemp)"
+  DEPLOY_GIT_BUNDLE_PATH="/tmp/delivery-platform-release-contract-$$.bundle"
+  trap 'rm -f "$calls_file" "$DEPLOY_GIT_BUNDLE_PATH"' EXIT
+  : > "$DEPLOY_GIT_BUNDLE_PATH"
+  REF="1111111111111111111111111111111111111111"
+  git() {
+    record_call "git $*"
+    case "$*" in
+      "bundle verify $DEPLOY_GIT_BUNDLE_PATH") return 0 ;;
+      "fetch $DEPLOY_GIT_BUNDLE_PATH HEAD") return 0 ;;
+      "rev-parse FETCH_HEAD") printf '%s\n' "$REF" ;;
+      "cat-file -e ${REF}^{commit}") return 0 ;;
+      *) return 1 ;;
+    esac
+  }
+  import_deployment_bundle
+  assert_calls "$(cat <<EXPECTED
+git bundle verify $DEPLOY_GIT_BUNDLE_PATH
+git fetch $DEPLOY_GIT_BUNDLE_PATH HEAD
+git rev-parse FETCH_HEAD
+git cat-file -e ${REF}^{commit}
+EXPECTED
+)"
+)
+
+test_exact_table_count_gate() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  temp_dir="$(mktemp -d)"
+  trap 'rm -rf "$temp_dir"' EXIT
+  before="$temp_dir/before.tsv"
+  after="$temp_dir/after.tsv"
+  report="$temp_dir/report.tsv"
+  printf 'projects\t3\nusers\t2\n' > "$before"
+  printf 'projects\t3\nusers\t4\nversions\t1\n' > "$after"
+  verify_table_counts_preserved "$before" "$after" "$report" || fail "valid non-decreasing table counts were rejected"
+  grep -Fxq $'users\t2\t4\t2' "$report" || fail "table count delta was not recorded"
+  grep -Fxq $'versions\tNEW\t1\tNEW' "$report" || fail "new table count was not recorded"
+
+  printf 'projects\t2\nusers\t4\n' > "$after"
+  if verify_table_counts_preserved "$before" "$after" "$report"; then
+    fail "decreased table count was accepted"
+  fi
+  printf 'users\t4\n' > "$after"
+  if verify_table_counts_preserved "$before" "$after" "$report"; then
+    fail "removed audited table was accepted"
+  fi
+)
+
+test_foreign_key_orphan_gate() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  temp_dir="$(mktemp -d)"
+  trap 'rm -rf "$temp_dir"' EXIT
+  output="$temp_dir/foreign-keys.tsv"
+  mock_orphan_count=0
+  mysql_query() {
+    case "$1" in
+      SELECT\ CONSTRAINT_NAME,*)
+        printf 'project_members_project_id_fkey\tproject_members\tprojects\t1\tproject_id\tid\n'
+        ;;
+      SELECT\ COUNT\(\*\)*) printf '%s\n' "$mock_orphan_count" ;;
+      *) return 1 ;;
+    esac
+  }
+  write_foreign_key_audit "$output" || fail "zero-orphan foreign key audit failed"
+  grep -Fxq $'project_members.project_members_project_id_fkey\t0' "$output" || fail "foreign key audit report is incomplete"
+  mock_orphan_count=1
+  if write_foreign_key_audit "$output"; then
+    fail "foreign key orphan was accepted"
+  fi
+)
+
+test_backup_source_revision_and_key_binding() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  temp_dir="$(mktemp -d)"
+  trap 'rm -rf "$temp_dir"' EXIT
+  APP_DIR="$temp_dir"
+  expected_source_revision="1111111111111111111111111111111111111111"
+  expected_target_revision="2222222222222222222222222222222222222222"
+  local_key="$(printf '01234567890123456789012345678901' | openssl base64 -A)"
+  mkdir -p "$APP_DIR/.deploy"
+  printf '%s\n' "$expected_source_revision" > "$APP_DIR/.deploy/last_successful_rev"
+  printf 'RELEASE_ID=old\nINTEGRATION_SECRET_ENCRYPTION_KEY=%s\n' "$local_key" > "$APP_DIR/.env"
+  cd "$APP_DIR"
+  source_env() { export INTEGRATION_SECRET_ENCRYPTION_KEY="$local_key"; }
+  git() {
+    case "$*" in
+      "cat-file -e ${expected_source_revision}^{commit}") return 0 ;;
+      "rev-parse --verify HEAD") printf '%s\n' "$expected_target_revision" ;;
+      *) return 1 ;;
+    esac
+  }
+  release_id() { printf '222222222222\n'; }
+  compose() {
+    [ "$*" = "config" ] || return 1
+    printf 'services: {}\n'
+  }
+  write_table_audit() { : > "$1"; }
+  write_foreign_key_audit() { : > "$1"; }
+  select_backup_runtime_revision() {
+    BACKUP_RUNTIME_REVISION="$expected_source_revision"
+    BACKUP_RUNTIME_SELECTION="source"
+    PAIRED_RESTORE_AVAILABLE="YES"
+    printf 'source\n' > "$3/runtime-selection.txt"
+    printf 'YES\n' > "$3/paired-restore.status"
+    printf 'CLEAN\n' > "$3/database-migration-state.txt"
+    : > "$3/database-migrations.before.tsv"
+    : > "$3/source-migrations.tsv"
+    : > "$3/target-migrations.tsv"
+    : > "$3/recovery-migrations.tsv"
+  }
+  render_revision_compose() {
+    printf 'services: {}\n' > "$4"
+    printf 'backend\nfrontend\n' > "$5"
+  }
+  write_retained_runtime_images() {
+    : > "$1/retained-images.tsv"
+    printf 'services: {}\n' > "$1/restore-images.override.yml"
+  }
+  backup_database() { printf 'database-backup' > "$CURRENT_BACKUP_DIR/mysql.sql.gz"; }
+  backup_minio() { printf 'minio-backup' > "$CURRENT_BACKUP_DIR/minio.tar.gz"; }
+  create_backup
+  [ "$(cat "$CURRENT_BACKUP_DIR/git-revision.txt")" = "$expected_source_revision" ] || fail "backup was labeled with target rather than source revision"
+  [ "$(cat "$CURRENT_BACKUP_DIR/target-git-revision.txt")" = "$expected_target_revision" ] || fail "backup target revision was not recorded"
+  grep -Fxq 'RELEASE_ID=111111111111' "$CURRENT_BACKUP_DIR/env.snapshot" || fail "backup environment was not paired to source release"
+  expected_fingerprint="$(printf '%s' "$local_key" | openssl base64 -d -A | sha256sum | awk '{print $1}')"
+  [ "$(cat "$CURRENT_BACKUP_DIR/integration-secret-key.sha256")" = "$expected_fingerprint" ] || fail "backup key fingerprint was not derived from decoded key bytes"
+)
+
+test_runtime_revision_follows_exact_database_migrations() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  backup_dir="$(mktemp -d)"
+  trap 'rm -rf "$backup_dir"' EXIT
+  source_revision="1111111111111111111111111111111111111111"
+  target_revision="2222222222222222222222222222222222222222"
+  checksum_a="$(printf 'a' | sha256sum | awk '{print $1}')"
+  checksum_b="$(printf 'b' | sha256sum | awk '{print $1}')"
+  write_database_migration_manifest() {
+    printf '20260101_init\t%s\n' "$checksum_b" > "$1"
+    printf 'CLEAN\n' > "$2"
+  }
+  write_revision_migration_manifest() {
+    if [ "$1" = "$source_revision" ]; then
+      printf '20260101_init\t%s\n' "$checksum_a" > "$2"
+    else
+      printf '20260101_init\t%s\n' "$checksum_b" > "$2"
+    fi
+  }
+  warn() { :; }
+  select_backup_runtime_revision "$source_revision" "$target_revision" "$backup_dir"
+  [ "$BACKUP_RUNTIME_SELECTION" = "target" ] || fail "target runtime was not selected for an already-forward database"
+  [ "$BACKUP_RUNTIME_REVISION" = "$target_revision" ] || fail "selected target runtime revision is incorrect"
+  [ "$PAIRED_RESTORE_AVAILABLE" = "YES" ] || fail "exact target runtime was not marked restorable"
+
+  write_revision_migration_manifest() { printf '20260101_init\t%s\n' "$checksum_b" > "$2"; }
+  select_backup_runtime_revision "$source_revision" "$target_revision" "$backup_dir"
+  [ "$BACKUP_RUNTIME_SELECTION" = "source" ] || fail "source runtime was not preferred for an unchanged database"
+)
+
+test_restore_candidate_uses_complete_backup_environment() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  temp_dir="$(mktemp -d)"
+  trap 'rm -rf "$temp_dir"' EXIT
+  APP_DIR="$temp_dir"
+  DEPLOY_RUN_ID="restore-env"
+  backup_dir="$temp_dir/backup"
+  mkdir -p "$APP_DIR/.deploy" "$backup_dir"
+  local_key="$(printf '01234567890123456789012345678901' | openssl base64 -A)"
+  printf 'TARGET_ONLY=yes\nINTEGRATION_SECRET_ENCRYPTION_KEY=%s\n' "$local_key" > "$APP_DIR/.env"
+  printf 'SOURCE_ONLY=yes\nINTEGRATION_SECRET_ENCRYPTION_KEY=%s\n' "$local_key" > "$backup_dir/env.snapshot"
+  integration_secret_key_fingerprint "$local_key" > "$backup_dir/integration-secret-key.sha256"
+  prepare_restore_environment "$backup_dir"
+  grep -Fxq 'SOURCE_ONLY=yes' "$RESTORE_ENV_CANDIDATE" || fail "restore candidate did not use the complete backup environment"
+  if grep -q '^TARGET_ONLY=' "$RESTORE_ENV_CANDIDATE"; then
+    fail "restore candidate retained target-only environment values"
+  fi
+)
+
+test_restore_runtime_never_builds_source_images() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  unset BACKEND_PORT FRONTEND_PORT
+  RESTORE_RUNTIME_ACTIVE="YES"
+  calls_file="$(mktemp)"
+  trap 'rm -f "$calls_file"' EXIT
+  compose() {
+    record_call "compose $*"
+    [ "$*" != "config --services" ] || legacy_services
+  }
+  check_url() { record_call "check-url $*"; }
+  verify_release_version() { record_call "verify-frontend-release"; }
+  verify_service_release() { record_call "verify-service-releases $*"; }
+  switch_app compatible
+  assert_calls "$(cat <<'EXPECTED'
+compose config --services
+compose up -d --no-build --no-deps --force-recreate --remove-orphans backend
+check-url backend readiness http://127.0.0.1:3000/api/v1/ready
+compose up -d --no-build --no-deps --force-recreate frontend
+check-url frontend http://127.0.0.1:8080
+verify-frontend-release
+verify-service-releases backend frontend
+EXPECTED
+)"
+)
+
+test_restore_rejects_legacy_backup_format() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  backup_dir="$(mktemp -d)"
+  trap 'rm -rf "$backup_dir"' EXIT
+  printf '2\n' > "$backup_dir/backup-format-version"
+  warn() { :; }
+  if validate_backup_for_restore "$backup_dir"; then
+    fail "legacy backup format bypassed the source-runtime preflight"
+  fi
+)
+
+test_retained_image_manifest_binds_exact_image_ids() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  backup_dir="$(mktemp -d)"
+  trap 'rm -rf "$backup_dir"' EXIT
+  revision="1111111111111111111111111111111111111111"
+  backend_id="sha256:$(printf 'a%.0s' {1..64})"
+  frontend_id="sha256:$(printf 'b%.0s' {1..64})"
+  printf '%s\n' "$revision" > "$backup_dir/git-revision.txt"
+  printf 'backend\nfrontend\n' > "$backup_dir/runtime-topology.services"
+  printf 'backend\tdelivery-platform-backend:111111111111\t%s\tdelivery-platform-backend\t111111111111\n' "$backend_id" > "$backup_dir/retained-images.tsv"
+  printf 'frontend\tdelivery-platform-frontend:111111111111\t%s\tdelivery-platform-frontend\t111111111111\n' "$frontend_id" >> "$backup_dir/retained-images.tsv"
+  image_identity() {
+    case "$1" in
+      delivery-platform-backend:*) printf '%s\tdelivery-platform-backend\t111111111111\n' "$backend_id" ;;
+      delivery-platform-frontend:*) printf '%s\tdelivery-platform-frontend\t111111111111\n' "$frontend_id" ;;
+      *) return 1 ;;
+    esac
+  }
+  validate_retained_runtime_images "$backup_dir"
+  image_identity() {
+    case "$1" in
+      delivery-platform-backend:*) printf '%s\tdelivery-platform-backend\t111111111111\n' "$backend_id" ;;
+      delivery-platform-frontend:*) printf 'sha256:%s\tdelivery-platform-frontend\t111111111111\n' "$(printf 'c%.0s' {1..64})" ;;
+      *) return 1 ;;
+    esac
+  }
+  if validate_retained_runtime_images "$backup_dir"; then
+    fail "stale retained frontend image id was accepted"
+  fi
+)
+
+test_format_three_requires_minio() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  backup_dir="$(mktemp -d)"
+  trap 'rm -rf "$backup_dir"' EXIT
+  for file in \
+    backup-format-version env.snapshot integration-secret-key.sha256 \
+    git-revision.txt previous-successful-revision.txt target-git-revision.txt \
+    compose-files.txt docker-compose.resolved.yml runtime-selection.txt \
+    paired-restore.status database-migration-state.txt database-migrations.before.tsv \
+    source-migrations.tsv target-migrations.tsv runtime-compose.resolved.yml \
+    recovery-migrations.tsv \
+    runtime-topology.services runtime-compose-with-images.resolved.yml \
+    retained-images.tsv restore-images.override.yml \
+    table-counts.before.tsv foreign-keys.before.tsv mysql.sql.gz; do
+    : > "$backup_dir/$file"
+  done
+  if write_backup_checksums "$backup_dir" >/dev/null 2>&1; then
+    fail "format-three backup accepted a missing MinIO archive"
+  fi
+  : > "$backup_dir/minio.tar.gz"
+  write_backup_checksums "$backup_dir" || fail "complete paired backup was rejected"
+  grep -Fq 'minio.tar.gz' "$backup_dir/checksums.sha256" || fail "MinIO archive was omitted from backup checksums"
+)
+
+test_ciphertext_restore_uses_strict_verify() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  calls_file="$(mktemp)"
+  trap 'rm -f "$calls_file"' EXIT
+  encrypted_integration_config_count() { printf '1\n'; }
+  compose() { record_call "compose $*"; }
+  verify_integration_ciphertext_readable
+  assert_calls "compose run --rm --no-deps backend-migrate sh -c ./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts --verify"
+)
+
+test_start_infra_returns_failure() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  compose() { return 1; }
+  if start_infra; then
+    fail "infrastructure startup failure was accepted"
+  fi
+)
+
+test_pre_mutation_failure_recovers_infrastructure() {
+  calls_file="$(mktemp)"
+  trap 'rm -f "$calls_file"' RETURN
+  set +e
+  (
+    # shellcheck source=../deploy-git.sh
+    source "$ROOT_DIR/deploy-git.sh"
+    SOURCE_SWITCH_STARTED="YES"
+    capture_failure_diagnostics() { record_call "capture"; }
+    restore_deployment_env() { record_call "restore-env"; }
+    rollback_source_to_last_successful() { record_call "rollback-source"; }
+    detect_compose() { record_call "detect-compose"; }
+    start_infra() { record_call "start-infra"; }
+    resume_existing_app() { record_call "resume $*"; }
+    log() { record_call "log $*"; }
+    err() { record_call "error $*"; exit 1; }
+    handle_pre_quiesce_failure "infrastructure startup failed"
+  ) >/dev/null 2>&1
+  status="$?"
+  set -e
+  [ "$status" -ne 0 ] || fail "pre-mutation failure returned success"
+  assert_calls "$(cat <<'EXPECTED'
+capture
+restore-env
+rollback-source
+detect-compose
+start-infra
+resume compatible
+log pre-deployment runtime recovered
+error infrastructure startup failed
+EXPECTED
+)"
+}
+
+test_exit_before_source_switch_preserves_worktree() {
+  calls_file="$(mktemp)"
+  trap 'rm -f "$calls_file"' RETURN
+  set +e
+  (
+    # shellcheck source=../deploy-git.sh
+    source "$ROOT_DIR/deploy-git.sh"
+    DEPLOY_ACTIVE="YES"
+    DEPLOY_SUCCEEDED="NO"
+    DATABASE_MUTATION_STARTED="NO"
+    SOURCE_SWITCH_STARTED="NO"
+    restore_deployment_env() { record_call "restore-env"; }
+    rollback_source_to_last_successful() { record_call "rollback-source"; }
+    recover_pre_mutation_runtime() { record_call "recover-runtime"; }
+    set +e
+    false
+    on_exit
+  ) >/dev/null 2>&1
+  status="$?"
+  set -e
+  [ "$status" -ne 0 ] || fail "pre-source-switch exit returned success"
+  assert_calls "restore-env"
+}
+
+test_database_mutation_state_and_restore_gate() {
+  calls_file="$(mktemp)"
+  trap 'rm -f "$calls_file"' RETURN
+
+  set +e
+  (
+    # shellcheck source=../deploy-git.sh
+    source "$ROOT_DIR/deploy-git.sh"
+    DATABASE_MUTATION_STARTED="YES"
+    ROLLBACK_DATA_ON_FAILURE="NO"
+    quiesce_app() { record_call "quiesce"; }
+    capture_failure_diagnostics() { record_call "capture"; }
+    preserve_deployment_env_backup_for_recovery() { DEPLOY_ENV_ROLLBACK_DISABLED="YES"; record_call "preserve-env"; }
+    restore_deployment_env() { record_call "restore-env"; }
+    rollback_source_to_last_successful() { record_call "rollback-source"; }
+    resume_existing_app() { record_call "resume"; }
+    err() { record_call "error $*"; exit 1; }
+    handle_deploy_failure "migration failed"
+  ) >/dev/null 2>&1
+  status="$?"
+  set -e
+  [ "$status" -ne 0 ] || fail "mutating failure returned success without a paired restore"
+  assert_calls "$(cat <<'EXPECTED'
+quiesce
+capture
+preserve-env
+error database mutation may have started and no verified paired data restore completed; target source and current environment are retained, and the application remains stopped
+EXPECTED
+)"
+
+  : > "$calls_file"
+  set +e
+  (
+    # shellcheck source=../deploy-git.sh
+    source "$ROOT_DIR/deploy-git.sh"
+    DATABASE_MUTATION_STARTED="YES"
+    ROLLBACK_DATA_ON_FAILURE="YES"
+    CURRENT_BACKUP_DIR="paired-backup"
+    quiesce_app() { record_call "quiesce"; }
+    capture_failure_diagnostics() { record_call "capture"; }
+    restore_data_from_backup() { DATA_RESTORE_COMPLETED="YES"; RESTORED_BACKUP_DIR="paired-backup"; record_call "restore-data $CONFIRM_RESTORE $BACKUP_PATH"; }
+    discard_deployment_env_backup() { record_call "discard-env"; }
+    rollback_source_from_revision_file() { record_call "rollback-runtime $*"; }
+    activate_restored_runtime() { record_call "activate-runtime $*"; }
+    switch_app() { record_call "switch $*"; }
+    mark_deployment_successful() { record_call "mark-success"; }
+    err() { record_call "error $*"; exit 1; }
+    handle_deploy_failure "migration failed"
+  ) >/dev/null 2>&1
+  status="$?"
+  set -e
+  [ "$status" -ne 0 ] || fail "paired rollback failure handler returned success"
+  assert_calls "$(cat <<'EXPECTED'
+quiesce
+capture
+restore-data YES paired-backup
+discard-env
+rollback-runtime paired-backup/git-revision.txt backup runtime
+activate-runtime paired-backup
+switch compatible
+mark-success
+error migration failed; verified paired data/runtime rollback completed
+EXPECTED
+)"
+
+  : > "$calls_file"
+  set +e
+  (
+    # shellcheck source=../deploy-git.sh
+    source "$ROOT_DIR/deploy-git.sh"
+    DATABASE_MUTATION_STARTED="YES"
+    ROLLBACK_DATA_ON_FAILURE="YES"
+    quiesce_app() { record_call "quiesce"; }
+    capture_failure_diagnostics() { record_call "capture"; }
+    restore_data_from_backup() { record_call "restore-data"; }
+    preserve_deployment_env_backup_for_recovery() { DEPLOY_ENV_ROLLBACK_DISABLED="YES"; record_call "preserve-env"; }
+    err() { record_call "error $*"; exit 1; }
+    handle_deploy_failure "manual rollback failed" NO
+  ) >/dev/null 2>&1
+  status="$?"
+  set -e
+  [ "$status" -ne 0 ] || fail "manual rollback mutation boundary returned success"
+  assert_calls "$(cat <<'EXPECTED'
+quiesce
+capture
+preserve-env
+error database mutation may have started and no verified paired data restore completed; target source and current environment are retained, and the application remains stopped
+EXPECTED
+)"
+}
+
+test_code_only_rollback_requires_exact_database_manifest() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  temp_dir="$(mktemp -d)"
+  trap 'rm -rf "$temp_dir"' EXIT
+  APP_DIR="$temp_dir"
+  DEPLOY_RUN_ID="code-rollback-contract"
+  revision="1111111111111111111111111111111111111111"
+  mkdir -p "$APP_DIR/.deploy"
+  printf '%s\n' "$revision" > "$APP_DIR/.deploy/previous_successful_rev"
+  cd "$APP_DIR"
+  git() { return 0; }
+  warn() { :; }
+  write_database_migration_manifest() {
+    printf 'migration_a\tchecksum_a\n' > "$1"
+    printf 'CLEAN\n' > "$2"
+  }
+  write_revision_migration_manifest() {
+    if [ "${REVISION_MATCHES_DATABASE:-NO}" = "YES" ]; then
+      printf 'migration_a\tchecksum_a\n' > "$2"
+    else
+      printf 'migration_b\tchecksum_b\n' > "$2"
+    fi
+  }
+
+  printf '%s\n' "$revision" > "$APP_DIR/.deploy/database-mutation-target"
+  if validate_code_only_rollback_revision .deploy/previous_successful_rev "previous successful"; then
+    fail "code-only rollback ignored the database mutation recovery marker"
+  fi
+  rm -f "$APP_DIR/.deploy/database-mutation-target"
+
+  if validate_code_only_rollback_revision .deploy/previous_successful_rev "previous successful"; then
+    fail "code-only rollback accepted a mismatched Prisma migration manifest"
+  fi
+  REVISION_MATCHES_DATABASE="YES"
+  validate_code_only_rollback_revision .deploy/previous_successful_rev "previous successful" || \
+    fail "code-only rollback rejected an exact Prisma migration manifest"
+)
+
+test_incomplete_restore_marker_blocks_ordinary_deploy() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  temp_dir="$(mktemp -d)"
+  trap 'rm -rf "$temp_dir"' EXIT
+  APP_DIR="$temp_dir"
+  DEPLOY_RUN_ID="incomplete-restore-contract"
+  backup="$APP_DIR/backups/git-deploy/contract"
+  mkdir -p "$backup" "$APP_DIR/.deploy"
+  printf 'artifact checksum\n' > "$backup/checksums.sha256"
+  printf '%s\n' '3333333333333333333333333333333333333333' > "$backup/git-revision.txt"
+
+  write_incomplete_data_restore_marker "$backup"
+  if assert_no_incomplete_data_restore; then
+    fail "ordinary deployment accepted an incomplete data restore marker"
+  fi
+  ALLOW_INCOMPLETE_RESTORE_RETRY="YES"
+  assert_no_incomplete_data_restore || fail "explicit restore retry was blocked"
+  validate_incomplete_data_restore_binding "$backup" || fail "restore marker rejected its bound backup"
+  printf 'changed manifest\n' > "$backup/checksums.sha256"
+  if validate_incomplete_data_restore_binding "$backup"; then
+    fail "restore marker accepted a changed backup manifest"
+  fi
+  printf 'artifact checksum\n' > "$backup/checksums.sha256"
+  clear_incomplete_data_restore_marker "$backup"
+  ALLOW_INCOMPLETE_RESTORE_RETRY="NO"
+  assert_no_incomplete_data_restore || fail "completed restore marker was not cleared"
+)
+
+test_deploy_checks_incomplete_restore_before_source_import() {
+  calls_file="$(mktemp)"
+  trap 'rm -f "$calls_file"' RETURN
+  set +e
+  (
+    # shellcheck source=../deploy-git.sh
+    source "$ROOT_DIR/deploy-git.sh"
+    init_or_adopt_repo() { record_call "init"; }
+    acquire_lock() { record_call "lock"; }
+    assert_no_incomplete_data_restore() { record_call "incomplete-restore-gate"; return 1; }
+    prepare_deployment_source() { record_call "prepare-source"; }
+    err() { record_call "error $*"; exit 1; }
+    deploy
+  ) >/dev/null 2>&1
+  status="$?"
+  set -e
+  [ "$status" -ne 0 ] || fail "deploy continued past the incomplete restore gate"
+  assert_calls "$(cat <<'EXPECTED'
+init
+lock
+incomplete-restore-gate
+error deployment is blocked until the recorded paired data restore is retried from its bound backup
+EXPECTED
+)"
+}
+
+test_restore_stops_minio_before_database_mutation() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  temp_dir="$(mktemp -d)"
+  calls_file="$(mktemp)"
+  trap 'rm -rf "$temp_dir"; rm -f "$calls_file"' EXIT
+  APP_DIR="$temp_dir"
+  BACKUP_PATH="$temp_dir/backup"
+  CONFIRM_RESTORE="YES"
+  DEPLOY_RUN_ID="restore-contract"
+  mkdir -p "$BACKUP_PATH" "$APP_DIR/.deploy"
+  printf '%s\n' '2222222222222222222222222222222222222222' > "$BACKUP_PATH/git-revision.txt"
+  cd "$APP_DIR"
+  source_env() { :; }
+  validate_backup_for_restore() { :; }
+  start_infra() { record_call "start-infra"; }
+  quiesce_app() { record_call "quiesce $*"; }
+  minio_volume_name() { printf 'minio-volume\n'; }
+  compose() {
+    record_call "compose $*"
+    [ "$*" != "stop minio" ]
+  }
+  write_revision_file() { record_call "mutation-marker $*"; }
+  warn() { :; }
+
+  if restore_data_from_backup; then
+    fail "restore continued after MinIO could not be stopped"
+  fi
+  [ "$DATABASE_MUTATION_STARTED" = "NO" ] || fail "database mutation started before MinIO was stopped"
+  [ "$DATA_RESTORE_STARTED" = "NO" ] || fail "database replacement started before MinIO was stopped"
+  assert_calls "$(cat <<'EXPECTED'
+start-infra
+quiesce compatible
+compose stop minio
+EXPECTED
+)"
+)
+
+test_manual_restore_preflight_failure_restarts_infrastructure() {
+  calls_file="$(mktemp)"
+  trap 'rm -f "$calls_file"' RETURN
+  set +e
+  (
+    # shellcheck source=../deploy-git.sh
+    source "$ROOT_DIR/deploy-git.sh"
+    init_or_adopt_repo() { :; }
+    acquire_lock() { :; }
+    preflight() { :; }
+    restore_data_from_backup() { DATA_RESTORE_STARTED="NO"; record_call "restore-data"; return 1; }
+    capture_failure_diagnostics() { record_call "capture"; }
+    start_infra() { record_call "start-infra"; }
+    resume_existing_app() { record_call "resume $*"; }
+    err() { record_call "error $*"; exit 1; }
+    manual_restore_data
+  ) >/dev/null 2>&1
+  status="$?"
+  set -e
+  [ "$status" -ne 0 ] || fail "manual restore preflight failure returned success"
+  assert_calls "$(cat <<'EXPECTED'
+restore-data
+capture
+start-infra
+resume compatible
+error data restore failed; application remains stopped if database replacement had started
+EXPECTED
+)"
+
+  : > "$calls_file"
+  set +e
+  (
+    # shellcheck source=../deploy-git.sh
+    source "$ROOT_DIR/deploy-git.sh"
+    temp_dir="$(mktemp -d)"
+    trap 'rm -rf "$temp_dir"' EXIT
+    APP_DIR="$temp_dir"
+    mkdir -p "$APP_DIR/.deploy/data-restore-incomplete"
+    init_or_adopt_repo() { :; }
+    acquire_lock() { :; }
+    preflight() { :; }
+    restore_data_from_backup() { DATA_RESTORE_STARTED="NO"; record_call "restore-data"; return 1; }
+    capture_failure_diagnostics() { record_call "capture"; }
+    start_infra() { record_call "start-infra"; }
+    resume_existing_app() { record_call "resume $*"; }
+    err() { record_call "error $*"; exit 1; }
+    manual_restore_data
+  ) >/dev/null 2>&1
+  status="$?"
+  set -e
+  [ "$status" -ne 0 ] || fail "bound restore retry failure returned success"
+  assert_calls "$(cat <<'EXPECTED'
+restore-data
+capture
+error data restore failed; application remains stopped if database replacement had started
+EXPECTED
+)"
+}
+
+test_unexpected_exit_respects_database_mutation_boundary() {
+  calls_file="$(mktemp)"
+  trap 'rm -f "$calls_file"' RETURN
+
+  set +e
+  (
+    # shellcheck source=../deploy-git.sh
+    source "$ROOT_DIR/deploy-git.sh"
+    DEPLOY_ACTIVE="YES"
+    DEPLOY_SUCCEEDED="NO"
+    DATABASE_MUTATION_STARTED="YES"
+    DEPLOY_ENV_ROLLBACK_DISABLED="NO"
+    quiesce_app() { record_call "quiesce $*"; }
+    preserve_deployment_env_backup_for_recovery() {
+      DEPLOY_ENV_ROLLBACK_DISABLED="YES"
+      record_call "preserve-env"
+    }
+    restore_deployment_env() { record_call "restore-env"; }
+    rollback_source_to_last_successful() { record_call "rollback-source"; }
+    set +e
+    false
+    on_exit
+  ) >/dev/null 2>&1
+  status="$?"
+  set -e
+  [ "$status" -ne 0 ] || fail "unexpected post-migration exit returned success"
+  assert_calls "$(cat <<'EXPECTED'
+quiesce available
+preserve-env
+EXPECTED
+)"
+
+  : > "$calls_file"
+  set +e
+  (
+    # shellcheck source=../deploy-git.sh
+    source "$ROOT_DIR/deploy-git.sh"
+    DEPLOY_ACTIVE="YES"
+    DEPLOY_SUCCEEDED="NO"
+    DATABASE_MUTATION_STARTED="YES"
+    DEPLOY_ENV_ROLLBACK_DISABLED="YES"
+    quiesce_app() { record_call "quiesce $*"; }
+    preserve_deployment_env_backup_for_recovery() { record_call "preserve-env"; }
+    set +e
+    false
+    on_exit
+  ) >/dev/null 2>&1
+  status="$?"
+  set -e
+  [ "$status" -ne 0 ] || fail "incomplete paired rollback exit returned success"
+  assert_calls "quiesce available"
+
+  : > "$calls_file"
+  set +e
+  (
+    # shellcheck source=../deploy-git.sh
+    source "$ROOT_DIR/deploy-git.sh"
+    DEPLOY_ACTIVE="YES"
+    DEPLOY_SUCCEEDED="NO"
+    DATABASE_MUTATION_STARTED="YES"
+    DEPLOY_ENV_ROLLBACK_DISABLED="YES"
+    PAIRED_RUNTIME_HEALTHY="YES"
+    quiesce_app() { record_call "quiesce $*"; }
+    preserve_deployment_env_backup_for_recovery() { record_call "preserve-env"; }
+    set +e
+    false
+    on_exit
+  ) >/dev/null 2>&1
+  status="$?"
+  set -e
+  [ "$status" -ne 0 ] || fail "completed paired rollback exit returned success"
+  [ ! -s "$calls_file" ] || fail "completed paired rollback was stopped again by exit handling"
+}
+
+test_run_migrations_marks_mutation_before_compose() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  DATABASE_MUTATION_STARTED="NO"
+  compose() { return 1; }
+  if run_migrations >/dev/null 2>&1; then
+    fail "migration command failure was accepted"
+  fi
+  [ "$DATABASE_MUTATION_STARTED" = "YES" ] || fail "database mutation boundary was not set before migration execution"
+)
+
+test_success_revision_commits_before_env_cleanup() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  calls_file="$(mktemp)"
+  trap 'rm -f "$calls_file"' EXIT
+  init_or_adopt_repo() { :; }
+  acquire_lock() { record_call "acquire-lock"; }
+  prepare_deployment_source() { record_call "prepare-source"; }
+  install_deployment_env_upload() { record_call "install-env"; }
+  checkout_target() { :; }
+  preflight() { :; }
+  build_images() { :; }
+  start_infra() { :; }
+  persist_prepared_integration_secret_key() { :; }
+  quiesce_app() { :; }
+  create_backup() { :; }
+  run_migrations() { :; }
+  switch_app() { :; }
+  mark_deployment_successful() { record_call "mark-success"; }
+  discard_deployment_env_backup() { record_call "discard-env"; return 1; }
+  warn() { record_call "warn $*"; }
+  rotate_backups() { record_call "rotate-backups"; }
+  log() { :; }
+  deploy
+  [ "$DEPLOY_SUCCEEDED" = "YES" ] || fail "healthy deployment was not committed before cleanup"
+  assert_calls "$(cat <<'EXPECTED'
+acquire-lock
+prepare-source
+install-env
+mark-success
+discard-env
+warn deployment is healthy, but its inactive environment backup could not be removed
+rotate-backups
+EXPECTED
+)"
 )
 
 test_failure_rollback_order() {
@@ -275,6 +1201,8 @@ EXPECTED
 )"
 }
 
+test_dockerfiles_do_not_require_external_syntax_frontend
+test_workflow_remote_argument_contract
 test_switch_order
 test_legacy_rollback_switch
 test_forward_switch_requires_complete_workers
@@ -282,5 +1210,32 @@ test_quiesce_and_resume_order
 test_release_label_gate
 test_integration_secret_key_gate
 test_prepared_key_survives_env_reload
+test_inherited_key_cannot_mask_missing_env_assignment
+test_environment_cannot_override_deployment_state
+test_env_backup_run_ownership
+test_environment_upload_is_installed_inside_owned_transaction
+test_git_bundle_is_imported_after_target_binding
+test_exact_table_count_gate
+test_foreign_key_orphan_gate
+test_backup_source_revision_and_key_binding
+test_runtime_revision_follows_exact_database_migrations
+test_restore_candidate_uses_complete_backup_environment
+test_restore_runtime_never_builds_source_images
+test_restore_rejects_legacy_backup_format
+test_retained_image_manifest_binds_exact_image_ids
+test_format_three_requires_minio
+test_ciphertext_restore_uses_strict_verify
+test_start_infra_returns_failure
+test_pre_mutation_failure_recovers_infrastructure
+test_exit_before_source_switch_preserves_worktree
+test_database_mutation_state_and_restore_gate
+test_code_only_rollback_requires_exact_database_manifest
+test_incomplete_restore_marker_blocks_ordinary_deploy
+test_deploy_checks_incomplete_restore_before_source_import
+test_restore_stops_minio_before_database_mutation
+test_manual_restore_preflight_failure_restarts_infrastructure
+test_unexpected_exit_respects_database_mutation_boundary
+test_run_migrations_marks_mutation_before_compose
+test_success_revision_commits_before_env_cleanup
 test_failure_rollback_order
 printf 'deploy-git contract tests passed\n'
