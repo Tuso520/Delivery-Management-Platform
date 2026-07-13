@@ -2714,50 +2714,27 @@ validate_prune_managed_paths() {
 }
 
 remove_unprotected_image_without_force() {
-  local image_id="$1" tag failure
-  local -a tags=()
-  mapfile -t tags < <(
-    docker image inspect "$image_id" --format '{{range .RepoTags}}{{println .}}{{end}}' 2>/dev/null || true
-  )
-  for tag in "${tags[@]}"; do
-    [ -n "$tag" ] && [ "$tag" != "<none>:<none>" ] || continue
-    failure="$(docker image rm "$tag" 2>&1 >/dev/null)" || {
-      case "$failure" in
-        *"No such image"*)
-          warn "image disappeared while cleanup was in progress: $tag"
-          continue
-          ;;
-        *"image is being used by"*|*"image is used by"*)
-          warn "Docker retained image referenced by a container: $tag"
-          append_prune_protected_image "$image_id" || return 1
-          return 0
-          ;;
-        *)
-          warn "Docker could not remove an unreferenced image without force: $tag"
-          return 1
-          ;;
-      esac
-    }
-  done
-  if docker image inspect "$image_id" >/dev/null 2>&1; then
-    failure="$(docker image rm "$image_id" 2>&1 >/dev/null)" || {
-      case "$failure" in
-        *"No such image"*)
-          warn "image disappeared while cleanup was in progress: $image_id"
-          return 0
-          ;;
-        *"image is being used by"*|*"image is used by"*)
-          warn "Docker retained image referenced by a container: $image_id"
-          append_prune_protected_image "$image_id" || return 1
-          return 0
-          ;;
-        *)
-          warn "Docker could not remove an unreferenced image without force: $image_id"
-          return 1
-          ;;
-      esac
-    }
-  fi
+  local image_id="$1" failure
+  # RepoTags are mutable and may resolve to a different image than image_id when
+  # a base image was refreshed while an older container is still running.
+  # Delete only the immutable inventory candidate that was classified above.
+  failure="$(docker image rm "$image_id" 2>&1 >/dev/null)" || {
+    case "$failure" in
+      *"No such image"*)
+        warn "image disappeared while cleanup was in progress: $image_id"
+        return 0
+        ;;
+      *"image is being used by"*|*"image is used by"*)
+        warn "Docker retained image referenced by a container: $image_id"
+        append_prune_protected_image "$image_id" || return 1
+        return 0
+        ;;
+      *)
+        warn "Docker could not remove an unreferenced image without force: $image_id"
+        return 1
+        ;;
+    esac
+  }
 }
 
 count_remaining_prune_candidates() {

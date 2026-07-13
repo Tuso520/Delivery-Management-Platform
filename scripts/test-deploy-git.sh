@@ -2597,7 +2597,7 @@ test_prune_removes_only_unreferenced_unprotected_images() (
     fi
     if [ "$1" = "image" ] && [ "$2" = "rm" ]; then
       printf 'image-rm %s\n' "$3" >> "$calls"
-      [ "$3" = "temporary-unused:test" ] || return 1
+      [ "$3" = "$unused_image" ] || return 1
       printf 'deleted\n' > "$deleted"
       return 0
     fi
@@ -2605,7 +2605,7 @@ test_prune_removes_only_unreferenced_unprotected_images() (
   }
 
   manual_prune_unused_images
-  [ "$(cat "$calls")" = "image-rm temporary-unused:test" ] || \
+  [ "$(cat "$calls")" = "image-rm $unused_image" ] || \
     fail "cleanup removed a protected image or did not remove the sole unused image"
 
   : > "$calls"
@@ -2619,7 +2619,7 @@ test_prune_removes_only_unreferenced_unprotected_images() (
   verify_release_version() { fail "pre-deployment cleanup required target frontend metadata"; }
   verify_service_release() { fail "pre-deployment cleanup required target service metadata"; }
   manual_prune_unused_images predeploy
-  [ "$(cat "$calls")" = "image-rm temporary-unused:test" ] || \
+  [ "$(cat "$calls")" = "image-rm $unused_image" ] || \
     fail "pre-deployment cleanup removed a protected image or did not remove the sole unused image"
 )
 
@@ -2693,29 +2693,17 @@ test_prune_classifies_known_docker_removal_races() (
   orphan_image="sha256:$(printf 'e%.0s' {1..64})"
   warn() { :; }
   docker() {
-    if [ "$1" = "image" ] && [ "$2" = "inspect" ] && [ "${4:-}" = "--format" ]; then
-      case "$3" in
-        "$missing_image") printf 'already-gone:test\n' ;;
-        "$container_image") printf 'mysql:8.0\n' ;;
-        "$orphan_image") printf 'unknown-orphan:test\n' ;;
-      esac
-      return 0
-    fi
-    if [ "$1" = "image" ] && [ "$2" = "inspect" ]; then
-      [ "$3" != "$missing_image" ]
-      return
-    fi
     if [ "$1" = "image" ] && [ "$2" = "rm" ]; then
       case "$3" in
-        already-gone:test)
-          printf 'Error response from daemon: No such image: already-gone:test\n' >&2
+        "$missing_image")
+          printf 'Error response from daemon: No such image: %s\n' "$missing_image" >&2
           return 1
           ;;
-        mysql:8.0)
+        "$container_image")
           printf 'conflict: image is being used by running container abc\n' >&2
           return 1
           ;;
-        unknown-orphan:test)
+        "$orphan_image")
           printf 'unexpected storage driver failure\n' >&2
           return 1
           ;;
@@ -2813,15 +2801,15 @@ test_prune_removes_arbitrarily_deep_unprotected_image_chain() (
     if [ "$1" = "image" ] && [ "$2" = "rm" ]; then
       printf 'image-rm %s\n' "$3" >> "$calls"
       case "$3" in
-        chain-parent:test)
+        "$parent_image")
           image_deleted "$middle_image" || return 1
           mark_image_deleted "$parent_image"
           ;;
-        chain-middle:test)
+        "$middle_image")
           image_deleted "$child_image" || return 1
           mark_image_deleted "$middle_image"
           ;;
-        chain-child:test)
+        "$child_image")
           mark_image_deleted "$child_image"
           ;;
         *) return 1 ;;
