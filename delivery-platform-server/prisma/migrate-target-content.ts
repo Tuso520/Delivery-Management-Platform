@@ -24,6 +24,15 @@ let verify = false;
 let strict = false;
 let actorUserId: string | undefined;
 let actorUsername: string | undefined;
+const plannedStandardFileBackfills = new Set<string>();
+const plannedSourceMappings = new Set<string>();
+const knowledgeDryRunRollback = new Error('KNOWLEDGE_DRY_RUN_ROLLBACK');
+
+interface SourceMappingPlan {
+  domain: Finding['domain'];
+  entityType: string;
+  entityId: string;
+}
 
 interface Finding {
   domain: 'STANDARD' | 'KNOWLEDGE';
@@ -438,6 +447,47 @@ function increment(key: string, target: Record<string, number>): void {
   target[key] = (target[key] ?? 0) + 1;
 }
 
+function sourceMappingKey(plan: SourceMappingPlan): string {
+  return `${plan.domain}\u0000${plan.entityType}\u0000${plan.entityId}`;
+}
+
+function markSourceMappingPlanned(plan: SourceMappingPlan): void {
+  const mappingKey = sourceMappingKey(plan);
+  if (plannedSourceMappings.has(mappingKey)) return;
+  plannedSourceMappings.add(mappingKey);
+  increment('sourceMappings', report.planned);
+}
+
+function markDeterministicSourceMappingsPlanned(): void {
+  for (const finding of report.findings) {
+    if (
+      finding.code === 'TARGET_CONTENT_SOURCE_MAPPING_INVALID' &&
+      plannedSourceMappings.has(
+        sourceMappingKey({
+          domain: finding.domain,
+          entityType: finding.entityType,
+          entityId: finding.entityId,
+        }),
+      )
+    ) {
+      finding.severity = 'WARNING';
+      finding.details = { ...finding.details, deterministicMigrationPlanned: true };
+    }
+  }
+}
+
+function markDeterministicStandardBackfillsPlanned(): void {
+  for (const finding of report.findings) {
+    if (
+      finding.code === 'STANDARD_FILE_VERSION_REQUIRED' &&
+      plannedStandardFileBackfills.has(finding.entityId)
+    ) {
+      finding.severity = 'WARNING';
+      finding.details = { ...finding.details, deterministicBackfillPlanned: true };
+    }
+  }
+}
+
 const managedFindingCodes = new Set([
   'TARGET_CONTENT_SOURCE_MAPPING_INVALID',
   'TARGET_CONTENT_AGGREGATE_WITHOUT_VERSION',
@@ -449,6 +499,7 @@ const managedFindingCodes = new Set([
   'STANDARD_STORAGE_BUCKET_UNAVAILABLE',
   'STANDARD_GENERATED_OBJECT_INVALID',
   'STANDARD_FILE_BACKFILL_CONFLICT',
+  'STANDARD_FILE_BACKFILL_OBJECT_CLEANUP_FAILED',
   'STANDARD_PRIMARY_FILE_AND_MIGRATION_SOURCE_MISSING',
   'STANDARD_FILE_VERSION_REQUIRED',
   'STANDARD_PRIMARY_FILE_REFERENCE_INVALID',
@@ -539,11 +590,38 @@ async function ensureStandard(input: {
   legacySnapshot: Prisma.InputJsonValue;
   publishedAt?: Date | null;
   legacyFile?: VerifiedLegacyObjectDescriptor | null;
+  sourceMapping?: SourceMappingPlan;
 }): Promise<void> {
-  const collision = await prisma.standard.findUnique({
-    where: { code: input.code },
-    select: { id: true },
-  });
+  const [collision, standardById, versionByIdentity, versionById] = await Promise.all([
+    prisma.standard.findUnique({
+      where: { code: input.code },
+      select: { id: true },
+    }),
+    prisma.standard.findUnique({
+      where: { id: input.id },
+      select: { code: true },
+    }),
+    prisma.standardVersion.findUnique({
+      where: {
+        standardId_version: {
+          standardId: input.id,
+          version: input.version,
+        },
+      },
+      select: {
+        id: true,
+        fileVersionId: true,
+        legacySnapshot: true,
+      },
+    }),
+    prisma.standardVersion.findUnique({
+      where: { id: input.versionId },
+      select: {
+        standardId: true,
+        version: true,
+      },
+    }),
+  ]);
   if (collision && collision.id !== input.id) {
     addFinding(
       'STANDARD',
@@ -558,7 +636,43 @@ async function ensureStandard(input: {
     );
     return;
   }
-  if (!apply) return;
+  const expectedLegacyFileVersionId = input.legacyFile
+    ? stableId(`legacy-file:${input.legacyFile.sourceKey}:version`)
+    : null;
+  const conflictReason =
+    standardById && standardById.code !== input.code
+      ? 'STANDARD_ID_COLLISION'
+      : versionByIdentity && versionByIdentity.id !== input.versionId
+        ? 'STANDARD_VERSION_IDENTITY_COLLISION'
+        : versionById &&
+            (versionById.standardId !== input.id || versionById.version !== input.version)
+          ? 'STANDARD_VERSION_ID_COLLISION'
+          : versionByIdentity &&
+              input.sourceMapping &&
+              jsonString(versionByIdentity.legacySnapshot, 'sourceId') !==
+                input.sourceMapping.entityId
+            ? 'STANDARD_VERSION_SOURCE_MAPPING_CONFLICT'
+            : expectedLegacyFileVersionId &&
+                versionByIdentity &&
+                versionByIdentity.fileVersionId !== null &&
+                versionByIdentity.fileVersionId !== expectedLegacyFileVersionId
+              ? 'STANDARD_VERSION_FILE_CONFLICT'
+              : null;
+  if (conflictReason) {
+    addFinding(
+      'STANDARD',
+      'Standard',
+      input.id,
+      'STANDARD_TARGET_MIGRATION_CONFLICT',
+      { reason: conflictReason },
+      'ERROR',
+    );
+    return;
+  }
+  if (!apply) {
+    if (input.sourceMapping) markSourceMappingPlanned(input.sourceMapping);
+    return;
+  }
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -687,6 +801,11 @@ async function migrateWorkflows(actorId: string): Promise<void> {
         sourceStatus: document.status,
       },
       publishedAt: publishedStatus(document.status) ? document.updatedAt : null,
+      sourceMapping: {
+        domain: 'STANDARD',
+        entityType: 'WorkflowDocument',
+        entityId: document.id,
+      },
     });
   }
 }
@@ -739,6 +858,11 @@ async function migrateChecklists(actorId: string): Promise<void> {
         sourceStatus: template.status,
       },
       publishedAt: publishedStatus(template.status) ? template.updatedAt : null,
+      sourceMapping: {
+        domain: 'STANDARD',
+        entityType: 'ChecklistTemplate',
+        entityId: template.id,
+      },
     });
   }
 }
@@ -811,6 +935,14 @@ async function migrateDocumentTemplates(actorId: string): Promise<void> {
         },
         publishedAt: isPublished ? version.publishedAt : null,
         legacyFile,
+        sourceMapping:
+          !legacyStoragePath || legacyFile
+            ? {
+                domain: 'STANDARD',
+                entityType: 'DocumentTemplateVersion',
+                entityId: version.id,
+              }
+            : undefined,
       });
       if (legacyStoragePath && !legacyFile) {
         addFinding(
@@ -855,6 +987,7 @@ async function migrateKnowledge(): Promise<void> {
   });
   report.scanned.knowledgeArticles = articles.length;
   for (const article of articles) {
+    const findingStart = report.findings.length;
     const attachments = await prisma.attachment.findMany({
       where: {
         ownerType: 'KnowledgeArticle',
@@ -987,7 +1120,12 @@ async function migrateKnowledge(): Promise<void> {
         'ERROR',
       );
     }
-    if (!apply) continue;
+    if (
+      !apply &&
+      report.findings.slice(findingStart).some((finding) => finding.severity === 'ERROR')
+    ) {
+      continue;
+    }
 
     try {
       await prisma.$transaction(async (tx) => {
@@ -1264,8 +1402,32 @@ async function migrateKnowledge(): Promise<void> {
             },
           });
         }
+        if (!apply) {
+          markSourceMappingPlanned({
+            domain: 'KNOWLEDGE',
+            entityType: 'KnowledgeArticle',
+            entityId: article.id,
+          });
+          for (const sourceVersion of sourceVersions.values()) {
+            markSourceMappingPlanned({
+              domain: 'KNOWLEDGE',
+              entityType: 'KnowledgeArticleVersion',
+              entityId: `${article.id}:${sourceVersion.version}`,
+            });
+          }
+          for (const { attachment, descriptor } of attachmentVerification) {
+            if (!descriptor) continue;
+            markSourceMappingPlanned({
+              domain: 'KNOWLEDGE',
+              entityType: 'Attachment',
+              entityId: attachment.id,
+            });
+          }
+          throw knowledgeDryRunRollback;
+        }
       });
     } catch (error: unknown) {
+      if (error === knowledgeDryRunRollback) continue;
       addFinding(
         'KNOWLEDGE',
         'KnowledgeArticle',
@@ -1291,6 +1453,24 @@ function standardFileStatus(
     ARCHIVED: 'ARCHIVED',
   };
   return values[status] ?? 'DRAFT';
+}
+
+async function removeUnboundGeneratedStandardObject(
+  storage: NonNullable<ReturnType<typeof getStorageConfig>>,
+  plan: ReturnType<typeof buildStandardGeneratedObjectPlan>,
+): Promise<void> {
+  const referenced = await prisma.fileAsset.findUnique({
+    where: {
+      storageBucket_storageKey: {
+        storageBucket: storage.defaultBucket,
+        storageKey: plan.storageKey,
+      },
+    },
+    select: { id: true },
+  });
+  if (!referenced) {
+    await storage.client.removeObject(storage.defaultBucket, plan.storageKey);
+  }
 }
 
 async function ensureStandardGeneratedFile(input: {
@@ -1341,8 +1521,104 @@ async function ensureStandardGeneratedFile(input: {
     );
     return;
   }
-  if (!apply) return;
+  const logicalFileId = stableId(`standard-content:${input.id}:logical-file`);
+  const preferredAssetId = stableId(`standard-content:${input.id}:asset`);
+  const fileVersionId = stableId(`standard-content:${input.id}:file-version`);
+  const fileStatus = standardFileStatus(input.status);
+  const [plannedLogicalFile, plannedAssetByObject, plannedAssetById, plannedFileVersion] =
+    await Promise.all([
+      prisma.logicalFile.findUnique({
+        where: { id: logicalFileId },
+        select: { ownerType: true, ownerId: true, currentVersionId: true },
+      }),
+      prisma.fileAsset.findUnique({
+        where: {
+          storageBucket_storageKey: {
+            storageBucket: storage.defaultBucket,
+            storageKey: plan.storageKey,
+          },
+        },
+        select: {
+          id: true,
+          ownerType: true,
+          ownerId: true,
+          size: true,
+          checksum: true,
+          storageProvider: true,
+          status: true,
+          archivedAt: true,
+        },
+      }),
+      prisma.fileAsset.findUnique({
+        where: { id: preferredAssetId },
+        select: { id: true },
+      }),
+      prisma.fileVersion.findUnique({
+        where: { id: fileVersionId },
+        select: {
+          logicalFileId: true,
+          assetId: true,
+          version: true,
+          status: true,
+          archivedAt: true,
+        },
+      }),
+    ]);
+  let planConflict: string | undefined;
+  if (
+    plannedLogicalFile &&
+    (plannedLogicalFile.ownerType !== 'STANDARD' ||
+      plannedLogicalFile.ownerId !== input.standardId ||
+      (plannedLogicalFile.currentVersionId !== null &&
+        plannedLogicalFile.currentVersionId !== fileVersionId))
+  ) {
+    planConflict = 'LOGICAL_FILE_ID_COLLISION';
+  }
+  if (
+    !planConflict &&
+    plannedAssetByObject &&
+    (plannedAssetByObject.ownerType !== 'STANDARD' ||
+      plannedAssetByObject.ownerId !== input.standardId ||
+      plannedAssetByObject.size !== BigInt(plan.body.length) ||
+      plannedAssetByObject.checksum?.toLowerCase() !== plan.checksum ||
+      plannedAssetByObject.storageProvider.toLowerCase() !== 'minio' ||
+      plannedAssetByObject.status !== 'AVAILABLE' ||
+      plannedAssetByObject.archivedAt !== null)
+  ) {
+    planConflict = 'FILE_ASSET_OBJECT_COLLISION';
+  }
+  if (!planConflict && plannedAssetById && plannedAssetByObject?.id !== plannedAssetById.id) {
+    planConflict = 'FILE_ASSET_ID_COLLISION';
+  }
+  const plannedAssetId = plannedAssetByObject?.id ?? preferredAssetId;
+  if (
+    !planConflict &&
+    plannedFileVersion &&
+    (plannedFileVersion.logicalFileId !== logicalFileId ||
+      plannedFileVersion.assetId !== plannedAssetId ||
+      plannedFileVersion.version !== input.version ||
+      plannedFileVersion.status !== fileStatus ||
+      plannedFileVersion.archivedAt !== null)
+  ) {
+    planConflict = 'FILE_VERSION_ID_COLLISION';
+  }
+  if (planConflict) {
+    addFinding(
+      'STANDARD',
+      'StandardVersion',
+      input.id,
+      'STANDARD_FILE_BACKFILL_CONFLICT',
+      { targetStandardId: input.standardId, reason: planConflict },
+      'ERROR',
+    );
+    return;
+  }
+  if (!apply) {
+    plannedStandardFileBackfills.add(input.id);
+    return;
+  }
 
+  let uploadedByThisRun = false;
   let objectVerification = await verifyStoredObject(storage.client, {
     bucket: storage.defaultBucket,
     key: plan.storageKey,
@@ -1362,6 +1638,7 @@ async function ensureStandardGeneratedFile(input: {
           'x-amz-meta-migration-source': 'standard-structured-content',
         },
       );
+      uploadedByThisRun = true;
       objectVerification = await verifyStoredObject(storage.client, {
         bucket: storage.defaultBucket,
         key: plan.storageKey,
@@ -1373,6 +1650,25 @@ async function ensureStandardGeneratedFile(input: {
     }
   }
   if (!objectVerification.ok) {
+    if (uploadedByThisRun) {
+      try {
+        await removeUnboundGeneratedStandardObject(storage, plan);
+      } catch (cleanupError: unknown) {
+        addFinding(
+          'STANDARD',
+          'StandardVersion',
+          input.id,
+          'STANDARD_FILE_BACKFILL_OBJECT_CLEANUP_FAILED',
+          {
+            targetStandardId: input.standardId,
+            storageBucket: storage.defaultBucket,
+            storageKey: plan.storageKey,
+            reason: cleanupError instanceof Error ? cleanupError.message : 'UNKNOWN',
+          },
+          'ERROR',
+        );
+      }
+    }
     addFinding(
       'STANDARD',
       'StandardVersion',
@@ -1391,10 +1687,6 @@ async function ensureStandardGeneratedFile(input: {
     return;
   }
 
-  const logicalFileId = stableId(`standard-content:${input.id}:logical-file`);
-  const preferredAssetId = stableId(`standard-content:${input.id}:asset`);
-  const fileVersionId = stableId(`standard-content:${input.id}:file-version`);
-  const fileStatus = standardFileStatus(input.status);
   try {
     await prisma.$transaction(async (tx) => {
       const existingLogicalFile = await tx.logicalFile.findUnique({
@@ -1529,6 +1821,25 @@ async function ensureStandardGeneratedFile(input: {
     });
     increment('standardFileBackfills', report.createdOrVerified);
   } catch (error: unknown) {
+    if (uploadedByThisRun) {
+      try {
+        await removeUnboundGeneratedStandardObject(storage, plan);
+      } catch (cleanupError: unknown) {
+        addFinding(
+          'STANDARD',
+          'StandardVersion',
+          input.id,
+          'STANDARD_FILE_BACKFILL_OBJECT_CLEANUP_FAILED',
+          {
+            targetStandardId: input.standardId,
+            storageBucket: storage.defaultBucket,
+            storageKey: plan.storageKey,
+            reason: cleanupError instanceof Error ? cleanupError.message : 'UNKNOWN',
+          },
+          'ERROR',
+        );
+      }
+    }
     addFinding(
       'STANDARD',
       'StandardVersion',
@@ -2486,6 +2797,10 @@ async function main(): Promise<void> {
   await backfillStandardFiles();
   await backfillTargetAssetChecksums();
   await queueTargetFileProcessing();
+  if (!apply) {
+    markDeterministicStandardBackfillsPlanned();
+    markDeterministicSourceMappingsPlanned();
+  }
   report.integrityAfter = apply ? await auditTargetContent() : report.integrityBefore;
   if (apply) assertNonDecreasingTargetCounts(report.integrityBefore, report.integrityAfter);
   await recordFindings();

@@ -47,6 +47,9 @@ describe('file-only target content schema migration contract', () => {
     expect(databaseBinding).toBeGreaterThan(putCall);
     expect(storageUnavailable).toBeGreaterThan(-1);
     expect(unavailableReturn).toBeLessThan(databaseBinding);
+    expect(generatedFileMigrator).toContain('uploadedByThisRun = true');
+    expect(generatedFileMigrator).toContain('removeUnboundGeneratedStandardObject(storage, plan)');
+    expect(generatedFileMigrator).toContain("'STANDARD_FILE_BACKFILL_OBJECT_CLEANUP_FAILED'");
     expect(migrator).not.toMatch(/touch.+minio/iu);
   });
 
@@ -59,7 +62,7 @@ describe('file-only target content schema migration contract', () => {
     expect(migrator).toContain('{ username: actorUsername }');
   });
 
-  it('keeps pre-audit ERROR findings in strict dry-run but re-audits apply after writes', () => {
+  it('keeps ambiguous pre-audit errors while allowing only deterministic planned backfills', () => {
     expect(migrator).toContain('report.integrityBefore = await auditTargetContent()');
     expect(migrator).toContain('if (apply) report.findings.splice(beforeFindingCount)');
     expect(migrator).toContain(
@@ -68,6 +71,13 @@ describe('file-only target content schema migration contract', () => {
     expect(migrator).toContain(
       'targetContentErrorsAreBlocking({ apply, strict }, applyErrorCount)',
     );
+    expect(migrator).toContain('plannedStandardFileBackfills.add(input.id)');
+    expect(migrator).toContain("finding.code === 'STANDARD_FILE_VERSION_REQUIRED'");
+    expect(migrator).toContain("finding.severity = 'WARNING'");
+    expect(migrator).toContain('deterministicBackfillPlanned: true');
+    expect(migrator).toContain("planConflict = 'LOGICAL_FILE_ID_COLLISION'");
+    expect(migrator).toContain("planConflict = 'FILE_ASSET_OBJECT_COLLISION'");
+    expect(migrator).toContain("planConflict = 'FILE_VERSION_ID_COLLISION'");
     expect(migrator).not.toMatch(/\n\s{2}report\.findings\.splice\(beforeFindingCount\);/gu);
   });
 
@@ -76,6 +86,24 @@ describe('file-only target content schema migration contract', () => {
     expect(migrator).toContain("'TARGET_CONTENT_SOURCE_MAPPING_INVALID'");
     expect(migrator).toContain("'TARGET_CONTENT_AGGREGATE_WITHOUT_VERSION'");
     expect(migrator).toContain("'DOCUMENT_TEMPLATE_SOURCE_OBJECT_REQUIRED'");
+  });
+
+  it('downgrades only fully validated deterministic source-mapping plans', () => {
+    expect(migrator).toContain('const plannedSourceMappings = new Set<string>()');
+    expect(migrator).toContain("finding.code === 'TARGET_CONTENT_SOURCE_MAPPING_INVALID'");
+    expect(migrator).toContain('deterministicMigrationPlanned: true');
+    expect(migrator).toContain("entityType: 'WorkflowDocument'");
+    expect(migrator).toContain("entityType: 'ChecklistTemplate'");
+    expect(migrator).toContain("entityType: 'DocumentTemplateVersion'");
+    expect(migrator).toContain("entityType: 'KnowledgeArticle'");
+    expect(migrator).toContain("entityType: 'KnowledgeArticleVersion'");
+    expect(migrator).toContain("entityType: 'Attachment'");
+    expect(migrator).toContain('!legacyStoragePath || legacyFile');
+    expect(migrator).toContain(
+      "report.findings.slice(findingStart).some((finding) => finding.severity === 'ERROR')",
+    );
+    expect(migrator).toContain('throw knowledgeDryRunRollback');
+    expect(migrator).toContain('if (error === knowledgeDryRunRollback) continue');
   });
 
   it('covers soft-deleted knowledge rows and archives deleted attachment file indexes', () => {
@@ -97,7 +125,10 @@ describe('file-only target content schema migration contract', () => {
     const itemCoverageFinding = coverage.indexOf(
       "missingMapping('KNOWLEDGE', 'KnowledgeArticle', article.id",
     );
-    const versionCoverageLoop = coverage.indexOf('for (const version of versions)', itemCoverageFinding);
+    const versionCoverageLoop = coverage.indexOf(
+      'for (const version of versions)',
+      itemCoverageFinding,
+    );
     expect(itemCoverageFinding).toBeGreaterThan(-1);
     expect(versionCoverageLoop).toBeGreaterThan(itemCoverageFinding);
     expect(coverage.slice(itemCoverageFinding, versionCoverageLoop)).not.toContain('continue;');

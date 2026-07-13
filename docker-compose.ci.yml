@@ -1,0 +1,27 @@
+name: delivery-platform-ci
+
+# CI-specific runtime policy. All interpolated values come from the GitHub job
+# environment; the workflow deliberately uses an empty env-file so local .env
+# files can never satisfy this contract accidentally.
+services:
+  mysql:
+    restart: "no"
+  redis:
+    restart: "no"
+  minio:
+    restart: "no"
+  minio-init:
+    restart: "no"
+  backend-migrate:
+    restart: "no"
+    working_dir: /app
+    environment:
+      NODE_ENV: test
+  backend:
+    restart: "no"
+  file-worker:
+    restart: "no"
+  outbox-worker:
+    restart: "no"
+  frontend:
+    restart: "no"

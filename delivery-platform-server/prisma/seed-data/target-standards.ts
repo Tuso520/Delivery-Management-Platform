@@ -1,4 +1,12 @@
 import { Prisma, PrismaClient } from '@prisma/client';
+import { Client as MinioClient } from 'minio';
+import { v5 as uuidv5 } from 'uuid';
+
+import {
+  buildStandardGeneratedObjectPlan,
+  verifyStoredObject,
+} from '../target-content-migration-support';
+import { targetContentId } from '../target-foundation-migration-support';
 
 interface WorkflowStandardSeed {
   code: string;
@@ -28,6 +36,8 @@ interface TargetStandardSeed {
 }
 
 const publishedAt = new Date('2026-07-11T00:00:00.000Z');
+const TARGET_STANDARD_SEED_NAMESPACE = '343480ff-1922-493a-a221-d6d47f50577f';
+const TARGET_STANDARD_VERSION = 'V1.0';
 
 const workflowStandards: WorkflowStandardSeed[] = [
   {
@@ -253,6 +263,102 @@ function buildTargetStandards(): TargetStandardSeed[] {
   return [...processSeeds, checklistSeed, ...templateSeeds];
 }
 
+interface TargetStandardStorage {
+  client: MinioClient;
+  bucket: string;
+}
+
+function targetStandardStorage(): TargetStandardStorage {
+  const rawEndpoint = process.env.MINIO_ENDPOINT?.trim();
+  const accessKey = process.env.MINIO_ACCESS_KEY;
+  const secretKey = process.env.MINIO_SECRET_KEY;
+  const bucket = process.env.MINIO_BUCKET?.trim();
+  if (!rawEndpoint || !accessKey?.trim() || !secretKey?.trim() || !bucket) {
+    throw new Error(
+      'MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY and MINIO_BUCKET are required to seed file-only standards',
+    );
+  }
+
+  const endpointHasProtocol = /^https?:\/\//iu.test(rawEndpoint);
+  const endpointUrl = new URL(endpointHasProtocol ? rawEndpoint : `http://${rawEndpoint}`);
+  const port = Number(endpointUrl.port || process.env.MINIO_PORT || 9000);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('MINIO_PORT must be a valid TCP port');
+  }
+  return {
+    client: new MinioClient({
+      endPoint: endpointUrl.hostname,
+      port,
+      useSSL: endpointHasProtocol
+        ? endpointUrl.protocol === 'https:'
+        : process.env.MINIO_USE_SSL === 'true',
+      accessKey,
+      secretKey,
+    }),
+    bucket,
+  };
+}
+
+function stableSeedId(value: string): string {
+  return uuidv5(value, TARGET_STANDARD_SEED_NAMESPACE);
+}
+
+async function ensureSeedObject(
+  storage: TargetStandardStorage,
+  plan: ReturnType<typeof buildStandardGeneratedObjectPlan>,
+): Promise<boolean> {
+  const bucketExists = await storage.client.bucketExists(storage.bucket).catch(() => false);
+  if (!bucketExists) {
+    throw new Error(`MinIO bucket is unavailable for target standard seed: ${storage.bucket}`);
+  }
+  let verification = await verifyStoredObject(storage.client, {
+    bucket: storage.bucket,
+    key: plan.storageKey,
+    expectedSize: plan.body.length,
+    expectedChecksum: plan.checksum,
+  });
+  let uploaded = false;
+  if (!verification.ok && verification.code === 'OBJECT_NOT_FOUND') {
+    await storage.client.putObject(storage.bucket, plan.storageKey, plan.body, plan.body.length, {
+      'Content-Type': 'text/markdown; charset=utf-8',
+      'x-amz-meta-content-sha256': plan.checksum,
+      'x-amz-meta-seed-source': 'target-standard',
+    });
+    verification = await verifyStoredObject(storage.client, {
+      bucket: storage.bucket,
+      key: plan.storageKey,
+      expectedSize: plan.body.length,
+      expectedChecksum: plan.checksum,
+    });
+    uploaded = true;
+  }
+  if (!verification.ok) {
+    throw new Error(
+      `Target standard seed object verification failed for ${plan.storageKey}: ${verification.code ?? 'UNKNOWN'}`,
+    );
+  }
+  return uploaded;
+}
+
+async function removeUnboundSeedObject(
+  prisma: PrismaClient,
+  storage: TargetStandardStorage,
+  storageKey: string,
+): Promise<void> {
+  const referenced = await prisma.fileAsset.findUnique({
+    where: {
+      storageBucket_storageKey: {
+        storageBucket: storage.bucket,
+        storageKey,
+      },
+    },
+    select: { id: true },
+  });
+  if (!referenced) {
+    await storage.client.removeObject(storage.bucket, storageKey);
+  }
+}
+
 export async function seedTargetStandards(prisma: PrismaClient): Promise<void> {
   const admin = await prisma.user.findUnique({
     where: { username: 'admin' },
@@ -262,67 +368,165 @@ export async function seedTargetStandards(prisma: PrismaClient): Promise<void> {
     throw new Error('目标标准种子依赖 admin 用户，请先执行用户种子');
   }
 
-  await prisma.$transaction(
-    async (tx) => {
-      for (const definition of buildTargetStandards()) {
-        const existingStandard = await tx.standard.findUnique({
-          where: { code: definition.code },
-          select: { id: true },
-        });
-        const standard = await tx.standard.upsert({
-          where: { code: definition.code },
-          create: {
-            code: definition.code,
-            name: definition.name,
-            type: definition.type,
-            category: definition.category,
-            status: 'PUBLISHED',
-            effectiveAt: publishedAt,
-            createdBy: admin.id,
-            updatedBy: admin.id,
-          },
-          update: {},
-          select: { id: true },
-        });
-        if (existingStandard) continue;
+  let storage: TargetStandardStorage | undefined;
+  for (const definition of buildTargetStandards()) {
+    const existingStandard = await prisma.standard.findUnique({
+      where: { code: definition.code },
+      select: { id: true },
+    });
+    if (existingStandard) {
+      await prisma.standard.upsert({
+        where: { code: definition.code },
+        create: {
+          code: definition.code,
+          name: definition.name,
+          type: definition.type,
+          category: definition.category,
+          status: 'PUBLISHED',
+          effectiveAt: publishedAt,
+          createdBy: admin.id,
+          updatedBy: admin.id,
+        },
+        update: {},
+        select: { id: true },
+      });
+      continue;
+    }
 
-        const version = await tx.standardVersion.upsert({
-          where: {
-            standardId_version: {
-              standardId: standard.id,
-              version: 'V1.0',
+    const standardId = stableSeedId(`target-standard:${definition.code}`);
+    const standardVersionId = stableSeedId(
+      `target-standard-version:${definition.code}:${TARGET_STANDARD_VERSION}`,
+    );
+    const logicalFileId = targetContentId(`standard-content:${standardVersionId}:logical-file`);
+    const assetId = targetContentId(`standard-content:${standardVersionId}:asset`);
+    const fileVersionId = targetContentId(`standard-content:${standardVersionId}:file-version`);
+    const plan = buildStandardGeneratedObjectPlan({
+      standardId,
+      standardVersionId,
+      code: definition.code,
+      name: definition.name,
+      type: definition.type,
+      category: definition.category,
+      version: TARGET_STANDARD_VERSION,
+      structuredContent: definition.content,
+      applicability: { scope: 'ALL_PROJECTS' },
+    });
+    const definitionStorage = (storage ??= targetStandardStorage());
+    const uploaded = await ensureSeedObject(definitionStorage, plan);
+
+    try {
+      const committed = await prisma.$transaction(
+        async (tx) => {
+          const standard = await tx.standard.upsert({
+            where: { code: definition.code },
+            create: {
+              id: standardId,
+              code: definition.code,
+              name: definition.name,
+              type: definition.type,
+              category: definition.category,
+              status: 'PUBLISHED',
+              effectiveAt: publishedAt,
+              createdBy: admin.id,
+              updatedBy: admin.id,
             },
-          },
-          create: {
-            standardId: standard.id,
-            version: 'V1.0',
-            structuredContent: definition.content,
-            applicability: json({ scope: 'ALL_PROJECTS' }),
-            legacySnapshot: json({ seedCode: definition.code }),
-            status: 'PUBLISHED',
-            effectiveAt: publishedAt,
-            changeDescription: '目标架构初始化版本',
-            submittedBy: admin.id,
-            submittedAt: publishedAt,
-            publishedAt,
-          },
-          update: {},
-          select: { id: true },
-        });
+            update: {},
+            select: { id: true },
+          });
+          if (standard.id !== standardId) return false;
 
-        await tx.standard.updateMany({
-          where: { id: standard.id, currentPublishedVersionId: null },
-          data: {
-            currentPublishedVersionId: version.id,
-            status: 'PUBLISHED',
-            effectiveAt: publishedAt,
-          },
-        });
+          await tx.logicalFile.create({
+            data: {
+              id: logicalFileId,
+              ownerType: 'STANDARD',
+              ownerId: standard.id,
+              displayName: plan.originalName,
+              status: 'APPROVED',
+              createdBy: admin.id,
+              createdAt: publishedAt,
+            },
+          });
+          await tx.fileAsset.create({
+            data: {
+              id: assetId,
+              ownerType: 'STANDARD',
+              ownerId: standard.id,
+              originalName: plan.originalName,
+              extension: 'md',
+              mimeType: 'text/markdown',
+              size: BigInt(plan.body.length),
+              storageProvider: 'minio',
+              storageBucket: definitionStorage.bucket,
+              storageKey: plan.storageKey,
+              checksum: plan.checksum,
+              status: 'AVAILABLE',
+              createdBy: admin.id,
+              createdAt: publishedAt,
+            },
+          });
+          await tx.fileVersion.create({
+            data: {
+              id: fileVersionId,
+              logicalFileId,
+              version: TARGET_STANDARD_VERSION,
+              versionSequence: 1,
+              revisionLevel: 'MINOR',
+              assetId,
+              status: 'APPROVED',
+              changeDescription: '目标架构初始化标准文件',
+              uploadedBy: admin.id,
+              uploadedAt: publishedAt,
+              approvedAt: publishedAt,
+            },
+          });
+          await tx.logicalFile.update({
+            where: { id: logicalFileId },
+            data: { currentVersionId: fileVersionId },
+          });
+          await tx.standardVersion.create({
+            data: {
+              id: standardVersionId,
+              standardId: standard.id,
+              version: TARGET_STANDARD_VERSION,
+              fileVersionId,
+              status: 'PUBLISHED',
+              effectiveAt: publishedAt,
+              changeDescription: '目标架构初始化版本',
+              submittedBy: admin.id,
+              submittedAt: publishedAt,
+              publishedAt,
+            },
+          });
+          await tx.standard.update({
+            where: { id: standard.id },
+            data: {
+              currentPublishedVersionId: standardVersionId,
+              status: 'PUBLISHED',
+              effectiveAt: publishedAt,
+            },
+          });
+          return true;
+        },
+        {
+          maxWait: 30_000,
+          timeout: 600_000,
+        },
+      );
+      if (!committed && uploaded) {
+        await removeUnboundSeedObject(prisma, definitionStorage, plan.storageKey);
       }
-    },
-    {
-      maxWait: 30_000,
-      timeout: 600_000,
-    },
-  );
+    } catch (error: unknown) {
+      if (uploaded) {
+        try {
+          await removeUnboundSeedObject(prisma, definitionStorage, plan.storageKey);
+        } catch (cleanupError: unknown) {
+          throw new AggregateError(
+            [error, cleanupError],
+            `Target standard seed transaction and object cleanup both failed: ${plan.storageKey}`,
+          );
+        }
+      }
+      throw error;
+    }
+  }
 }

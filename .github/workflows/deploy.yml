@@ -104,6 +104,7 @@ jobs:
       - name: 校验 Compose 配置
         run: |
           docker compose --env-file .env.local.example -f docker-compose.test.yml config -q
+          docker compose --env-file .env.local.example -f docker-compose.test.yml -f docker-compose.ci.yml config -q
           docker compose --env-file .env.example -f docker-compose.yml config -q
           docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.prod.yml config -q
       - name: 校验 Git 部署脚本
@@ -161,18 +162,72 @@ jobs:
           pnpm --dir delivery-platform-web exec playwright install --with-deps chrome
       - name: 启动真实依赖与应用
         run: |
-          docker compose --env-file .env.local.example -f docker-compose.test.yml up -d --build
+          compose=(docker compose --env-file /dev/null -f docker-compose.test.yml -f docker-compose.ci.yml)
+          diagnose_migration_failure() {
+            echo "::group::docker compose ps -a"
+            "${compose[@]}" ps -a || true
+            echo "::endgroup::"
+            echo "::group::backend-migrate full logs"
+            "${compose[@]}" logs --no-color backend-migrate || true
+            echo "::endgroup::"
+            echo "::group::mysql last 200 lines"
+            "${compose[@]}" logs --no-color --tail=200 mysql || true
+            echo "::endgroup::"
+            echo "::group::sanitized database compose config"
+            "${compose[@]}" config --format json | jq '
+              (.services["backend-migrate"].environment.DATABASE_URL
+                | capture("^mysql://.*@(?<host>[^:/]+):(?<port>[0-9]+)/(?<database>[^?]+)")) as $target
+              | {
+                  mysql: {
+                    database: .services.mysql.environment.MYSQL_DATABASE,
+                    user: .services.mysql.environment.MYSQL_USER,
+                    healthcheck: {
+                      interval: .services.mysql.healthcheck.interval,
+                      timeout: .services.mysql.healthcheck.timeout,
+                      retries: .services.mysql.healthcheck.retries,
+                      start_period: .services.mysql.healthcheck.start_period
+                    }
+                  },
+                  backend_migrate: {
+                    database_host: $target.host,
+                    database_port: $target.port,
+                    database: $target.database,
+                    command: .services["backend-migrate"].command,
+                    working_dir: .services["backend-migrate"].working_dir,
+                    depends_on: .services["backend-migrate"].depends_on
+                  }
+                }
+            ' || true
+            echo "::endgroup::"
+          }
+          if ! "${compose[@]}" config -q; then
+            echo "::error::CI Compose environment is incomplete"
+            exit 1
+          fi
+          if ! "${compose[@]}" up -d --build; then
+            diagnose_migration_failure
+            exit 1
+          fi
+          for completed_service in minio-init backend-migrate; do
+            completed_id="$("${compose[@]}" ps -a --quiet "$completed_service")"
+            completed_exit="$(docker inspect "$completed_id" --format '{{.State.ExitCode}}' 2>/dev/null || true)"
+            if [ -z "$completed_id" ] || [ "$completed_exit" != "0" ]; then
+              echo "::error::$completed_service did not complete with exit code 0"
+              diagnose_migration_failure
+              exit 1
+            fi
+          done
           for _ in $(seq 1 60); do
             if curl -fsS --connect-timeout 3 --max-time 10 http://127.0.0.1:13000/api/v1/ready >/dev/null; then
               exit 0
             fi
             sleep 5
           done
-          docker compose --env-file .env.local.example -f docker-compose.test.yml ps
+          diagnose_migration_failure
           exit 1
       - name: 验证异步 Worker 稳定
         run: |
-          compose=(docker compose --env-file .env.local.example -f docker-compose.test.yml)
+          compose=(docker compose --env-file /dev/null -f docker-compose.test.yml -f docker-compose.ci.yml)
           for service in file-worker outbox-worker; do
             stable=0
             for _ in $(seq 1 20); do
@@ -219,10 +274,10 @@ jobs:
           pnpm test:e2e
       - name: 输出容器状态
         if: ${{ always() }}
-        run: docker compose --env-file .env.local.example -f docker-compose.test.yml ps
+        run: docker compose --env-file /dev/null -f docker-compose.test.yml -f docker-compose.ci.yml ps -a
       - name: 清理真实验收环境
         if: ${{ always() }}
-        run: docker compose --env-file .env.local.example -f docker-compose.test.yml down -v --remove-orphans
+        run: docker compose --env-file /dev/null -f docker-compose.test.yml -f docker-compose.ci.yml down -v --remove-orphans
 
   deploy:
     name: 部署到服务器

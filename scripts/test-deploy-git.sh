@@ -1961,6 +1961,25 @@ test_workflow_runs_protected_image_cleanup_after_deploy() {
   fi
 }
 
+test_workflow_diagnoses_backend_migration_failure() {
+  local workflow="$ROOT_DIR/.github/workflows/deploy.yml"
+  local compose_test="$ROOT_DIR/docker-compose.test.yml"
+  grep -Fq 'compose=(docker compose --env-file /dev/null -f docker-compose.test.yml -f docker-compose.ci.yml)' "$workflow" || \
+    fail "CI integration still depends on a repository env file"
+  grep -Fq '"${compose[@]}" ps -a || true' "$workflow" || \
+    fail "CI migration diagnostics do not include stopped containers"
+  grep -Fq '"${compose[@]}" logs --no-color backend-migrate || true' "$workflow" || \
+    fail "CI migration diagnostics do not include full backend-migrate logs"
+  grep -Fq '"${compose[@]}" logs --no-color --tail=200 mysql || true' "$workflow" || \
+    fail "CI migration diagnostics do not include the last 200 MySQL log lines"
+  grep -Fq '"${compose[@]}" config --format json' "$workflow" || \
+    fail "CI migration diagnostics do not render sanitized Compose database configuration"
+  grep -Fq 'condition: service_healthy' "$compose_test" || \
+    fail "CI services do not wait for a healthy dependency"
+  grep -Fq 'condition: service_completed_successfully' "$compose_test" || \
+    fail "CI services do not wait for successful one-shot dependencies"
+}
+
 test_workflow_resolves_one_immutable_commit_for_all_jobs() {
   local workflow="$ROOT_DIR/.github/workflows/deploy.yml"
   [ "$(grep -Fc 'ref: ${{ needs.resolve.outputs.commit }}' "$workflow")" -eq 4 ] || \
@@ -2691,6 +2710,7 @@ test_run_migrations_marks_mutation_before_compose
 test_post_migration_audit_never_mutates_published_backup
 test_success_revision_commits_before_env_cleanup
 test_workflow_runs_protected_image_cleanup_after_deploy
+test_workflow_diagnoses_backend_migration_failure
 test_workflow_resolves_one_immutable_commit_for_all_jobs
 test_image_identity_uses_real_tab_template
 test_docker_disk_usage_timeout_contract

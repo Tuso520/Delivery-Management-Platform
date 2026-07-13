@@ -22,6 +22,32 @@ jest.mock('bcrypt', () => ({
 }));
 
 describe('deployment seed safety', () => {
+  it('creates fresh target standards with verified file-only content', () => {
+    const source = readFileSync(
+      join(__dirname, '../../../prisma/seed-data/target-standards.ts'),
+      'utf8',
+    );
+
+    expect(source).toContain('await ensureSeedObject(definitionStorage, plan)');
+    expect(source).toContain('await verifyStoredObject(storage.client');
+    expect(source).toContain('await tx.logicalFile.create');
+    expect(source).toContain('await tx.fileAsset.create');
+    expect(source).toContain('await tx.fileVersion.create');
+    expect(source).toContain('fileVersionId,');
+    expect(source).toContain("status: 'APPROVED'");
+    expect(source).toContain('await removeUnboundSeedObject(prisma, definitionStorage');
+    expect(source).toContain('await storage.client.removeObject(storage.bucket, storageKey)');
+    expect(source).toContain('storageBucket_storageKey');
+    const versionCreateStart = source.indexOf('await tx.standardVersion.create');
+    const versionCreateEnd = source.indexOf('await tx.standard.update', versionCreateStart);
+    const versionCreate = source.slice(versionCreateStart, versionCreateEnd);
+    expect(versionCreateStart).toBeGreaterThan(-1);
+    expect(versionCreateEnd).toBeGreaterThan(versionCreateStart);
+    expect(versionCreate).not.toContain('structuredContent:');
+    expect(versionCreate).not.toContain('applicability:');
+    expect(versionCreate).not.toContain('legacySnapshot:');
+  });
+
   it('keeps the target seed entry disconnected from retired seed domains and writes', () => {
     const seedDirectory = join(__dirname, '../../../prisma');
     const activeFiles = [

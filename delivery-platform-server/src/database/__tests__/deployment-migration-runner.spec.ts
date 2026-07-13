@@ -133,4 +133,24 @@ describe('deployment migration runner', () => {
     expect(source.match(/--apply "--actor-username=\$actor_username"/gu)).toHaveLength(3);
     expect(source).toContain('set -eu');
   });
+
+  it('fails fast with a named stage and validates every external dependency input', () => {
+    for (const name of [
+      'DATABASE_URL',
+      'INTEGRATION_SECRET_ENCRYPTION_KEY',
+      'SEED_ADMIN_PASSWORD',
+      'SEED_DEFAULT_PASSWORD',
+      'MINIO_ENDPOINT',
+      'MINIO_ACCESS_KEY',
+      'MINIO_SECRET_KEY',
+      'MINIO_BUCKET',
+    ]) {
+      expect(source).toContain(`'${name}'`);
+    }
+    expect(source).toContain('./node_modules/.bin/prisma validate');
+    expect(source).toContain('[migrate] database target:');
+    expect(source).toContain('[migrate] failed stage: %s (exit=%s)');
+    expect(source).toContain('current_stage="target content strict dry-run"');
+    expect(source).toContain('current_stage="integration secret verification"');
+  });
 });
