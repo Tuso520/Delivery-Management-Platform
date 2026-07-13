@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The contract harness intentionally mocks functions sourced at runtime and exercises
 # them in isolated subshells, which makes these data-flow warnings false positives.
-# shellcheck disable=SC1091,SC2030,SC2031,SC2034,SC2119,SC2120,SC2317
+# shellcheck disable=SC1091,SC2030,SC2031,SC2034,SC2119,SC2120,SC2317,SC2329
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -23,6 +23,25 @@ assert_calls() {
 
 record_call() {
   printf '%s\n' "$*" >> "$calls_file"
+}
+
+create_complete_format_three_backup_fixture() {
+  local backup_dir="$1"
+  local file payload
+  mkdir -p "$backup_dir"
+  while IFS= read -r file; do
+    case "$file" in
+      mysql.sql.gz|minio.tar.gz) ;;
+      *) : > "$backup_dir/$file" ;;
+    esac
+  done < <(backup_required_checksum_artifacts)
+  printf '3\n' > "$backup_dir/backup-format-version"
+  printf 'database fixture\n' | gzip -c > "$backup_dir/mysql.sql.gz"
+  payload="$(mktemp -d)"
+  printf 'object fixture\n' > "$payload/object"
+  tar -czf "$backup_dir/minio.tar.gz" -C "$payload" .
+  rm -rf "$payload"
+  write_backup_checksums "$backup_dir"
 }
 
 current_services() {
@@ -532,8 +551,12 @@ test_backup_source_revision_and_key_binding() (
     : > "$1/retained-images.tsv"
     printf 'services: {}\n' > "$1/restore-images.override.yml"
   }
-  backup_database() { printf 'database-backup' > "$CURRENT_BACKUP_DIR/mysql.sql.gz"; }
-  backup_minio() { printf 'minio-backup' > "$CURRENT_BACKUP_DIR/minio.tar.gz"; }
+  backup_database() { printf 'database-backup' | gzip -c > "$CURRENT_BACKUP_DIR/mysql.sql.gz"; }
+  backup_minio() {
+    mkdir -p "$temp_dir/minio-source"
+    printf 'minio-backup' > "$temp_dir/minio-source/object"
+    tar -czf "$CURRENT_BACKUP_DIR/minio.tar.gz" -C "$temp_dir/minio-source" .
+  }
   create_backup
   [ "$(cat "$CURRENT_BACKUP_DIR/git-revision.txt")" = "$expected_source_revision" ] || fail "backup was labeled with target rather than source revision"
   [ "$(cat "$CURRENT_BACKUP_DIR/target-git-revision.txt")" = "$expected_target_revision" ] || fail "backup target revision was not recorded"
@@ -678,15 +701,154 @@ test_format_three_requires_minio() (
     recovery-migrations.tsv \
     runtime-topology.services runtime-compose-with-images.resolved.yml \
     retained-images.tsv restore-images.override.yml \
-    table-counts.before.tsv foreign-keys.before.tsv mysql.sql.gz; do
+    table-counts.before.tsv foreign-keys.before.tsv; do
     : > "$backup_dir/$file"
   done
+  printf 'database-backup\n' | gzip -c > "$backup_dir/mysql.sql.gz"
   if write_backup_checksums "$backup_dir" >/dev/null 2>&1; then
     fail "format-three backup accepted a missing MinIO archive"
   fi
-  : > "$backup_dir/minio.tar.gz"
+  mkdir -p "$backup_dir/minio-source"
+  printf 'minio-backup\n' > "$backup_dir/minio-source/object"
+  tar -czf "$backup_dir/minio.tar.gz" -C "$backup_dir/minio-source" .
+  rm -rf "$backup_dir/minio-source"
   write_backup_checksums "$backup_dir" || fail "complete paired backup was rejected"
   grep -Fq 'minio.tar.gz' "$backup_dir/checksums.sha256" || fail "MinIO archive was omitted from backup checksums"
+)
+
+test_minio_backup_is_atomic_and_health_gated() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  temp_dir="$(mktemp -d)"
+  trap 'rm -rf "$temp_dir"' EXIT
+  APP_DIR="$temp_dir"
+  CURRENT_BACKUP_DIR="backups/git-deploy/current"
+  MINIO_HEALTH="healthy"
+  MINIO_RUN_FAIL="NO"
+  mkdir -p "$APP_DIR/$CURRENT_BACKUP_DIR" "$temp_dir/minio-source"
+  printf 'object data\n' > "$temp_dir/minio-source/object"
+  cd "$APP_DIR"
+  compose() {
+    [ "$*" = "ps --status running --quiet minio" ] || return 1
+    printf 'minio-container\n'
+  }
+  docker() {
+    case "$1" in
+      inspect)
+        if [[ "$*" = *'.State.Running'* ]]; then
+          printf 'true\t%s\n' "$MINIO_HEALTH"
+        elif [[ "$*" = *'.Mounts'* ]]; then
+          printf 'volume\tminio-volume\n'
+        else
+          return 1
+        fi
+        ;;
+      volume)
+        [ "$2" = "inspect" ] && [ "$3" = "minio-volume" ]
+        ;;
+      run)
+        tar -czf "$APP_DIR/$CURRENT_BACKUP_DIR/minio.tar.gz.part" -C "$temp_dir/minio-source" .
+        [ "$MINIO_RUN_FAIL" != "YES" ]
+        ;;
+      *) return 1 ;;
+    esac
+  }
+
+  backup_minio || fail "healthy MinIO source was rejected"
+  [ -f "$APP_DIR/$CURRENT_BACKUP_DIR/minio.tar.gz" ] || fail "validated MinIO archive was not published"
+  [ ! -e "$APP_DIR/$CURRENT_BACKUP_DIR/minio.tar.gz.part" ] || fail "MinIO partial archive survived a successful publish"
+  tar -tzf "$APP_DIR/$CURRENT_BACKUP_DIR/minio.tar.gz" >/dev/null || fail "published MinIO archive is invalid"
+
+  rm -f "$APP_DIR/$CURRENT_BACKUP_DIR/minio.tar.gz"
+  MINIO_HEALTH="unhealthy"
+  if backup_minio >/dev/null 2>&1; then
+    fail "unhealthy MinIO source was accepted"
+  fi
+  [ ! -e "$APP_DIR/$CURRENT_BACKUP_DIR/minio.tar.gz" ] || fail "unhealthy MinIO source published an archive"
+  [ ! -e "$APP_DIR/$CURRENT_BACKUP_DIR/minio.tar.gz.part" ] || fail "unhealthy MinIO source left a partial archive"
+
+  MINIO_HEALTH="healthy"
+  MINIO_RUN_FAIL="YES"
+  if backup_minio >/dev/null 2>&1; then
+    fail "failed MinIO archive command was accepted"
+  fi
+  [ ! -e "$APP_DIR/$CURRENT_BACKUP_DIR/minio.tar.gz" ] || fail "failed MinIO archive command published an archive"
+  [ ! -e "$APP_DIR/$CURRENT_BACKUP_DIR/minio.tar.gz.part" ] || fail "failed MinIO archive command left a partial archive"
+)
+
+test_backup_rotation_deletes_only_verified_unprotected_backups() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  temp_dir="$(mktemp -d)"
+  trap 'rm -rf "$temp_dir"' EXIT
+  APP_DIR="$temp_dir"
+  BACKUP_RETENTION_DAYS=14
+  root="$APP_DIR/backups/git-deploy"
+  mkdir -p "$root" "$APP_DIR/.deploy/data-restore-incomplete"
+  cd "$APP_DIR"
+
+  for name in expired-valid latest bound current fresh invalid unverified legacy; do
+    create_complete_format_three_backup_fixture "$root/$name"
+  done
+  printf '%s\n' 'backups/git-deploy/latest' > "$APP_DIR/.deploy/latest_backup"
+  printf '%s\n' "$root/bound" > "$APP_DIR/.deploy/data-restore-incomplete/backup-path.txt"
+  CURRENT_BACKUP_DIR="backups/git-deploy/current"
+  printf 'corruption\n' >> "$root/invalid/minio.tar.gz"
+  rm -f "$root/unverified/checksums.sha256"
+  printf '2\n' > "$root/legacy/backup-format-version"
+  for name in expired-valid latest bound current invalid unverified legacy; do
+    touch -d '30 days ago' "$root/$name"
+  done
+
+  rotate_backups || fail "safe backup rotation failed"
+  [ ! -e "$root/expired-valid" ] || fail "expired verified unprotected backup was not removed"
+  for name in latest bound current fresh invalid unverified legacy; do
+    [ -d "$root/$name" ] || fail "backup rotation removed protected or unverified backup: $name"
+  done
+)
+
+test_storage_diagnostics_include_capacity_and_minio_volume() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  temp_dir="$(mktemp -d)"
+  trap 'rm -rf "$temp_dir"' EXIT
+  APP_DIR="$temp_dir"
+  mkdir -p "$APP_DIR/backups/git-deploy/current"
+  CURRENT_BACKUP_DIR="backups/git-deploy/current"
+  df() { printf 'filesystem-capacity\n'; }
+  du() { printf 'backup-size %s\n' "$*"; }
+  find() { :; }
+  compose() {
+    case "$*" in
+      "ps -a minio") printf 'minio-compose-status\n' ;;
+      "ps --all --quiet minio") printf 'minio-container\n' ;;
+      *) return 1 ;;
+    esac
+  }
+  docker() {
+    case "$1 $2" in
+      "system df") printf 'docker-capacity\n' ;;
+      "inspect minio-container")
+        if [[ "$*" = *'.Mounts'* ]]; then
+          printf 'volume\tminio-volume\n'
+        else
+          printf 'container-state\n'
+        fi
+        ;;
+      "volume inspect")
+        if [[ "$*" = *'--format'* ]]; then
+          printf 'volume=minio-volume driver=local mountpoint=/var/lib/docker/volumes/minio-volume/_data\n'
+        fi
+        ;;
+      *) return 1 ;;
+    esac
+  }
+  output="$(write_storage_diagnostics)"
+  grep -Fq 'filesystem-capacity' <<< "$output" || fail "filesystem capacity was omitted from diagnostics"
+  grep -Fq 'backup-size' <<< "$output" || fail "backup sizes were omitted from diagnostics"
+  grep -Fq 'docker-capacity' <<< "$output" || fail "Docker disk usage was omitted from diagnostics"
+  grep -Fq 'minio-compose-status' <<< "$output" || fail "MinIO compose status was omitted from diagnostics"
+  grep -Fq 'volume=minio-volume' <<< "$output" || fail "MinIO volume identity was omitted from diagnostics"
 )
 
 test_ciphertext_restore_uses_strict_verify() (
@@ -1395,6 +1557,9 @@ test_restore_runtime_never_builds_source_images
 test_restore_rejects_legacy_backup_format
 test_retained_image_manifest_binds_exact_image_ids
 test_format_three_requires_minio
+test_minio_backup_is_atomic_and_health_gated
+test_backup_rotation_deletes_only_verified_unprotected_backups
+test_storage_diagnostics_include_capacity_and_minio_volume
 test_ciphertext_restore_uses_strict_verify
 test_start_infra_returns_failure
 test_start_infra_preserves_prepared_integration_key

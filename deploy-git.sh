@@ -550,6 +550,7 @@ persist_prepared_integration_secret_key() {
 
 validate_layout() {
   [[ "$DEPLOY_RUN_ID" =~ ^[A-Za-z0-9._:-]+$ ]] || err "DEPLOY_RUN_ID contains unsupported characters"
+  [[ "$BACKUP_RETENTION_DAYS" =~ ^[0-9]+$ ]] || err "BACKUP_RETENTION_DAYS must be a non-negative integer"
   [ -f docker-compose.yml ] || err "missing docker-compose.yml"
   [ -f delivery-platform-web/Dockerfile ] || err "missing delivery-platform-web/Dockerfile"
   [ -f delivery-platform-server/Dockerfile ] || err "missing delivery-platform-server/Dockerfile"
@@ -560,6 +561,9 @@ validate_layout() {
 validate_env() {
   source_env
   require_command sha256sum
+  require_command gzip
+  require_command tar
+  require_command find
   prepare_integration_secret_key || err "integration secret encryption key preflight failed"
   local required_vars=(
     MYSQL_ROOT_PASSWORD MYSQL_DATABASE MYSQL_USER MYSQL_USER_PASSWORD
@@ -1234,64 +1238,143 @@ validate_retained_runtime_images() {
   fi
 }
 
+backup_required_checksum_artifacts() {
+  printf '%s\n' \
+    backup-format-version \
+    env.snapshot \
+    integration-secret-key.sha256 \
+    git-revision.txt \
+    previous-successful-revision.txt \
+    target-git-revision.txt \
+    compose-files.txt \
+    docker-compose.resolved.yml \
+    runtime-selection.txt \
+    paired-restore.status \
+    database-migration-state.txt \
+    database-migrations.before.tsv \
+    source-migrations.tsv \
+    target-migrations.tsv \
+    recovery-migrations.tsv \
+    runtime-compose.resolved.yml \
+    runtime-topology.services \
+    runtime-compose-with-images.resolved.yml \
+    retained-images.tsv \
+    restore-images.override.yml \
+    table-counts.before.tsv \
+    foreign-keys.before.tsv \
+    mysql.sql.gz \
+    minio.tar.gz
+}
+
+backup_optional_checksum_artifacts() {
+  printf '%s\n' \
+    table-counts.after.tsv \
+    foreign-keys.after.tsv \
+    table-count-deltas.tsv
+}
+
+backup_checksum_artifact_allowed() {
+  case "$1" in
+    backup-format-version|env.snapshot|integration-secret-key.sha256|git-revision.txt|\
+    previous-successful-revision.txt|target-git-revision.txt|compose-files.txt|\
+    docker-compose.resolved.yml|runtime-selection.txt|paired-restore.status|\
+    database-migration-state.txt|database-migrations.before.tsv|source-migrations.tsv|\
+    target-migrations.tsv|recovery-migrations.tsv|runtime-compose.resolved.yml|\
+    runtime-topology.services|runtime-compose-with-images.resolved.yml|retained-images.tsv|\
+    restore-images.override.yml|table-counts.before.tsv|foreign-keys.before.tsv|\
+    mysql.sql.gz|minio.tar.gz|table-counts.after.tsv|foreign-keys.after.tsv|\
+    table-count-deltas.tsv) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 write_backup_checksums() {
   local backup_dir="$1"
   local temporary="$backup_dir/checksums.sha256.tmp.$$"
   local file
-  local -a required_files=(
-    backup-format-version
-    env.snapshot
-    integration-secret-key.sha256
-    git-revision.txt
-    previous-successful-revision.txt
-    target-git-revision.txt
-    compose-files.txt
-    docker-compose.resolved.yml
-    runtime-selection.txt
-    paired-restore.status
-    database-migration-state.txt
-    database-migrations.before.tsv
-    source-migrations.tsv
-    target-migrations.tsv
-    recovery-migrations.tsv
-    runtime-compose.resolved.yml
-    runtime-topology.services
-    runtime-compose-with-images.resolved.yml
-    retained-images.tsv
-    restore-images.override.yml
-    table-counts.before.tsv
-    foreign-keys.before.tsv
-    mysql.sql.gz
-    minio.tar.gz
-  )
-  local -a optional_files=(
-    table-counts.after.tsv
-    foreign-keys.after.tsv
-    table-count-deltas.tsv
-  )
+  local -a required_files=()
+  local -a optional_files=()
+  mapfile -t required_files < <(backup_required_checksum_artifacts)
+  mapfile -t optional_files < <(backup_optional_checksum_artifacts)
   : > "$temporary" || return 1
   for file in "${required_files[@]}"; do
-    [ -f "$backup_dir/$file" ] || {
+    if [ ! -f "$backup_dir/$file" ] || [ -L "$backup_dir/$file" ]; then
       warn "required backup artifact is missing: $file"
       rm -f "$temporary"
       return 1
-    }
+    fi
     (cd "$backup_dir" && sha256sum -- "$file") >> "$temporary" || return 1
   done
+  if [ -e "$backup_dir/minio.tar.gz.part" ]; then
+    warn "incomplete MinIO backup archive is present"
+    rm -f "$temporary"
+    return 1
+  fi
+  gzip -t "$backup_dir/mysql.sql.gz" || {
+    warn "MySQL backup archive validation failed"
+    rm -f "$temporary"
+    return 1
+  }
+  tar -tzf "$backup_dir/minio.tar.gz" >/dev/null || {
+    warn "MinIO backup archive validation failed"
+    rm -f "$temporary"
+    return 1
+  }
   for file in "${optional_files[@]}"; do
     [ -f "$backup_dir/$file" ] || continue
+    [ ! -L "$backup_dir/$file" ] || return 1
     (cd "$backup_dir" && sha256sum -- "$file") >> "$temporary" || return 1
   done
   chmod 600 "$temporary" || return 1
   mv -f "$temporary" "$backup_dir/checksums.sha256" || return 1
 }
 
+backup_checksum_manifest_is_safe() {
+  local backup_dir="$1"
+  local line checksum file required
+  local checksum_line_pattern='^([0-9a-f]{64}) ([ *])([A-Za-z0-9._-]+)$'
+  local -A seen=()
+  while IFS= read -r line || [ -n "$line" ]; do
+    # GNU sha256sum writes either "  file" (text marker) or " *file"
+    # (binary marker). Git for Windows uses the binary marker by default,
+    # while existing Linux backups use the text marker; both are canonical
+    # sha256sum formats and remain safe after the filename allowlist below.
+    if [[ ! "$line" =~ $checksum_line_pattern ]]; then
+      warn "backup checksum manifest contains an invalid entry"
+      return 1
+    fi
+    checksum="${BASH_REMATCH[1]}"
+    file="${BASH_REMATCH[3]}"
+    [ -n "$checksum" ] || return 1
+    backup_checksum_artifact_allowed "$file" || {
+      warn "backup checksum manifest references an unexpected artifact: $file"
+      return 1
+    }
+    [ -z "${seen[$file]:-}" ] || {
+      warn "backup checksum manifest contains a duplicate artifact: $file"
+      return 1
+    }
+    if [ ! -f "$backup_dir/$file" ] || [ -L "$backup_dir/$file" ]; then
+      warn "checksummed backup artifact is missing or unsafe: $file"
+      return 1
+    fi
+    seen["$file"]="YES"
+  done < "$backup_dir/checksums.sha256"
+  while IFS= read -r required; do
+    [ "${seen[$required]:-}" = "YES" ] || {
+      warn "backup checksum manifest omits a required artifact: $required"
+      return 1
+    }
+  done < <(backup_required_checksum_artifacts)
+}
+
 verify_backup_checksums() {
   local backup_dir="$1"
-  [ -f "$backup_dir/checksums.sha256" ] || {
+  if [ ! -f "$backup_dir/checksums.sha256" ] || [ -L "$backup_dir/checksums.sha256" ]; then
     warn "backup checksum manifest is missing"
     return 1
-  }
+  fi
+  backup_checksum_manifest_is_safe "$backup_dir" || return 1
   (cd "$backup_dir" && sha256sum --check --strict checksums.sha256 >/dev/null) || {
     warn "backup checksum verification failed"
     return 1
@@ -1451,32 +1534,90 @@ backup_database() {
   gzip -t "${sql_file}.gz" || return 1
 }
 
-minio_volume_name() {
+minio_running_container_id() {
   local container_id
-  container_id="$(compose ps -q minio 2>/dev/null || true)"
+  container_id="$(compose ps --status running --quiet minio 2>/dev/null || true)"
+  [ -n "$container_id" ] || return 1
+  [[ "$container_id" != *$'\n'* ]] || return 1
+  printf '%s\n' "$container_id"
+}
+
+minio_volume_name() {
+  local container_id="${1:-}"
+  local mount_record mount_type volume_name extra
+  if [ -z "$container_id" ]; then
+    container_id="$(minio_running_container_id 2>/dev/null || true)"
+  fi
   [ -n "$container_id" ] || return 0
-  docker inspect "$container_id" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}' 2>/dev/null || true
+  mount_record="$(docker inspect "$container_id" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{printf "%s\t%s\n" .Type .Name}}{{end}}{{end}}' 2>/dev/null || true)"
+  [ -n "$mount_record" ] || return 0
+  [[ "$mount_record" != *$'\n'* ]] || return 0
+  IFS=$'\t' read -r mount_type volume_name extra <<< "$mount_record"
+  [ "$mount_type" = "volume" ] || return 0
+  [ -z "$extra" ] || return 0
+  [[ "$volume_name" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || return 0
+  docker volume inspect "$volume_name" >/dev/null 2>&1 || return 0
+  printf '%s\n' "$volume_name"
+}
+
+verified_minio_backup_volume() {
+  local container_id state_record running health extra volume_name
+  container_id="$(minio_running_container_id)" || {
+    warn "MinIO container is not running; refusing an unpaired database-only backup"
+    return 1
+  }
+  state_record="$(docker inspect "$container_id" --format '{{printf "%t\t" .State.Running}}{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' 2>/dev/null)" || return 1
+  IFS=$'\t' read -r running health extra <<< "$state_record"
+  if [ "$running" != "true" ] || [ "$health" != "healthy" ] || [ -n "$extra" ]; then
+    warn "MinIO container is not healthy (running=${running:-unknown}, health=${health:-unknown}); refusing backup"
+    return 1
+  fi
+  volume_name="$(minio_volume_name "$container_id")"
+  if [ -z "$volume_name" ]; then
+    warn "MinIO named data volume was not found; refusing an unpaired database-only backup"
+    return 1
+  fi
+  printf '%s\n' "$volume_name"
 }
 
 backup_minio() {
-  local volume_name
-  volume_name="$(minio_volume_name)"
-  if [ -z "$volume_name" ]; then
-    warn "MinIO data volume was not found; refusing an unpaired database-only backup"
+  local volume_name backup_root backup_dir archive partial
+  volume_name="$(verified_minio_backup_volume)" || return 1
+  backup_root="$(cd "$APP_DIR/backups/git-deploy" && pwd -P)" || return 1
+  backup_dir="$(cd "$CURRENT_BACKUP_DIR" && pwd -P)" || return 1
+  [ "${backup_dir%/*}" = "$backup_root" ] || {
+    warn "MinIO backup destination is outside the managed backup directory"
+    return 1
+  }
+  archive="$backup_dir/minio.tar.gz"
+  partial="${archive}.part"
+  [ ! -e "$archive" ] && [ ! -e "$partial" ] || {
+    warn "MinIO backup archive destination already exists"
+    return 1
+  }
+  log "backing up MinIO volume: $volume_name"
+  if ! docker run --rm \
+    -v "${volume_name}:/data:ro" \
+    -v "${backup_dir}:/backup" \
+    alpine sh -c 'tar czf /backup/minio.tar.gz.part -C /data .'; then
+    rm -f -- "$partial"
+    warn "MinIO backup failed; the paired backup remains incomplete and will not be published"
     return 1
   fi
-  log "backing up MinIO volume: $volume_name"
-  docker run --rm \
-    -v "${volume_name}:/data:ro" \
-    -v "$(pwd)/${CURRENT_BACKUP_DIR}:/backup" \
-    alpine sh -c 'tar czf /backup/minio.tar.gz -C /data .' || return 1
-  tar -tzf "$CURRENT_BACKUP_DIR/minio.tar.gz" >/dev/null || return 1
+  if [ ! -s "$partial" ] || ! tar -tzf "$partial" >/dev/null; then
+    rm -f -- "$partial"
+    warn "MinIO backup archive validation failed; the paired backup will not be published"
+    return 1
+  fi
+  mv -f -- "$partial" "$archive" || return 1
+  tar -tzf "$archive" >/dev/null || return 1
 }
 
 create_backup() {
   local stamp id source_revision source_id target_revision runtime_id key_fingerprint source_env_file
   local runtime_config runtime_services runtime_config_with_images runtime_services_with_images
   source_env
+  rotate_backups || return 1
   stamp="$(date +%Y%m%d_%H%M%S)"
   id="$(release_id)"
   source_revision="$(deployment_data_revision)" || return 1
@@ -1532,9 +1673,120 @@ create_backup() {
   log "backup saved: $CURRENT_BACKUP_DIR"
 }
 
+read_single_line_file() {
+  local file="$1"
+  local -a lines=()
+  [ -f "$file" ] && [ ! -L "$file" ] || return 1
+  mapfile -t lines < "$file" || return 1
+  [ "${#lines[@]}" -eq 1 ] || return 1
+  lines[0]="${lines[0]%$'\r'}"
+  [ -n "${lines[0]}" ] || return 1
+  [[ "${lines[0]}" != *$'\r'* && "${lines[0]}" != *$'\n'* ]] || return 1
+  printf '%s\n' "${lines[0]}"
+}
+
+resolve_managed_backup_reference() {
+  local backup_root="$1"
+  local reference="$2"
+  local candidate canonical
+  [ -n "$reference" ] || return 1
+  [[ "$reference" != *$'\r'* && "$reference" != *$'\n'* ]] || return 1
+  case "$reference" in
+    /*) candidate="$reference" ;;
+    *) candidate="$APP_DIR/$reference" ;;
+  esac
+  [ -d "$candidate" ] && [ ! -L "$candidate" ] || return 1
+  canonical="$(cd "$candidate" && pwd -P)" || return 1
+  [ "${canonical%/*}" = "$backup_root" ] || return 1
+  printf '%s\n' "$canonical"
+}
+
+backup_is_rotation_eligible() {
+  local backup="$1"
+  local format
+  [ -d "$backup" ] && [ ! -L "$backup" ] || return 1
+  [ -f "$backup/backup-format-version" ] && [ ! -L "$backup/backup-format-version" ] || return 1
+  format="$(tr -d '[:space:]' < "$backup/backup-format-version")" || return 1
+  [ "$format" = "3" ] || return 1
+  [ ! -e "$backup/minio.tar.gz.part" ] || return 1
+  verify_backup_checksums "$backup" || return 1
+  gzip -t "$backup/mysql.sql.gz" || return 1
+  tar -tzf "$backup/minio.tar.gz" >/dev/null || return 1
+}
+
 rotate_backups() {
-  [ -d backups/git-deploy ] || return 0
-  find backups/git-deploy -mindepth 1 -maxdepth 1 -type d -mtime +"$BACKUP_RETENTION_DAYS" -exec rm -rf -- {} +
+  local backup_root candidate canonical protected_path reference marker
+  local -a protected=()
+  [[ "$BACKUP_RETENTION_DAYS" =~ ^[0-9]+$ ]] || {
+    warn "backup rotation skipped because BACKUP_RETENTION_DAYS is invalid"
+    return 1
+  }
+  [ -d "$APP_DIR/backups/git-deploy" ] || return 0
+  [ ! -L "$APP_DIR/backups/git-deploy" ] || {
+    warn "backup rotation skipped because the managed backup root is a symbolic link"
+    return 1
+  }
+  backup_root="$(cd "$APP_DIR/backups/git-deploy" && pwd -P)" || return 1
+
+  if [ -e "$APP_DIR/.deploy/latest_backup" ]; then
+    reference="$(read_single_line_file "$APP_DIR/.deploy/latest_backup")" || {
+      warn "backup rotation skipped because the latest-backup pointer is invalid"
+      return 0
+    }
+    protected_path="$(resolve_managed_backup_reference "$backup_root" "$reference")" || {
+      warn "backup rotation skipped because the latest-backup pointer is outside the managed backup root or missing"
+      return 0
+    }
+    protected+=("$protected_path")
+  fi
+
+  marker="$APP_DIR/.deploy/data-restore-incomplete"
+  if [ -e "$marker" ]; then
+    if [ ! -d "$marker" ] || [ -L "$marker" ]; then
+      warn "backup rotation skipped because the incomplete-restore marker is unsafe"
+      return 0
+    fi
+    reference="$(read_single_line_file "$marker/backup-path.txt")" || {
+      warn "backup rotation skipped because the incomplete-restore backup binding is invalid"
+      return 0
+    }
+    protected_path="$(resolve_managed_backup_reference "$backup_root" "$reference")" || {
+      warn "backup rotation skipped because the incomplete-restore backup is outside the managed backup root or missing"
+      return 0
+    }
+    protected+=("$protected_path")
+  fi
+
+  if [ -n "$CURRENT_BACKUP_DIR" ]; then
+    protected_path="$(resolve_managed_backup_reference "$backup_root" "$CURRENT_BACKUP_DIR")" || {
+      warn "backup rotation skipped because the current backup path cannot be protected"
+      return 0
+    }
+    protected+=("$protected_path")
+  fi
+
+  while IFS= read -r -d '' candidate; do
+    [ ! -L "$candidate" ] || continue
+    canonical="$(cd "$candidate" && pwd -P)" || continue
+    [ "${canonical%/*}" = "$backup_root" ] || {
+      warn "backup rotation ignored a path outside the managed backup root: $candidate"
+      continue
+    }
+    for protected_path in "${protected[@]}"; do
+      if [ "$canonical" = "$protected_path" ]; then
+        log "keeping protected backup: ${canonical##*/}"
+        continue 2
+      fi
+    done
+    if ! backup_is_rotation_eligible "$canonical"; then
+      warn "keeping expired backup because format-3 checksum/archive validation failed: ${canonical##*/}"
+      continue
+    fi
+    [ "$(cd "$canonical" && pwd -P)" = "$canonical" ] || return 1
+    [ "${canonical%/*}" = "$backup_root" ] || return 1
+    rm -rf -- "$canonical" || return 1
+    log "removed expired verified backup: ${canonical##*/}"
+  done < <(find "$backup_root" -mindepth 1 -maxdepth 1 -type d -mtime +"$BACKUP_RETENTION_DAYS" -print0)
 }
 
 build_images() {
@@ -1663,6 +1915,47 @@ mark_deployment_successful() {
   log "successful revision recorded: $current"
 }
 
+write_storage_diagnostics() {
+  local container_id volume_name current_path
+  echo "===== filesystem capacity ====="
+  df -h -- "$APP_DIR" || true
+  echo
+  echo "===== backup sizes ====="
+  if [ -d "$APP_DIR/backups/git-deploy" ]; then
+    du -sh -- "$APP_DIR/backups/git-deploy" || true
+    find "$APP_DIR/backups/git-deploy" -mindepth 1 -maxdepth 1 -type d -exec du -sh -- {} \; || true
+  else
+    echo "managed backup directory is absent"
+  fi
+  if [ -n "$CURRENT_BACKUP_DIR" ]; then
+    case "$CURRENT_BACKUP_DIR" in
+      /*) current_path="$CURRENT_BACKUP_DIR" ;;
+      *) current_path="$APP_DIR/$CURRENT_BACKUP_DIR" ;;
+    esac
+    [ ! -d "$current_path" ] || du -sh -- "$current_path" || true
+  fi
+  echo
+  echo "===== docker disk usage ====="
+  docker system df || true
+  echo
+  echo "===== MinIO backup source ====="
+  compose ps -a minio || true
+  container_id="$(compose ps --all --quiet minio 2>/dev/null || true)"
+  if [ -z "$container_id" ] || [[ "$container_id" = *$'\n'* ]]; then
+    echo "MinIO container id is unavailable or ambiguous"
+    return 0
+  fi
+  docker inspect "$container_id" \
+    --format 'container={{.Name}} running={{.State.Running}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}} restarts={{.RestartCount}}' || true
+  volume_name="$(minio_volume_name "$container_id")"
+  if [ -z "$volume_name" ]; then
+    echo "MinIO named /data volume is unavailable or ambiguous"
+    return 0
+  fi
+  docker volume inspect "$volume_name" \
+    --format 'volume={{.Name}} driver={{.Driver}} mountpoint={{.Mountpoint}}' || true
+}
+
 capture_failure_diagnostics() {
   local stamp output
   local -a log_services=(backend backend-migrate frontend mysql redis minio)
@@ -1680,6 +1973,8 @@ capture_failure_diagnostics() {
     echo
     echo "===== compose ps ====="
     compose ps -a || true
+    echo
+    write_storage_diagnostics
     echo
     echo "===== logs ====="
     if load_app_topology available; then
@@ -2046,6 +2341,7 @@ manual_backup() {
     handle_pre_quiesce_failure "integration secret encryption key preflight failed"
   fi
   if ! create_backup; then
+    capture_failure_diagnostics || true
     resume_existing_app available || true
     err "backup failed"
   fi

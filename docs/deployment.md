@@ -104,6 +104,19 @@ backups/git-deploy/YYYYMMDD_HHMMSS-<source-release>-to-<target-release>/
 
 备份格式固定为 v3；旧 v2 备份缺少可核验的运行时身份，自动恢复会 fail closed。`git-revision.txt` 记录与迁移前数据库中已完成 Prisma migration 名称和 checksum **完全一致**的可恢复运行时：通常是上一成功版本；若之前的不安全发布已经把数据库前向迁移，则选择与现有 migration 清单完全一致的目标版本，避免把新 schema 交给旧代码。两者都不匹配或存在未完成 migration 时，备份仍保存数据，但 `paired-restore.status=NO`，只能用于人工数据取证，不会执行自动破坏性恢复。`previous-successful-revision.txt` 和 `target-git-revision.txt` 分别保留来源与目标审计事实。
 
+MinIO 备份必须来自处于 `running` 且 `healthy` 状态的容器，并且 `/data` 只能解析为一个有效的命名卷。归档先写入 `minio.tar.gz.part`，在宿主机通过 `tar -tzf` 后才原子发布为 `minio.tar.gz`；归档命令、健康检查、卷解析或校验任一失败都会中止部署，绝不生成空文件继续数据库迁移。失败诊断会记录文件系统容量、各备份目录大小、`docker system df`、MinIO 容器状态和卷身份，但不记录环境变量或密钥。
+
+`BACKUP_RETENTION_DAYS` 默认为 14，必须是非负整数。创建新备份前只会清理超过保留期、格式为 v3、checksum 与 MySQL/MinIO 压缩包均验证通过，且未被 `latest_backup`、当前备份或未完成恢复标记引用的直接子目录；损坏、未校验、旧格式或保护指针异常时一律保留并 fail safe。缩短保留期不能修复 MinIO 不健康或卷丢失，遇到备份失败应先在服务器执行：
+
+```bash
+docker compose ps minio
+docker compose logs --no-color --tail=50 minio
+docker system df
+df -h
+```
+
+确认服务配置和数据卷正确后，才可执行 `docker compose up -d minio`；不得通过跳过 MinIO、伪造空归档或只保留数据库备份绕过成对恢复门禁。
+
 脚本对每张表执行精确 `COUNT(*)`，迁移后拒绝旧表消失或行数减少，并逐条检查 `information_schema.KEY_COLUMN_USAGE` 中的外键是否存在孤儿记录；任何 SQL 或报告写入失败都会阻断切换。数据库、MinIO、完整环境、revision、源 Compose 拓扑、不可变镜像 ID/OCI release label 和审计报告均进入 checksum 清单。上一运行版本没有不可变 tag 时，只允许从仍存在且 release label 匹配的运行容器捕获精确 Image ID 并补 tag，禁止通过重新构建旧 Dockerfile 伪造回滚镜像。
 
 `restore-data` 是显式破坏性操作，必须同时提供 `CONFIRM_RESTORE=YES` 和备份路径。脚本会在任何 `DROP DATABASE` 前重新从 `git-revision.txt` 解包并解析源 Compose，核对 Worker 拓扑、完整环境中的 release id、集成密钥指纹、不可变镜像 tag/Image ID/OCI label、所有 checksum 及 MinIO 压缩包，并确认 MinIO 已成功停止、数据卷可定位。随后原子写入 database mutation marker 和 `.deploy/data-restore-incomplete` 才允许替换数据库；后者绑定备份绝对路径、checksum 清单摘要和 revision，跨进程保留恢复未完成事实。导入后要求表计数、Prisma migration 清单与备份完全一致，外键孤儿为零且既有密文通过 `--verify` 真正解密；再 checkout 已验证 revision，加载 checksummed image override，并使用 `--no-build` 启动。破坏前预检失败会恢复原运行时；破坏阶段开始后的任一失败都会保持停服，不会用不匹配代码或现场重建镜像启动已恢复数据。
