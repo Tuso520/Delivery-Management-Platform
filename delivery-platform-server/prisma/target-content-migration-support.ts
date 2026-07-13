@@ -21,6 +21,13 @@ export interface KnowledgePrimaryContentValidation {
   populatedFields: Array<'fileVersionId' | 'markdownContent' | 'externalUrl'>;
 }
 
+export interface LegacyKnowledgeContentInput {
+  contentType: string;
+  fileUrl: string | null;
+  markdownContent: string | null;
+  activeAttachmentCount: number;
+}
+
 export interface StandardGeneratedObjectPlan {
   storageKey: string;
   originalName: string;
@@ -156,6 +163,17 @@ function isValidExternalUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+export function resolveLegacyKnowledgeContentType(
+  input: LegacyKnowledgeContentInput,
+): KnowledgePrimaryContentType {
+  const declaredType = input.contentType.trim().toLowerCase();
+  if (declaredType === 'file') return 'FILE';
+  if (declaredType === 'link') return 'LINK';
+  if (input.markdownContent?.trim()) return 'MARKDOWN';
+  if (input.fileUrl?.trim() || input.activeAttachmentCount > 0) return 'FILE';
+  return 'MARKDOWN';
 }
 
 export function validateKnowledgePrimaryContent(

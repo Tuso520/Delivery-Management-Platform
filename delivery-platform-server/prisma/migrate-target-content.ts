@@ -12,6 +12,7 @@ import {
   buildStandardGeneratedObjectPlan,
   isArchiveStateConsistent,
   isPrimaryFileVersionStatusValid,
+  resolveLegacyKnowledgeContentType,
   validateKnowledgePrimaryContent,
   verifyStoredObject,
 } from './target-content-migration-support';
@@ -508,7 +509,6 @@ const managedFindingCodes = new Set([
   'STANDARD_PRIMARY_STORAGE_VERIFICATION_UNAVAILABLE',
   'STANDARD_PRIMARY_STORAGE_OBJECT_INVALID',
   'STANDARD_CURRENT_PUBLISHED_POINTER_INVALID',
-  'MIXED_LEGACY_CONTENT',
   'LEGACY_ATTACHMENT_OBJECT_UNAVAILABLE',
   'KNOWLEDGE_PRIMARY_FILE_UNAVAILABLE',
   'IN_FLIGHT_REVIEW_REQUIRES_MANUAL_RECONCILIATION',
@@ -962,22 +962,6 @@ async function migrateDocumentTemplates(actorId: string): Promise<void> {
   }
 }
 
-function knowledgeContentType(article: {
-  markdownContent: string | null;
-  fileUrl: string | null;
-  contentType: string;
-}): 'MARKDOWN' | 'FILE' | 'LINK' {
-  if (article.markdownContent?.trim()) return 'MARKDOWN';
-  if (
-    article.contentType.toLowerCase() === 'link' &&
-    /^https?:\/\//iu.test(article.fileUrl ?? '')
-  ) {
-    return 'LINK';
-  }
-  if (article.fileUrl) return 'FILE';
-  return article.contentType.toLowerCase() === 'link' ? 'LINK' : 'MARKDOWN';
-}
-
 async function migrateKnowledge(): Promise<void> {
   const articles = await prisma.knowledgeArticle.findMany({
     include: {
@@ -1005,16 +989,22 @@ async function migrateKnowledge(): Promise<void> {
         deletedAt: true,
         createdAt: true,
       },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
     const itemId = stableId(`knowledge:${article.id}`);
-    const contentType = knowledgeContentType(article);
+    const activeAttachments = attachments.filter((attachment) => attachment.deletedAt === null);
+    const contentType = resolveLegacyKnowledgeContentType({
+      contentType: article.contentType,
+      fileUrl: article.fileUrl,
+      markdownContent: article.markdownContent,
+      activeAttachmentCount: activeAttachments.length,
+    });
     const attachmentVerification = await Promise.all(
       attachments.map(async (attachment) => ({
         attachment,
         descriptor: await verifyLegacyObjectDescriptor(descriptorFromAttachment(attachment)),
       })),
     );
-    const activeAttachments = attachments.filter((attachment) => attachment.deletedAt === null);
     const attachmentDescriptors = attachmentVerification.flatMap(({ attachment, descriptor }) =>
       attachment.deletedAt === null && descriptor ? [descriptor] : [],
     );
@@ -1078,20 +1068,6 @@ async function migrateKnowledge(): Promise<void> {
     const targetArchived = targetArchivedAt !== null;
     const targetPublished = sourcePublished && !fileMigrationPending && !targetArchived;
     const targetItemStatus = targetArchived ? 'ARCHIVED' : targetPublished ? 'PUBLISHED' : 'DRAFT';
-    if (article.markdownContent?.trim() && (article.fileUrl || activeAttachments.length > 0)) {
-      addFinding(
-        'KNOWLEDGE',
-        'KnowledgeArticle',
-        article.id,
-        'MIXED_LEGACY_CONTENT',
-        {
-          selectedPrimaryType: 'MARKDOWN',
-          attachmentCount: activeAttachments.length,
-          hasFileUrl: Boolean(article.fileUrl),
-        },
-        'ERROR',
-      );
-    }
     if (fileMigrationPending) {
       addFinding(
         'KNOWLEDGE',
@@ -1368,6 +1344,28 @@ async function migrateKnowledge(): Promise<void> {
               },
               update: {},
             });
+          }
+          const expectedSupportingFiles = supportingFileVersionIds.map(
+            (fileVersionId, sortOrder) => ({ fileVersionId, role: 'SUPPORTING', sortOrder }),
+          );
+          const assertedSupportingFiles = await tx.knowledgeVersionFile.findMany({
+            where: { knowledgeVersionId: targetVersion.id },
+            select: { fileVersionId: true, role: true, sortOrder: true },
+            orderBy: [{ sortOrder: 'asc' }, { fileVersionId: 'asc' }],
+          });
+          if (
+            assertedSupportingFiles.length !== expectedSupportingFiles.length ||
+            assertedSupportingFiles.some((file, index) => {
+              const expected = expectedSupportingFiles[index];
+              return (
+                !expected ||
+                file.fileVersionId !== expected.fileVersionId ||
+                file.role !== expected.role ||
+                file.sortOrder !== expected.sortOrder
+              );
+            })
+          ) {
+            throw new Error('KNOWLEDGE_SUPPORTING_FILE_SET_MISMATCH');
           }
           const assertedVersion = await tx.knowledgeVersion.findUnique({
             where: { id: targetVersion.id },

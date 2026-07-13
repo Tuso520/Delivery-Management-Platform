@@ -6,6 +6,7 @@ import {
   isArchiveStateConsistent,
   isPrimaryFileVersionStatusValid,
   renderStandardMarkdown,
+  resolveLegacyKnowledgeContentType,
   validateKnowledgePrimaryContent,
   verifyStoredObject,
 } from '../../../prisma/target-content-migration-support';
@@ -30,6 +31,50 @@ describe('target content migration support', () => {
     expect(isArchiveStateConsistent('DRAFT', new Date('2026-07-13T00:00:00.000Z'))).toBe(false);
     expect(isArchiveStateConsistent('DRAFT', null)).toBe(true);
   });
+
+  it.each([
+    {
+      input: {
+        contentType: 'article',
+        markdownContent: '# 操作说明',
+        fileUrl: null,
+        activeAttachmentCount: 11,
+      },
+      expected: 'MARKDOWN',
+    },
+    {
+      input: {
+        contentType: 'file',
+        markdownContent: '# 旧快速新增自动占位',
+        fileUrl: null,
+        activeAttachmentCount: 1,
+      },
+      expected: 'FILE',
+    },
+    {
+      input: {
+        contentType: 'link',
+        markdownContent: '# 旧残留正文',
+        fileUrl: 'https://example.com/guide',
+        activeAttachmentCount: 0,
+      },
+      expected: 'LINK',
+    },
+    {
+      input: {
+        contentType: 'article',
+        markdownContent: null,
+        fileUrl: null,
+        activeAttachmentCount: 1,
+      },
+      expected: 'FILE',
+    },
+  ])(
+    'resolves legacy knowledge primary content without treating support files as a second primary',
+    ({ input, expected }) => {
+      expect(resolveLegacyKnowledgeContentType(input)).toBe(expected);
+    },
+  );
 
   it('renders deterministic standard Markdown and a stable SHA-256 object plan', () => {
     const input = {

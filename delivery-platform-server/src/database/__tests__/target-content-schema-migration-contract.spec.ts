@@ -53,10 +53,11 @@ describe('file-only target content schema migration contract', () => {
     expect(migrator).not.toMatch(/touch.+minio/iu);
   });
 
-  it('provides strict read-only verification and fail-closed ambiguity findings', () => {
+  it('provides strict read-only verification and fail-closed primary-content findings', () => {
     expect(migrator).toContain("report.mode = apply ? 'APPLY' : verify ? 'VERIFY' : 'DRY_RUN'");
     expect(migrator).toContain('strict target content verification failed');
-    expect(migrator).toContain("'MIXED_LEGACY_CONTENT'");
+    expect(migrator).not.toContain("'MIXED_LEGACY_CONTENT'");
+    expect(migrator).toContain('resolveLegacyKnowledgeContentType');
     expect(migrationSupport).toContain("'KNOWLEDGE_MULTIPLE_PRIMARY_CONTENTS'");
     expect(migrator).toContain("'OPEN_CONTENT_MIGRATION_EXCEPTION'");
     expect(migrator).toContain('{ username: actorUsername }');
@@ -148,6 +149,8 @@ describe('file-only target content schema migration contract', () => {
     expect(migrator).toContain("throw new Error('KNOWLEDGE_ITEM_TARGET_MISMATCH')");
     expect(migrator).toContain("throw new Error('KNOWLEDGE_VERSION_TARGET_MISMATCH')");
     expect(migrator).toContain("throw new Error('KNOWLEDGE_VERSION_CONTENT_MISMATCH')");
+    expect(migrator).toContain("throw new Error('KNOWLEDGE_SUPPORTING_FILE_SET_MISMATCH')");
+    expect(migrator).toContain("orderBy: [{ createdAt: 'asc' }, { id: 'asc' }]");
     expect(migrator).toContain(
       "targetContentType === 'MARKDOWN' ? sourceVersion.markdownContent : null",
     );
