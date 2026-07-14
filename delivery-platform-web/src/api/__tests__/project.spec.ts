@@ -35,34 +35,28 @@ describe('projectApi refactored contract', () => {
   })
 
   it('uses PATCH for ordinary edits and never falls back to PUT', () => {
-    const payload = { revision: 7, projectName: '上海交付中心', progressPercent: 35 }
+    const payload = { revision: 7, projectName: '上海交付中心' }
 
     projectApi.update('project-1', payload)
 
     expect(mocks.patch).toHaveBeenCalledWith('/projects/project-1', payload)
   })
 
-  it('uses dedicated stage and acceptance commands', () => {
-    projectApi.updateStage('project-1', {
+  it('uses one dedicated progress command for stage, progress and acceptance', () => {
+    projectApi.updateProgress('project-1', {
       revision: 7,
       targetStage: 'CONSTRUCTION',
+      progressPercent: 68,
+      expectedAcceptanceAt: '2026-07-11',
       reason: '现场计划调整',
-    })
-    projectApi.updateAcceptance('project-1', {
-      revision: 8,
-      actualAcceptanceAt: '2026-07-11',
-      reason: '客户完成验收',
     })
 
-    expect(mocks.patch).toHaveBeenNthCalledWith(1, '/projects/project-1/stage', {
+    expect(mocks.patch).toHaveBeenCalledWith('/projects/project-1/progress', {
       revision: 7,
       targetStage: 'CONSTRUCTION',
+      progressPercent: 68,
+      expectedAcceptanceAt: '2026-07-11',
       reason: '现场计划调整',
-    })
-    expect(mocks.patch).toHaveBeenNthCalledWith(2, '/projects/project-1/acceptance', {
-      revision: 8,
-      actualAcceptanceAt: '2026-07-11',
-      reason: '客户完成验收',
     })
   })
 
@@ -101,8 +95,8 @@ describe('projectApi refactored contract', () => {
   })
 
   it('uses a silent DELETE so the page can preserve and surface dependency blockers verbatim', () => {
-    projectApi.delete('project-1')
+    projectApi.permanentDelete('project-1')
 
-    expect(mocks.delete).toHaveBeenCalledWith('/projects/project-1', { silent: true })
+    expect(mocks.delete).toHaveBeenCalledWith('/projects/project-1/permanent', { silent: true })
   })
 })

@@ -12,7 +12,7 @@ export async function seedProjects(prisma: PrismaClient) {
       countryCode: 'VN',
       city: '海防',
       customerName: 'LG Electronics Vietnam',
-      projectType: '冷站节能',
+      projectType: 'FACTORY',
       contractCurrency: 'USD',
       baseCurrency: 'CNY',
       contractAmount: new Decimal(850000),
@@ -34,7 +34,7 @@ export async function seedProjects(prisma: PrismaClient) {
       countryCode: 'TH',
       city: '罗勇',
       customerName: 'PTT Public Company Limited',
-      projectType: '空压节能',
+      projectType: 'DATA_CENTER',
       contractCurrency: 'THB',
       baseCurrency: 'CNY',
       contractAmount: new Decimal(12000000),
@@ -56,7 +56,7 @@ export async function seedProjects(prisma: PrismaClient) {
       countryCode: 'SG',
       city: 'Singapore',
       customerName: 'Engie Services Asia',
-      projectType: 'ESL',
+      projectType: 'COMMERCIAL',
       contractCurrency: 'SGD',
       baseCurrency: 'CNY',
       contractAmount: new Decimal(450000),
@@ -78,7 +78,7 @@ export async function seedProjects(prisma: PrismaClient) {
       countryCode: 'ID',
       city: '雅加达',
       customerName: 'PT FMCS Indonesia',
-      projectType: 'FMCS',
+      projectType: 'MEDICAL',
       contractCurrency: 'USD',
       baseCurrency: 'CNY',
       contractAmount: new Decimal(620000),
@@ -100,7 +100,7 @@ export async function seedProjects(prisma: PrismaClient) {
       countryCode: 'MY',
       city: '吉隆坡',
       customerName: 'Cooling Logistics Sdn Bhd',
-      projectType: '冷站节能',
+      projectType: 'RAIL_TRANSIT',
       contractCurrency: 'MYR',
       baseCurrency: 'CNY',
       contractAmount: new Decimal(950000),
@@ -122,7 +122,7 @@ export async function seedProjects(prisma: PrismaClient) {
       countryCode: 'OM',
       city: '马斯喀特',
       customerName: 'JA Engineering LLC',
-      projectType: '空压节能',
+      projectType: 'LIGHTWEIGHT',
       contractCurrency: 'OMR',
       baseCurrency: 'CNY',
       contractAmount: new Decimal(180000),
@@ -144,7 +144,7 @@ export async function seedProjects(prisma: PrismaClient) {
       countryCode: 'AE',
       city: '阿布扎比',
       customerName: 'Abu Dhabi FMCS LLC',
-      projectType: 'FMCS',
+      projectType: 'FACTORY',
       contractCurrency: 'USD',
       baseCurrency: 'CNY',
       contractAmount: new Decimal(380000),
@@ -167,7 +167,7 @@ export async function seedProjects(prisma: PrismaClient) {
       countryCode: 'TH',
       city: '曼谷',
       customerName: 'SCG Cement Co Ltd',
-      projectType: 'ESL',
+      projectType: 'DATA_CENTER',
       contractCurrency: 'THB',
       baseCurrency: 'CNY',
       contractAmount: new Decimal(8000000),
@@ -189,7 +189,7 @@ export async function seedProjects(prisma: PrismaClient) {
       countryCode: 'VN',
       city: '河内',
       customerName: 'Hanoi Cooling Solutions JSC',
-      projectType: '冷站节能',
+      projectType: 'COMMERCIAL',
       contractCurrency: 'USD',
       baseCurrency: 'CNY',
       contractAmount: new Decimal(1200000),
@@ -211,7 +211,7 @@ export async function seedProjects(prisma: PrismaClient) {
       countryCode: 'ID',
       city: '雅加达',
       customerName: 'Jakarta Chiller Services',
-      projectType: '冷站节能',
+      projectType: 'MEDICAL',
       contractCurrency: 'USD',
       baseCurrency: 'CNY',
       contractAmount: new Decimal(520000),
@@ -230,21 +230,7 @@ export async function seedProjects(prisma: PrismaClient) {
     },
   ] satisfies Prisma.ProjectCreateInput[];
 
-  // ── Upsert each project ───────────────────────────────────────────
-  const createdProjects: Array<{ id: string; projectCode: string }> = [];
-
-  for (const data of projectData) {
-    const project = await prisma.project.upsert({
-      where: { projectCode: data.projectCode },
-      create: data,
-      update: {},
-      select: { id: true, projectCode: true },
-    });
-    createdProjects.push(project);
-    console.log(`  Project "${data.projectCode}" ready (id=${project.id})`);
-  }
-
-  // ── Lookup users by username ──────────────────────────────────────
+  // Resolve demo assignees before inserts so seed reruns never update existing projects.
   const userMap = new Map<string, string>();
   const availableUsers = await prisma.user.findMany({
     where: { deletedAt: null, status: 'Active' },
@@ -267,14 +253,62 @@ export async function seedProjects(prisma: PrismaClient) {
     'ID-JK-2026-002': 'delivery_mgr',
   };
 
-  for (const project of createdProjects) {
-    const salesUsername = salesOwnerAssignments[project.projectCode];
-    const salesOwnerId = salesUsername ? userMap.get(salesUsername) : undefined;
-    if (!salesOwnerId) continue;
-    await prisma.project.updateMany({
-      where: { id: project.id, salesOwnerId: null },
-      data: { salesOwnerId },
+  const projectManagerAssignments: Record<string, string> = {
+    'VN-LG-2026-001': 'pm_wang',
+    'TH-PTT-2026-001': 'pm_li',
+    'SG-ESA-2026-001': 'pm_wang',
+    'ID-FMCS-2026-001': 'pm_wang',
+    'MY-CL-2026-001': 'pm_li',
+    'OM-JA-2026-001': 'pm_wang',
+    'AE-AB-2026-001': 'pm_li',
+    'TH-SC-2026-002': 'pm_wang',
+    'VN-HN-2026-002': 'pm_li',
+    'ID-JK-2026-002': 'pm_wang',
+  };
+  const contractTypes = ['EPC', 'EMC', 'POC'] as const;
+  const products = ['DEEPSIGHT', 'DEEPBOT'] as const;
+  const keywordSets = [
+    ['NEW_BUILD', 'CONSTRUCTION', 'MAIN_MATERIAL'],
+    ['RENOVATION', 'SOFTWARE_COMMISSIONING', 'EMCS_SYSTEM'],
+    ['NEW_BUILD', 'HARDWARE_COMMISSIONING', 'ENERGY_MANAGEMENT_SYSTEM'],
+    ['RENOVATION', 'CHILLER_ENERGY_SAVING', 'CHILLER_PLANT_CONTROL'],
+  ] as const;
+
+  // ── Upsert each project ───────────────────────────────────────────
+  const createdProjects: Array<{ id: string; projectCode: string }> = [];
+
+  for (const [index, data] of projectData.entries()) {
+    const salesOwnerId = userMap.get(salesOwnerAssignments[data.projectCode]);
+    const projectManagerId = userMap.get(projectManagerAssignments[data.projectCode]);
+    const isAccepted = index === 6 || index === 9;
+    const isArchived = index === 9;
+    const project = await prisma.project.upsert({
+      where: { projectCode: data.projectCode },
+      create: {
+        ...data,
+        shortName: `示例项目 ${index + 1}`,
+        contractType: contractTypes[index % contractTypes.length],
+        product: products[index % products.length],
+        keywords: [...keywordSets[index % keywordSets.length]],
+        progressPercent: new Decimal(isAccepted ? 100 : Math.min(95, 10 + index * 9)),
+        contractSignedAt: new Date(`202${index < 6 ? '6' : '5'}-0${(index % 8) + 1}-15`),
+        expectedAcceptanceAt: new Date(`2026-${String((index % 6) + 7).padStart(2, '0')}-28`),
+        actualAcceptanceAt: isAccepted ? new Date(`2026-0${(index % 6) + 1}-20`) : null,
+        salesOwnerId: salesOwnerId ?? null,
+        projectManagerId: projectManagerId ?? null,
+        electricalOwnerId: index % 2 === 0 ? (userMap.get('elec_zhang') ?? null) : null,
+        softwareOwnerId: index % 3 !== 0 ? (userMap.get('sw_chen') ?? null) : null,
+        createdBy: isArchived
+          ? (projectManagerId ?? userMap.get('admin') ?? null)
+          : (userMap.get('admin') ?? null),
+        archivedAt: isArchived ? new Date('2026-07-01T08:00:00.000Z') : null,
+        archivedBy: isArchived ? (userMap.get('admin') ?? null) : null,
+      },
+      update: {},
+      select: { id: true, projectCode: true },
     });
+    createdProjects.push(project);
+    console.log(`  Project "${data.projectCode}" ready (id=${project.id})`);
   }
 
   // ── Member assignments per project ────────────────────────────────

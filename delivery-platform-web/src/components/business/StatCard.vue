@@ -5,8 +5,9 @@ withDefaults(
     value: string | number
     active?: boolean
     interactive?: boolean
+    tone?: 'blue' | 'green' | 'cyan' | 'red'
   }>(),
-  { active: false, interactive: false },
+  { active: false, interactive: false, tone: 'blue' },
 )
 
 const emit = defineEmits<{ select: [] }>()
@@ -16,7 +17,7 @@ const emit = defineEmits<{ select: [] }>()
   <button
     v-if="interactive"
     class="stat-card"
-    :class="{ 'stat-card--active': active, 'stat-card--interactive': interactive }"
+    :class="[`stat-card--${tone}`, { 'stat-card--active': active, 'stat-card--interactive': interactive }]"
     type="button"
     :aria-pressed="active"
     @click="emit('select')"
@@ -25,7 +26,7 @@ const emit = defineEmits<{ select: [] }>()
     <strong class="stat-card__value">{{ value }}</strong>
     <slot />
   </button>
-  <div v-else class="stat-card">
+  <div v-else class="stat-card" :class="`stat-card--${tone}`">
     <span class="stat-card__label">{{ label }}</span>
     <strong class="stat-card__value">{{ value }}</strong>
     <slot />
@@ -57,6 +58,12 @@ const emit = defineEmits<{ select: [] }>()
 .stat-card__value {
   display: block;
 }
+.stat-card--blue { --stat-color: var(--primary-6); }
+.stat-card--green { --stat-color: var(--success-6); }
+.stat-card--cyan { --stat-color: 0, 180, 190; }
+.stat-card--red { --stat-color: var(--danger-6); }
+.stat-card__value { color: rgb(var(--stat-color)); font-size: 30px; }
+.stat-card--active { box-shadow: inset 3px 0 rgb(var(--stat-color)); }
 
 .stat-card__label {
   color: var(--color-text-3);

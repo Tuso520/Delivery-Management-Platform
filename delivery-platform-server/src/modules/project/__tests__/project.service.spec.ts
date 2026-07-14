@@ -36,7 +36,7 @@ describe('ProjectService', () => {
       'project:view_financial',
       'project:view_contract',
       'project:view_acceptance',
-      'project:stage:update',
+      'project:progress:update',
       'project:update',
     ],
   };
@@ -90,6 +90,7 @@ describe('ProjectService', () => {
     exchangeRate: Record<string, jest.Mock>;
     country: Record<string, jest.Mock>;
     operationLog: Record<string, jest.Mock>;
+    projectProcessRecord: Record<string, jest.Mock>;
     outboxEvent: Record<string, jest.Mock>;
     approvalTemplate: Record<string, jest.Mock>;
     $transaction: jest.Mock;
@@ -135,6 +136,7 @@ describe('ProjectService', () => {
         findMany: jest.fn().mockResolvedValue([{ countryCode: 'VN', nameZh: '越南' }]),
       },
       operationLog: { create: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+      projectProcessRecord: { create: jest.fn() },
       outboxEvent: { create: jest.fn() },
       approvalTemplate: { findMany: jest.fn().mockResolvedValue([]) },
       $transaction: jest.fn(),
@@ -245,7 +247,10 @@ describe('ProjectService', () => {
     prisma.project.count.mockResolvedValue(0);
     prisma.project.findMany.mockResolvedValue([]);
 
-    await service.findAll({ keyword: 'AC', lifecycleStatus: 'ACTIVE' }, publicActor);
+    await service.findAll(
+      { keyword: 'AC', lifecycleStatus: 'ACTIVE', scope: 'all' },
+      publicActor,
+    );
 
     expect(prisma.project.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -255,9 +260,11 @@ describe('ProjectService', () => {
               deletedAt: null,
               members: { some: { userId: 'user-1' } },
             },
+            { archivedAt: null },
             {
               OR: [
                 { projectName: { contains: 'AC' } },
+                { shortName: { contains: 'AC' } },
                 { projectCode: { contains: 'AC' } },
                 { customerName: { contains: 'AC' } },
               ],
@@ -679,7 +686,7 @@ describe('ProjectService', () => {
 
   it('physically deletes an empty project only for a super administrator and audits it', async () => {
     const adminActor = { ...publicActor, roles: ['SUPER_ADMIN'], permissions: ['project:delete'] };
-    prisma.project.findUnique.mockResolvedValue(mockProject);
+    prisma.project.findUnique.mockResolvedValue({ ...mockProject, archivedAt: new Date() });
 
     await service.purge('project-1', adminActor);
 
@@ -696,7 +703,7 @@ describe('ProjectService', () => {
 
   it('blocks physical deletion when protected records exist and audits the rejection', async () => {
     const adminActor = { ...publicActor, roles: ['SUPER_ADMIN'], permissions: ['project:delete'] };
-    prisma.project.findUnique.mockResolvedValue(mockProject);
+    prisma.project.findUnique.mockResolvedValue({ ...mockProject, archivedAt: new Date() });
     prisma.projectArchiveFile.count.mockResolvedValue(2);
     prisma.reviewTask.count.mockResolvedValue(1);
 
@@ -752,7 +759,7 @@ describe('ProjectService', () => {
       .mockResolvedValueOnce(2)
       .mockResolvedValueOnce(1);
 
-    await expect(service.getSummary(publicActor)).resolves.toEqual({
+    await expect(service.getSummary(publicActor, 'all')).resolves.toEqual({
       total: 8,
       active: 4,
       accepted: 2,
@@ -761,74 +768,101 @@ describe('ProjectService', () => {
     expect(projectAccess.buildProjectWhere).toHaveBeenCalledWith('user-1');
     expect(prisma.project.count).toHaveBeenNthCalledWith(2, {
       where: {
-        AND: [{ deletedAt: null }, { status: 'ACTIVE', archivedAt: null }],
+        AND: [
+          { AND: [{ deletedAt: null }, { archivedAt: null }] },
+          { status: 'ACTIVE', archivedAt: null },
+        ],
       },
     });
   });
 
-  it('requires a reason when moving the delivery stage backwards', async () => {
+  it('requires a reason when moving project progress to an earlier stage', async () => {
     prisma.project.findFirst.mockResolvedValue({
       id: 'project-1',
       currentStage: 'CONSTRUCTION',
+      progressPercent: new Prisma.Decimal(40),
+      expectedAcceptanceAt: null,
+      actualAcceptanceAt: null,
+      status: 'ACTIVE',
       revision: 1,
     });
 
     await expect(
-      service.updateStage('project-1', { revision: 1, targetStage: 'DEEPENING' }, sensitiveActor),
-    ).rejects.toThrow('项目阶段回退必须填写原因');
+      service.updateProgress(
+        'project-1',
+        { revision: 1, targetStage: 'DEEPENING', progressPercent: 35 },
+        sensitiveActor,
+      ),
+    ).rejects.toThrow('项目阶段回退必须填写变更说明');
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('updates stage and audit log atomically', async () => {
+  it('updates stage, percentage and audit log atomically through the progress command', async () => {
     prisma.project.findFirst
       .mockResolvedValueOnce({
         id: 'project-1',
         currentStage: 'CONSTRUCTION',
+        progressPercent: new Prisma.Decimal(40),
+        expectedAcceptanceAt: null,
+        actualAcceptanceAt: null,
+        status: 'ACTIVE',
         revision: 1,
       })
       .mockResolvedValueOnce(mockProject);
 
-    await service.updateStage(
+    await service.updateProgress(
       'project-1',
-      { revision: 1, targetStage: 'TESTING', reason: '现场已进入测试' },
+      { revision: 1, targetStage: 'TESTING', progressPercent: 70, reason: '现场已进入测试' },
       sensitiveActor,
     );
 
     expect(prisma.project.updateMany).toHaveBeenCalledWith({
       where: {
         id: 'project-1',
-        deletedAt: null,
         revision: 1,
-        currentStage: 'CONSTRUCTION',
+        archivedAt: null,
       },
       data: {
         currentStage: 'TESTING',
+        progressPercent: new Prisma.Decimal(70),
+        expectedAcceptanceAt: null,
+        actualAcceptanceAt: null,
         revision: { increment: 1 },
       },
     });
     expect(prisma.operationLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        action: 'stage_update',
-        beforeData: { stage: 'CONSTRUCTION', revision: 1 },
-        afterData: {
+        action: 'progress_update',
+        beforeData: expect.objectContaining({ stage: 'CONSTRUCTION', progressPercent: '40' }),
+        afterData: expect.objectContaining({
           stage: 'TESTING',
+          progressPercent: 70,
           revision: 2,
           reason: '现场已进入测试',
-        },
+        }),
       }),
     });
+    expect(prisma.projectProcessRecord.create).toHaveBeenCalled();
   });
 
-  it('rejects a concurrent stage update when the CAS no longer matches', async () => {
+  it('rejects a concurrent progress update when the CAS no longer matches', async () => {
     prisma.project.findFirst.mockResolvedValue({
       id: 'project-1',
       currentStage: 'CONSTRUCTION',
+      progressPercent: new Prisma.Decimal(40),
+      expectedAcceptanceAt: null,
+      actualAcceptanceAt: null,
+      status: 'ACTIVE',
       revision: 1,
     });
     prisma.project.updateMany.mockResolvedValue({ count: 0 });
 
     await expect(
-      service.updateStage('project-1', { revision: 1, targetStage: 'TESTING' }, sensitiveActor),
+      service.updateProgress(
+        'project-1',
+        { revision: 1, targetStage: 'TESTING', progressPercent: 70 },
+        sensitiveActor,
+      ),
     ).rejects.toThrow(ConflictException);
 
     expect(prisma.operationLog.create).not.toHaveBeenCalled();
@@ -892,10 +926,12 @@ describe('ProjectService', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('records actual acceptance only through the dedicated command', async () => {
+  it('records actual acceptance through the unified progress command', async () => {
     prisma.project.findFirst
       .mockResolvedValueOnce({
         id: 'project-1',
+        currentStage: 'TESTING',
+        progressPercent: new Prisma.Decimal(90),
         expectedAcceptanceAt: new Date('2026-12-20'),
         actualAcceptanceAt: null,
         status: 'ACTIVE',
@@ -907,10 +943,12 @@ describe('ProjectService', () => {
         actualAcceptanceAt: new Date('2026-12-18'),
       });
 
-    const result = await service.updateAcceptance(
+    const result = await service.updateProgress(
       'project-1',
       {
         revision: 1,
+        targetStage: 'EXTERNAL_ACCEPTANCE',
+        progressPercent: 100,
         actualAcceptanceAt: '2026-12-18T00:00:00.000Z',
         reason: '客户签署验收单',
       },
@@ -920,22 +958,21 @@ describe('ProjectService', () => {
     expect(prisma.project.updateMany).toHaveBeenCalledWith({
       where: {
         id: 'project-1',
-        deletedAt: null,
         revision: 1,
-        status: 'ACTIVE',
-        expectedAcceptanceAt: new Date('2026-12-20'),
-        actualAcceptanceAt: null,
+        archivedAt: null,
       },
       data: {
+        currentStage: 'EXTERNAL_ACCEPTANCE',
+        progressPercent: new Prisma.Decimal(100),
         expectedAcceptanceAt: new Date('2026-12-20'),
         actualAcceptanceAt: new Date('2026-12-18T00:00:00.000Z'),
-        revision: { increment: 1 },
         status: 'COMPLETED',
+        revision: { increment: 1 },
       },
     });
     expect(prisma.operationLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        action: 'acceptance_update',
+        action: 'progress_update',
         afterData: expect.objectContaining({
           reason: '客户签署验收单',
         }),
@@ -944,9 +981,11 @@ describe('ProjectService', () => {
     expect(result.acceptanceTimeType).toBe('ACTUAL');
   });
 
-  it('rejects a concurrent acceptance update when the CAS no longer matches', async () => {
+  it('rejects a concurrent acceptance progress update when the CAS no longer matches', async () => {
     prisma.project.findFirst.mockResolvedValue({
       id: 'project-1',
+      currentStage: 'TESTING',
+      progressPercent: new Prisma.Decimal(90),
       expectedAcceptanceAt: new Date('2026-12-20'),
       actualAcceptanceAt: null,
       status: 'ACTIVE',
@@ -955,10 +994,12 @@ describe('ProjectService', () => {
     prisma.project.updateMany.mockResolvedValue({ count: 0 });
 
     await expect(
-      service.updateAcceptance(
+      service.updateProgress(
         'project-1',
         {
           revision: 1,
+          targetStage: 'EXTERNAL_ACCEPTANCE',
+          progressPercent: 100,
           actualAcceptanceAt: '2026-12-18T00:00:00.000Z',
         },
         sensitiveActor,

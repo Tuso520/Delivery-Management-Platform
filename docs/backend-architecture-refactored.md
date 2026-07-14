@@ -169,7 +169,7 @@ tests/
 
 ```ts
 @RequirePermissions({
-  all: ['project:update', 'project:stage:update'],
+  all: ['project:update', 'project:progress:update'],
 })
 ```
 
@@ -197,7 +197,7 @@ tests/
 project:view
 project:create
 project:update
-project:stage:update
+project:progress:update
 project:archive
 project:restore
 project:delete
@@ -597,7 +597,7 @@ GET /projects/summary
 查询参数：
 
 ```text
-summaryFilter=ALL|ACTIVE|ACCEPTED|HIGH_RISK
+scope=mine|all
 ```
 
 返回：
@@ -622,6 +622,7 @@ GET /projects
 前端参数：
 
 ```text
+scope=mine|all
 keyword
 summaryFilter
 page
@@ -632,10 +633,19 @@ sort
 关键词搜索：
 
 - 项目名称
+- 项目简称
 - 项目编号
 - 客户名称
 
-返回字段严格匹配前端列表，不返回无关大对象。
+`scope=mine` 包含当前用户作为销售、项目经理、电气负责人、软件负责人或项目成员的项目；`scope=all` 仍受服务端数据范围约束。正常列表自动排除已归档项目。返回字段严格匹配前端列表，不返回无关大对象。
+
+### 归档列表
+
+```http
+GET /projects/archived
+```
+
+支持 `scope`、`keyword`、`page`、`pageSize`，只返回已归档且位于当前用户数据范围内的项目，并补充归档人摘要。
 
 ## 6.3 创建项目
 
@@ -676,26 +686,32 @@ PATCH /projects/:id
 
 这些必须使用专用命令接口。
 
-## 6.5 项目阶段修改
+## 6.5 项目进度修改
 
 ```http
-PATCH /projects/:id/stage
+PATCH /projects/:id/progress
 ```
 
 请求：
 
 ```ts
 {
+  revision: number
   targetStage: ProjectStage
+  progressPercent: number
+  expectedAcceptanceAt?: string
+  actualAcceptanceAt?: string
   reason?: string
 }
 ```
 
 规则：
 
-- 具备 `project:stage:update`。
+- 具备 `project:progress:update`，并通过项目数据范围检查。
 - 回退阶段必须填写原因。
-- 记录原阶段、新阶段、操作人和原因。
+- 阶段、百分比和预计/实际验收时间在同一事务内更新；提交实际验收时间时按业务规则进入已完成状态。
+- 通过 `revision` 乐观锁拒绝并发覆盖。
+- 记录原值、新值、操作人和原因。
 - 写入审计日志和项目动态。
 - 触发通知事件。
 
@@ -708,13 +724,14 @@ POST /projects/:id/complete
 POST /projects/:id/cancel
 POST /projects/:id/archive
 POST /projects/:id/restore
-DELETE /projects/:id
+DELETE /projects/:id/permanent
 ```
 
 规则：
 
-- 归档为软归档。
-- `DELETE /projects/:id` 仅允许 `SUPER_ADMIN`，权限装饰器之外 Service 再做角色终检。
+- 归档写入 `archivedAt` 和 `archivedBy`，仅允许 `SUPER_ADMIN`，或同时为项目创建者和项目经理的用户执行。
+- 恢复使用独立权限并清空归档标记。
+- `DELETE /projects/:id/permanent` 仅允许 `SUPER_ADMIN` 且项目必须已归档，权限装饰器之外 Service 再做角色终检。
 - 存在文件、审核记录、财务记录或审计记录时，默认禁止物理删除。
 - 成功删除与因关联记录被拒绝都写审计日志；409 消息返回四类阻断数量，前端保持当前页面。
 - 所有状态动作写审计日志。
@@ -2183,16 +2200,16 @@ API 可达性
 ```text
 /projects/summary
 /projects
+/projects/archived
 /projects/:id
-/projects/:id/stage
-/projects/:id/acceptance
+/projects/:id/progress
 /projects/:id/pause
 /projects/:id/resume
 /projects/:id/complete
 /projects/:id/cancel
 /projects/:id/archive
 /projects/:id/restore
-DELETE /projects/:id
+DELETE /projects/:id/permanent
 ```
 
 ## 项目档案

@@ -18,7 +18,7 @@ describe('PermissionsGuard', () => {
     const reflector = {
       getAllAndOverride: jest
         .fn()
-        .mockReturnValue({ all: ['project:update', 'project:stage:update'] }),
+        .mockReturnValue({ all: ['project:update', 'project:progress:update'] }),
     } as unknown as Reflector;
     const guard = new PermissionsGuard(reflector);
 
@@ -27,7 +27,7 @@ describe('PermissionsGuard', () => {
     ).toThrow(ForbiddenException);
     expect(
       guard.canActivate(
-        createContext(['project:update', 'project:stage:update']),
+        createContext(['project:update', 'project:progress:update']),
       ),
     ).toBe(true);
   });
@@ -49,7 +49,7 @@ describe('PermissionsGuard', () => {
     const reflector = {
       getAllAndOverride: jest.fn().mockReturnValue({
         all: ['project:update'],
-        any: ['project:stage:update', 'project:archive'],
+        any: ['project:progress:update', 'project:archive'],
       }),
     } as unknown as Reflector;
     const guard = new PermissionsGuard(reflector);
@@ -59,7 +59,7 @@ describe('PermissionsGuard', () => {
     ).toThrow(ForbiddenException);
     expect(
       guard.canActivate(
-        createContext(['project:update', 'project:stage:update']),
+        createContext(['project:update', 'project:progress:update']),
       ),
     ).toBe(true);
   });

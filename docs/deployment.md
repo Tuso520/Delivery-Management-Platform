@@ -220,6 +220,8 @@ pnpm --filter ./delivery-platform-server prisma:migrate-integration-secrets -- -
 
 迁移 094 删除旧项目运行时列前会将原状态写入 `project_legacy_state_archive` 并执行状态 preflight；出现异常必须中止，禁止绕过校验手工删列。旧业务表只读保留，不要在常规发布中物理删除。
 
+迁移 `20260715110000_expand_project_overview_and_archive` 增加合同类型、产品、关键词和归档操作人，统一电气/软件负责人列，并移除采购、财务负责人列。发布前必须确认目标提交的 Prisma Client 已重新生成；迁移和二次幂等 seed 由既有 `backend-migrate` 门禁按固定顺序执行，不得单独使用 `db push` 替代。部署后除通用就绪检查外，还要验证项目概览的 mine/all 查询、项目详情、统一进度命令、归档列表和恢复权限。
+
 ## 健康与就绪检查
 
 ```bash

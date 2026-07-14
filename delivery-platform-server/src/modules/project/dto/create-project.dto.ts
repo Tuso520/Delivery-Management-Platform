@@ -6,12 +6,26 @@ import {
   IsNumber,
   IsDateString,
   IsIn,
+  IsArray,
+  ArrayUnique,
+  IsBoolean,
   Max,
   MaxLength,
   Min,
 } from 'class-validator';
 
-import { PROJECT_DELIVERY_STAGES, type ProjectDeliveryStage } from '../project.constants';
+import {
+  CONTRACT_TYPES,
+  PRODUCT_TYPES,
+  PROJECT_DELIVERY_STAGES,
+  PROJECT_KEYWORDS,
+  PROJECT_TYPES,
+  type ContractType,
+  type ProductType,
+  type ProjectDeliveryStage,
+  type ProjectKeyword,
+  type ProjectType,
+} from '../project.constants';
 
 export class CreateProjectDto {
   @ApiProperty({ description: '项目名称' })
@@ -44,11 +58,27 @@ export class CreateProjectDto {
   @MaxLength(200)
   customerName?: string;
 
-  @ApiPropertyOptional({ description: '项目类型' })
+  @ApiPropertyOptional({ description: '项目类型', enum: PROJECT_TYPES })
   @IsOptional()
-  @IsString()
-  @MaxLength(50)
-  projectType?: string;
+  @IsIn(PROJECT_TYPES)
+  projectType?: ProjectType;
+
+  @ApiPropertyOptional({ description: '合同类型', enum: CONTRACT_TYPES })
+  @IsOptional()
+  @IsIn(CONTRACT_TYPES)
+  contractType?: ContractType;
+
+  @ApiPropertyOptional({ description: '产品', enum: PRODUCT_TYPES })
+  @IsOptional()
+  @IsIn(PRODUCT_TYPES)
+  product?: ProductType;
+
+  @ApiPropertyOptional({ description: '项目关键词', enum: PROJECT_KEYWORDS, isArray: true })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsIn(PROJECT_KEYWORDS, { each: true })
+  keywords?: ProjectKeyword[];
 
   @ApiPropertyOptional({ description: '合同币种' })
   @IsOptional()
@@ -98,22 +128,12 @@ export class CreateProjectDto {
   @ApiPropertyOptional({ description: '电气负责人ID' })
   @IsOptional()
   @IsString()
-  electricLeaderId?: string;
+  electricalOwnerId?: string;
 
   @ApiPropertyOptional({ description: '软件负责人ID' })
   @IsOptional()
   @IsString()
-  softwareLeaderId?: string;
-
-  @ApiPropertyOptional({ description: '采购负责人ID' })
-  @IsOptional()
-  @IsString()
-  purchaseOwnerId?: string;
-
-  @ApiPropertyOptional({ description: '财务负责人ID' })
-  @IsOptional()
-  @IsString()
-  financeOwnerId?: string;
+  softwareOwnerId?: string;
 
   @ApiPropertyOptional({ description: '目标交付阶段', enum: PROJECT_DELIVERY_STAGES })
   @IsOptional()
@@ -170,4 +190,9 @@ export class CreateProjectDto {
   @IsOptional()
   @IsString()
   approvalTemplateId?: string;
+
+  @ApiPropertyOptional({ description: '仅保存草稿，不发起新建项目审核', default: false })
+  @IsOptional()
+  @IsBoolean()
+  saveAsDraft?: boolean;
 }

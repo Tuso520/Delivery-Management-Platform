@@ -10,9 +10,8 @@ import type {
   ProjectUserReferenceOption,
   ProjectUserReferencePurpose,
   QueryProjectDto,
-  UpdateProjectAcceptanceDto,
   UpdateProjectDto,
-  UpdateProjectStageDto,
+  UpdateProjectProgressDto,
 } from '@/types/project'
 
 export const projectApi = {
@@ -22,6 +21,14 @@ export const projectApi = {
 
   getSummary() {
     return request.get<ProjectSummary>('/projects/summary')
+  },
+
+  getSummaryByScope(scope: 'mine' | 'all') {
+    return request.get<ProjectSummary>('/projects/summary', { params: { scope } })
+  },
+
+  getArchived(params: QueryProjectDto) {
+    return request.get<PaginatedData<Project>>('/projects/archived', { params })
   },
 
   getUserOptions(purpose: ProjectUserReferencePurpose) {
@@ -44,20 +51,16 @@ export const projectApi = {
     return request.patch<Project>(`/projects/${id}`, data)
   },
 
-  updateStage(id: string, data: UpdateProjectStageDto) {
-    return request.patch<Project>(`/projects/${id}/stage`, data)
-  },
-
-  updateAcceptance(id: string, data: UpdateProjectAcceptanceDto) {
-    return request.patch<Project>(`/projects/${id}/acceptance`, data)
+  updateProgress(id: string, data: UpdateProjectProgressDto) {
+    return request.patch<Project>(`/projects/${id}/progress`, data)
   },
 
   changeStatus(id: string, command: ProjectStatusCommand, data: ProjectStatusActionDto) {
     return request.post<Project>(`/projects/${id}/${command}`, data)
   },
 
-  delete(id: string) {
-    return request.delete<void>(`/projects/${id}`, { silent: true })
+  permanentDelete(id: string) {
+    return request.delete<void>(`/projects/${id}/permanent`, { silent: true })
   },
 
   getMembers(projectId: string) {

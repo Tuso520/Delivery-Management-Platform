@@ -243,10 +243,10 @@ const permissionDefs: PermissionSeed[] = [
   },
   // target project and archive commands
   {
-    permissionCode: 'project:stage:update',
-    permissionName: '修改项目阶段',
+    permissionCode: 'project:progress:update',
+    permissionName: '修改项目进度',
     resource: 'project',
-    action: 'stage_update',
+    action: 'progress_update',
   },
   {
     permissionCode: 'project:restore',

@@ -10,8 +10,6 @@ describe('business component adoption contract', () => {
   it('uses the shared workbench shell across the owned project and settings pages', () => {
     const pageContainers = [
       'src/views/project/index.vue',
-      'src/views/project/create.vue',
-      'src/views/project/detail.vue',
       'src/views/archive/index.vue',
       'src/views/system/notification.vue',
       'src/views/system/config.vue',
@@ -23,7 +21,6 @@ describe('business component adoption contract', () => {
 
     const tablePages = [
       'src/views/project/index.vue',
-      'src/views/project/detail.vue',
       'src/views/archive/index.vue',
       'src/views/system/notification.vue',
       'src/views/system/logs.vue',
@@ -33,7 +30,7 @@ describe('business component adoption contract', () => {
     for (const path of tablePages) expect(source(path)).toContain('<BusinessTable')
 
     expect(source('src/views/system/config.vue')).toContain('<StickyActionBar')
-    expect(source('src/views/project/create.vue')).toContain('<StickyActionBar')
+    expect(source('src/views/project/ProjectDrawer.vue')).toContain('<StickyActionBar')
     expect(source('src/views/project/index.vue')).toContain('<StatCard')
     expect(source('src/views/archive/index.vue')).toContain('<StatCard')
   })

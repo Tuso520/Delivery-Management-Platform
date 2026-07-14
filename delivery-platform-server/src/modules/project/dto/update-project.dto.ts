@@ -5,10 +5,23 @@ import {
   IsNumber,
   IsDateString,
   IsInt,
-  Max,
+  IsArray,
+  ArrayUnique,
+  IsIn,
   MaxLength,
   Min,
 } from 'class-validator';
+
+import {
+  CONTRACT_TYPES,
+  PRODUCT_TYPES,
+  PROJECT_KEYWORDS,
+  PROJECT_TYPES,
+  type ContractType,
+  type ProductType,
+  type ProjectKeyword,
+  type ProjectType,
+} from '../project.constants';
 
 export class UpdateProjectDto {
   @ApiProperty({ description: '当前项目版本号', minimum: 1 })
@@ -46,11 +59,27 @@ export class UpdateProjectDto {
   @MaxLength(200)
   customerName?: string;
 
-  @ApiPropertyOptional({ description: '项目类型' })
+  @ApiPropertyOptional({ description: '项目类型', enum: PROJECT_TYPES })
   @IsOptional()
-  @IsString()
-  @MaxLength(50)
-  projectType?: string;
+  @IsIn(PROJECT_TYPES)
+  projectType?: ProjectType;
+
+  @ApiPropertyOptional({ description: '合同类型', enum: CONTRACT_TYPES })
+  @IsOptional()
+  @IsIn(CONTRACT_TYPES)
+  contractType?: ContractType;
+
+  @ApiPropertyOptional({ description: '产品', enum: PRODUCT_TYPES })
+  @IsOptional()
+  @IsIn(PRODUCT_TYPES)
+  product?: ProductType;
+
+  @ApiPropertyOptional({ description: '项目关键词', enum: PROJECT_KEYWORDS, isArray: true })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsIn(PROJECT_KEYWORDS, { each: true })
+  keywords?: ProjectKeyword[];
 
   @ApiPropertyOptional({ description: '合同币种' })
   @IsOptional()
@@ -100,35 +129,18 @@ export class UpdateProjectDto {
   @ApiPropertyOptional({ description: '电气负责人ID' })
   @IsOptional()
   @IsString()
-  electricLeaderId?: string;
+  electricalOwnerId?: string;
 
   @ApiPropertyOptional({ description: '软件负责人ID' })
   @IsOptional()
   @IsString()
-  softwareLeaderId?: string;
-
-  @ApiPropertyOptional({ description: '采购负责人ID' })
-  @IsOptional()
-  @IsString()
-  purchaseOwnerId?: string;
-
-  @ApiPropertyOptional({ description: '财务负责人ID' })
-  @IsOptional()
-  @IsString()
-  financeOwnerId?: string;
+  softwareOwnerId?: string;
 
   @ApiPropertyOptional({ description: '风险等级' })
   @IsOptional()
   @IsString()
   @MaxLength(20)
   riskLevel?: string;
-
-  @ApiPropertyOptional({ description: '项目进度百分比' })
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Max(100)
-  progressPercent?: number;
 
   @ApiPropertyOptional({ description: '风险说明' })
   @IsOptional()
@@ -146,8 +158,4 @@ export class UpdateProjectDto {
   @IsString()
   plannedEndDate?: string;
 
-  @ApiPropertyOptional({ description: '预计验收时间' })
-  @IsOptional()
-  @IsDateString()
-  expectedAcceptanceAt?: string;
 }

@@ -4,8 +4,7 @@ import { validate } from 'class-validator';
 import type { JwtPayload } from '../../auth/strategies/jwt.strategy';
 import { CreateProjectDto } from '../dto/create-project.dto';
 import { ProjectStatusActionDto } from '../dto/project-status-action.dto';
-import { UpdateProjectAcceptanceDto } from '../dto/update-project-acceptance.dto';
-import { UpdateProjectStageDto } from '../dto/update-project-stage.dto';
+import { UpdateProjectProgressDto } from '../dto/update-project-progress.dto';
 import { ProjectController } from '../project.controller';
 import type { ProjectService } from '../project.service';
 
@@ -70,11 +69,11 @@ describe('ProjectController project creation', () => {
   });
 
   it.each([
-    Object.assign(new UpdateProjectStageDto(), { targetStage: 'TESTING' }),
-    Object.assign(new ProjectStatusActionDto(), { reason: '状态调整' }),
-    Object.assign(new UpdateProjectAcceptanceDto(), {
-      actualAcceptanceAt: '2026-12-18T00:00:00.000Z',
+    Object.assign(new UpdateProjectProgressDto(), {
+      targetStage: 'TESTING',
+      progressPercent: 80,
     }),
+    Object.assign(new ProjectStatusActionDto(), { reason: '状态调整' }),
   ])('requires revision in every project command DTO', async (commandDto) => {
     const errors = await validate(commandDto);
 

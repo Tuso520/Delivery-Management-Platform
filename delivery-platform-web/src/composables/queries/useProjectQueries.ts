@@ -9,7 +9,7 @@ import { dictionaryApi } from '@/api/platform'
 import { projectApi } from '@/api/project'
 import { projectPaymentApi } from '@/api/project-payment'
 import { queryKeys } from '@/query/keys'
-import type { QueryProjectDto } from '@/types/project'
+import type { ProjectScope, QueryProjectDto } from '@/types/project'
 
 export function useProjectListQuery(params: MaybeRefOrGetter<QueryProjectDto>) {
   return useQuery({
@@ -18,10 +18,17 @@ export function useProjectListQuery(params: MaybeRefOrGetter<QueryProjectDto>) {
   })
 }
 
-export function useProjectSummaryQuery() {
+export function useProjectSummaryQuery(scope: MaybeRefOrGetter<ProjectScope> = 'mine') {
   return useQuery({
-    queryKey: queryKeys.projects.summary(),
-    queryFn: projectApi.getSummary,
+    queryKey: computed(() => [...queryKeys.projects.summary(), toValue(scope)]),
+    queryFn: () => projectApi.getSummaryByScope(toValue(scope)),
+  })
+}
+
+export function useArchivedProjectListQuery(params: MaybeRefOrGetter<QueryProjectDto>) {
+  return useQuery({
+    queryKey: computed(() => [...queryKeys.projects.lists(), 'archived', toValue(params)]),
+    queryFn: () => projectApi.getArchived({ ...toValue(params) }),
   })
 }
 
@@ -80,6 +87,18 @@ export function useProjectFormOptionsQueries(
       {
         queryKey: [...queryKeys.projects.formOptions(), 'project-types'] as const,
         queryFn: () => dictionaryApi.getByCode('project_type'),
+      },
+      {
+        queryKey: [...queryKeys.projects.formOptions(), 'contract-types'] as const,
+        queryFn: () => dictionaryApi.getByCode('contract_type'),
+      },
+      {
+        queryKey: [...queryKeys.projects.formOptions(), 'product-types'] as const,
+        queryFn: () => dictionaryApi.getByCode('product_type'),
+      },
+      {
+        queryKey: [...queryKeys.projects.formOptions(), 'project-keywords'] as const,
+        queryFn: () => dictionaryApi.getByCode('project_keyword'),
       },
       {
         queryKey: queryKeys.projects.userOptions('sales-owner'),

@@ -10,7 +10,7 @@ const PAGINATION_CONSUMERS = [
   'src/views/system/approvals.vue',
   'src/views/archive/index.vue',
   'src/views/archive/template.vue',
-  'src/views/project/create.vue',
+  'src/views/project/ProjectDrawer.vue',
   'src/views/project/index.vue',
   'src/views/project/detail.vue',
   'src/views/review/pending.vue',

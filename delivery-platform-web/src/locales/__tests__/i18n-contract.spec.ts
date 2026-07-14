@@ -27,7 +27,7 @@ const targetVueSources = [
   'src/views/review/pending.vue',
   'src/views/review/components/ReviewDialog.vue',
   'src/views/project/index.vue',
-  'src/views/project/create.vue',
+  'src/views/project/ProjectDrawer.vue',
   'src/views/project/detail.vue',
   'src/views/archive/index.vue',
   'src/views/archive/template.vue',

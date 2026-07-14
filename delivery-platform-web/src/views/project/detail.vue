@@ -1,1011 +1,235 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { useI18n } from 'vue-i18n'
+import { computed, reactive, ref } from 'vue'
 import { Message } from '@arco-design/web-vue'
+import { useI18n } from 'vue-i18n'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 
 import { projectApi } from '@/api/project'
-import { hasHttpStatus } from '@/api/errors'
-import { projectPaymentApi } from '@/api/project-payment'
-import {
-  BusinessModal,
-  BusinessTable,
-  Can,
-  PageContainer,
-  PageToolbar,
-  SectionCard,
-  StatusBadge,
-} from '@/components/business'
-import {
-  useProjectDetailQuery,
-  useProjectPaymentsQuery,
-  useProjectUserOptionsQuery,
-} from '@/composables/queries/useProjectQueries'
-import { usePermission } from '@/composables/usePermission'
+import { BusinessModal, FormGrid, FormSection, PageToolbar, ReadonlyField, StatusBadge } from '@/components/business'
+import { useProjectDetailQuery } from '@/composables/queries/useProjectQueries'
 import { queryKeys } from '@/query/keys'
-import { useLocaleStore } from '@/store/locale'
-import type {
-  Project,
-  ProjectDeliveryStage,
-  ProjectLifecycleStatus,
-  ProjectMember,
-  ProjectStatusCommand,
-  ProjectUserReferenceOption,
-} from '@/types/project'
-import { PROJECT_DELIVERY_STAGES, PROJECT_ROLE_OPTIONS, STAGE_OPTIONS } from '@/types/project'
-import type { ProjectPayment, ProjectPaymentPayload } from '@/types/project-payment'
-import { arcoConfirm, arcoPrompt } from '@/utils/arco-dialog'
+import type { ProjectDeliveryStage } from '@/types/project'
+import { PROJECT_DELIVERY_STAGES, STAGE_OPTIONS } from '@/types/project'
+import { arcoConfirm } from '@/utils/arco-dialog'
 import {
-  localizeProjectRisk,
-  localizeProjectStage,
-  localizeProjectStatus,
-} from '@/utils/project-localization'
+  CONTRACT_TYPE_OPTIONS, PRODUCT_TYPE_OPTIONS, PROJECT_KEYWORD_OPTIONS, PROJECT_STAGE_COLORS,
+  PROJECT_TYPE_OPTIONS, findProjectDictionaryOption,
+} from '@/utils/project-dictionaries'
+import { localizeProjectRisk, localizeProjectStage, localizeProjectStatus } from '@/utils/project-localization'
 
-const props = withDefaults(
-  defineProps<{
-    embedded?: boolean
-    projectId?: string
-  }>(),
-  {
-    embedded: false,
-    projectId: '',
-  },
-)
-
-const emit = defineEmits<{
-  edit: []
-  close: []
-  changed: []
-}>()
-
-const route = useRoute()
-const router = useRouter()
-const localeStore = useLocaleStore()
-const { hasPermission, hasAllPermissions } = usePermission()
+const props = defineProps<{ embedded?: boolean; projectId: string }>()
+const emit = defineEmits<{ edit: []; close: []; changed: [] }>()
 const queryClient = useQueryClient()
 const { t } = useI18n()
-const resolvedProjectId = computed(
-  () =>
-    props.projectId ||
-    String(route.params.projectId || route.params.id || route.query.projectId || ''),
-)
-
-const memberModalVisible = ref(false)
-const memberForm = ref({ userId: '', projectRole: 'MEMBER' })
-const paymentModalVisible = ref(false)
-const editingPaymentId = ref('')
-const stageModalVisible = ref(false)
-const stageForm = ref<{ targetStage: ProjectDeliveryStage; reason: string }>({
-  targetStage: 'STARTUP',
-  reason: '',
+const query = useProjectDetailQuery(() => props.projectId)
+const project = computed(() => query.data.value)
+const progressVisible = ref(false)
+const progressForm = reactive({
+  targetStage: 'STARTUP' as ProjectDeliveryStage, progressPercent: 0,
+  expectedAcceptanceAt: '', actualAcceptanceAt: '', reason: '',
 })
-const acceptanceModalVisible = ref(false)
-const acceptanceForm = ref({
-  expectedAcceptanceAt: '',
-  actualAcceptanceAt: '',
-  reason: '',
-})
-const paymentForm = ref<ProjectPaymentPayload>({
-  projectId: resolvedProjectId.value,
-  paymentName: '',
-  originalAmount: 0,
-  originalCurrency: 'CNY',
-  convertedCurrency: 'CNY',
-  receivedOriginalAmount: 0,
-  dueDate: '',
-  receivedDate: '',
-  remark: '',
-})
-
-const projectQuery = useProjectDetailQuery(resolvedProjectId)
-const paymentQuery = useProjectPaymentsQuery(
-  resolvedProjectId,
-  computed(() => hasPermission('payment:view')),
-)
-const userOptionsQuery = useProjectUserOptionsQuery('project-member')
-const project = computed<Project | null>(() => projectQuery.data.value ?? null)
-const memberList = computed<ProjectMember[]>(() => project.value?.members ?? [])
-const paymentList = computed<ProjectPayment[]>(() => paymentQuery.data.value?.items ?? [])
-const userOptions = computed<ProjectUserReferenceOption[]>(() => userOptionsQuery.data.value ?? [])
-const loading = computed(() => projectQuery.isFetching.value || paymentQuery.isFetching.value)
-const loadError = computed(() => projectQuery.isError.value)
-
-type ProjectDetailMutation =
-  | { kind: 'remove-member'; memberId: string }
-  | { kind: 'add-member'; userId: string; projectRole: string }
-  | { kind: 'stage'; revision: number; targetStage: ProjectDeliveryStage; reason?: string }
-  | { kind: 'status'; revision: number; command: ProjectStatusCommand; reason?: string }
-  | {
-      kind: 'acceptance'
-      revision: number
-      expectedAcceptanceAt?: string
-      actualAcceptanceAt?: string
-      reason?: string
-    }
-  | { kind: 'payment'; paymentId?: string; data: ProjectPaymentPayload }
-
-const projectDetailMutation = useMutation({
-  mutationFn: async (variables: ProjectDetailMutation) => {
-    const projectId = resolvedProjectId.value
-    switch (variables.kind) {
-      case 'remove-member':
-        return projectApi.removeMember(projectId, variables.memberId)
-      case 'add-member':
-        return projectApi.addMember(projectId, {
-          userId: variables.userId,
-          projectRole: variables.projectRole,
-        })
-      case 'stage':
-        return projectApi.updateStage(projectId, {
-          revision: variables.revision,
-          targetStage: variables.targetStage,
-          reason: variables.reason,
-        })
-      case 'status':
-        return projectApi.changeStatus(projectId, variables.command, {
-          revision: variables.revision,
-          reason: variables.reason,
-        })
-      case 'acceptance':
-        return projectApi.updateAcceptance(projectId, {
-          revision: variables.revision,
-          expectedAcceptanceAt: variables.expectedAcceptanceAt,
-          actualAcceptanceAt: variables.actualAcceptanceAt,
-          reason: variables.reason,
-        })
-      case 'payment':
-        return variables.paymentId
-          ? projectPaymentApi.update(variables.paymentId, variables.data)
-          : projectPaymentApi.create(variables.data)
-    }
+const mutation = useMutation({
+  mutationFn: () => {
+    if (!project.value) throw new Error('项目尚未加载')
+    return projectApi.updateProgress(project.value.id, {
+      revision: project.value.revision, targetStage: progressForm.targetStage,
+      progressPercent: progressForm.progressPercent,
+      expectedAcceptanceAt: progressForm.expectedAcceptanceAt || undefined,
+      actualAcceptanceAt: progressForm.actualAcceptanceAt || undefined,
+      reason: progressForm.reason.trim() || undefined,
+    })
   },
   retry: false,
-  onSuccess: async (result, variables) => {
-    const projectId = resolvedProjectId.value
-    if (['stage', 'status', 'acceptance'].includes(variables.kind)) {
-      queryClient.setQueryData(queryKeys.projects.detail(projectId), result as Project)
-    }
-    const invalidations = [
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) }),
+  onSuccess: async (updated) => {
+    queryClient.setQueryData(queryKeys.projects.detail(props.projectId), updated)
+    await Promise.all([
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.lists() }),
-    ]
-    if (variables.kind === 'status') {
-      invalidations.push(queryClient.invalidateQueries({ queryKey: queryKeys.projects.summary() }))
-    }
-    if (variables.kind === 'payment') {
-      invalidations.push(
-        queryClient.invalidateQueries({ queryKey: queryKeys.projects.payments(projectId) }),
-      )
-    }
-    await Promise.all(invalidations)
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.summary() }),
+    ])
   },
 })
-const commandLoading = computed(() => projectDetailMutation.isPending.value)
-
-const isArchived = computed(() => Boolean(project.value?.archivedAt))
-
-const lifecycleStatus = computed<ProjectLifecycleStatus>(() => {
-  return project.value?.status ?? 'DRAFT'
-})
-
-const statusActions = computed<
-  Array<{
-    command: ProjectStatusCommand
-    label: string
-    status?: 'normal' | 'warning' | 'danger'
-  }>
->(() => {
-  if (isArchived.value) {
-    return hasPermission('project:restore')
-      ? [{ command: 'restore', label: t('projects.actions.restore'), status: 'normal' }]
-      : []
-  }
-  if (!hasPermission('project:update')) return []
-
-  const actions: Record<
-    ProjectLifecycleStatus,
-    Array<{
-      command: ProjectStatusCommand
-      label: string
-      status?: 'normal' | 'warning' | 'danger'
-    }>
-  > = {
-    DRAFT: [{ command: 'cancel', label: t('projects.actions.cancel'), status: 'danger' }],
-    ACTIVE: [
-      { command: 'pause', label: t('projects.actions.pause'), status: 'warning' },
-      { command: 'complete', label: t('projects.actions.complete'), status: 'normal' },
-      { command: 'cancel', label: t('projects.actions.cancel'), status: 'danger' },
-    ],
-    PAUSED: [
-      { command: 'resume', label: t('projects.actions.resume'), status: 'normal' },
-      { command: 'complete', label: t('projects.actions.complete'), status: 'normal' },
-      { command: 'cancel', label: t('projects.actions.cancel'), status: 'danger' },
-    ],
-    COMPLETED: [],
-    CANCELLED: [],
-  }
-  const result = [...actions[lifecycleStatus.value]]
-  if (hasPermission('project:archive')) {
-    result.push({ command: 'archive', label: t('projects.actions.archive'), status: 'warning' })
-  }
-  return result
-})
-
-async function refreshProject(): Promise<void> {
-  await Promise.allSettled([projectQuery.refetch(), paymentQuery.refetch()])
+function openProgress(): void {
+  if (!project.value) return
+  Object.assign(progressForm, {
+    targetStage: project.value.currentStage, progressPercent: project.value.progressPercent ?? 0,
+    expectedAcceptanceAt: project.value.expectedAcceptanceAt?.slice(0, 10) || '',
+    actualAcceptanceAt: project.value.actualAcceptanceAt?.slice(0, 10) || '', reason: '',
+  })
+  progressVisible.value = true
 }
-
-function currentProjectRevision(): number {
-  const revision = project.value?.revision
-  if (!revision) throw new Error('Project revision is unavailable')
-  return revision
-}
-
-async function handleProjectConflict(error: unknown): Promise<void> {
-  if (!hasHttpStatus(error, 409)) return
-  Message.warning(t('projects.conflict'))
-  await Promise.all([
-    refreshProject(),
-    queryClient.invalidateQueries({ queryKey: queryKeys.projects.lists() }),
-  ])
+async function saveProgress(): Promise<boolean> {
+  const currentIndex = project.value ? PROJECT_DELIVERY_STAGES.indexOf(project.value.currentStage) : -1
+  const targetIndex = PROJECT_DELIVERY_STAGES.indexOf(progressForm.targetStage)
+  if (targetIndex < currentIndex && !progressForm.reason.trim()) {
+    Message.warning('阶段回退必须填写变更说明')
+    return false
+  }
+  await mutation.mutateAsync()
+  progressVisible.value = false
+  Message.success('项目进度已更新')
   emit('changed')
+  return true
 }
-
-function handleEdit(): void {
-  if (props.embedded) emit('edit')
-  else void router.push(`/projects/${resolvedProjectId.value}/edit`)
+async function archiveProject(): Promise<void> {
+  if (!project.value) return
+  await arcoConfirm(`确认归档“${project.value.shortName || project.value.projectName}”？`, '归档项目', { type: 'warning' })
+  await arcoConfirm('归档后项目将移入归档列表，可由有权限人员恢复。', '再次确认归档', { type: 'warning', confirmButtonText: '确认归档' })
+  const updated = await projectApi.changeStatus(project.value.id, 'archive', { revision: project.value.revision })
+  queryClient.setQueryData(queryKeys.projects.detail(props.projectId), updated)
+  await queryClient.invalidateQueries({ queryKey: queryKeys.projects.lists() })
+  Message.success('项目已归档')
+  emit('changed')
+  emit('close')
 }
-
-function handleClose(): void {
-  if (props.embedded) emit('close')
-  else void router.push('/projects')
-}
-
-async function handleRemoveMember(member: ProjectMember): Promise<void> {
-  try {
-    await arcoConfirm(
-      t('projects.removeMemberConfirm', {
-        name: member.user?.realName || member.userId,
-      }),
-      t('projects.removeMemberTitle'),
-      {
-        type: 'warning',
-      },
-    )
-    await projectDetailMutation.mutateAsync({ kind: 'remove-member', memberId: member.id })
-    Message.success(t('projects.memberRemoved'))
-    emit('changed')
-  } catch {
-    // Cancellation and request failures use the shared interaction layer.
-  }
-}
-
-async function openAddMember(): Promise<void> {
-  memberForm.value = { userId: '', projectRole: 'MEMBER' }
-  memberModalVisible.value = true
-  if (!userOptionsQuery.data.value) await userOptionsQuery.refetch()
-}
-
-async function handleAddMember(): Promise<boolean> {
-  if (!memberForm.value.userId) {
-    Message.warning(t('projects.memberRequired'))
-    return false
-  }
-  try {
-    await projectDetailMutation.mutateAsync({
-      kind: 'add-member',
-      ...memberForm.value,
-    })
-    Message.success(t('projects.memberAdded'))
-    emit('changed')
-    return true
-  } catch {
-    return false
-  }
-}
-
-function openStageCommand(): void {
-  const current = resolveDeliveryStage(project.value)
-  stageForm.value = { targetStage: current || 'STARTUP', reason: '' }
-  stageModalVisible.value = true
-}
-
-async function saveStage(): Promise<boolean> {
-  const current = resolveDeliveryStage(project.value)
-  const currentIndex = current ? PROJECT_DELIVERY_STAGES.indexOf(current) : -1
-  const targetIndex = PROJECT_DELIVERY_STAGES.indexOf(stageForm.value.targetStage)
-  if (currentIndex >= 0 && targetIndex < currentIndex && !stageForm.value.reason.trim()) {
-    Message.warning(t('projects.stageRollbackRequired'))
-    return false
-  }
-
-  try {
-    await projectDetailMutation.mutateAsync({
-      kind: 'stage',
-      revision: currentProjectRevision(),
-      targetStage: stageForm.value.targetStage,
-      reason: stageForm.value.reason.trim() || undefined,
-    })
-    stageModalVisible.value = false
-    Message.success(t('projects.stageUpdated'))
-    emit('changed')
-    return true
-  } catch (error) {
-    await handleProjectConflict(error)
-    return false
-  }
-}
-
-async function executeStatusCommand(command: ProjectStatusCommand, label: string): Promise<void> {
-  try {
-    let reason: string | undefined
-    if (command === 'archive' || command === 'restore') {
-      await arcoConfirm(t('projects.actionConfirm', { label }), label, {
-        type: command === 'archive' ? 'warning' : 'info',
-      })
-    } else {
-      const prompt = await arcoPrompt(t('projects.actionReasonHint'), label, {
-        inputType: 'textarea',
-        inputPlaceholder: t('projects.actionReasonPlaceholder'),
-      })
-      reason = prompt.value.trim() || undefined
-    }
-
-    await projectDetailMutation.mutateAsync({
-      kind: 'status',
-      revision: currentProjectRevision(),
-      command,
-      reason,
-    })
-    Message.success(t('projects.actionSuccess', { label }))
-    emit('changed')
-  } catch (error) {
-    await handleProjectConflict(error)
-  }
-}
-
-function openAcceptanceCommand(): void {
-  acceptanceForm.value = {
-    expectedAcceptanceAt: project.value?.expectedAcceptanceAt?.slice(0, 10) || '',
-    actualAcceptanceAt: project.value?.actualAcceptanceAt?.slice(0, 10) || '',
-    reason: '',
-  }
-  acceptanceModalVisible.value = true
-}
-
-async function saveAcceptance(): Promise<boolean> {
-  if (!acceptanceForm.value.expectedAcceptanceAt && !acceptanceForm.value.actualAcceptanceAt) {
-    Message.warning(t('projects.acceptanceRequired'))
-    return false
-  }
-  try {
-    await projectDetailMutation.mutateAsync({
-      kind: 'acceptance',
-      revision: currentProjectRevision(),
-      expectedAcceptanceAt: acceptanceForm.value.expectedAcceptanceAt || undefined,
-      actualAcceptanceAt: acceptanceForm.value.actualAcceptanceAt || undefined,
-      reason: acceptanceForm.value.reason.trim() || undefined,
-    })
-    acceptanceModalVisible.value = false
-    Message.success(t('projects.acceptanceUpdated'))
-    emit('changed')
-    return true
-  } catch (error) {
-    await handleProjectConflict(error)
-    return false
-  }
-}
-
-function paymentStatusLabel(status: string): string {
-  return ['Planned', 'Invoiced', 'PartiallyReceived', 'Received', 'Overdue'].includes(status)
-    ? t(`projects.paymentStatus.${status}`)
-    : status
-}
-
-function openPayment(payment?: ProjectPayment): void {
-  editingPaymentId.value = payment?.id ?? ''
-  paymentForm.value = payment
-    ? {
-        projectId: resolvedProjectId.value,
-        paymentName: payment.paymentName,
-        paymentType: payment.paymentType,
-        dueDate: payment.dueDate?.slice(0, 10) ?? '',
-        originalAmount: payment.originalAmount,
-        originalCurrency: payment.originalCurrency,
-        convertedCurrency: payment.convertedCurrency,
-        receivedOriginalAmount: payment.receivedOriginalAmount,
-        receivedDate: payment.receivedDate?.slice(0, 10) ?? '',
-        remark: payment.remark ?? '',
-      }
-    : {
-        projectId: resolvedProjectId.value,
-        paymentName: '',
-        originalAmount: 0,
-        originalCurrency: project.value?.contractCurrency || 'CNY',
-        convertedCurrency: project.value?.baseCurrency || 'CNY',
-        receivedOriginalAmount: 0,
-        dueDate: '',
-        receivedDate: '',
-        remark: '',
-      }
-  paymentModalVisible.value = true
-}
-
-async function savePayment(): Promise<boolean> {
-  if (!paymentForm.value.paymentName || paymentForm.value.originalAmount <= 0) {
-    Message.warning(t('projects.paymentRequired'))
-    return false
-  }
-  try {
-    await projectDetailMutation.mutateAsync({
-      kind: 'payment',
-      paymentId: editingPaymentId.value || undefined,
-      data: paymentForm.value,
-    })
-    Message.success(t('projects.paymentSaved'))
-    return true
-  } catch {
-    return false
-  }
-}
-
-function resolveDeliveryStage(value: Project | null): ProjectDeliveryStage | null {
-  return value?.currentStage ?? null
-}
-
-function getCountryLabel(project: Project): string {
-  return project.countryName || project.countryCode
-}
-
-function projectRoleLabel(role: string): string {
-  const option = PROJECT_ROLE_OPTIONS.find((item) => item.value === role)
-  return option ? t(option.label) : role
-}
-
-function formatDate(value?: string | null): string {
-  if (!value) return '—'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString(localeStore.currentLocale)
-}
-
-function formatDateTime(value?: string | null): string {
-  if (!value) return '—'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString(localeStore.currentLocale)
-}
-
-function formatAmount(value?: number | null): string {
-  if (value == null) return '—'
-  return new Intl.NumberFormat(localeStore.currentLocale, { maximumFractionDigits: 2 }).format(
-    value,
-  )
-}
-
-function referenceLabel(option: ProjectUserReferenceOption): string {
-  return option.departmentName
-    ? `${option.displayName} (${option.name}) · ${option.departmentName}`
-    : `${option.displayName} (${option.name})`
-}
+function date(value?: string | null): string { return value ? value.slice(0, 10) : '—' }
+function money(value?: number | null): string { return value == null ? '—' : new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value) }
+function member(role: string): string { return project.value?.members?.find((item) => item.projectRole === role)?.user?.realName || '—' }
+function keyword(value: string) { return PROJECT_KEYWORD_OPTIONS.find((item) => item.value === value) }
 </script>
 
 <template>
-  <PageContainer class="project-detail-page" :class="{ embedded }">
-    <PageToolbar
-      :title="embedded ? '' : project?.projectName || t('projects.detail')"
-      :description="embedded ? '' : project?.projectCode || ''"
-    >
+  <div class="detail-root">
+    <PageToolbar>
       <template #actions>
-        <a-button v-if="!embedded" @click="handleClose">
-          {{ t('projects.detailPage.back') }}
+        <a-button v-if="project?.canEdit && !project.archivedAt" type="primary" @click="emit('edit')">
+          {{ t('projects.edit') }}
         </a-button>
-        <a-button
-          v-if="project && hasPermission('project:stage:update') && !isArchived"
-          @click="openStageCommand"
-        >
-          {{ t('projects.detailPage.adjustStage') }}
+        <a-button v-if="project?.canUpdateProgress && !project.archivedAt" @click="openProgress">
+          {{ t('projects.progress.update') }}
         </a-button>
-        <a-button
-          v-if="
-            project &&
-              hasAllPermissions(['project:update', 'project:view_acceptance']) &&
-              !isArchived
-          "
-          @click="openAcceptanceCommand"
-        >
-          {{ t('projects.detailPage.updateAcceptance') }}
-        </a-button>
-        <a-button
-          v-for="action in statusActions"
-          :key="action.command"
-          :status="action.status"
-          :loading="commandLoading"
-          @click="executeStatusCommand(action.command, action.label)"
-        >
-          {{ action.label }}
-        </a-button>
-        <Can v-if="project && !isArchived" permission="project:update">
-          <a-button type="primary" @click="handleEdit">
-            {{ t('common.edit') }}
-          </a-button>
-        </Can>
       </template>
     </PageToolbar>
-
-    <a-spin :loading="loading" class="detail-loading">
-      <a-result v-if="loadError" status="error" :title="t('projects.detailPage.loadFailed')">
-        <template #subtitle>
-          {{ t('projects.detailPage.loadFailedHint') }}
-        </template>
+    <a-spin :loading="query.isFetching.value">
+      <a-result v-if="query.isError.value" status="error" :title="t('projects.detailPage.loadFailed')">
         <template #extra>
-          <a-button type="primary" @click="refreshProject">
+          <a-button @click="query.refetch()">
             {{ t('common.retry') }}
           </a-button>
         </template>
       </a-result>
-
       <template v-else-if="project">
-        <SectionCard :bordered="false" class="detail-card">
-          <template #title>
-            <div class="card-title-row">
-              <span>{{ project.projectName }}</span>
-              <StatusBadge
-                domain="project"
-                :status="isArchived ? 'ARCHIVED' : lifecycleStatus"
-                :label="
-                  isArchived
-                    ? t('projects.archived')
-                    : localizeProjectStatus(lifecycleStatus, localeStore.currentLocale)
-                "
-              />
-            </div>
-          </template>
+        <FormSection :title="t('projects.sections.basic')">
+          <FormGrid :columns="4">
+            <ReadonlyField :label="t('projects.detailPage.projectCode')" :value="project.projectCode" />
+            <ReadonlyField class="span-2" :label="t('projects.createForm.projectName')" :value="project.projectName" />
+            <ReadonlyField :label="t('projects.detailPage.shortName')" :value="project.shortName" />
+            <ReadonlyField class="span-2" :label="t('projects.detailPage.customer')" :value="project.customerName" />
+            <ReadonlyField :label="t('projects.detailPage.region')" :value="`${project.countryName || project.countryCode} / ${project.city || '—'}`" />
+            <ReadonlyField :label="t('common.status')">
+              <StatusBadge domain="project" :status="project.archivedAt ? 'ARCHIVED' : project.status" :label="project.archivedAt ? t('projects.archived') : localizeProjectStatus(project.status, 'zh-CN')" />
+            </ReadonlyField>
+            <ReadonlyField :label="t('projects.createForm.projectType')">
+              <a-tag v-if="project.projectType" :color="findProjectDictionaryOption(PROJECT_TYPE_OPTIONS, project.projectType)?.color">
+                {{ findProjectDictionaryOption(PROJECT_TYPE_OPTIONS, project.projectType)?.label }}
+              </a-tag>
+            </ReadonlyField>
+            <ReadonlyField :label="t('projects.createForm.contractType')">
+              <a-tag v-if="project.contractType" :color="findProjectDictionaryOption(CONTRACT_TYPE_OPTIONS, project.contractType)?.color">
+                {{ project.contractType }}
+              </a-tag>
+            </ReadonlyField>
+            <ReadonlyField :label="t('projects.createForm.product')">
+              <a-tag v-if="project.product" :color="findProjectDictionaryOption(PRODUCT_TYPE_OPTIONS, project.product)?.color">
+                {{ findProjectDictionaryOption(PRODUCT_TYPE_OPTIONS, project.product)?.label }}
+              </a-tag>
+            </ReadonlyField>
+            <ReadonlyField class="span-full" :label="t('projects.createForm.keywords')">
+              <a-space wrap>
+                <a-tag v-for="item in project.keywords" :key="item" :color="keyword(item)?.color">
+                  {{ keyword(item)?.label || item }}
+                </a-tag><span v-if="!project.keywords.length">—</span>
+              </a-space>
+            </ReadonlyField>
+          </FormGrid>
+        </FormSection>
 
-          <a-descriptions :column="3" bordered size="small">
-            <a-descriptions-item :label="t('projects.detailPage.projectCode')">
-              {{
-                project.projectCode
-              }}
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('projects.detailPage.shortName')">
-              {{
-                project.shortName || '—'
-              }}
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('projects.detailPage.region')">
-              {{ getCountryLabel(project) }} / {{ project.city || '—' }}
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('projects.detailPage.customer')">
-              {{
-                project.customerName || '—'
-              }}
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('projects.detailPage.projectType')">
-              {{
-                project.projectType || '—'
-              }}
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('projects.detailPage.language')">
-              {{
-                project.projectLanguage || '—'
-              }}
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('projects.detailPage.currentStage')">
-              {{ localizeProjectStage(project.currentStage, localeStore.currentLocale) }}
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('projects.detailPage.progress')">
-              {{ project.progressPercent == null ? '—' : `${project.progressPercent}%` }}
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('projects.detailPage.riskLevel')">
-              <StatusBadge
-                domain="risk"
-                :status="project.riskLevel"
-                :label="localizeProjectRisk(project.riskLevel, localeStore.currentLocale)"
-              />
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('projects.detailPage.riskDescription')" :span="3">
-              {{ project.riskDescription || '—' }}
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('projects.detailPage.plannedStart')">
-              {{
-                formatDate(project.startDate)
-              }}
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('projects.detailPage.plannedEnd')">
-              {{
-                formatDate(project.plannedEndDate)
-              }}
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('projects.detailPage.acceptanceTime')">
-              <template v-if="project.acceptanceTimeType === 'ACTUAL'">
-                {{
-                  t('projects.detailPage.actualAcceptance', {
-                    date: formatDate(project.actualAcceptanceAt),
-                  })
-                }}
-              </template>
-              <template v-else-if="project.acceptanceTimeType === 'EXPECTED'">
-                {{
-                  t('projects.detailPage.expectedAcceptance', {
-                    date: formatDate(project.expectedAcceptanceAt),
-                  })
-                }}
-              </template>
-              <template v-else-if="project.acceptanceTimeType === 'NONE'">
-                —
-              </template>
-              <template v-else>
-                —
-              </template>
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('projects.detailPage.contractNo')">
-              {{
-                project.contractNo || '—'
-              }}
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('projects.detailPage.signedAt')">
-              {{
-                formatDate(project.contractSignedAt)
-              }}
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('projects.detailPage.contractAmount')">
-              <template v-if="project.contractAmount != null && project.contractCurrency">
-                {{ project.contractCurrency }} {{ formatAmount(project.contractAmount) }}
-              </template>
-              <template v-else>
-                —
-              </template>
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('projects.detailPage.convertedAmount')">
-              <template v-if="project.convertedAmount != null && project.baseCurrency">
-                {{ project.baseCurrency }} {{ formatAmount(project.convertedAmount) }}
-              </template>
-              <template v-else>
-                —
-              </template>
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('projects.detailPage.rate')">
-              {{ project.exchangeRate == null ? '—' : project.exchangeRate }}
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('projects.detailPage.rateDate')">
-              {{
-                formatDate(project.exchangeRateDate)
-              }}
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('common.createdAt')">
-              {{
-                formatDateTime(project.createdAt)
-              }}
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('common.updatedAt')">
-              {{
-                formatDateTime(project.updatedAt)
-              }}
-            </a-descriptions-item>
-          </a-descriptions>
-        </SectionCard>
+        <FormSection :title="t('projects.sections.planContract')">
+          <FormGrid :columns="4">
+            <ReadonlyField :label="t('projects.columns.currentStage')">
+              <a-tag :color="PROJECT_STAGE_COLORS[project.currentStage]">
+                {{ localizeProjectStage(project.currentStage, 'zh-CN') }}
+              </a-tag>
+            </ReadonlyField>
+            <ReadonlyField :label="t('projects.columns.progress')" :value="`${project.progressPercent ?? 0}%`" />
+            <ReadonlyField :label="t('projects.columns.signedAt')" :value="date(project.contractSignedAt)" />
+            <ReadonlyField :label="t('projects.detailPage.expectedAcceptanceLabel')" :value="date(project.expectedAcceptanceAt)" />
+            <ReadonlyField :label="t('projects.detailPage.actualAcceptanceLabel')" :value="date(project.actualAcceptanceAt)" />
+            <ReadonlyField :label="t('projects.createForm.sourceCurrency')" :value="project.contractCurrency" />
+            <ReadonlyField :label="t('projects.columns.contractAmount')" :value="project.contractCurrency && project.contractAmount != null ? `${project.contractCurrency} ${money(project.contractAmount)}` : '—'" />
+            <ReadonlyField :label="t('projects.columns.convertedCny')" :value="project.convertedAmount == null ? '—' : `CNY ${money(project.convertedAmount)}`" />
+          </FormGrid>
+        </FormSection>
 
-        <SectionCard :bordered="false" class="detail-card">
-          <template #title>
-            {{
-              t('projects.detailPage.members', { count: memberList.length })
-            }}
-          </template>
-          <template #extra>
-            <a-button
-              v-if="hasPermission('project:manage_member')"
-              type="primary"
-              size="small"
-              @click="openAddMember"
-            >
-              {{ t('projects.detailPage.addMember') }}
-            </a-button>
-          </template>
-          <BusinessTable
-            :data="memberList"
-            bordered
-            stripe
-            size="small"
-            :empty-title="t('projects.detailPage.emptyMembers')"
-          >
-            <a-table-column :title="t('projects.detailPage.name')" :min-width="120">
-              <template #cell="{ record: row }">
-                {{ row.user?.realName || '—' }}
-              </template>
-            </a-table-column>
-            <a-table-column :title="t('projects.detailPage.username')" :width="120">
-              <template #cell="{ record: row }">
-                {{ row.user?.username || '—' }}
-              </template>
-            </a-table-column>
-            <a-table-column
-              data-index="projectRole"
-              :title="t('projects.detailPage.projectRole')"
-              :width="140"
-            >
-              <template #cell="{ record: row }">
-                {{ projectRoleLabel(row.projectRole) }}
-              </template>
-            </a-table-column>
-            <a-table-column
-              v-if="hasPermission('project:manage_member')"
-              :title="t('common.action')"
-              :width="90"
-            >
-              <template #cell="{ record: row }">
-                <a-button
-                  type="text"
-                  status="danger"
-                  size="small"
-                  @click="handleRemoveMember(row)"
-                >
-                  {{ t('projects.detailPage.remove') }}
-                </a-button>
-              </template>
-            </a-table-column>
-          </BusinessTable>
-        </SectionCard>
+        <FormSection :title="t('projects.createForm.team')">
+          <FormGrid :columns="4">
+            <ReadonlyField :label="t('projects.createForm.salesOwner')" :value="member('SALES_OWNER')" /><ReadonlyField :label="t('projects.createForm.manager')" :value="member('PROJECT_MANAGER')" /><ReadonlyField :label="t('projects.createForm.electricalOwner')" :value="member('ELEC_LEADER')" /><ReadonlyField :label="t('projects.createForm.softwareOwner')" :value="member('SOFTWARE_LEADER')" />
+          </FormGrid>
+        </FormSection>
 
-        <SectionCard v-if="hasPermission('payment:view')" :bordered="false" class="detail-card">
-          <template #title>
-            {{ t('projects.detailPage.payments') }}
-          </template>
-          <template #extra>
-            <a-button
-              v-if="hasPermission('payment:operate')"
-              type="primary"
-              size="small"
-              @click="openPayment()"
-            >
-              {{ t('projects.detailPage.addPayment') }}
-            </a-button>
-          </template>
-          <BusinessTable
-            :data="paymentList"
-            bordered
-            stripe
-            size="small"
-            :empty-title="t('projects.detailPage.emptyPayments')"
-          >
-            <a-table-column
-              data-index="paymentName"
-              :title="t('projects.detailPage.paymentName')"
-              :min-width="160"
-            />
-            <a-table-column :title="t('projects.detailPage.plannedDate')" :width="120">
-              <template #cell="{ record: row }">
-                {{ formatDate(row.dueDate) }}
-              </template>
-            </a-table-column>
-            <a-table-column :title="t('projects.detailPage.receivable')" :width="150" align="right">
-              <template #cell="{ record: row }">
-                {{ row.originalCurrency }} {{ formatAmount(row.originalAmount) }}
-              </template>
-            </a-table-column>
-            <a-table-column :title="t('projects.detailPage.received')" :width="150" align="right">
-              <template #cell="{ record: row }">
-                {{ row.originalCurrency }} {{ formatAmount(row.receivedOriginalAmount) }}
-              </template>
-            </a-table-column>
-            <a-table-column :title="t('common.status')" :width="110">
-              <template #cell="{ record: row }">
-                <StatusBadge
-                  domain="payment"
-                  :status="row.status"
-                  :label="paymentStatusLabel(row.status)"
-                />
-              </template>
-            </a-table-column>
-            <a-table-column
-              v-if="hasPermission('payment:operate')"
-              :title="t('common.action')"
-              :width="80"
-            >
-              <template #cell="{ record: row }">
-                <a-button type="text" @click="openPayment(row)">
-                  {{ t('common.edit') }}
-                </a-button>
-              </template>
-            </a-table-column>
-          </BusinessTable>
-        </SectionCard>
+        <FormSection :title="t('projects.sections.riskArchive')">
+          <FormGrid :columns="4">
+            <ReadonlyField :label="t('projects.detailPage.riskLevel')">
+              <StatusBadge domain="risk" :status="project.riskLevel" :label="localizeProjectRisk(project.riskLevel, 'zh-CN')" />
+            </ReadonlyField>
+            <ReadonlyField class="span-2" :label="t('projects.detailPage.riskDescription')" :value="project.riskDescription" />
+            <ReadonlyField :label="t('projects.detailPage.archiveCompletion')" :value="project.archiveCompletion ? `${project.archiveCompletion.completed}/${project.archiveCompletion.total} (${t('projects.detailPage.required')} ${project.archiveCompletion.requiredCompleted}/${project.archiveCompletion.requiredTotal})` : '—'" />
+          </FormGrid>
+        </FormSection>
+
+        <FormSection :title="t('projects.detailPage.recentActivities')">
+          <a-timeline v-if="project.recentActivities?.length">
+            <a-timeline-item v-for="item in project.recentActivities" :key="item.id" :label="item.recordDate.slice(0, 16).replace('T', ' ')">
+              <strong>{{ item.title }}</strong><p>{{ item.description || '—' }}</p>
+            </a-timeline-item>
+          </a-timeline><a-empty v-else :description="t('projects.detailPage.emptyActivities')" />
+        </FormSection>
+
+        <section v-if="project.canArchive && !project.archivedAt" class="archive-zone">
+          <div><strong>{{ t('projects.archiveTitle') }}</strong><p>{{ t('projects.archiveHint') }}</p></div><a-button status="warning" @click="archiveProject">
+            {{ t('projects.archiveTitle') }}
+          </a-button>
+        </section>
       </template>
     </a-spin>
 
     <BusinessModal
-      v-model:visible="stageModalVisible"
-      :title="t('projects.detailPage.adjustStage')"
-      :ok-loading="commandLoading"
-      :on-before-ok="saveStage"
-    >
-      <a-form :model="stageForm" layout="vertical">
-        <a-form-item :label="t('projects.detailPage.targetStage')" required>
-          <a-select v-model="stageForm.targetStage">
-            <a-option
-              v-for="item in STAGE_OPTIONS"
-              :key="item.value"
-              :label="t(item.label)"
-              :value="item.value"
-            />
-          </a-select>
-        </a-form-item>
-        <a-form-item :label="t('projects.detailPage.adjustReason')">
-          <a-textarea
-            v-model="stageForm.reason"
-            :auto-size="{ minRows: 3, maxRows: 6 }"
-            :placeholder="t('projects.detailPage.rollbackPlaceholder')"
-          />
-        </a-form-item>
-      </a-form>
-    </BusinessModal>
-
-    <BusinessModal
-      v-model:visible="acceptanceModalVisible"
-      :title="t('projects.detailPage.acceptanceTitle')"
-      :ok-loading="commandLoading"
-      :on-before-ok="saveAcceptance"
-    >
-      <a-form :model="acceptanceForm" layout="vertical">
-        <a-row :gutter="12">
-          <a-col :span="12">
-            <a-form-item :label="t('projects.detailPage.expectedAcceptanceLabel')">
-              <a-date-picker
-                v-model="acceptanceForm.expectedAcceptanceAt"
-                format="YYYY-MM-DD"
-                style="width: 100%"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item :label="t('projects.detailPage.actualAcceptanceLabel')">
-              <a-date-picker
-                v-model="acceptanceForm.actualAcceptanceAt"
-                format="YYYY-MM-DD"
-                style="width: 100%"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-form-item :label="t('projects.detailPage.adjustmentNote')">
-          <a-textarea v-model="acceptanceForm.reason" :auto-size="{ minRows: 3, maxRows: 6 }" />
-        </a-form-item>
-      </a-form>
-    </BusinessModal>
-
-    <BusinessModal
-      v-model:visible="memberModalVisible"
-      :title="t('projects.detailPage.addMemberTitle')"
-      :on-before-ok="handleAddMember"
-    >
-      <a-form :model="memberForm" layout="vertical">
-        <a-form-item :label="t('projects.detailPage.employee')" required>
-          <a-select
-            v-model="memberForm.userId"
-            allow-search
-            :placeholder="t('projects.detailPage.employeePlaceholder')"
-          >
-            <a-option
-              v-for="user in userOptions"
-              :key="user.id"
-              :label="referenceLabel(user)"
-              :value="user.id"
-            />
-          </a-select>
-        </a-form-item>
-        <a-form-item :label="t('projects.detailPage.position')">
-          <a-select v-model="memberForm.projectRole">
-            <a-option
-              v-for="role in PROJECT_ROLE_OPTIONS"
-              :key="role.value"
-              :label="t(role.label)"
-              :value="role.value"
-            />
-          </a-select>
-        </a-form-item>
-      </a-form>
-    </BusinessModal>
-
-    <BusinessModal
-      v-model:visible="paymentModalVisible"
-      :title="
-        editingPaymentId
-          ? t('projects.detailPage.editPayment')
-          : t('projects.detailPage.newPayment')
-      "
+      v-model:visible="progressVisible"
+      :title="t('projects.progress.update')"
       :width="620"
-      :on-before-ok="savePayment"
+      :ok-loading="mutation.isPending.value"
+      :on-before-ok="saveProgress"
     >
-      <a-form :model="paymentForm" layout="vertical">
-        <a-form-item :label="t('projects.detailPage.paymentName')" required>
-          <a-input
-            v-model="paymentForm.paymentName"
-            :placeholder="t('projects.detailPage.paymentPlaceholder')"
-          />
-        </a-form-item>
-        <a-row :gutter="12">
-          <a-col :span="12">
-            <a-form-item :label="t('projects.detailPage.plannedDate')">
-              <a-date-picker
-                v-model="paymentForm.dueDate"
-                format="YYYY-MM-DD"
-                style="width: 100%"
+      <a-form :model="progressForm" layout="vertical">
+        <FormGrid>
+          <ReadonlyField :label="t('projects.progress.currentStage')" :value="project ? localizeProjectStage(project.currentStage, 'zh-CN') : '—'" />
+          <a-form-item :label="t('projects.progress.newStage')" required>
+            <a-select v-model="progressForm.targetStage">
+              <a-option
+                v-for="item in STAGE_OPTIONS"
+                :key="item.value"
+                :value="item.value"
+                :label="item.label"
               />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item :label="t('projects.detailPage.receivedDate')">
-              <a-date-picker
-                v-model="paymentForm.receivedDate"
-                format="YYYY-MM-DD"
-                style="width: 100%"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-row :gutter="12">
-          <a-col :span="12">
-            <a-form-item :label="t('projects.detailPage.receivable')">
-              <a-input-number
-                v-model="paymentForm.originalAmount"
-                :min="0"
-                :precision="2"
-                style="width: 100%"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item :label="t('projects.detailPage.received')">
-              <a-input-number
-                v-model="paymentForm.receivedOriginalAmount"
-                :min="0"
-                :precision="2"
-                style="width: 100%"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-form-item :label="t('projects.detailPage.note')">
-          <a-textarea v-model="paymentForm.remark" :auto-size="{ minRows: 2, maxRows: 5 }" />
-        </a-form-item>
+            </a-select>
+          </a-form-item>
+          <a-form-item :label="t('projects.progress.percent')" required>
+            <a-input-number v-model="progressForm.progressPercent" :min="0" :max="100" />
+          </a-form-item>
+          <a-form-item :label="t('projects.detailPage.expectedAcceptanceLabel')">
+            <a-date-picker v-model="progressForm.expectedAcceptanceAt" format="YYYY-MM-DD" />
+          </a-form-item>
+          <a-form-item :label="t('projects.detailPage.actualAcceptanceLabel')">
+            <a-date-picker v-model="progressForm.actualAcceptanceAt" format="YYYY-MM-DD" />
+          </a-form-item>
+          <a-form-item class="span-full" :label="t('projects.progress.reason')">
+            <a-textarea v-model="progressForm.reason" :auto-size="{ minRows: 3, maxRows: 6 }" :placeholder="t('projects.progress.rollbackRequired')" />
+          </a-form-item>
+        </FormGrid>
       </a-form>
     </BusinessModal>
-  </PageContainer>
+  </div>
 </template>
 
-<style scoped lang="scss">
-.project-detail-page {
-  min-width: 0;
-}
-
-.detail-loading {
-  display: block;
-  min-height: 240px;
-}
-
-.detail-card {
-  margin-bottom: 8px;
-  border: 1px solid var(--color-border-2);
-  border-radius: 0;
-}
-
-.detail-card :deep(.arco-card-header) {
-  min-height: 40px;
-  padding: 8px 12px;
-}
-
-.detail-card :deep(.arco-card-body) {
-  padding: 10px 12px;
-}
-
-.card-title-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-@media (max-width: 900px) {
-  :deep(.arco-descriptions-layout-fixed) {
-    table-layout: auto;
-  }
-}
+<style scoped>
+.detail-root { min-width: 0; }.archive-zone { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: 18px; padding: 16px; border: 1px solid rgb(var(--warning-3)); background: var(--color-warning-light-1); }.archive-zone p, .arco-timeline p { margin: 4px 0 0; color: var(--color-text-3); }
 </style>

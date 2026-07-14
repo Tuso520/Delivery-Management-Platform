@@ -22,8 +22,7 @@ import { SystemConfigService } from '../system-config/system-config.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { ProjectStatusActionDto } from './dto/project-status-action.dto';
 import { QueryProjectDto } from './dto/query-project.dto';
-import { UpdateProjectAcceptanceDto } from './dto/update-project-acceptance.dto';
-import { UpdateProjectStageDto } from './dto/update-project-stage.dto';
+import { UpdateProjectProgressDto } from './dto/update-project-progress.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { ProjectAccessService } from './project-access.service';
 import {
@@ -35,6 +34,7 @@ import {
   type ProjectDeliveryStage,
   type ProjectLifecycleStatus,
   type ProjectSummaryFilter,
+  type ProjectScope,
 } from './project.constants';
 
 type ProjectActor = Pick<JwtPayload, 'sub' | 'permissions' | 'roles'> | string;
@@ -65,6 +65,9 @@ interface ProjectListItem {
   city: string | null;
   customerName: string | null;
   projectType: string | null;
+  contractType: string | null;
+  product: string | null;
+  keywords: string[];
   contractCurrency?: string | null;
   baseCurrency?: string | null;
   contractAmount?: number | null;
@@ -74,6 +77,9 @@ interface ProjectListItem {
   exchangeRateSource?: string | null;
   projectLanguage: string | null;
   salesOwnerId: string | null;
+  projectManagerId: string | null;
+  electricalOwnerId: string | null;
+  softwareOwnerId: string | null;
   revision: number;
   status: ProjectLifecycleStatus;
   currentStage: ProjectDeliveryStage;
@@ -88,6 +94,8 @@ interface ProjectListItem {
   expectedAcceptanceAt: Date | null;
   actualAcceptanceAt: Date | null;
   acceptanceTimeType: 'ACTUAL' | 'EXPECTED' | 'NONE';
+  archivedAt: Date | null;
+  archivedBy: string | null;
   createdBy: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -122,6 +130,7 @@ export class ProjectService {
       page = 1,
       pageSize: requestedPageSize,
       keyword,
+      scope: requestedScope = 'mine',
       lifecycleStatus,
       countryCode,
       projectType,
@@ -130,15 +139,17 @@ export class ProjectService {
     } = query;
     const pageSize = requestedPageSize ?? (await this.systemConfig.getDefaultProjectPageSize());
 
-    const scope: Prisma.ProjectWhereInput = userId
+    const allowedScope: Prisma.ProjectWhereInput = userId
       ? await this.projectAccess.buildProjectWhere(userId)
       : { deletedAt: null };
+    const scope = this.buildRequestedScope(allowedScope, requestedScope, userId);
     const filters: Prisma.ProjectWhereInput[] = [];
 
     if (keyword) {
       filters.push({
         OR: [
           { projectName: { contains: keyword } },
+          { shortName: { contains: keyword } },
           { projectCode: { contains: keyword } },
           { customerName: { contains: keyword } },
         ],
@@ -162,7 +173,7 @@ export class ProjectService {
     }
 
     const where: Prisma.ProjectWhereInput = {
-      AND: [scope, ...filters],
+      AND: [scope, { archivedAt: null }, ...filters],
     };
 
     const [total, list] = await Promise.all([
@@ -178,6 +189,9 @@ export class ProjectService {
           city: true,
           customerName: true,
           projectType: true,
+          contractType: true,
+          product: true,
+          keywords: true,
           contractCurrency: true,
           baseCurrency: true,
           contractAmount: true,
@@ -187,6 +201,9 @@ export class ProjectService {
           exchangeRateSource: true,
           projectLanguage: true,
           salesOwnerId: true,
+          projectManagerId: true,
+          electricalOwnerId: true,
+          softwareOwnerId: true,
           revision: true,
           status: true,
           currentStage: true,
@@ -200,6 +217,8 @@ export class ProjectService {
           actualEndDate: true,
           expectedAcceptanceAt: true,
           actualAcceptanceAt: true,
+          archivedAt: true,
+          archivedBy: true,
           createdBy: true,
           createdAt: true,
           updatedAt: true,
@@ -239,6 +258,7 @@ export class ProjectService {
       this.getUserId(actor),
       {
         keyword: keyword ?? null,
+        scope: requestedScope,
         lifecycleStatus: lifecycleStatus ?? null,
         countryCode: countryCode ?? null,
         projectType: projectType ?? null,
@@ -255,7 +275,68 @@ export class ProjectService {
     };
   }
 
-  async getSummary(actor: ProjectActor): Promise<{
+  async findArchived(
+    query: QueryProjectDto,
+    actor: ProjectActor,
+  ): Promise<PaginatedResult<Record<string, unknown>>> {
+    const userId = this.requireUserId(actor);
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? (await this.systemConfig.getDefaultProjectPageSize());
+    const allowedScope = await this.projectAccess.buildProjectWhere(userId);
+    const keywordFilter: Prisma.ProjectWhereInput = query.keyword
+      ? {
+          OR: [
+            { projectName: { contains: query.keyword } },
+            { shortName: { contains: query.keyword } },
+            { projectCode: { contains: query.keyword } },
+            { customerName: { contains: query.keyword } },
+          ],
+        }
+      : {};
+    const where: Prisma.ProjectWhereInput = {
+      AND: [allowedScope, { archivedAt: { not: null } }, keywordFilter],
+    };
+    const [total, projects] = await Promise.all([
+      this.prisma.project.count({ where }),
+      this.prisma.project.findMany({
+        where,
+        include: {
+          members: {
+            where: { deletedAt: null },
+            include: {
+              user: { select: { id: true, username: true, realName: true } },
+            },
+          },
+        },
+        orderBy: { archivedAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ]);
+    const countryNames = await this.getCountryNames(projects.map((project) => project.countryCode));
+    const archivedByIds = projects
+      .map((project) => project.archivedBy)
+      .filter((id): id is string => Boolean(id));
+    const archivedUsers = await this.prisma.user.findMany({
+      where: { id: { in: archivedByIds } },
+      select: { id: true, username: true, realName: true },
+    });
+    const archivedUserById = new Map(archivedUsers.map((user) => [user.id, user]));
+    return {
+      items: projects.map((project) => ({
+        ...this.toProjectResponse(
+          { ...project, countryName: countryNames.get(project.countryCode) ?? null },
+          actor,
+        ),
+        archivedByUser: project.archivedBy ? (archivedUserById.get(project.archivedBy) ?? null) : null,
+      })),
+      page,
+      pageSize,
+      total,
+    };
+  }
+
+  async getSummary(actor: ProjectActor, requestedScope: ProjectScope = 'mine'): Promise<{
     total: number;
     active: number;
     accepted: number;
@@ -265,22 +346,24 @@ export class ProjectService {
     if (!userId) {
       throw new ForbiddenException('缺少用户上下文');
     }
-    const scope = await this.projectAccess.buildProjectWhere(userId);
+    const allowedScope = await this.projectAccess.buildProjectWhere(userId);
+    const scope = this.buildRequestedScope(allowedScope, requestedScope, userId);
+    const activeScope: Prisma.ProjectWhereInput = { AND: [scope, { archivedAt: null }] };
     const [total, active, accepted, highRisk] = await Promise.all([
-      this.prisma.project.count({ where: scope }),
+      this.prisma.project.count({ where: activeScope }),
       this.prisma.project.count({
         where: {
-          AND: [scope, this.buildSummaryFilterWhere('ACTIVE')],
+          AND: [activeScope, this.buildSummaryFilterWhere('ACTIVE')],
         },
       }),
       this.prisma.project.count({
         where: {
-          AND: [scope, this.buildSummaryFilterWhere('ACCEPTED')],
+          AND: [activeScope, this.buildSummaryFilterWhere('ACCEPTED')],
         },
       }),
       this.prisma.project.count({
         where: {
-          AND: [scope, this.buildSummaryFilterWhere('HIGH_RISK')],
+          AND: [activeScope, this.buildSummaryFilterWhere('HIGH_RISK')],
         },
       }),
     ]);
@@ -306,6 +389,26 @@ export class ProjectService {
             },
           },
         },
+        processRecords: {
+          where: { deletedAt: null },
+          orderBy: { recordDate: 'desc' },
+          take: 10,
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            stageCode: true,
+            recordDate: true,
+            createdBy: true,
+          },
+        },
+        archiveEntries: {
+          where: { archivedAt: null },
+          select: {
+            required: true,
+            files: { where: { archivedAt: null }, select: { id: true } },
+          },
+        },
       },
     });
 
@@ -314,10 +417,23 @@ export class ProjectService {
     }
     await this.auditSensitiveRead(actor, auditContext, 'view_financial', id);
     const countryNames = await this.getCountryNames([project.countryCode]);
-    return this.toProjectResponse(
-      { ...project, countryName: countryNames.get(project.countryCode) ?? null },
-      actor,
-    );
+    const { archiveEntries: completionEntries = [], ...projectFields } = project;
+    const archiveCompletion = {
+      total: completionEntries.length,
+      completed: completionEntries.filter((entry) => entry.files.length > 0).length,
+      requiredTotal: completionEntries.filter((entry) => entry.required).length,
+      requiredCompleted: completionEntries.filter(
+        (entry) => entry.required && entry.files.length > 0,
+      ).length,
+    };
+    return {
+      ...this.toProjectResponse(
+        { ...projectFields, countryName: countryNames.get(project.countryCode) ?? null },
+        actor,
+      ),
+      archiveCompletion,
+      recentActivities: project.processRecords ?? [],
+    };
   }
 
   async generateProjectCode(countryCode: string, customerCode: string): Promise<string> {
@@ -366,8 +482,10 @@ export class ProjectService {
     const deliveryStage = dto.deliveryStage ?? 'STARTUP';
     const riskLevel = dto.riskLevel ?? (await this.systemConfig.getDefaultProjectRiskLevel());
     const projectId = uuidv4();
-    const preparedReview = await this.prepareProjectCreateReview(projectId, dto, userId);
-    const initialLifecycleStatus = preparedReview ? 'DRAFT' : 'ACTIVE';
+    const preparedReview = dto.saveAsDraft
+      ? null
+      : await this.prepareProjectCreateReview(projectId, dto, userId);
+    const initialLifecycleStatus = dto.saveAsDraft || preparedReview ? 'DRAFT' : 'ACTIVE';
 
     try {
       const result = await this.prisma.$transaction(async (tx) => {
@@ -381,6 +499,9 @@ export class ProjectService {
             city: dto.city,
             customerName: dto.customerName,
             projectType: dto.projectType,
+            contractType: dto.contractType,
+            product: dto.product,
+            keywords: dto.keywords ?? Prisma.JsonNull,
             contractCurrency: dto.contractCurrency,
             baseCurrency: dto.baseCurrency,
             contractAmount: dto.contractAmount ?? undefined,
@@ -390,10 +511,8 @@ export class ProjectService {
             projectLanguage: dto.projectLanguage,
             salesOwnerId: dto.salesOwnerId,
             projectManagerId: dto.projectManagerId,
-            electricLeaderId: dto.electricLeaderId,
-            softwareLeaderId: dto.softwareLeaderId,
-            purchaseOwnerId: dto.purchaseOwnerId,
-            financeOwnerId: dto.financeOwnerId,
+            electricalOwnerId: dto.electricalOwnerId,
+            softwareOwnerId: dto.softwareOwnerId,
             status: initialLifecycleStatus,
             currentStage: deliveryStage,
             progressPercent:
@@ -413,7 +532,7 @@ export class ProjectService {
             createdBy: userId,
           },
         });
-        await this.syncLeadershipMembers(tx, created.id, dto, userId);
+        await this.syncLeadershipMembers(tx, created.id, dto);
         const archiveSnapshot = await this.projectArchiveSnapshot.createProjectSnapshot(
           tx,
           created.id,
@@ -566,6 +685,9 @@ export class ProjectService {
     if (dto.city !== undefined) updateData.city = dto.city;
     if (dto.customerName !== undefined) updateData.customerName = dto.customerName;
     if (dto.projectType !== undefined) updateData.projectType = dto.projectType;
+    if (dto.contractType !== undefined) updateData.contractType = dto.contractType;
+    if (dto.product !== undefined) updateData.product = dto.product;
+    if (dto.keywords !== undefined) updateData.keywords = dto.keywords;
     if (dto.contractCurrency !== undefined) updateData.contractCurrency = dto.contractCurrency;
     if (dto.baseCurrency !== undefined) updateData.baseCurrency = dto.baseCurrency;
     if (dto.contractAmount !== undefined) updateData.contractAmount = dto.contractAmount;
@@ -588,14 +710,9 @@ export class ProjectService {
     if (dto.projectLanguage !== undefined) updateData.projectLanguage = dto.projectLanguage;
     if (dto.salesOwnerId !== undefined) updateData.salesOwnerId = dto.salesOwnerId;
     if (dto.projectManagerId !== undefined) updateData.projectManagerId = dto.projectManagerId;
-    if (dto.electricLeaderId !== undefined) updateData.electricLeaderId = dto.electricLeaderId;
-    if (dto.softwareLeaderId !== undefined) updateData.softwareLeaderId = dto.softwareLeaderId;
-    if (dto.purchaseOwnerId !== undefined) updateData.purchaseOwnerId = dto.purchaseOwnerId;
-    if (dto.financeOwnerId !== undefined) updateData.financeOwnerId = dto.financeOwnerId;
+    if (dto.electricalOwnerId !== undefined) updateData.electricalOwnerId = dto.electricalOwnerId;
+    if (dto.softwareOwnerId !== undefined) updateData.softwareOwnerId = dto.softwareOwnerId;
     if (dto.riskLevel !== undefined) updateData.riskLevel = dto.riskLevel as RiskLevel;
-    if (dto.progressPercent !== undefined) {
-      updateData.progressPercent = new Prisma.Decimal(dto.progressPercent);
-    }
     if (dto.riskDescription !== undefined) {
       updateData.riskDescription = dto.riskDescription;
     }
@@ -603,11 +720,6 @@ export class ProjectService {
       updateData.startDate = dto.startDate ? new Date(dto.startDate) : null;
     if (dto.plannedEndDate !== undefined)
       updateData.plannedEndDate = dto.plannedEndDate ? new Date(dto.plannedEndDate) : null;
-    if (dto.expectedAcceptanceAt !== undefined) {
-      updateData.expectedAcceptanceAt = dto.expectedAcceptanceAt
-        ? new Date(dto.expectedAcceptanceAt)
-        : null;
-    }
     updateData.revision = { increment: 1 };
 
     await this.prisma.$transaction(async (tx) => {
@@ -639,53 +751,85 @@ export class ProjectService {
     return this.findById(id, actor);
   }
 
-  async updateStage(id: string, dto: UpdateProjectStageDto, actor: ProjectActor) {
+  async updateProgress(id: string, dto: UpdateProjectProgressDto, actor: ProjectActor) {
+    this.assertProgressPermission(actor);
     const userId = this.requireUserId(actor);
     const scope = await this.projectAccess.buildProjectWhere(userId);
     const project = await this.prisma.project.findFirst({
-      where: { ...scope, id },
+      where: { ...scope, id, archivedAt: null },
       select: {
         id: true,
         currentStage: true,
+        progressPercent: true,
+        expectedAcceptanceAt: true,
+        actualAcceptanceAt: true,
+        status: true,
         revision: true,
       },
     });
-    if (!project) throw new NotFoundException('项目不存在');
+    if (!project) throw new NotFoundException('项目不存在或已归档');
     this.assertProjectRevision(project.revision, dto.revision);
 
     const currentStage = this.requireDeliveryStage(project.currentStage, project.id);
-    const currentIndex = (PROJECT_DELIVERY_STAGES as readonly string[]).indexOf(currentStage);
+    const currentIndex = PROJECT_DELIVERY_STAGES.indexOf(currentStage);
     const targetIndex = PROJECT_DELIVERY_STAGES.indexOf(dto.targetStage);
-    if (currentIndex >= 0 && targetIndex < currentIndex && !dto.reason?.trim()) {
-      throw new BadRequestException('项目阶段回退必须填写原因');
+    if (targetIndex < currentIndex && !dto.reason?.trim()) {
+      throw new BadRequestException('项目阶段回退必须填写变更说明');
     }
+    const expectedAcceptanceAt = dto.expectedAcceptanceAt
+      ? new Date(dto.expectedAcceptanceAt)
+      : project.expectedAcceptanceAt;
+    const actualAcceptanceAt = dto.actualAcceptanceAt
+      ? new Date(dto.actualAcceptanceAt)
+      : project.actualAcceptanceAt;
+    const becameAccepted = Boolean(dto.actualAcceptanceAt && !project.actualAcceptanceAt);
+
     await this.prisma.$transaction(async (tx) => {
       const updateResult = await tx.project.updateMany({
-        where: {
-          id,
-          deletedAt: null,
-          revision: dto.revision,
-          currentStage: currentStage,
-        },
+        where: { id, revision: dto.revision, archivedAt: null },
         data: {
           currentStage: dto.targetStage,
+          progressPercent: new Prisma.Decimal(dto.progressPercent),
+          expectedAcceptanceAt,
+          actualAcceptanceAt,
+          ...(dto.actualAcceptanceAt ? { status: 'COMPLETED' } : {}),
           revision: { increment: 1 },
         },
       });
       this.assertProjectCommandUpdated(updateResult.count);
+      await tx.projectProcessRecord.create({
+        data: {
+          projectId: id,
+          title: '项目进度更新',
+          recordType: 'Progress',
+          stageCode: dto.targetStage,
+          recordDate: new Date(),
+          description: dto.reason?.trim() || `项目进度调整为 ${dto.progressPercent}%`,
+          createdBy: userId,
+        },
+      });
       await tx.operationLog.create({
         data: {
           userId,
           module: 'project',
-          action: 'stage_update',
+          action: 'progress_update',
           targetType: 'project',
           targetId: id,
           result: 'success',
-          beforeData: { stage: currentStage, revision: dto.revision },
+          beforeData: {
+            stage: currentStage,
+            progressPercent: project.progressPercent?.toString() ?? null,
+            expectedAcceptanceAt: project.expectedAcceptanceAt?.toISOString() ?? null,
+            actualAcceptanceAt: project.actualAcceptanceAt?.toISOString() ?? null,
+            revision: dto.revision,
+          },
           afterData: {
             stage: dto.targetStage,
-            revision: dto.revision + 1,
+            progressPercent: dto.progressPercent,
+            expectedAcceptanceAt: expectedAcceptanceAt?.toISOString() ?? null,
+            actualAcceptanceAt: actualAcceptanceAt?.toISOString() ?? null,
             reason: dto.reason?.trim() ?? null,
+            revision: dto.revision + 1,
           },
         },
       });
@@ -697,93 +841,21 @@ export class ProjectService {
           projectId: id,
           previousStage: currentStage,
           targetStage: dto.targetStage,
+          progressPercent: dto.progressPercent,
           reason: dto.reason?.trim() ?? null,
           changedBy: userId,
           revision: dto.revision + 1,
         },
       });
-    });
-    return this.findById(id, actor);
-  }
-
-  async updateAcceptance(id: string, dto: UpdateProjectAcceptanceDto, actor: ProjectActor) {
-    if (!dto.expectedAcceptanceAt && !dto.actualAcceptanceAt) {
-      throw new BadRequestException('至少填写一个验收时间');
-    }
-    const userId = this.requireUserId(actor);
-    const scope = await this.projectAccess.buildProjectWhere(userId);
-    const project = await this.prisma.project.findFirst({
-      where: { ...scope, id },
-      select: {
-        id: true,
-        expectedAcceptanceAt: true,
-        actualAcceptanceAt: true,
-        status: true,
-        revision: true,
-      },
-    });
-    if (!project) throw new NotFoundException('项目不存在');
-    this.assertProjectRevision(project.revision, dto.revision);
-
-    const expectedAcceptanceAt = dto.expectedAcceptanceAt
-      ? new Date(dto.expectedAcceptanceAt)
-      : project.expectedAcceptanceAt;
-    const actualAcceptanceAt = dto.actualAcceptanceAt
-      ? new Date(dto.actualAcceptanceAt)
-      : project.actualAcceptanceAt;
-    const currentStatus = this.requireLifecycleStatus(project.status, project.id);
-    await this.prisma.$transaction(async (tx) => {
-      const updateResult = await tx.project.updateMany({
-        where: {
-          id,
-          deletedAt: null,
-          revision: dto.revision,
-          status: currentStatus,
-          expectedAcceptanceAt: project.expectedAcceptanceAt,
-          actualAcceptanceAt: project.actualAcceptanceAt,
-        },
-        data: {
-          expectedAcceptanceAt,
-          actualAcceptanceAt,
-          revision: { increment: 1 },
-          ...(dto.actualAcceptanceAt
-            ? {
-                status: 'COMPLETED',
-              }
-            : {}),
-        },
-      });
-      this.assertProjectCommandUpdated(updateResult.count);
-      await tx.operationLog.create({
-        data: {
-          userId,
-          module: 'project',
-          action: 'acceptance_update',
-          targetType: 'project',
-          targetId: id,
-          result: 'success',
-          beforeData: {
-            expectedAcceptanceAt: project.expectedAcceptanceAt?.toISOString() ?? null,
-            actualAcceptanceAt: project.actualAcceptanceAt?.toISOString() ?? null,
-            revision: dto.revision,
-          },
-          afterData: {
-            expectedAcceptanceAt: expectedAcceptanceAt?.toISOString() ?? null,
-            actualAcceptanceAt: actualAcceptanceAt?.toISOString() ?? null,
-            revision: dto.revision + 1,
-            reason: dto.reason?.trim() ?? null,
-          },
-        },
-      });
-      if (dto.actualAcceptanceAt) {
+      if (becameAccepted && actualAcceptanceAt) {
         await enqueueDomainEvent(tx, {
           eventType: 'ProjectAccepted',
           aggregateType: 'project',
           aggregateId: id,
-          deduplicationKey: `ProjectAccepted:${id}:${new Date(dto.actualAcceptanceAt).toISOString()}`,
+          deduplicationKey: `ProjectAccepted:${id}:${actualAcceptanceAt.toISOString()}`,
           payload: {
             projectId: id,
-            actualAcceptanceAt: new Date(dto.actualAcceptanceAt).toISOString(),
+            actualAcceptanceAt: actualAcceptanceAt.toISOString(),
             acceptedBy: userId,
             revision: dto.revision + 1,
           },
@@ -807,6 +879,8 @@ export class ProjectService {
         id: true,
         status: true,
         archivedAt: true,
+        createdBy: true,
+        projectManagerId: true,
         revision: true,
       },
     });
@@ -819,15 +893,23 @@ export class ProjectService {
     let targetStatus = currentStatus;
 
     if (command === 'archive') {
+      if (!this.canArchiveProject(project, actor)) {
+        throw new ForbiddenException('仅管理员或该项目的创建者项目经理可归档项目');
+      }
       if (project.archivedAt) {
         throw new BadRequestException('项目已归档');
       }
       updateData.archivedAt = now;
+      updateData.archivedBy = userId;
     } else if (command === 'restore') {
+      if (!this.canRestoreProject(actor)) {
+        throw new ForbiddenException('无权恢复归档项目');
+      }
       if (!project.archivedAt) {
         throw new BadRequestException('项目未归档');
       }
       updateData.archivedAt = null;
+      updateData.archivedBy = null;
     } else {
       targetStatus = this.resolveStatusTransition(currentStatus, command);
       updateData.status = targetStatus;
@@ -910,6 +992,11 @@ export class ProjectService {
       city: project.city,
       customerName: project.customerName,
       projectType: project.projectType,
+      contractType: project.contractType,
+      product: project.product,
+      keywords: Array.isArray(project.keywords)
+        ? project.keywords.filter((keyword): keyword is string => typeof keyword === 'string')
+        : [],
       contractCurrency: project.contractCurrency,
       baseCurrency: project.baseCurrency,
       contractAmount: project.contractAmount?.toString() ?? null,
@@ -918,10 +1005,8 @@ export class ProjectService {
       projectLanguage: project.projectLanguage,
       salesOwnerId: project.salesOwnerId,
       projectManagerId: project.projectManagerId,
-      electricLeaderId: project.electricLeaderId,
-      softwareLeaderId: project.softwareLeaderId,
-      purchaseOwnerId: project.purchaseOwnerId,
-      financeOwnerId: project.financeOwnerId,
+      electricalOwnerId: project.electricalOwnerId,
+      softwareOwnerId: project.softwareOwnerId,
       progressPercent: project.progressPercent?.toString() ?? null,
       riskLevel: project.riskLevel,
       riskDescription: project.riskDescription,
@@ -990,9 +1075,13 @@ export class ProjectService {
             projectCode: true,
             projectName: true,
             status: true,
+            archivedAt: true,
           },
         });
         if (!project) throw new NotFoundException('项目不存在');
+        if (!project.archivedAt) {
+          throw new BadRequestException('仅已归档项目可永久删除');
+        }
 
         const [archiveFileCount, legacyFileCount, reviewCount, paymentCount, auditCount] =
           await Promise.all([
@@ -1061,16 +1150,12 @@ export class ProjectService {
     client: Pick<Prisma.TransactionClient, 'projectMember'>,
     projectId: string,
     dto: Partial<CreateProjectDto & UpdateProjectDto>,
-    creatorId?: string,
   ): Promise<void> {
     const assignments = [
       [dto.salesOwnerId, 'SALES_OWNER'],
       [dto.projectManagerId, 'PROJECT_MANAGER'],
-      [dto.electricLeaderId, 'ELEC_LEADER'],
-      [dto.softwareLeaderId, 'SOFTWARE_LEADER'],
-      [dto.purchaseOwnerId, 'PURCHASE'],
-      [dto.financeOwnerId, 'FINANCE'],
-      [creatorId, 'PROJECT_MANAGER'],
+      [dto.electricalOwnerId, 'ELEC_LEADER'],
+      [dto.softwareOwnerId, 'SOFTWARE_LEADER'],
     ] as const;
     for (const [assignedUserId, projectRole] of assignments) {
       if (!assignedUserId) continue;
@@ -1090,6 +1175,62 @@ export class ProjectService {
 
   private getUserId(actor?: ProjectActor): string | undefined {
     return typeof actor === 'string' ? actor : actor?.sub;
+  }
+
+  private buildRequestedScope(
+    allowedScope: Prisma.ProjectWhereInput,
+    requestedScope: ProjectScope,
+    userId?: string,
+  ): Prisma.ProjectWhereInput {
+    if (requestedScope === 'all') return allowedScope;
+    if (!userId) return { AND: [allowedScope, { id: { in: [] } }] };
+    return {
+      AND: [
+        allowedScope,
+        {
+          OR: [
+            { salesOwnerId: userId },
+            { projectManagerId: userId },
+            { electricalOwnerId: userId },
+            { softwareOwnerId: userId },
+            { members: { some: { userId, deletedAt: null } } },
+          ],
+        },
+      ],
+    };
+  }
+
+  private isSuperAdmin(actor?: ProjectActor): boolean {
+    return Boolean(actor && typeof actor !== 'string' && actor.roles.includes('SUPER_ADMIN'));
+  }
+
+  private hasPermission(actor: ProjectActor | undefined, permission: string): boolean {
+    return Boolean(
+      actor &&
+        typeof actor !== 'string' &&
+        (this.isSuperAdmin(actor) || actor.permissions.includes(permission)),
+    );
+  }
+
+  private canArchiveProject(
+    project: { createdBy: string | null; projectManagerId: string | null },
+    actor?: ProjectActor,
+  ): boolean {
+    if (!actor || typeof actor === 'string') return false;
+    return (
+      this.isSuperAdmin(actor) ||
+      (project.createdBy === actor.sub && project.projectManagerId === actor.sub)
+    );
+  }
+
+  private canRestoreProject(actor?: ProjectActor): boolean {
+    return this.hasPermission(actor, 'project:restore');
+  }
+
+  private assertProgressPermission(actor: ProjectActor): void {
+    if (!this.hasPermission(actor, 'project:progress:update')) {
+      throw new ForbiddenException('无权修改项目进度');
+    }
   }
 
   private requireUserId(actor: ProjectActor): string {
@@ -1268,6 +1409,17 @@ export class ProjectService {
       expectedAcceptanceAt: Date | null;
       actualAcceptanceAt: Date | null;
       progressPercent: Prisma.Decimal | null;
+      keywords: Prisma.JsonValue | null;
+      createdBy: string | null;
+      projectManagerId: string | null;
+      archivedAt: Date | null;
+      projectName: string;
+      city: string | null;
+      countryName?: string | null;
+      members?: Array<{
+        projectRole: string;
+        user: { id: string; username: string; realName: string };
+      }>;
     },
   >(project: T, actor?: ProjectActor) {
     const {
@@ -1283,6 +1435,7 @@ export class ProjectService {
       expectedAcceptanceAt,
       actualAcceptanceAt,
       progressPercent,
+      keywords,
       status,
       currentStage,
       ...publicFields
@@ -1291,6 +1444,9 @@ export class ProjectService {
     const canViewFinancial = this.canViewFinancial(actor);
     const canViewContract = this.canViewContract(actor);
     const canViewAcceptance = this.canViewAcceptance(actor);
+    const salesOwner = project.members?.find((member) => member.projectRole === 'SALES_OWNER')?.user ?? null;
+    const projectManager =
+      project.members?.find((member) => member.projectRole === 'PROJECT_MANAGER')?.user ?? null;
     const visibleExpectedAcceptanceAt = canViewAcceptance ? expectedAcceptanceAt : null;
     const visibleActualAcceptanceAt = canViewAcceptance ? actualAcceptanceAt : null;
     const acceptanceTimeType: ProjectListItem['acceptanceTimeType'] = visibleActualAcceptanceAt
@@ -1315,6 +1471,20 @@ export class ProjectService {
       expectedAcceptanceAt: visibleExpectedAcceptanceAt,
       actualAcceptanceAt: visibleActualAcceptanceAt,
       acceptanceTimeType,
+      name: project.projectName,
+      cityName: project.city,
+      currencyCode: canViewFinancial ? contractCurrency : null,
+      convertedCnyAmount: canViewFinancial ? (convertedAmount?.toNumber() ?? null) : null,
+      salesOwner,
+      projectManager,
+      keywords: Array.isArray(keywords)
+        ? keywords.filter((keyword): keyword is string => typeof keyword === 'string')
+        : [],
+      canEdit: this.hasPermission(actor, 'project:update'),
+      canUpdateProgress: this.hasPermission(actor, 'project:progress:update'),
+      canArchive: !project.archivedAt && this.canArchiveProject(project, actor),
+      canRestore: Boolean(project.archivedAt) && this.canRestoreProject(actor),
+      canPermanentDelete: Boolean(project.archivedAt) && this.isSuperAdmin(actor),
     };
   }
 

@@ -124,7 +124,7 @@ flowchart TD
 | -------- | ----------------------------------- |
 | 创建     | `project:create`                    |
 | 编辑     | `project:update`                    |
-| 阶段调整 | `project:stage:update` 且项目未归档 |
+| 进度调整 | `project:progress:update` 且项目未归档 |
 | 归档     | `project:archive` 且未归档          |
 | 恢复     | `project:restore` 且已归档          |
 
@@ -178,7 +178,7 @@ stateDiagram-v2
 - `project:manage_member`：添加或移除项目成员。
 - `payment:view`：加载回款节点；`payment:operate`：新增或编辑回款节点。
 - `project:update` + `project:view_acceptance`：更新预计/实际验收时间。
-- `project:stage:update`：调整阶段。
+- `project:progress:update`：统一调整阶段、进度百分比和预计/实际验收时间。
 
 编辑只更新普通字段；阶段、生命周期和验收必须走专用命令，不能通过普通 `PATCH /projects/:id` 绕过业务校验。
 
@@ -635,7 +635,7 @@ node scripts/local-test-server.mjs
 | NAV-01    | 分别准备普通用户、设置只读用户、`SUPER_ADMIN`                                   | 登录并检查侧栏、齿轮、深链、无权限路由                                  | 只显示可访问菜单；无权限路由回退；超级管理员可见全部当前路由                               |
 | DASH-01   | 账号有 `dashboard:view` 且有项目/审核/风险数据                                  | 打开看板，分别让一个区块失败，点击项目和待办                            | 其他区块仍显示；项目进入详情；错误区块可独立重试                                           |
 | PROJ-01   | 有发布档案模版；分别启用/停用新建项目审批                                       | 创建项目两次                                                            | 无审批时返回 `ACTIVE`；有审批时返回 `DRAFT` 并生成 `PROJECT_CREATE` 任务；两者都有档案快照 |
-| PROJ-02   | `project:update`、`project:stage:update`、验收/成员/回款权限分别准备            | 编辑普通字段；前推/回退阶段；更新验收；管理成员和回款；执行生命周期命令 | 专用命令生效；阶段回退无原因被阻止；相关 Query 刷新                                        |
+| PROJ-02   | `project:update`、`project:progress:update`、成员/回款权限分别准备              | 编辑普通字段；通过统一进度命令前推/回退阶段并更新验收；管理成员和回款；执行生命周期命令 | 专用命令生效；阶段回退无原因被阻止；相关 Query 刷新                                        |
 | PROJ-03   | 超级管理员、一个有关联项目和一个隔离无关联测试项目                              | 打开永久删除二次核验；分别请求删除                                      | 有关联项目返回含四类计数的 409 并保留页面/失败审计；无关联项目删除且保留成功审计            |
 | ATPL-01   | 有档案模版维护与审核账号                                                        | 建模版、编辑结构、提交、驳回、修订、通过、创建新版本、停用              | 状态按 DRAFT/IN_REVIEW/REJECTED/PUBLISHED 变化；发布版只读；历史保留                       |
 | ARCH-01   | 已创建带快照项目，源模版发布了新增项                                            | 打开项目档案并同步                                                      | 只新增选中稳定键；已有目录、文件和项目独有项不被覆盖或删除                                 |

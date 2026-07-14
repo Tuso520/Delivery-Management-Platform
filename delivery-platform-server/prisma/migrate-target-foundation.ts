@@ -1509,10 +1509,8 @@ async function isEligiblePendingReviewer(
       createdBy: true,
       salesOwnerId: true,
       projectManagerId: true,
-      electricLeaderId: true,
-      softwareLeaderId: true,
-      purchaseOwnerId: true,
-      financeOwnerId: true,
+      electricalOwnerId: true,
+      softwareOwnerId: true,
       members: {
         select: {
           userId: true,
@@ -1535,10 +1533,8 @@ async function isEligiblePendingReviewer(
         project.createdBy,
         project.salesOwnerId,
         project.projectManagerId,
-        project.electricLeaderId,
-        project.softwareLeaderId,
-        project.purchaseOwnerId,
-        project.financeOwnerId,
+        project.electricalOwnerId,
+        project.softwareOwnerId,
       ];
       if (owners.includes(userId)) return true;
     }

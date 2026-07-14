@@ -33,23 +33,57 @@ export type ProjectSort =
   | 'projectName:desc'
 
 export type AcceptanceTimeType = 'ACTUAL' | 'EXPECTED' | 'NONE'
+export type ProjectScope = 'mine' | 'all'
+export type ProjectType =
+  | 'FACTORY'
+  | 'DATA_CENTER'
+  | 'COMMERCIAL'
+  | 'MEDICAL'
+  | 'RAIL_TRANSIT'
+  | 'LIGHTWEIGHT'
+export type ContractType = 'EPC' | 'EMC' | 'POC'
+export type ProductType = 'DEEPSIGHT' | 'DEEPBOT'
+export type ProjectKeyword =
+  | 'NEW_BUILD'
+  | 'RENOVATION'
+  | 'MAIN_MATERIAL'
+  | 'CONSTRUCTION'
+  | 'SOFTWARE_COMMISSIONING'
+  | 'HARDWARE_COMMISSIONING'
+  | 'CHILLER_ENERGY_SAVING'
+  | 'HVAC_ENERGY_SAVING'
+  | 'AIR_COMPRESSOR_ENERGY_SAVING'
+  | 'EMCS_SYSTEM'
+  | 'ENERGY_MANAGEMENT_SYSTEM'
+  | 'SOFTWARE_SYSTEM'
+  | 'CHILLER_PLANT_CONTROL'
+  | 'HIGH_EFFICIENCY_PLANT_ROOM'
+  | 'PLATFORM_CUSTOMIZATION'
+  | 'RESEARCH'
 
 export interface Project {
   id: string
   revision: number
   projectCode: string
   projectName: string
+  name: string
   shortName?: string | null
   countryCode: string
   countryName?: string | null
   city?: string | null
+  cityName?: string | null
   customerName?: string | null
-  projectType?: string | null
+  projectType?: ProjectType | null
+  contractType?: ContractType | null
+  product?: ProductType | null
+  keywords: ProjectKeyword[]
   contractCurrency?: string | null
   baseCurrency?: string | null
   contractAmount?: number | null
   exchangeRate?: number | null
   convertedAmount?: number | null
+  convertedCnyAmount?: number | null
+  currencyCode?: string | null
   exchangeRateDate?: string | null
   exchangeRateSource?: string | null
   contractNo?: string | null
@@ -57,10 +91,8 @@ export interface Project {
   projectLanguage?: string | null
   salesOwnerId?: string | null
   projectManagerId?: string | null
-  electricLeaderId?: string | null
-  softwareLeaderId?: string | null
-  purchaseOwnerId?: string | null
-  financeOwnerId?: string | null
+  electricalOwnerId?: string | null
+  softwareOwnerId?: string | null
   currentStage: ProjectDeliveryStage
   status: ProjectLifecycleStatus
   progressPercent?: number | null
@@ -73,11 +105,42 @@ export interface Project {
   actualAcceptanceAt?: string | null
   acceptanceTimeType?: AcceptanceTimeType
   archivedAt?: string | null
+  archiveTemplateId?: string | null
+  archiveTemplateVersionId?: string | null
+  archivedBy?: string | null
+  archivedByUser?: ProjectUserSummary | null
   createdBy?: string | null
   deletedAt?: string | null
   createdAt: string
   updatedAt: string
   members?: ProjectMember[]
+  salesOwner?: ProjectUserSummary | null
+  projectManager?: ProjectUserSummary | null
+  canEdit: boolean
+  canUpdateProgress: boolean
+  canArchive: boolean
+  canRestore: boolean
+  canPermanentDelete: boolean
+  archiveCompletion?: {
+    total: number
+    completed: number
+    requiredTotal: number
+    requiredCompleted: number
+  }
+  recentActivities?: Array<{
+    id: string
+    title: string
+    description?: string | null
+    stageCode?: string | null
+    recordDate: string
+    createdBy: string
+  }>
+}
+
+export interface ProjectUserSummary {
+  id: string
+  username: string
+  realName: string
 }
 
 export interface ProjectMember {
@@ -120,7 +183,10 @@ interface ProjectCommonWriteFields {
   countryCode?: string
   city?: string
   customerName?: string
-  projectType?: string
+  projectType?: ProjectType
+  contractType?: ContractType
+  product?: ProductType
+  keywords?: ProjectKeyword[]
   contractCurrency?: string
   baseCurrency?: string
   contractAmount?: number
@@ -129,11 +195,8 @@ interface ProjectCommonWriteFields {
   projectLanguage?: string
   salesOwnerId?: string
   projectManagerId?: string
-  electricLeaderId?: string
-  softwareLeaderId?: string
-  purchaseOwnerId?: string
-  financeOwnerId?: string
-  progressPercent?: number
+  electricalOwnerId?: string
+  softwareOwnerId?: string
   riskLevel?: string
   riskDescription?: string
   startDate?: string
@@ -145,9 +208,11 @@ export interface CreateProjectDto extends ProjectCommonWriteFields {
   countryCode: string
   archiveTemplateId: string
   deliveryStage?: ProjectDeliveryStage
+  progressPercent?: number
   expectedAcceptanceAt?: string
   archiveTemplateVersionId?: string
   approvalTemplateId?: string
+  saveAsDraft?: boolean
 }
 
 /**
@@ -161,18 +226,15 @@ export interface QueryProjectDto {
   page: number
   pageSize: number
   keyword?: string
+  scope?: ProjectScope
   summaryFilter?: ProjectSummaryFilter
   sort?: ProjectSort
 }
 
-export interface UpdateProjectStageDto {
+export interface UpdateProjectProgressDto {
   revision: number
   targetStage: ProjectDeliveryStage
-  reason?: string
-}
-
-export interface UpdateProjectAcceptanceDto {
-  revision: number
+  progressPercent: number
   expectedAcceptanceAt?: string
   actualAcceptanceAt?: string
   reason?: string

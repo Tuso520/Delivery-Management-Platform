@@ -32,8 +32,7 @@ import type { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { ProjectStatusActionDto } from './dto/project-status-action.dto';
 import { QueryProjectDto } from './dto/query-project.dto';
-import { UpdateProjectAcceptanceDto } from './dto/update-project-acceptance.dto';
-import { UpdateProjectStageDto } from './dto/update-project-stage.dto';
+import { UpdateProjectProgressDto } from './dto/update-project-progress.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { validateProjectCreateIdempotencyKey } from './project-create-idempotency';
 import { ProjectService, type ProjectReadAuditContext } from './project.service';
@@ -107,8 +106,15 @@ export class ProjectController {
   @Get('summary')
   @RequirePermissions({ all: ['project:view'] })
   @ApiOperation({ summary: '获取当前数据范围内的项目概览统计' })
-  getSummary(@CurrentUser() user: JwtPayload) {
-    return this.projectService.getSummary(user);
+  getSummary(@Query() query: QueryProjectDto, @CurrentUser() user: JwtPayload) {
+    return this.projectService.getSummary(user, query.scope);
+  }
+
+  @Get('archived')
+  @RequirePermissions({ all: ['project:view'] })
+  @ApiOperation({ summary: '获取当前数据范围内的归档项目列表' })
+  findArchived(@Query() query: QueryProjectDto, @CurrentUser() user: JwtPayload) {
+    return this.projectService.findArchived(query, user);
   }
 
   @Post()
@@ -167,28 +173,15 @@ export class ProjectController {
     return this.projectService.update(id, dto, user);
   }
 
-  @Patch(':id/stage')
-  @RequirePermissions({ all: ['project:stage:update'] })
-  @ApiOperation({ summary: '使用专用命令修改项目阶段' })
-  updateStage(
+  @Patch(':id/progress')
+  @RequirePermissions({ all: ['project:progress:update'] })
+  @ApiOperation({ summary: '统一修改项目阶段、进度与验收时间' })
+  updateProgress(
     @Param('id') id: string,
-    @Body() dto: UpdateProjectStageDto,
+    @Body() dto: UpdateProjectProgressDto,
     @CurrentUser() user: JwtPayload,
   ) {
-    return this.projectService.updateStage(id, dto, user);
-  }
-
-  @Patch(':id/acceptance')
-  @RequirePermissions({
-    all: ['project:update', 'project:view_acceptance'],
-  })
-  @ApiOperation({ summary: '使用专用命令更新项目验收时间' })
-  updateAcceptance(
-    @Param('id') id: string,
-    @Body() dto: UpdateProjectAcceptanceDto,
-    @CurrentUser() user: JwtPayload,
-  ) {
-    return this.projectService.updateAcceptance(id, dto, user);
+    return this.projectService.updateProgress(id, dto, user);
   }
 
   @Post(':id/pause')
@@ -232,7 +225,7 @@ export class ProjectController {
   }
 
   @Post(':id/archive')
-  @RequirePermissions({ all: ['project:archive'] })
+  @RequirePermissions({ all: ['project:view'] })
   archive(
     @Param('id') id: string,
     @Body() dto: ProjectStatusActionDto,
@@ -251,7 +244,7 @@ export class ProjectController {
     return this.projectService.changeStatus(id, 'restore', dto, user);
   }
 
-  @Delete(':id')
+  @Delete(':id/permanent')
   @RequirePermissions({ all: ['project:delete'] })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '物理删除无关联记录的项目（仅超级管理员）' })

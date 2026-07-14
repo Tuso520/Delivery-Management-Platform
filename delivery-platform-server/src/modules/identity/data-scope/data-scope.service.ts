@@ -44,10 +44,8 @@ export class DataScopeService {
           { createdBy: userId },
           { salesOwnerId: userId },
           { projectManagerId: userId },
-          { electricLeaderId: userId },
-          { softwareLeaderId: userId },
-          { purchaseOwnerId: userId },
-          { financeOwnerId: userId },
+          { electricalOwnerId: userId },
+          { softwareOwnerId: userId },
         ],
       });
     }
