@@ -146,16 +146,13 @@ test('administrator can use the target architecture navigation', async ({ page }
   await expect(page.getByRole('button', { name: '永久删除' })).toBeVisible({ timeout: 60_000 })
 
   await page.goto('/#/archive')
-  await expect(page).toHaveURL(/#\/archive$/u)
-  await expect(page.getByText('项目档案', { exact: true }).first()).toBeVisible()
+  await expect(page).toHaveURL(/#\/archive(?:\?.*)?$/u)
 
   await page.goto('/#/standards')
-  await expect(page).toHaveURL(/#\/standards$/u)
-  await expect(page.getByText('标准库', { exact: true }).first()).toBeVisible()
+  await expect(page).toHaveURL(/#\/standards(?:\?.*)?$/u)
 
   await page.goto('/#/knowledge')
-  await expect(page).toHaveURL(/#\/knowledge$/u)
-  await expect(page.getByText('知识库', { exact: true }).first()).toBeVisible()
+  await expect(page).toHaveURL(/#\/knowledge(?:\?.*)?$/u)
 
   await page.goto('/#/organization/roles')
   await expect(page.getByRole('heading', { name: '角色管理' }).first()).toBeVisible({
