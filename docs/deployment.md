@@ -25,7 +25,7 @@ BRANCH=main bash deploy-git.sh deploy
 3. `validate`：对同一个已固定 commit 校验本地、默认和生产 Compose 组合，并对 `deploy-git.sh` 执行 shell 语法检查和部署契约测试。
 4. `integration`：以同一个已固定 commit 标记本次验收镜像，生成仅供本次 runner 使用并立即遮罩的临时凭据，启动真实 NestJS、MySQL、Redis、MinIO、File Worker、Outbox Worker 与前端；两个 Worker 必须保持 running 且容器 ID、重启次数稳定，之后才执行登录/Refresh Token API E2E、依赖就绪冒烟，以及管理员和受限项目经理的浏览器权限与数据范围 E2E。
 5. `deploy`：仅前三项门禁都通过时进入 Environment `test`，使用同一个已固定 commit 和 SSH 上传 Git bundle；bundle 导入、服务器工作区校验、可选环境原子替换都由该提交中的 `deploy-git.sh` 在取得服务器部署锁后完成，随后执行备份、migration、容器切换和健康检查。
-6. 部署脚本备份 MySQL、MinIO 和环境快照，执行受控迁移，重建 API、File Worker、Outbox Worker 和前端容器，并检查依赖就绪状态、Worker 运行状态、前端响应和发布版本号；失败时保存诊断信息。源码切换后、写库前可恢复来源运行时，写库后只能保留目标版本向前修复，或恢复经过验证的成对数据与运行时。
+6. 部署脚本备份 MySQL、MinIO 和环境快照，执行受控迁移，重建 API、File Worker、Outbox Worker 和前端容器，并检查依赖就绪状态、Worker 运行状态、前端响应和发布版本号；重试同一已成功 commit 时先核验并复用现有后端和前端 release 镜像，只重建临时迁移镜像，避免同名 tag 改指新 Image ID 后破坏来源运行时备份。失败时保存诊断信息。源码切换后、写库前可恢复来源运行时，写库后只能保留目标版本向前修复，或恢复经过验证的成对数据与运行时。
 
 服务器工作区存在任何未提交的受跟踪或未跟踪源码时，自动部署都会在切换代码前拒绝继续；`.env`、备份、存储和发布元数据等 `.gitignore` 中的服务器专属文件不受影响。不得通过清理未知文件绕过该门禁，应先识别并保留服务器侧改动。
 
@@ -34,6 +34,21 @@ BRANCH=main bash deploy-git.sh deploy
 工作流已具备上述逻辑不等于自动部署已经跑通。首次启用或凭据变更后，必须以 GitHub Actions 中对应提交的 `resolve`、`quality`、`validate`、`integration`、`deploy` 五个作业均成功，以及测试服务器版本核对结果为准。
 
 ## GitHub Environment 配置
+
+### 权限边界与首次接入
+
+GitHub 侧只有首次接入或凭据轮换人员需要仓库 `Admin` 权限，用于启用 Actions、维护 Environment、Variables 和 Secrets；日常开发人员只需能够向受控 `main` 合并或推送的 `Write` 权限。工作流自身固定使用只读的 `GITHUB_TOKEN`（`contents: read`），服务器不保存 GitHub Token、PAT 或仓库密码，因为发布提交由 Actions 生成 Git bundle 后通过 SSH 上传。
+
+测试环境允许 `main` 推送后自动进入 `test`。生产环境必须使用独立 Environment、独立 SSH 密钥和独立变量，并设置人工审批；不得让测试环境 Secret 直接获得生产服务器访问权。
+
+服务器侧推荐创建专用 Linux 部署账号，不使用 `root`。该账号应满足：
+
+- 只允许部署专用 SSH 公钥登录，不设置可用密码；`authorized_keys` 可使用 `restrict` 禁止端口转发、Agent 转发、X11 和 PTY，但必须保留远程命令与 SCP 能力。
+- 对 `DEPLOY_APP_DIR`、其 `.git`、`.deploy` 和 `backups/` 具有读写权限，并能在 `/tmp` 创建本次发布的临时 bundle 和脚本。
+- 能执行 Docker Compose，并读取、构建、启动和检查本平台的容器、镜像、网络与命名卷。加入 `docker` 组在常规 Docker 安装中等同于宿主机高权限，部署私钥必须按最高敏感级别管理；若需要更严格隔离，应改用 rootless Docker 或受控部署代理，而不是给工作流通用 `sudo`。
+- 不需要访问 GitHub，也不需要在服务器 Git remote 中保存凭据。应用目录必须已经是干净的 Git 工作区，服务器专属 `.env` 权限为 `0600`，Docker 和 Compose 已安装并可用。
+
+网络侧只需允许 GitHub 托管 Runner 连接服务器 SSH 端口，以及用户访问平台的 HTTP/HTTPS 入口；MySQL、Redis、MinIO 管理端口继续只绑定本机或受控内网。由于 GitHub 托管 Runner 出口地址会变化，不应把长期固定单个公网 IP 当成唯一控制条件，应同时依赖专用密钥、固定 host key、受限账号和云防火墙。首次写入 `DEPLOY_KNOWN_HOSTS` 前必须通过服务器控制台或其他可信渠道线下核验 SSH host key 指纹。
 
 在仓库的 GitHub Environment `test` 中配置以下 Variables：
 

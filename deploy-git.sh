@@ -2925,7 +2925,60 @@ manual_discard_managed_backups() (
     err "managed backup discard did not empty the managed root"
 )
 
+reusable_release_image() {
+  local image_reference="$1"
+  local expected_title="$2"
+  local expected_version="$3"
+  local identity image_id title version extra
+  identity="$(image_identity "$image_reference" 2>/dev/null)" || return 1
+  IFS=$'\t' read -r image_id title version extra <<< "$identity"
+  [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+  [ "$title" = "$expected_title" ] || return 1
+  [ "$version" = "$expected_version" ] || return 1
+  [ -z "$extra" ] || return 1
+}
+
+release_runtime_images_are_reusable() {
+  local expected_version="$1"
+  reusable_release_image \
+    "delivery-platform-backend:$expected_version" \
+    delivery-platform-backend \
+    "$expected_version" || return 1
+  reusable_release_image \
+    "delivery-platform-frontend:$expected_version" \
+    delivery-platform-frontend \
+    "$expected_version" || return 1
+}
+
 build_images() {
+  local target_revision last_successful_revision="" target_release
+  target_revision="$(git rev-parse --verify HEAD)" || return 1
+  target_release="${target_revision:0:12}"
+  if [ -e .deploy/last_successful_rev ] || [ -L .deploy/last_successful_rev ]; then
+    last_successful_revision="$(read_single_line_file .deploy/last_successful_rev)" || {
+      warn "last successful revision is invalid; refusing to build over an unknown runtime"
+      return 1
+    }
+    [[ "$last_successful_revision" =~ ^[0-9a-f]{40}$ ]] || {
+      warn "last successful revision is not a full commit id"
+      return 1
+    }
+  fi
+
+  # A retry of the exact same immutable commit must not rebuild the runtime
+  # tags. Rebuilding would move those tags to new Image IDs while the existing
+  # containers still reference the old IDs, making the paired backup
+  # unverifiable. The migration image is ephemeral and may be rebuilt safely.
+  if [ "$last_successful_revision" = "$target_revision" ]; then
+    release_runtime_images_are_reusable "$target_release" || {
+      warn "same-release runtime images are missing or have invalid release labels; refusing to overwrite them"
+      return 1
+    }
+    log "reusing immutable runtime images for already successful release: $target_release"
+    compose build backend-migrate
+    return
+  fi
+
   log "building application images"
   # Production hosts can be memory constrained. Compose/Bake builds services in
   # parallel by default, which lets the frontend and two backend targets exhaust

@@ -151,6 +151,12 @@ test_release_images_build_serially() (
   calls="$(mktemp)"
   expected="$(mktemp)"
   trap 'rm -f "$calls" "$expected"' EXIT
+  git() {
+    [ "$1" = rev-parse ] && [ "$2" = --verify ] && [ "$3" = HEAD ] || \
+      fail "serial image build test issued an unexpected Git command: $*"
+    printf 'e%.0s' {1..40}
+    printf '\n'
+  }
   compose() {
     printf '%s\n' "$*" >> "$calls"
   }
@@ -162,6 +168,78 @@ build backend-migrate
 build frontend
 EXPECTED
   diff -u "$expected" "$calls" || fail "release images are not built serially"
+)
+
+test_same_release_reuses_runtime_images() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  local root calls expected revision release backend_id frontend_id
+  root="$(mktemp -d)"
+  calls="$root/calls"
+  expected="$root/expected"
+  : > "$calls"
+  : > "$expected"
+  revision="$(printf 'a%.0s' {1..40})"
+  release="${revision:0:12}"
+  backend_id="sha256:$(printf 'b%.0s' {1..64})"
+  frontend_id="sha256:$(printf 'c%.0s' {1..64})"
+  trap 'rm -rf "$root"' EXIT
+  cd "$root"
+  git() {
+    [ "$1" = rev-parse ] && [ "$2" = --verify ] && [ "$3" = HEAD ] || \
+      fail "same-release image test issued an unexpected Git command: $*"
+    printf '%s\n' "$revision"
+  }
+  read_single_line_file() {
+    [ "$1" = .deploy/last_successful_rev ] || \
+      fail "same-release image test read an unexpected file: $1"
+    printf '%s\n' "$revision"
+  }
+  image_identity() {
+    case "$1" in
+      "delivery-platform-backend:$release")
+        printf '%s\tdelivery-platform-backend\t%s\n' "$backend_id" "$release"
+        ;;
+      "delivery-platform-frontend:$release")
+        printf '%s\tdelivery-platform-frontend\t%s\n' "$frontend_id" "$release"
+        ;;
+      *) fail "same-release image test inspected an unexpected image: $1" ;;
+    esac
+  }
+  compose() {
+    printf '%s\n' "$*" >> "$calls"
+  }
+  mkdir -p .deploy
+  : > .deploy/last_successful_rev
+
+  build_images
+  printf '%s\n' 'build backend-migrate' > "$expected"
+  diff -u "$expected" "$calls" || \
+    fail "same-release deployment rebuilt immutable runtime image tags"
+)
+
+test_same_release_rejects_invalid_runtime_images() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  local root calls revision
+  root="$(mktemp -d)"
+  calls="$root/calls"
+  : > "$calls"
+  revision="$(printf 'd%.0s' {1..40})"
+  trap 'rm -rf "$root"' EXIT
+  cd "$root"
+  git() { printf '%s\n' "$revision"; }
+  read_single_line_file() { printf '%s\n' "$revision"; }
+  image_identity() { return 1; }
+  compose() { printf '%s\n' "$*" >> "$calls"; }
+  mkdir -p .deploy
+  : > .deploy/last_successful_rev
+
+  if build_images; then
+    fail "same-release deployment accepted missing runtime images"
+  fi
+  [ ! -s "$calls" ] || \
+    fail "same-release deployment started a build after runtime image validation failed"
 )
 
 test_debian_build_mirror_contract() {
@@ -2961,6 +3039,8 @@ test_dockerfiles_do_not_require_external_syntax_frontend
 test_workflow_remote_argument_contract
 test_debian_build_mirror_contract
 test_release_images_build_serially
+test_same_release_reuses_runtime_images
+test_same_release_rejects_invalid_runtime_images
 test_switch_order
 test_legacy_rollback_switch
 test_forward_switch_requires_complete_workers

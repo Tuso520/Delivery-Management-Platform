@@ -14,7 +14,7 @@ BRANCH=main bash deploy-git.sh deploy
 1. 拉取目标分支、标签或提交。
 2. 写入 `RELEASE_ID` 和 `RELEASE_MANIFEST.txt`。
 3. 检查 `.env`、Docker Compose、Dockerfile 和 Prisma 迁移保护脚本。
-4. 构建后端、迁移容器、File Worker、Outbox Worker 和前端镜像。
+4. 为新 commit 串行构建后端、迁移容器、File Worker、Outbox Worker 和前端镜像；重试同一已成功 commit 时复用经 release label 校验的运行镜像，只重建临时迁移镜像，禁止覆盖运行容器引用的同名 tag。
 5. 启动 MySQL、Redis 和 MinIO。
 6. 在迁移前先停止 File Worker 与 Outbox Worker，再停止后端和前端写入。
 7. 在业务写入停止后确认 `INTEGRATION_SECRET_ENCRYPTION_KEY` 是独立的 32 字节 Base64 密钥并在迁移容器、API 与 Outbox Worker 一致；缺失时由服务器生成仅限当前部署进程的候选值，并且仅在确认无既有密文后持久化启用，审计账号 `INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME` 必须有效。

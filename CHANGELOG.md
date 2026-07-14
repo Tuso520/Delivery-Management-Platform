@@ -1,5 +1,10 @@
 # 更新记录
 
+## 2026-07-14
+
+- 修复同一 commit 重试部署时覆盖运行中 release tag、导致旧容器 Image ID 无法进入成对备份的问题；已成功发布的同版本后端和前端镜像现在必须通过 OCI release label 校验并直接复用，仅重建临时迁移镜像。
+- 补充 GitHub Environment、仓库角色、部署账号、SSH、Docker 和网络的最小权限接入边界，明确服务器不保存 GitHub Token，生产与测试必须使用隔离凭据。
+
 ## 2026-07-13
 
 - GitHub 部署成功后新增受保护的服务器镜像清理：保留全部容器、当前/上一成功发布及 checksummed v3 备份引用的 Image ID，只以非强制方式删除其余镜像；清理前后复核磁盘、API、Worker、前端和发布标签，绝不清理 Docker volume。
