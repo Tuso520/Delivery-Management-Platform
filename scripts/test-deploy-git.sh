@@ -134,6 +134,8 @@ EXPECTED
     fail "workflow remote invocation does not pass the release bundle as argument eight"
   [ "$(grep -Fc -- '-o ServerAliveInterval=30 -o ServerAliveCountMax=20' "$workflow")" = "4" ] || \
     fail "workflow SSH/SCP calls do not all preserve long-running deployment connections"
+  [ "$(grep -Fc -- '-o ConnectTimeout=30' "$workflow")" = "4" ] || \
+    fail "workflow SSH/SCP calls do not all bound connection establishment"
   for index in "${!names[@]}"; do
     position=$((index + 1))
     expected="${names[$index]}=\"\$$position\""
@@ -141,6 +143,26 @@ EXPECTED
       fail "workflow remote receiver is missing positional assignment: $expected"
   done
 }
+
+test_release_images_build_serially() (
+  # shellcheck source=../deploy-git.sh
+  source "$ROOT_DIR/deploy-git.sh"
+  local calls expected
+  calls="$(mktemp)"
+  expected="$(mktemp)"
+  trap 'rm -f "$calls" "$expected"' EXIT
+  compose() {
+    printf '%s\n' "$*" >> "$calls"
+  }
+
+  build_images
+  cat > "$expected" <<'EXPECTED'
+build backend
+build backend-migrate
+build frontend
+EXPECTED
+  diff -u "$expected" "$calls" || fail "release images are not built serially"
+)
 
 test_debian_build_mirror_contract() {
   local compose_file="$ROOT_DIR/docker-compose.yml"
@@ -2907,6 +2929,7 @@ EXPECTED
 test_dockerfiles_do_not_require_external_syntax_frontend
 test_workflow_remote_argument_contract
 test_debian_build_mirror_contract
+test_release_images_build_serially
 test_switch_order
 test_legacy_rollback_switch
 test_forward_switch_requires_complete_workers

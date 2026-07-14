@@ -2898,7 +2898,13 @@ manual_discard_managed_backups() (
 
 build_images() {
   log "building application images"
-  compose build backend backend-migrate frontend
+  # Production hosts can be memory constrained. Compose/Bake builds services in
+  # parallel by default, which lets the frontend and two backend targets exhaust
+  # RAM and make sshd unresponsive. Build one service at a time; backend-migrate
+  # reuses the backend builder cache, so this also avoids duplicate compilation.
+  compose build backend
+  compose build backend-migrate
+  compose build frontend
 }
 
 migration_audit_required_artifacts() {
