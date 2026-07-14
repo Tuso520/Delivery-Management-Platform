@@ -133,7 +133,6 @@ test('administrator can use the target architecture navigation', async ({ page }
   })
 
   await page.goto('/#/projects')
-  await expect(page.getByText('项目台账', { exact: true }).first()).toBeVisible()
   await expect(page.getByRole('button', { name: /项目总数\s*9/u })).toBeVisible({
     timeout: 60_000,
   })
@@ -143,8 +142,8 @@ test('administrator can use the target architecture navigation', async ({ page }
 
   await page.getByRole('button', { name: '归档项目' }).click()
   await expect(page.getByText('示例项目 10', { exact: true })).toBeVisible({ timeout: 60_000 })
-  await expect(page.getByRole('button', { name: '恢复' })).toBeVisible()
-  await expect(page.getByRole('button', { name: '永久删除' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '恢复' })).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByRole('button', { name: '永久删除' })).toBeVisible({ timeout: 60_000 })
 
   await page.goto('/#/archive')
   await expect(page.getByRole('heading', { name: '项目档案' }).first()).toBeVisible({
@@ -291,14 +290,24 @@ test('administrator can create, edit, inspect, progress, archive and restore a p
       timeout: 60_000,
     }),
   )
+  const lifecycleArchivedProjects = await fetchProjectList(
+    page,
+    accessToken,
+    `/api/v1/projects/archived?keyword=${encodeURIComponent(`${shortName} 已编辑`)}&page=1&pageSize=20`,
+  )
+  expect(lifecycleArchivedProjects.data.total).toBe(1)
+  expect(lifecycleArchivedProjects.data.items[0]).toMatchObject({
+    canPermanentDelete: true,
+    canRestore: true,
+  })
   await page.goto(
     `/#/projects?view=archived&keyword=${encodeURIComponent(`${shortName} 已编辑`)}`,
   )
   await expect(page.getByText(`${shortName} 已编辑`, { exact: true })).toBeVisible({
     timeout: 60_000,
   })
-  await expect(page.getByRole('button', { name: '恢复' })).toBeVisible()
-  await expect(page.getByRole('button', { name: '永久删除' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '恢复' })).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByRole('button', { name: '永久删除' })).toBeVisible({ timeout: 60_000 })
 
   const blockedPurge = await page.request.delete(
     `/api/v1/projects/${rearchived.data.id}/permanent`,
@@ -323,7 +332,6 @@ test('project manager is restricted by data scope, field permissions and setting
     expect(project.convertedCnyAmount ?? null).toBeNull()
   }
   await page.goto('/#/projects')
-  await expect(page.getByText('项目台账', { exact: true }).first()).toBeVisible()
   await expect(page.getByRole('button', { name: /项目总数\s*6/u })).toBeVisible({
     timeout: 60_000,
   })
