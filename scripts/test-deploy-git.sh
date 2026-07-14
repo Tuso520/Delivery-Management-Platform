@@ -288,8 +288,15 @@ test_quiesce_and_resume_order() (
   trap 'rm -f "$calls_file"' EXIT
   compose() {
     record_call "compose $*"
-    [ "$*" != "config --services" ] || current_services
+    case "$*" in
+      "config --services") current_services ;;
+      "ps --all --quiet backend") printf '%064d\n' 1 ;;
+      "ps --all --quiet file-worker") printf '%064d\n' 2 ;;
+      "ps --all --quiet outbox-worker") printf '%064d\n' 3 ;;
+      "ps --all --quiet frontend") printf '%064d\n' 4 ;;
+    esac
   }
+  docker() { record_call "docker $*"; }
   check_url() { record_call "check-url $1 $2"; }
   check_service_stable() { record_call "check-stable $1"; }
   verify_release_version() { record_call "verify-frontend-release"; }
@@ -307,15 +314,38 @@ EXPECTED
   resume_existing_app
   assert_calls "$(cat <<'EXPECTED'
 compose config --services
-compose start backend
+compose ps --all --quiet backend
+docker start 0000000000000000000000000000000000000000000000000000000000000001
 check-url backend readiness http://127.0.0.1:3000/api/v1/ready
-compose start file-worker outbox-worker
+compose ps --all --quiet file-worker
+docker start 0000000000000000000000000000000000000000000000000000000000000002
 check-stable file-worker
+compose ps --all --quiet outbox-worker
+docker start 0000000000000000000000000000000000000000000000000000000000000003
 check-stable outbox-worker
-compose start frontend
+compose ps --all --quiet frontend
+docker start 0000000000000000000000000000000000000000000000000000000000000004
 check-url frontend http://127.0.0.1:8080
 verify-frontend-release
 verify-service-releases backend file-worker outbox-worker frontend
+EXPECTED
+)"
+
+  : > "$calls_file"
+  compose() {
+    record_call "compose $*"
+    case "$*" in
+      "config --services") current_services ;;
+      "ps --all --quiet backend") : ;;
+      *) fail "resume inspected another service after the backend container was missing" ;;
+    esac
+  }
+  if resume_existing_app >/dev/null 2>&1; then
+    fail "resume accepted a missing backend container"
+  fi
+  assert_calls "$(cat <<'EXPECTED'
+compose config --services
+compose ps --all --quiet backend
 EXPECTED
 )"
 )

@@ -980,19 +980,48 @@ quiesce_app() {
   compose stop backend frontend >/dev/null 2>&1 || return 1
 }
 
+start_existing_service_container() {
+  local service="$1"
+  local output container_id
+  local -a container_ids=()
+  output="$(compose ps --all --quiet "$service")" || return 1
+  while IFS= read -r container_id; do
+    [ -n "$container_id" ] || continue
+    container_ids+=("$container_id")
+  done <<< "$output"
+  if [ "${#container_ids[@]}" -ne 1 ]; then
+    warn "expected exactly one existing $service container, found ${#container_ids[@]}"
+    return 1
+  fi
+  container_id="${container_ids[0]}"
+  [[ "$container_id" =~ ^[0-9a-f]{12,64}$ ]] || {
+    warn "existing $service container id is invalid"
+    return 1
+  }
+  # `docker compose start backend` re-evaluates depends_on and refuses to
+  # resume after the intentionally ephemeral backend-migrate container has
+  # completed and been removed. Start the exact stopped container selected by
+  # Compose instead: this cannot recreate it or bypass the migration gate used
+  # by a forward switch.
+  docker start "$container_id" >/dev/null || {
+    warn "existing $service container could not be started"
+    return 1
+  }
+}
+
 resume_existing_app() {
   local policy="${1:-compatible}"
   local service
   load_app_topology "$policy" || return 1
-  compose start backend >/dev/null 2>&1 || return 1
+  start_existing_service_container backend || return 1
   check_url "backend readiness" "http://127.0.0.1:${BACKEND_PORT:-3000}/api/v1/ready" || return 1
   if [ "${#WORKER_SERVICES[@]}" -gt 0 ]; then
-    compose start "${WORKER_SERVICES[@]}" >/dev/null 2>&1 || return 1
     for service in "${WORKER_SERVICES[@]}"; do
+      start_existing_service_container "$service" || return 1
       check_service_stable "$service" || return 1
     done
   fi
-  compose start frontend >/dev/null 2>&1 || return 1
+  start_existing_service_container frontend || return 1
   check_url "frontend" "http://127.0.0.1:${FRONTEND_PORT:-8080}" || return 1
   verify_release_version || return 1
   verify_service_release "${APPLICATION_SERVICES[@]}" || return 1
