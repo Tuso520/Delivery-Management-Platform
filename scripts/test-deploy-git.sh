@@ -132,6 +132,8 @@ EXPECTED
     fail "workflow remote invocation does not pass the deployment script as argument seven"
   grep -Fq "$bundle_pattern" "$workflow" || \
     fail "workflow remote invocation does not pass the release bundle as argument eight"
+  [ "$(grep -Fc -- '-o ServerAliveInterval=30 -o ServerAliveCountMax=20' "$workflow")" = "4" ] || \
+    fail "workflow SSH/SCP calls do not all preserve long-running deployment connections"
   for index in "${!names[@]}"; do
     position=$((index + 1))
     expected="${names[$index]}=\"\$$position\""
