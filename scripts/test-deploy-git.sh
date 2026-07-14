@@ -2226,9 +2226,10 @@ test_prune_release_pointer_and_symlink_contracts() (
     fail "pre-deployment cleanup rejected a release image that is already absent"
   [ ! -s "$PRUNE_PROTECTED_IMAGES_FILE" ] || \
     fail "pre-deployment cleanup invented protection for an absent release image"
-  if protect_release_pointer_images_for_prune runtime >/dev/null 2>&1; then
-    fail "runtime cleanup accepted a missing current release image"
-  fi
+  protect_release_pointer_images_for_prune runtime || \
+    fail "runtime cleanup rejected a release image tag that is already absent"
+  [ ! -s "$PRUNE_PROTECTED_IMAGES_FILE" ] || \
+    fail "runtime cleanup invented protection for an absent release image tag"
 
   if command -v ln >/dev/null 2>&1; then
     rm -f .deploy/last_successful_rev

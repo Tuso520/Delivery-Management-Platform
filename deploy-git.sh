@@ -2416,13 +2416,13 @@ protect_release_pointer_images_for_prune() {
         expected_title="delivery-platform-frontend"
       fi
       tag="${expected_title}:${runtime_id}"
-      identity="$(image_identity "$tag")" || {
-        if [ "$mode" = "predeploy" ]; then
-          warn "release pointer image is already absent before deployment; container and backup Image IDs remain protected: $tag"
-          continue
-        fi
-        warn "refusing image cleanup because the protected release image is missing: $tag"
-        return 1
+      identity="$(image_identity "$tag" 2>/dev/null)" || {
+        # A release pointer can outlive its mutable tag after an authorized
+        # reset or an earlier cleanup race. Running containers and immutable
+        # backup bindings are collected independently, so a missing tag is
+        # not evidence of an unknown orphan image and must not fail cleanup.
+        warn "release pointer image is already absent; container and backup Image IDs remain protected: $tag"
+        continue
       }
       IFS=$'\t' read -r image_id title version extra <<< "$identity"
       [ "$title" = "$expected_title" ] && [ "$version" = "$runtime_id" ] && [ -z "$extra" ] || {
