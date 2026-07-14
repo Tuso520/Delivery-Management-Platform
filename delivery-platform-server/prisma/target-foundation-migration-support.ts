@@ -30,6 +30,198 @@ export const TARGET_PROJECT_DELIVERY_STAGES = [
   'WARRANTY',
 ] as const;
 
+// These values were emitted by the retired demo approval seed. Keep the list
+// exact: similarly named custom approval types must remain unmapped and block a
+// strict migration until an explicit business decision is made.
+export const LEGACY_DEMO_PROJECT_APPROVAL_TYPES = [
+  'demo-approval-01',
+  'demo-approval-02',
+  'demo-approval-03',
+  'demo-approval-04',
+  'demo-approval-05',
+  'demo-approval-06',
+  'demo-approval-07',
+  'demo-approval-08',
+  'demo-approval-09',
+  'demo-approval-10',
+] as const;
+
+const legacyDemoProjectApprovalTypeSet = new Set<string>(LEGACY_DEMO_PROJECT_APPROVAL_TYPES);
+
+export function isLegacyDemoProjectApprovalType(value: string): boolean {
+  return legacyDemoProjectApprovalTypeSet.has(value.trim());
+}
+
+export interface LegacyDemoProjectApprovalCancellationInput {
+  businessType: string;
+  normalizedStatus: string;
+  projectExists: boolean;
+  projectStatus: string | null;
+  projectDeleted: boolean;
+  projectArchived: boolean;
+}
+
+export function shouldCancelLegacyDemoProjectApproval(
+  input: LegacyDemoProjectApprovalCancellationInput,
+): boolean {
+  return (
+    isLegacyDemoProjectApprovalType(input.businessType) &&
+    input.normalizedStatus === 'PENDING' &&
+    input.projectExists &&
+    (input.projectStatus !== 'DRAFT' || input.projectDeleted || input.projectArchived)
+  );
+}
+
+export interface RetiredMissingKnowledgeFileUpdateApprovalInput {
+  businessType: string;
+  normalizedStatus: string;
+  templateCode: string;
+  sourceCount: number;
+}
+
+/**
+ * Identifies only the retired knowledge attachment revision workflow whose
+ * source Attachment is already absent. Any surviving or ambiguous source must
+ * remain a blocking finding instead of being silently discarded.
+ */
+export function isKnownRetiredMissingKnowledgeFileUpdateApproval(
+  input: RetiredMissingKnowledgeFileUpdateApprovalInput,
+): boolean {
+  return (
+    input.businessType.trim() === 'knowledge-file-update' &&
+    input.normalizedStatus === 'PENDING' &&
+    input.templateCode.trim() === 'KNOWLEDGE_FILE_UPDATE' &&
+    input.sourceCount === 0
+  );
+}
+
+export interface EmptyArchiveSeedSnapshotFolder {
+  id: string;
+  sourceTemplateFolderId: string | null;
+  sourceStableKey: string | null;
+  archivedAt: Date | null;
+}
+
+export interface EmptyArchiveSeedSnapshotEntry {
+  id: string;
+  folderId: string;
+  templateVersionId: string | null;
+  sourceTemplateItemId: string | null;
+  sourceStableKey: string | null;
+  archivedAt: Date | null;
+}
+
+export interface EmptyArchiveSeedTemplateFolder {
+  id: string;
+  stableKey: string;
+}
+
+export interface EmptyArchiveSeedTemplateItem {
+  id: string;
+  folderId: string;
+  stableKey: string;
+}
+
+export interface EmptyArchiveSeedSnapshotInput {
+  archiveTemplateVersionId: string | null;
+  archiveFileCount: number;
+  projectFolders: readonly EmptyArchiveSeedSnapshotFolder[];
+  projectEntries: readonly EmptyArchiveSeedSnapshotEntry[];
+  templateFolders: readonly EmptyArchiveSeedTemplateFolder[];
+  templateItems: readonly EmptyArchiveSeedTemplateItem[];
+}
+
+function hasUniqueValues(values: readonly string[]): boolean {
+  return new Set(values).size === values.length;
+}
+
+/**
+ * Proves that a target project archive is only the deterministic empty seed
+ * snapshot of its selected template version. This predicate is intentionally
+ * exact because a false positive would replace real project archive data.
+ */
+export function isDeterministicEmptyArchiveSeedSnapshot(
+  input: EmptyArchiveSeedSnapshotInput,
+): boolean {
+  const versionId = input.archiveTemplateVersionId?.trim();
+  if (!versionId || input.archiveFileCount !== 0) return false;
+  if (input.templateFolders.length === 0 || input.templateItems.length === 0) return false;
+  if (
+    input.projectFolders.length !== input.templateFolders.length ||
+    input.projectEntries.length !== input.templateItems.length
+  ) {
+    return false;
+  }
+  if (
+    !hasUniqueValues(input.templateFolders.map((folder) => folder.id)) ||
+    !hasUniqueValues(input.templateFolders.map((folder) => folder.stableKey)) ||
+    !hasUniqueValues(input.templateItems.map((item) => item.id)) ||
+    !hasUniqueValues(input.templateItems.map((item) => item.stableKey)) ||
+    !hasUniqueValues(input.projectFolders.map((folder) => folder.id)) ||
+    !hasUniqueValues(
+      input.projectFolders.flatMap((folder) =>
+        folder.sourceTemplateFolderId ? [folder.sourceTemplateFolderId] : [],
+      ),
+    ) ||
+    !hasUniqueValues(input.projectEntries.map((entry) => entry.id)) ||
+    !hasUniqueValues(
+      input.projectEntries.flatMap((entry) =>
+        entry.sourceTemplateItemId ? [entry.sourceTemplateItemId] : [],
+      ),
+    )
+  ) {
+    return false;
+  }
+
+  const templateFolderById = new Map(input.templateFolders.map((folder) => [folder.id, folder]));
+  const projectFolderById = new Map(input.projectFolders.map((folder) => [folder.id, folder]));
+  const projectFolderBySourceId = new Map(
+    input.projectFolders.flatMap((folder) =>
+      folder.sourceTemplateFolderId ? [[folder.sourceTemplateFolderId, folder] as const] : [],
+    ),
+  );
+  if (
+    input.projectFolders.some((folder) => {
+      if (folder.archivedAt !== null || !folder.sourceTemplateFolderId) return true;
+      const source = templateFolderById.get(folder.sourceTemplateFolderId);
+      return !source || folder.sourceStableKey !== source.stableKey;
+    }) ||
+    input.templateFolders.some((folder) => !projectFolderBySourceId.has(folder.id))
+  ) {
+    return false;
+  }
+
+  const templateItemById = new Map(input.templateItems.map((item) => [item.id, item]));
+  if (
+    input.projectEntries.some((entry) => {
+      if (
+        entry.archivedAt !== null ||
+        entry.templateVersionId !== versionId ||
+        !entry.sourceTemplateItemId
+      ) {
+        return true;
+      }
+      const source = templateItemById.get(entry.sourceTemplateItemId);
+      const projectFolder = projectFolderById.get(entry.folderId);
+      return (
+        !source ||
+        !projectFolder ||
+        entry.sourceStableKey !== source.stableKey ||
+        projectFolder.sourceTemplateFolderId !== source.folderId
+      );
+    }) ||
+    input.templateItems.some(
+      (item) =>
+        !input.projectEntries.some((entry) => entry.sourceTemplateItemId === item.id) ||
+        !templateFolderById.has(item.folderId),
+    )
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 export interface MigrationOptions {
   apply: boolean;
   actorUserId?: string;

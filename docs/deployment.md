@@ -46,6 +46,18 @@ DEPLOY_BRANCH=main
 DEPLOY_COMPOSE_FILES=docker-compose.yml:docker-compose.prod.yml
 ```
 
+### Docker 构建镜像源
+
+后端运行镜像和 `backend-migrate` 构建共享 `DEBIAN_MIRROR`、`DEBIAN_SECURITY_MIRROR` 两个 build args。`.env.example` 默认仍指向 Debian 官方签名软件源，因此本地和 CI 行为不变；仅当部署区域访问官方源明显过慢时，才应通过部署进程环境或服务器 `.env` 覆盖。GitHub 的远端部署 shell 当前显式使用腾讯云 Debian 镜像，该配置不含密钥，且只影响镜像构建，不进入应用容器运行环境。人工部署需要同样加速时可执行：
+
+```bash
+export DEBIAN_MIRROR=http://mirrors.cloud.tencent.com/debian
+export DEBIAN_SECURITY_MIRROR=http://mirrors.cloud.tencent.com/debian-security
+BRANCH=main bash deploy-git.sh deploy
+```
+
+软件包仍由 Debian 仓库签名验证；不要用 `trusted=yes`、`--allow-unauthenticated` 或关闭 APT 签名校验来换取速度。
+
 其中 `DEPLOY_PORT`、`DEPLOY_APP_DIR`、`DEPLOY_BRANCH` 和 `DEPLOY_COMPOSE_FILES` 有工作流默认值，但建议在 Environment 中显式维护，避免服务器约定变化后产生歧义。`DEPLOY_HOST` 和 `DEPLOY_USER` 也兼容从同名 Secret 读取，但推荐使用 Variable；不得把服务器地址、用户名或目录硬编码到工作流。
 
 配置以下 Secrets：
@@ -163,6 +175,8 @@ prepare-migrate → prisma migrate deploy → bootstrap seed → Archive audit E
 ```
 
 首次空库需要 bootstrap seed 创建迁移审计账号；第二次 seed 用于验证幂等性且不得重建已退役的数据库 UI 翻译或无文件标准。档案预审先输出完整报告并按 finding fail closed：所有 ERROR 都阻断；`STORED_LEVEL_MISMATCH` 可由父子关系确定性重建层级，`FOLDER_WITH_DIRECT_FILES` 可确定性拆分为目录和同名合成档案项，因此这两个 REVIEW 只报告；任何其他或未来新增的 REVIEW 默认阻断。三个 migrator 都先只读报告、再以同一个启用账号写入；内容与 foundation 的 dry-run 均使用 strict 门禁，foundation apply 也使用 strict，确定性拆分只计入计划数量，其余仍需人工判断的 ERROR/REVIEW 都会在 apply 前阻断，apply 期间新出现的 finding 也只能记录失败审计并中止。内容迁移把旧标准结构化正文和知识内容收敛为 FILE/MARKDOWN/LINK 单主内容源，foundation 迁移再收敛项目档案、文件和审核关联。Secret apply 会先验证所有既有密文都能由同一密钥解密，再把配置更新和成功审计放在同一个事务内。最后三组 verify 均为只读门禁，拒绝待迁移内容、开放迁移异常、旧审核残留、目标关联不完整、明文 Secret 或待重写密文。`backend`、`file-worker` 和 `outbox-worker` 都等待该容器成功；任何一步失败都不得启动业务流量。API、Outbox Worker 和迁移容器必须使用同一个 `INTEGRATION_SECRET_ENCRYPTION_KEY`，迁移审计账号由 `INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME` 指定且必须处于启用状态。File Worker 不持有集成 Secret。
+
+从旧架构升级时，bootstrap seed 发现项目仍有 `ProjectArchiveItem` 就不会绑定新版档案模板或生成目标快照。对于此前版本已经生成的目标快照，foundation 只在模板版本、文件夹、条目、来源 ID、稳定键和目录关系全部匹配且项目档案文件为零时，才在事务内二次核验、软归档该空快照并清除项目模板指针；任何已有文件或结构差异都会继续 fail closed。旧档案项的状态、截止和完成时间在旧只读表中保留并进入迁移计数，不伪造目标字段。历史 demo 项目审批仅按精确白名单迁为 `PROJECT_CREATE` 审核历史；不再可执行的 Pending 项迁为已归档 `CANCELLED` 记录。精确命中且能证明来源附件不存在的已退役知识文件更新审批不生成目标任务，而是写入带处理人和处理时间的 `RESOLVED` `MigrationException`；其他未知审批结构仍阻断发布。
 
 ### 整体重构既有库升级
 

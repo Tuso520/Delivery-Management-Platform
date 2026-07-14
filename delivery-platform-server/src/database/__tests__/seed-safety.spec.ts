@@ -154,7 +154,10 @@ describe('deployment seed safety', () => {
         }),
       },
       role: { findMany: jest.fn().mockResolvedValue([]) },
-      projectArchiveItem: { create: legacyProjectArchiveCreate },
+      projectArchiveItem: {
+        create: legacyProjectArchiveCreate,
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
       $transaction: jest.fn(),
     } as unknown as PrismaClient;
     (prisma.$transaction as unknown as jest.Mock).mockImplementation(
@@ -167,6 +170,95 @@ describe('deployment seed safety', () => {
       expect(call[0].update).toEqual({});
     }
     expect(legacyProjectArchiveCreate).not.toHaveBeenCalled();
+  });
+
+  it('does not recreate a versioned archive snapshot on seed reruns before legacy migration', async () => {
+    const projectUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const projectFindUnique = jest.fn();
+    const targetFolderUpsert = jest.fn();
+    const targetEntryUpsert = jest.fn();
+    const prisma = {
+      project: {
+        upsert: jest.fn().mockImplementation(({ where }: { where: { projectCode: string } }) =>
+          Promise.resolve({
+            id: `project-${where.projectCode}`,
+            projectCode: where.projectCode,
+          }),
+        ),
+        updateMany: projectUpdateMany,
+        findUnique: projectFindUnique,
+      },
+      user: { findMany: jest.fn().mockResolvedValue([]) },
+      projectMember: {
+        upsert: jest.fn(),
+        findMany: jest.fn(),
+      },
+      archiveTemplate: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'archive-template-1',
+          currentPublishedVersionId: 'archive-template-version-1',
+        }),
+      },
+      archiveTemplateVersion: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'archive-template-version-1',
+          folders: [
+            {
+              id: 'template-folder-1',
+              stableKey: 'folder-1',
+              name: 'Folder',
+              description: null,
+              sortOrder: 1,
+              items: [
+                {
+                  id: 'template-item-1',
+                  stableKey: 'entry-1',
+                  name: 'Entry',
+                  description: null,
+                  required: true,
+                  reviewRequired: false,
+                  approvalTemplateId: null,
+                  ownerRoleId: null,
+                  allowMultipleFiles: false,
+                  allowedExtensions: null,
+                  maxFileSize: null,
+                  namingRule: null,
+                  sortOrder: 1,
+                },
+              ],
+            },
+          ],
+        }),
+      },
+      role: { findMany: jest.fn().mockResolvedValue([]) },
+      projectArchiveItem: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'legacy-archive-item-1' }),
+      },
+      projectArchiveFolder: { upsert: targetFolderUpsert },
+      projectArchiveEntry: { upsert: targetEntryUpsert },
+      $transaction: jest.fn(),
+    } as unknown as PrismaClient;
+    (prisma.$transaction as unknown as jest.Mock).mockImplementation(
+      (callback: (tx: PrismaClient) => Promise<unknown>) => callback(prisma),
+    );
+
+    await seedProjects(prisma);
+    await seedProjects(prisma);
+
+    expect(prisma.projectArchiveItem.findFirst).toHaveBeenCalled();
+    expect(projectUpdateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { archiveTemplateId: 'archive-template-1' },
+      }),
+    );
+    expect(projectUpdateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { archiveTemplateVersionId: 'archive-template-version-1' },
+      }),
+    );
+    expect(projectFindUnique).not.toHaveBeenCalled();
+    expect(targetFolderUpsert).not.toHaveBeenCalled();
+    expect(targetEntryUpsert).not.toHaveBeenCalled();
   });
 
   it('does not reset existing notification or integration configuration', async () => {

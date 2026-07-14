@@ -140,6 +140,28 @@ EXPECTED
   done
 }
 
+test_debian_build_mirror_contract() {
+  local compose_file="$ROOT_DIR/docker-compose.yml"
+  local workflow="$ROOT_DIR/.github/workflows/deploy.yml"
+  local example_env="$ROOT_DIR/.env.example"
+  local mirror_arg security_arg
+  mirror_arg='DEBIAN_MIRROR: ${DEBIAN_MIRROR:-http://deb.debian.org/debian}'
+  security_arg='DEBIAN_SECURITY_MIRROR: ${DEBIAN_SECURITY_MIRROR:-http://deb.debian.org/debian-security}'
+
+  [ "$(grep -Fc "$mirror_arg" "$compose_file")" = "2" ] ||
+    fail "backend and backend-migrate do not both receive the Debian mirror build arg"
+  [ "$(grep -Fc "$security_arg" "$compose_file")" = "2" ] ||
+    fail "backend and backend-migrate do not both receive the Debian security mirror build arg"
+  grep -Fq 'export DEBIAN_MIRROR="http://mirrors.cloud.tencent.com/debian"' "$workflow" ||
+    fail "remote deployment does not select the regional Debian mirror"
+  grep -Fq 'export DEBIAN_SECURITY_MIRROR="http://mirrors.cloud.tencent.com/debian-security"' "$workflow" ||
+    fail "remote deployment does not select the regional Debian security mirror"
+  grep -Fxq 'DEBIAN_MIRROR=http://deb.debian.org/debian' "$example_env" ||
+    fail ".env.example does not retain the official Debian mirror default"
+  grep -Fxq 'DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security' "$example_env" ||
+    fail ".env.example does not retain the official Debian security mirror default"
+}
+
 test_switch_order() (
   # shellcheck source=../deploy-git.sh
   source "$ROOT_DIR/deploy-git.sh"
@@ -2882,6 +2904,7 @@ EXPECTED
 
 test_dockerfiles_do_not_require_external_syntax_frontend
 test_workflow_remote_argument_contract
+test_debian_build_mirror_contract
 test_switch_order
 test_legacy_rollback_switch
 test_forward_switch_requires_complete_workers

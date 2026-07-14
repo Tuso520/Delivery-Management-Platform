@@ -475,6 +475,16 @@ export async function seedProjects(prisma: PrismaClient) {
   for (const project of createdProjects) {
     await prisma.$transaction(
       async (tx) => {
+        const legacyArchiveItem = await tx.projectArchiveItem.findFirst({
+          where: { projectId: project.id },
+          select: { id: true },
+        });
+        if (legacyArchiveItem) {
+          console.warn(
+            `  Skipping target archive template binding and snapshot for "${project.projectCode}" until legacy archive migration completes`,
+          );
+          return;
+        }
         await tx.project.updateMany({
           where: { id: project.id, archiveTemplateId: null },
           data: { archiveTemplateId: template.id },

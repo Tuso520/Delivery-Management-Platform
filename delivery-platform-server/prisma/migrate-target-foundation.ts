@@ -4,11 +4,15 @@ import {
   HELP_TEXT,
   MigrationOptions,
   foundationId,
+  isDeterministicEmptyArchiveSeedSnapshot,
+  isKnownRetiredMissingKnowledgeFileUpdateApproval,
+  isLegacyDemoProjectApprovalType,
   legacyFolderKey,
   legacyItemKey,
   mapLegacyDecision,
   mapLegacyFileStatus,
   parseMigrationOptions,
+  shouldCancelLegacyDemoProjectApproval,
   TARGET_PROJECT_DELIVERY_STAGES,
   TARGET_PROJECT_LIFECYCLE_STATUSES,
   targetContentId,
@@ -26,6 +30,14 @@ interface Finding {
   details: Prisma.InputJsonObject;
 }
 
+interface MigrationExclusion {
+  domain: 'REVIEW';
+  entityType: 'ApprovalTask';
+  entityId: string;
+  code: 'RETIRED_KNOWLEDGE_FILE_UPDATE_SOURCE_MISSING';
+  details: Prisma.InputJsonObject;
+}
+
 interface MigrationReport {
   mode: 'DRY_RUN' | 'VERIFY' | 'APPLY';
   actorUserId: string | null;
@@ -37,6 +49,7 @@ interface MigrationReport {
   targetCountsBefore: Record<string, number>;
   targetCountsAfter: Record<string, number>;
   findings: Finding[];
+  exclusions: MigrationExclusion[];
 }
 
 interface MigrationContext {
@@ -79,7 +92,7 @@ type LegacyApprovalTask = Prisma.ApprovalTaskGetPayload<{
 }>;
 
 interface TargetReviewSource {
-  sourceType: 'PROJECT_ARCHIVE' | 'ARCHIVE_TEMPLATE' | 'STANDARD' | 'KNOWLEDGE';
+  sourceType: 'PROJECT_CREATE' | 'PROJECT_ARCHIVE' | 'ARCHIVE_TEMPLATE' | 'STANDARD' | 'KNOWLEDGE';
   sourceId: string;
   sourceVersionId: string | null;
   projectId: string | null;
@@ -99,9 +112,11 @@ const report: MigrationReport = {
   targetCountsBefore: {},
   targetCountsAfter: {},
   findings: [],
+  exclusions: [],
 };
 
 const findingKeys = new Set<string>();
+const exclusionKeys = new Set<string>();
 const context: MigrationContext = {
   expectedProjectIds: new Set(),
   expectedFolderIds: new Set(),
@@ -132,6 +147,13 @@ function addFinding(
   if (findingKeys.has(key)) return;
   findingKeys.add(key);
   report.findings.push({ severity, domain, entityType, entityId, code, details });
+}
+
+function addExclusion(exclusion: MigrationExclusion): void {
+  const key = `${exclusion.domain}:${exclusion.entityType}:${exclusion.entityId}:${exclusion.code}`;
+  if (exclusionKeys.has(key)) return;
+  exclusionKeys.add(key);
+  report.exclusions.push(exclusion);
 }
 
 function dateJson(value: Date | null | undefined): string | null {
@@ -237,10 +259,7 @@ async function collectTargetCounts(prisma: PrismaClient): Promise<Record<string,
   };
 }
 
-async function migrateProjectState(
-  prisma: PrismaClient,
-  options: MigrationOptions,
-): Promise<void> {
+async function migrateProjectState(prisma: PrismaClient, options: MigrationOptions): Promise<void> {
   // Project state is finalized by migration 20260712094000. This step validates
   // the single target model and keeps the foundation migrator usable for
   // archive/file/review history without resurrecting removed legacy fields.
@@ -309,20 +328,10 @@ function recordLegacyItemMetadata(item: LegacyArchiveItem): void {
   const statusNeedsSnapshot =
     activeFiles.length === 0 && !['NotStarted', 'PendingUpload'].includes(item.status);
   if (!item.dueDate && !item.completedAt && !statusNeedsSnapshot) return;
-  addFinding(
-    'REVIEW',
-    'ARCHIVE',
-    'ProjectArchiveItem',
-    item.id,
-    'LEGACY_ITEM_METADATA_REQUIRES_RECONCILIATION',
-    {
-      legacyStatus: item.status,
-      dueDate: dateJson(item.dueDate),
-      completedAt: dateJson(item.completedAt),
-      activeFileCount: activeFiles.length,
-      note: '目标档案项不保存旧状态/截止时间；原表保留，元数据同时登记迁移异常。',
-    },
-  );
+  // The target entry intentionally has no legacy status/due/completed fields.
+  // The source row remains read-only and auditable, so this is retained source
+  // metadata rather than an unresolved migration exception.
+  increment(report.planned, 'legacyItemMetadataRetainedReadOnly');
 }
 
 async function migrateArchiveStructure(
@@ -399,50 +408,84 @@ async function migrateArchiveStructure(
   for (const [projectId, projectItems] of itemsByProject) {
     if (!validateLegacyArchiveHierarchy(projectItems)) continue;
 
-    const [project, existingFolders, existingEntries] = await Promise.all([
-      prisma.project.findUnique({
-        where: { id: projectId },
-        select: { archiveTemplateVersionId: true, countryCode: true },
-      }),
-      prisma.projectArchiveFolder.findMany({
-        where: { projectId },
-        select: { id: true, sourceStableKey: true },
-      }),
-      prisma.projectArchiveEntry.findMany({
-        where: { projectId },
-        select: {
-          id: true,
-          folderId: true,
-          sourceStableKey: true,
-          templateVersionId: true,
-          approvalTemplateId: true,
-        },
-      }),
-    ]);
+    const [project, existingFolders, existingEntries, existingArchiveFileCount] = await Promise.all(
+      [
+        prisma.project.findUnique({
+          where: { id: projectId },
+          select: {
+            archiveTemplateId: true,
+            archiveTemplateVersionId: true,
+            countryCode: true,
+            archiveTemplateVersion: {
+              select: {
+                id: true,
+                folders: { select: { id: true, stableKey: true } },
+                versionItems: { select: { id: true, folderId: true, stableKey: true } },
+              },
+            },
+          },
+        }),
+        prisma.projectArchiveFolder.findMany({
+          where: { projectId },
+          select: {
+            id: true,
+            sourceTemplateFolderId: true,
+            sourceStableKey: true,
+            archivedAt: true,
+          },
+        }),
+        prisma.projectArchiveEntry.findMany({
+          where: { projectId },
+          select: {
+            id: true,
+            folderId: true,
+            sourceStableKey: true,
+            templateVersionId: true,
+            sourceTemplateItemId: true,
+            approvalTemplateId: true,
+            archivedAt: true,
+          },
+        }),
+        prisma.projectArchiveFile.count({ where: { projectId } }),
+      ],
+    );
     if (!project) {
       addFinding('ERROR', 'ARCHIVE', 'Project', projectId, 'ORPHAN_ARCHIVE_PROJECT', {});
       continue;
     }
 
-    const hasVersionedTarget =
-      Boolean(project.archiveTemplateVersionId) &&
-      (existingFolders.some((folder) => !folder.sourceStableKey?.startsWith('legacy-folder:')) ||
-        existingEntries.some((entry) => Boolean(entry.templateVersionId)));
+    const hasVersionedTarget = Boolean(project.archiveTemplateVersionId);
+    let replaceEmptySeedSnapshot = false;
     if (hasVersionedTarget) {
-      addFinding(
-        'ERROR',
-        'ARCHIVE',
-        'Project',
-        projectId,
-        'TARGET_VERSIONED_ARCHIVE_ALREADY_EXISTS',
-        {
-          archiveTemplateVersionId: project.archiveTemplateVersionId,
-          legacyItemCount: projectItems.length,
-          targetFolderCount: existingFolders.length,
-          note: '不能自动判定两套快照等价，已跳过该项目。',
-        },
-      );
-      continue;
+      replaceEmptySeedSnapshot = isDeterministicEmptyArchiveSeedSnapshot({
+        archiveTemplateVersionId: project.archiveTemplateVersionId,
+        archiveFileCount: existingArchiveFileCount,
+        projectFolders: existingFolders,
+        projectEntries: existingEntries,
+        templateFolders: project.archiveTemplateVersion?.folders ?? [],
+        templateItems: project.archiveTemplateVersion?.versionItems ?? [],
+      });
+      if (!replaceEmptySeedSnapshot) {
+        addFinding(
+          'ERROR',
+          'ARCHIVE',
+          'Project',
+          projectId,
+          'TARGET_VERSIONED_ARCHIVE_ALREADY_EXISTS',
+          {
+            archiveTemplateVersionId: project.archiveTemplateVersionId,
+            legacyItemCount: projectItems.length,
+            targetFolderCount: existingFolders.length,
+            targetEntryCount: existingEntries.length,
+            targetArchiveFileCount: existingArchiveFileCount,
+            note: '不能证明目标结构是所选模板版本的空 seed 快照，已跳过该项目。',
+          },
+        );
+        continue;
+      }
+      increment(report.planned, 'emptyArchiveSeedSnapshotsReplaced');
+      increment(report.planned, 'emptyArchiveSeedFoldersArchived', existingFolders.length);
+      increment(report.planned, 'emptyArchiveSeedEntriesArchived', existingEntries.length);
     }
 
     const byId = new Map(projectItems.map((item) => [item.id, item]));
@@ -656,6 +699,81 @@ async function migrateArchiveStructure(
 
     if (options.apply) {
       await prisma.$transaction(async (tx) => {
+        if (replaceEmptySeedSnapshot) {
+          const [currentProject, currentFolders, currentEntries, currentArchiveFileCount] =
+            await Promise.all([
+              tx.project.findUnique({
+                where: { id: projectId },
+                select: {
+                  archiveTemplateVersionId: true,
+                  archiveTemplateVersion: {
+                    select: {
+                      folders: { select: { id: true, stableKey: true } },
+                      versionItems: { select: { id: true, folderId: true, stableKey: true } },
+                    },
+                  },
+                },
+              }),
+              tx.projectArchiveFolder.findMany({
+                where: { projectId },
+                select: {
+                  id: true,
+                  sourceTemplateFolderId: true,
+                  sourceStableKey: true,
+                  archivedAt: true,
+                },
+              }),
+              tx.projectArchiveEntry.findMany({
+                where: { projectId },
+                select: {
+                  id: true,
+                  folderId: true,
+                  templateVersionId: true,
+                  sourceTemplateItemId: true,
+                  sourceStableKey: true,
+                  archivedAt: true,
+                },
+              }),
+              tx.projectArchiveFile.count({ where: { projectId } }),
+            ]);
+          if (
+            !currentProject ||
+            currentProject.archiveTemplateVersionId !== project.archiveTemplateVersionId ||
+            !isDeterministicEmptyArchiveSeedSnapshot({
+              archiveTemplateVersionId: currentProject.archiveTemplateVersionId,
+              archiveFileCount: currentArchiveFileCount,
+              projectFolders: currentFolders,
+              projectEntries: currentEntries,
+              templateFolders: currentProject.archiveTemplateVersion?.folders ?? [],
+              templateItems: currentProject.archiveTemplateVersion?.versionItems ?? [],
+            })
+          ) {
+            throw new Error('EMPTY_ARCHIVE_SEED_SNAPSHOT_CHANGED_DURING_APPLY');
+          }
+          const retiredAt = new Date();
+          const archivedEntries = await tx.projectArchiveEntry.updateMany({
+            where: { id: { in: currentEntries.map((entry) => entry.id) }, archivedAt: null },
+            data: { archivedAt: retiredAt },
+          });
+          const archivedFolders = await tx.projectArchiveFolder.updateMany({
+            where: { id: { in: currentFolders.map((folder) => folder.id) }, archivedAt: null },
+            data: { archivedAt: retiredAt },
+          });
+          const detachedProject = await tx.project.updateMany({
+            where: {
+              id: projectId,
+              archiveTemplateVersionId: project.archiveTemplateVersionId,
+            },
+            data: { archiveTemplateId: null, archiveTemplateVersionId: null },
+          });
+          if (
+            archivedEntries.count !== currentEntries.length ||
+            archivedFolders.count !== currentFolders.length ||
+            detachedProject.count !== 1
+          ) {
+            throw new Error('EMPTY_ARCHIVE_SEED_SNAPSHOT_REPLACEMENT_INCOMPLETE');
+          }
+        }
         for (const folder of plannedFolders) {
           await tx.projectArchiveFolder.upsert({
             where: { id: folder.id },
@@ -717,6 +835,19 @@ async function migrateArchiveStructure(
           });
         }
       });
+      if (replaceEmptySeedSnapshot) {
+        increment(report.writtenOrVerified, 'emptyArchiveSeedSnapshotsReplaced');
+        increment(
+          report.writtenOrVerified,
+          'emptyArchiveSeedFoldersArchived',
+          existingFolders.length,
+        );
+        increment(
+          report.writtenOrVerified,
+          'emptyArchiveSeedEntriesArchived',
+          existingEntries.length,
+        );
+      }
     }
     increment(report.writtenOrVerified, 'projectArchiveFolders', plannedFolders.length);
     increment(report.writtenOrVerified, 'projectArchiveEntries', plannedEntries.length);
@@ -1143,10 +1274,7 @@ async function migrateArchiveFiles(
     }
 
     for (const plannedAsset of plannedAssets.values()) {
-      if (
-        !plannedAsset.existing ||
-        plannedAsset.id === assetId(plannedAsset.file.id)
-      ) {
+      if (!plannedAsset.existing || plannedAsset.id === assetId(plannedAsset.file.id)) {
         continue;
       }
       addFinding('REVIEW', 'FILE', 'File', plannedAsset.file.id, 'REUSED_EXISTING_PHYSICAL_ASSET', {
@@ -1777,11 +1905,114 @@ async function migrateFileReviews(prisma: PrismaClient, options: MigrationOption
   }
 }
 
+type NormalizedApprovalTaskStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+type TargetApprovalTaskStatus = NormalizedApprovalTaskStatus | 'CANCELLED';
+
+async function excludeKnownRetiredApproval(
+  prisma: PrismaClient,
+  task: LegacyApprovalTask,
+  taskStatus: NormalizedApprovalTaskStatus,
+  options: MigrationOptions,
+): Promise<boolean> {
+  const businessType = task.businessType.trim();
+  if (businessType !== 'knowledge-file-update' || taskStatus !== 'PENDING') return false;
+  const sourceCount = await prisma.attachment.count({
+    where: {
+      OR: [
+        { id: task.businessId },
+        { ownerType: 'KnowledgeFileRevision', ownerId: task.businessId },
+      ],
+    },
+  });
+  const retired = isKnownRetiredMissingKnowledgeFileUpdateApproval({
+    businessType,
+    normalizedStatus: taskStatus,
+    templateCode: task.template.templateCode,
+    sourceCount,
+  });
+  if (!retired) return false;
+  const code = 'RETIRED_KNOWLEDGE_FILE_UPDATE_SOURCE_MISSING' as const;
+  addExclusion({
+    domain: 'REVIEW',
+    entityType: 'ApprovalTask',
+    entityId: task.id,
+    code,
+    details: {
+      legacyBusinessType: businessType,
+      legacyStatus: task.status,
+      legacyBusinessId: task.businessId,
+      templateCode: task.template.templateCode,
+      sourceCount,
+      resolution: 'SOURCE_CONFIRMED_MISSING_RETIRED_FLOW',
+      disposition: 'NO_TARGET_REVIEW_TASK_CREATED',
+    },
+  });
+  increment(report.planned, 'retiredLegacyApprovals');
+  if (options.verify) {
+    const audit = await prisma.migrationException.findUnique({
+      where: {
+        domain_entityType_entityId_code: {
+          domain: 'REVIEW',
+          entityType: 'ApprovalTask',
+          entityId: task.id,
+          code,
+        },
+      },
+      select: { status: true, resolvedBy: true, resolvedAt: true },
+    });
+    if (!audit || audit.status !== 'RESOLVED' || !audit.resolvedBy || audit.resolvedAt === null) {
+      addFinding(
+        'ERROR',
+        'REVIEW',
+        'ApprovalTask',
+        task.id,
+        'RETIRED_APPROVAL_RESOLUTION_AUDIT_MISSING',
+        { expectedCode: code },
+      );
+    } else {
+      increment(report.writtenOrVerified, 'retiredLegacyApprovalAudits');
+    }
+  }
+  return true;
+}
+
 async function resolveApprovalTarget(
   prisma: PrismaClient,
   task: LegacyApprovalTask,
 ): Promise<TargetReviewSource | null> {
   const businessType = task.businessType.trim();
+  if (isLegacyDemoProjectApprovalType(businessType)) {
+    const project = await prisma.project.findUnique({
+      where: { id: task.businessId },
+      select: { id: true, status: true, deletedAt: true, archivedAt: true },
+    });
+    const cancelledNonActionablePending = shouldCancelLegacyDemoProjectApproval({
+      businessType,
+      normalizedStatus: task.status.trim().toUpperCase(),
+      projectExists: Boolean(project),
+      projectStatus: project?.status ?? null,
+      projectDeleted: project?.deletedAt !== null && project?.deletedAt !== undefined,
+      projectArchived: project?.archivedAt !== null && project?.archivedAt !== undefined,
+    });
+    return {
+      sourceType: 'PROJECT_CREATE',
+      sourceId: task.businessId,
+      sourceVersionId: null,
+      projectId: project?.id ?? null,
+      fileVersionId: null,
+      exists: Boolean(project),
+      mapping: {
+        legacyBusinessType: businessType,
+        mappingRule: 'EXPLICIT_LEGACY_DEMO_PROJECT_APPROVAL',
+        migrationDisposition: cancelledNonActionablePending
+          ? 'CANCELLED_NON_ACTIONABLE_DEMO_PROJECT_APPROVAL'
+          : 'HISTORICAL_OR_ACTIONABLE_PROJECT_CREATE',
+        projectStatus: project?.status ?? null,
+        projectDeletedAt: dateJson(project?.deletedAt),
+        projectArchivedAt: dateJson(project?.archivedAt),
+      },
+    };
+  }
   if (businessType === 'knowledge') {
     const article = await prisma.knowledgeArticle.findUnique({
       where: { id: task.businessId },
@@ -1951,12 +2182,23 @@ async function resolveApprovalTarget(
   return null;
 }
 
-function normalizeApprovalTaskStatus(status: string): 'PENDING' | 'APPROVED' | 'REJECTED' | null {
+function normalizeApprovalTaskStatus(status: string): NormalizedApprovalTaskStatus | null {
   const normalized = status.trim().toUpperCase();
   if (normalized === 'PENDING') return 'PENDING';
   if (['APPROVED', 'COMPLETED'].includes(normalized)) return 'APPROVED';
   if (['REJECTED', 'DENIED'].includes(normalized)) return 'REJECTED';
   return null;
+}
+
+function resolveTargetApprovalTaskStatus(
+  taskStatus: NormalizedApprovalTaskStatus,
+  target: TargetReviewSource,
+): TargetApprovalTaskStatus {
+  return taskStatus === 'PENDING' &&
+    target.sourceType === 'PROJECT_CREATE' &&
+    target.mapping.migrationDisposition === 'CANCELLED_NON_ACTIONABLE_DEMO_PROJECT_APPROVAL'
+    ? 'CANCELLED'
+    : taskStatus;
 }
 
 async function resolveConfiguredReviewerIds(
@@ -2024,7 +2266,7 @@ interface ApprovalStepPlan {
 async function buildApprovalStepPlans(
   prisma: PrismaClient,
   task: LegacyApprovalTask,
-  taskStatus: 'PENDING' | 'APPROVED' | 'REJECTED',
+  taskStatus: TargetApprovalTaskStatus,
   target: TargetReviewSource,
   submittedAt: Date,
 ): Promise<ApprovalStepPlan[] | null> {
@@ -2032,6 +2274,47 @@ async function buildApprovalStepPlans(
     (left, right) => left.stepOrder - right.stepOrder,
   );
   const decisions = task.actions.filter((action) => Boolean(mapLegacyDecision(action.action)));
+
+  if (taskStatus === 'CANCELLED') {
+    const step =
+      configured.find((candidate) => candidate.stepOrder === task.currentStep) ?? configured[0];
+    if (!task.approverId) {
+      addFinding(
+        'ERROR',
+        'REVIEW',
+        'ApprovalTask',
+        task.id,
+        'CANCELLED_DEMO_APPROVER_NOT_IDENTIFIABLE',
+        { currentStep: task.currentStep },
+      );
+      return null;
+    }
+    const legacyStepOrder = step?.stepOrder ?? task.currentStep;
+    return [
+      {
+        legacyStepOrder,
+        stepNo: 1,
+        mode: 'SINGLE',
+        requiredCount: 1,
+        status: 'CANCELLED',
+        startedAt: submittedAt,
+        completedAt: task.updatedAt,
+        assignees: [
+          {
+            userId: task.approverId,
+            decision: null,
+            actedAt: task.updatedAt,
+            comment: task.comment,
+            createdAt: task.createdAt,
+            legacyActionIds: [],
+            resolvedFromType: step?.approverType ?? 'legacy-task-approver',
+            resolvedFromValue: task.approverId,
+            status: 'CANCELLED',
+          },
+        ],
+      },
+    ];
+  }
 
   if (taskStatus === 'PENDING') {
     const steps =
@@ -2228,18 +2511,22 @@ async function buildApprovalStepPlans(
         createdAt: decisionTime,
       },
     ];
-    addFinding(
-      'REVIEW',
-      'REVIEW',
-      'ApprovalTask',
-      task.id,
-      'DECISION_SYNTHESIZED_FROM_TASK_STATE',
-      {
-        decision: taskStatus,
-        actorUserId: task.approverId,
-        decidedAt: decisionTime.toISOString(),
-      },
-    );
+    if (isLegacyDemoProjectApprovalType(task.businessType)) {
+      increment(report.planned, 'demoDecisionHistorySynthesized');
+    } else {
+      addFinding(
+        'REVIEW',
+        'REVIEW',
+        'ApprovalTask',
+        task.id,
+        'DECISION_SYNTHESIZED_FROM_TASK_STATE',
+        {
+          decision: taskStatus,
+          actorUserId: task.approverId,
+          decidedAt: decisionTime.toISOString(),
+        },
+      );
+    }
   }
 
   const actionsByStep = new Map<number, typeof effectiveDecisions>();
@@ -2312,6 +2599,9 @@ async function migrateApprovalTasks(
       });
       continue;
     }
+    if (await excludeKnownRetiredApproval(prisma, task, taskStatus, options)) {
+      continue;
+    }
     const target = await resolveApprovalTarget(prisma, task);
     if (!target) {
       addFinding(
@@ -2345,6 +2635,7 @@ async function migrateApprovalTasks(
       );
       if (taskStatus === 'PENDING') continue;
     }
+    const targetTaskStatus = resolveTargetApprovalTaskStatus(taskStatus, target);
     if (
       taskStatus === 'PENDING' &&
       target.sourceType === 'PROJECT_ARCHIVE' &&
@@ -2363,10 +2654,16 @@ async function migrateApprovalTasks(
       (action) => action.action.trim().toUpperCase() === 'SUBMITTED',
     );
     const submittedAt = submittedAction?.createdAt ?? task.createdAt;
-    const stepPlans = await buildApprovalStepPlans(prisma, task, taskStatus, target, submittedAt);
+    const stepPlans = await buildApprovalStepPlans(
+      prisma,
+      task,
+      targetTaskStatus,
+      target,
+      submittedAt,
+    );
     if (!stepPlans || stepPlans.length === 0) continue;
     const completedAt =
-      taskStatus === 'PENDING'
+      targetTaskStatus === 'PENDING'
         ? null
         : (task.decidedAt ??
           latestDate(stepPlans.map((step) => step.completedAt)) ??
@@ -2387,7 +2684,7 @@ async function migrateApprovalTasks(
       });
       continue;
     }
-    if (taskStatus === 'PENDING') {
+    if (targetTaskStatus === 'PENDING') {
       const competingPendingTask = await prisma.reviewTask.findFirst({
         where: {
           id: { not: taskId },
@@ -2410,6 +2707,9 @@ async function migrateApprovalTasks(
 
     context.expectedReviewTaskIds.add(taskId);
     increment(report.planned, 'approvalReviewTasks');
+    if (targetTaskStatus === 'CANCELLED') {
+      increment(report.planned, 'retiredDemoApprovalsCancelled');
+    }
     if (options.apply) {
       await prisma.$transaction(async (tx) => {
         await tx.reviewTask.upsert({
@@ -2429,6 +2729,7 @@ async function migrateApprovalTasks(
               legacyBusinessType: task.businessType,
               legacyBusinessId: task.businessId,
               legacyStatus: task.status,
+              targetMigrationStatus: targetTaskStatus,
               legacyCurrentStep: task.currentStep,
               legacyTaskComment: task.comment,
               targetMapping: target.mapping,
@@ -2448,16 +2749,17 @@ async function migrateApprovalTasks(
             },
             title: task.businessTitle ?? `${task.template.templateName}（历史任务）`,
             locationLabel: task.businessTitle,
-            status: taskStatus,
+            status: targetTaskStatus,
             reviewMode: stepPlans.length > 1 ? 'SERIAL' : stepPlans[0].mode,
             currentStepNo:
-              taskStatus === 'PENDING'
+              targetTaskStatus === 'PENDING'
                 ? (stepPlans.find((step) => step.status === 'ACTIVE')?.stepNo ?? 1)
                 : stepPlans[stepPlans.length - 1].stepNo,
             totalSteps: stepPlans.length,
             submittedBy: task.applicantId,
             submittedAt,
             completedAt,
+            archivedAt: targetTaskStatus === 'CANCELLED' ? completedAt : null,
             createdAt: task.createdAt,
             updatedAt: task.updatedAt,
           },
@@ -2509,7 +2811,7 @@ async function migrateApprovalTasks(
                   migrationSource: 'approval_tasks',
                   legacyActionIds: assignee.legacyActionIds,
                   legacyStepOrder: stepPlan.legacyStepOrder,
-                  eligibilityChecked: taskStatus === 'PENDING' && !assignee.decision,
+                  eligibilityChecked: targetTaskStatus === 'PENDING' && !assignee.decision,
                 },
                 createdAt: assignee.createdAt,
                 updatedAt: assignee.actedAt ?? assignee.createdAt,
@@ -2572,8 +2874,32 @@ async function migrateApprovalTasks(
             update: {},
           });
         }
+        if (targetTaskStatus === 'CANCELLED') {
+          const cancelledAssignee = stepPlans[stepPlans.length - 1].assignees[0];
+          await tx.reviewActionEvent.upsert({
+            where: {
+              id: foundationId(`review-event:legacy-approval:${task.id}:cancelled`),
+            },
+            create: {
+              id: foundationId(`review-event:legacy-approval:${task.id}:cancelled`),
+              reviewTaskId: taskId,
+              stepNo: stepPlans[stepPlans.length - 1].stepNo,
+              actorUserId: cancelledAssignee.userId,
+              action: 'CANCELLED',
+              comment: task.comment,
+              metadata: {
+                migrationSource: 'approval_tasks',
+                legacyApprovalTaskId: task.id,
+                synthesized: true,
+                reason: 'PROJECT_CREATE_SOURCE_ALREADY_LEFT_DRAFT',
+              },
+              createdAt: completedAt ?? task.updatedAt,
+            },
+            update: {},
+          });
+        }
         if (
-          taskStatus !== 'PENDING' &&
+          (targetTaskStatus === 'APPROVED' || targetTaskStatus === 'REJECTED') &&
           !task.actions.some((action) => Boolean(mapLegacyDecision(action.action)))
         ) {
           const finalStep = stepPlans[stepPlans.length - 1];
@@ -2587,7 +2913,7 @@ async function migrateApprovalTasks(
               reviewTaskId: taskId,
               stepNo: finalStep.stepNo,
               actorUserId: finalAssignee.userId,
-              action: taskStatus,
+              action: targetTaskStatus,
               comment: task.comment,
               metadata: {
                 migrationSource: 'approval_tasks',
@@ -2602,6 +2928,9 @@ async function migrateApprovalTasks(
       });
     }
     increment(report.writtenOrVerified, 'approvalReviewTasks');
+    if (options.apply && targetTaskStatus === 'CANCELLED') {
+      increment(report.writtenOrVerified, 'retiredDemoApprovalsCancelled');
+    }
   }
 }
 
@@ -2921,6 +3250,47 @@ async function recordFindings(prisma: PrismaClient): Promise<void> {
   }
 }
 
+async function recordResolvedExclusions(prisma: PrismaClient, actorUserId: string): Promise<void> {
+  const resolvedAt = new Date();
+  for (const exclusion of report.exclusions) {
+    await prisma.migrationException.upsert({
+      where: {
+        domain_entityType_entityId_code: {
+          domain: exclusion.domain,
+          entityType: exclusion.entityType,
+          entityId: exclusion.entityId,
+          code: exclusion.code,
+        },
+      },
+      create: {
+        domain: exclusion.domain,
+        entityType: exclusion.entityType,
+        entityId: exclusion.entityId,
+        code: exclusion.code,
+        details: {
+          migrationScript: 'migrate-target-foundation.ts',
+          disposition: 'RESOLVED_RETIRED_LEGACY_FLOW',
+          ...exclusion.details,
+        },
+        status: 'RESOLVED',
+        resolvedBy: actorUserId,
+        resolvedAt,
+      },
+      update: {
+        details: {
+          migrationScript: 'migrate-target-foundation.ts',
+          disposition: 'RESOLVED_RETIRED_LEGACY_FLOW',
+          ...exclusion.details,
+        },
+        status: 'RESOLVED',
+        resolvedBy: actorUserId,
+        resolvedAt,
+      },
+    });
+    increment(report.writtenOrVerified, 'retiredLegacyApprovalAudits');
+  }
+}
+
 async function run(options: MigrationOptions): Promise<void> {
   const prisma = new PrismaClient();
   report.mode = options.apply ? 'APPLY' : options.verify ? 'VERIFY' : 'DRY_RUN';
@@ -2952,6 +3322,7 @@ async function run(options: MigrationOptions): Promise<void> {
       await validateAppliedMigration(prisma);
     }
     if (options.apply) {
+      await recordResolvedExclusions(prisma, options.actorUserId!);
       await recordFindings(prisma);
     }
     report.targetCountsAfter = await collectTargetCounts(prisma);
@@ -2972,6 +3343,12 @@ async function run(options: MigrationOptions): Promise<void> {
             validation: report.validation,
             targetCountsAfter: report.targetCountsAfter,
             findingCount,
+            exclusions: report.exclusions.map((exclusion) => ({
+              entityType: exclusion.entityType,
+              entityId: exclusion.entityId,
+              code: exclusion.code,
+              details: exclusion.details,
+            })),
           },
           result: findingCount === 0 ? 'success' : 'failure',
           errorReason:
@@ -2989,6 +3366,7 @@ async function run(options: MigrationOptions): Promise<void> {
         total: report.findings.length,
         errors: report.findings.filter((finding) => finding.severity === 'ERROR').length,
         reviewRequired: report.findings.filter((finding) => finding.severity === 'REVIEW').length,
+        retiredApprovalsExcluded: report.exclusions.length,
       },
     };
     process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);

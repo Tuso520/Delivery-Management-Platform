@@ -109,6 +109,8 @@ services:
       dockerfile: Dockerfile
       args:
         RELEASE_ID: ${RELEASE_ID:-development}
+        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-http://deb.debian.org/debian}
+        DEBIAN_SECURITY_MIRROR: ${DEBIAN_SECURITY_MIRROR:-http://deb.debian.org/debian-security}
     image: delivery-platform-backend:${RELEASE_ID:-development}
     container_name: delivery-backend
     restart: unless-stopped
@@ -208,6 +210,8 @@ services:
       target: builder
       args:
         RELEASE_ID: ${RELEASE_ID:-development}
+        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-http://deb.debian.org/debian}
+        DEBIAN_SECURITY_MIRROR: ${DEBIAN_SECURITY_MIRROR:-http://deb.debian.org/debian-security}
     container_name: delivery-backend-migrate
     restart: "no"
     environment:

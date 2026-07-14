@@ -448,6 +448,10 @@ jobs:
           export DEPLOY_ENV_UPLOAD_SHA256="$EXPECTED_ENV_SHA"
           export DEPLOY_GIT_BUNDLE_PATH="$REMOTE_BUNDLE"
           export ALLOW_RELEASE_OVERLAY_RECOVERY=YES
+          # Debian package indexes are exceptionally slow from this region. These
+          # non-secret build-only overrides keep local and CI defaults unchanged.
+          export DEBIAN_MIRROR="http://mirrors.cloud.tencent.com/debian"
+          export DEBIAN_SECURITY_MIRROR="http://mirrors.cloud.tencent.com/debian-security"
           if [ -n "$DEPLOY_REF" ]; then
             export REF="$DEPLOY_REF"
           fi
