@@ -2174,9 +2174,9 @@ test_workflow_runs_protected_image_cleanup_after_deploy() {
     [ "$first_status_line" -lt "$prune_line" ] && \
     [ "$prune_line" -lt "$final_status_line" ] || \
     fail "workflow does not clean before build and verify status before and after runtime cleanup"
-  grep -Fq 'bash "$DEPLOY_SCRIPT" prune-unused-images || prune_status="$?"' "$workflow" || \
+  grep -Fq 'bash "$DEPLOY_SCRIPT" prune-unused-images </dev/null || prune_status="$?"' "$workflow" || \
     fail "workflow does not preserve the protected image cleanup exit status"
-  grep -Fq 'bash "$DEPLOY_SCRIPT" status || final_status="$?"' "$workflow" || \
+  grep -Fq 'bash "$DEPLOY_SCRIPT" status </dev/null || final_status="$?"' "$workflow" || \
     fail "workflow does not run final status verification after cleanup failure"
   if grep -Eq 'docker[[:space:]]+(system|volume|container|network)[[:space:]]+prune|docker[[:space:]]+compose[[:space:]]+down[[:space:]].*-v|docker[[:space:]]+image[[:space:]]+rm[[:space:]].*(-f|--force)' "$ROOT_DIR/deploy-git.sh"; then
     fail "protected image cleanup contains a force, system, volume, container or network prune"
