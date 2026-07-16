@@ -90,6 +90,10 @@ grep -Fq 'DEPLOY_TARGET_BOOTSTRAP' "$workflow" || fail "workflow has no explicit
 grep -Fq 'TARGET_BOOTSTRAP="$7"' "$workflow" || fail "workflow does not bind the bootstrap gate remotely"
 grep -Fq 'CONFIRM_TEST_SERVER_RESET=YES' "$workflow" || fail "workflow does not confirm reset"
 grep -Fq 'CONFIRM_TEST_DATA_SEED=YES' "$workflow" || fail "workflow does not confirm test-data seed"
+grep -Fq 'bash "$TEST_RELEASE_SCRIPT" seed </dev/null' "$workflow" || \
+  fail "workflow does not protect post-deploy seed commands from stdin consumption"
+grep -Fq 'bash "$DEPLOY_SCRIPT" deploy </dev/null' "$workflow" || \
+  fail "workflow does not isolate deployment script stdin"
 grep -Fq 'TEST_DATA_MIN_COUNT' "$workflow" || fail "workflow does not configure minimum data count"
 
 printf 'test-server release contract tests passed\n'

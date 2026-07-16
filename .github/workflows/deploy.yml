@@ -519,20 +519,20 @@ jobs:
             export REF="$DEPLOY_REF"
           fi
 
-          bash "$DEPLOY_SCRIPT" prune-unused-images-predeploy
+          bash "$DEPLOY_SCRIPT" prune-unused-images-predeploy </dev/null
           CONFIRM_TEST_SERVER_RESET=YES \
             DEPLOY_SCRIPT="$DEPLOY_SCRIPT" \
-            bash "$TEST_RELEASE_SCRIPT" reset
-          bash "$DEPLOY_SCRIPT" deploy
+            bash "$TEST_RELEASE_SCRIPT" reset </dev/null
+          bash "$DEPLOY_SCRIPT" deploy </dev/null
           CONFIRM_TEST_DATA_SEED=YES \
             DEPLOY_SCRIPT="$DEPLOY_SCRIPT" \
             TEST_DATA_MIN_COUNT="$TEST_DATA_MIN_COUNT" \
-            bash "$TEST_RELEASE_SCRIPT" seed
-          bash "$DEPLOY_SCRIPT" status
+            bash "$TEST_RELEASE_SCRIPT" seed </dev/null
+          bash "$DEPLOY_SCRIPT" status </dev/null
           prune_status=0
           final_status=0
-          bash "$DEPLOY_SCRIPT" prune-unused-images || prune_status="$?"
-          bash "$DEPLOY_SCRIPT" status || final_status="$?"
+          bash "$DEPLOY_SCRIPT" prune-unused-images </dev/null || prune_status="$?"
+          bash "$DEPLOY_SCRIPT" status </dev/null || final_status="$?"
           if [ "$prune_status" -ne 0 ]; then
             exit "$prune_status"
           fi
