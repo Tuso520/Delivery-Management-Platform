@@ -15,16 +15,8 @@ import {
 } from 'class-validator';
 
 import {
-  CONTRACT_TYPES,
-  PRODUCT_TYPES,
   PROJECT_DELIVERY_STAGES,
-  PROJECT_KEYWORDS,
-  PROJECT_TYPES,
-  type ContractType,
-  type ProductType,
   type ProjectDeliveryStage,
-  type ProjectKeyword,
-  type ProjectType,
 } from '../project.constants';
 
 export class CreateProjectDto {
@@ -58,27 +50,31 @@ export class CreateProjectDto {
   @MaxLength(200)
   customerName?: string;
 
-  @ApiPropertyOptional({ description: '项目类型', enum: PROJECT_TYPES })
+  @ApiPropertyOptional({ description: '项目类型（取自项目配置）' })
   @IsOptional()
-  @IsIn(PROJECT_TYPES)
-  projectType?: ProjectType;
+  @IsString()
+  @MaxLength(100)
+  projectType?: string;
 
-  @ApiPropertyOptional({ description: '合同类型', enum: CONTRACT_TYPES })
+  @ApiPropertyOptional({ description: '合同类型（取自项目配置）' })
   @IsOptional()
-  @IsIn(CONTRACT_TYPES)
-  contractType?: ContractType;
+  @IsString()
+  @MaxLength(100)
+  contractType?: string;
 
-  @ApiPropertyOptional({ description: '产品', enum: PRODUCT_TYPES })
+  @ApiPropertyOptional({ description: '产品（取自项目配置）' })
   @IsOptional()
-  @IsIn(PRODUCT_TYPES)
-  product?: ProductType;
+  @IsString()
+  @MaxLength(100)
+  product?: string;
 
-  @ApiPropertyOptional({ description: '项目关键词', enum: PROJECT_KEYWORDS, isArray: true })
+  @ApiPropertyOptional({ description: '项目关键词（取自项目配置）', isArray: true })
   @IsOptional()
   @IsArray()
   @ArrayUnique()
-  @IsIn(PROJECT_KEYWORDS, { each: true })
-  keywords?: ProjectKeyword[];
+  @IsString({ each: true })
+  @MaxLength(100, { each: true })
+  keywords?: string[];
 
   @ApiPropertyOptional({ description: '合同币种' })
   @IsOptional()

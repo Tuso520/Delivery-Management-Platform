@@ -5,6 +5,7 @@ import type { JwtPayload } from '../../auth/strategies/jwt.strategy';
 import { CreateProjectDto } from '../dto/create-project.dto';
 import { ProjectStatusActionDto } from '../dto/project-status-action.dto';
 import { UpdateProjectProgressDto } from '../dto/update-project-progress.dto';
+import type { ProjectConfigurationService } from '../project-configuration.service';
 import { ProjectController } from '../project.controller';
 import type { ProjectService } from '../project.service';
 
@@ -25,13 +26,25 @@ describe('ProjectController project creation', () => {
   };
 
   let projectService: { create: jest.Mock };
+  let projectConfiguration: { getConfiguration: jest.Mock };
   let controller: ProjectController;
 
   beforeEach(() => {
     projectService = {
       create: jest.fn().mockResolvedValue({ id: 'project-1' }),
     };
-    controller = new ProjectController(projectService as unknown as ProjectService);
+    projectConfiguration = {
+      getConfiguration: jest.fn().mockResolvedValue({ projectTypes: [] }),
+    };
+    controller = new ProjectController(
+      projectService as unknown as ProjectService,
+      projectConfiguration as unknown as ProjectConfigurationService,
+    );
+  });
+
+  it('returns the aggregate project configuration from its domain service', async () => {
+    await expect(controller.getConfiguration()).resolves.toEqual({ projectTypes: [] });
+    expect(projectConfiguration.getConfiguration).toHaveBeenCalledTimes(1);
   });
 
   it('requires Idempotency-Key on POST /projects', async () => {

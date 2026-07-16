@@ -14,6 +14,7 @@ import type { ReviewTaskService } from '../../review/review-task.service';
 import type { SystemConfigService } from '../../system-config/system-config.service';
 import type { CreateProjectDto } from '../dto/create-project.dto';
 import type { ProjectAccessService } from '../project-access.service';
+import type { ProjectConfigurationService } from '../project-configuration.service';
 import { hashProjectCreateRequest } from '../project-create-idempotency';
 import { ProjectService } from '../project.service';
 
@@ -112,6 +113,7 @@ describe('ProjectService', () => {
     getDefaultProjectRiskLevel: jest.Mock;
     getDefaultProjectPageSize: jest.Mock;
   };
+  let projectConfiguration: { validate: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -167,6 +169,7 @@ describe('ProjectService', () => {
       getDefaultProjectRiskLevel: jest.fn().mockResolvedValue('Low'),
       getDefaultProjectPageSize: jest.fn().mockResolvedValue(20),
     };
+    projectConfiguration = { validate: jest.fn().mockResolvedValue(undefined) };
     service = new ProjectService(
       prisma as unknown as PrismaService,
       projectAccess as unknown as ProjectAccessService,
@@ -174,6 +177,7 @@ describe('ProjectService', () => {
       reviewConfiguration as unknown as ReviewConfigurationService,
       reviewTasks as unknown as ReviewTaskService,
       systemConfig as unknown as SystemConfigService,
+      projectConfiguration as unknown as ProjectConfigurationService,
     );
   });
 

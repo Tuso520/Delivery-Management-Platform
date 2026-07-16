@@ -48,6 +48,32 @@ export function formatCurrency(amount: number | string | null | undefined, curre
   }
 }
 
+export interface FormatAdaptiveNumberOptions {
+  fractionDigits?: number
+  placeholder?: string
+}
+
+/**
+ * Format a finite number while keeping integers compact and decimal values fixed
+ * to the requested precision. Numeric strings are accepted for API compatibility.
+ */
+export function formatAdaptiveNumber(
+  value: number | string | null | undefined,
+  options: FormatAdaptiveNumberOptions = {},
+): string {
+  const placeholder = options.placeholder ?? '-'
+  if (value === null || value === undefined || value === '') return placeholder
+
+  const numericValue = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(numericValue)) return placeholder
+
+  const fractionDigits = Number.isInteger(numericValue) ? 0 : (options.fractionDigits ?? 2)
+  return new Intl.NumberFormat('zh-CN', {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(numericValue)
+}
+
 /**
  * Format file size from bytes to human readable
  */

@@ -3,14 +3,20 @@
 ## 环境要求
 
 - Node.js 20。
-- pnpm。
+- pnpm 10.34.4。
 - Docker Desktop 或 Docker Engine，用于容器化测试。
+
+开始开发前执行 `node scripts/preflight.mjs`。该只读检查报告 Node.js、pnpm、两个工作区依赖、Prisma Client、`.env.local`、Docker Compose 和本地验收端口状态；发布验收使用 `node scripts/preflight.mjs --require-docker`。
 
 ## 安装依赖
 
 ```powershell
-pnpm install
+pnpm --dir delivery-platform-web install
+pnpm --dir delivery-platform-server install
+pnpm --dir delivery-platform-server prisma:generate
 ```
+
+前端和后端是两个独立 pnpm workspace，仓库根目录不承载包清单。后端首次安装或 Prisma schema 变化后必须执行 `prisma:generate`。
 
 ## 本地模拟服务
 
@@ -40,6 +46,7 @@ pnpm --dir delivery-platform-web lint
 pnpm --dir delivery-platform-web type-check
 pnpm --dir delivery-platform-web test
 pnpm --dir delivery-platform-web build
+pnpm --dir delivery-platform-web budget
 ```
 
 前端约定：
@@ -53,18 +60,19 @@ pnpm --dir delivery-platform-web build
 - 固定界面文案使用中英文同构 i18n key；状态文案和颜色通过 `components/business/status-registry.ts` 统一定义。
 - 筛选项保持简洁，能一行展示时不要拆成多行。
 - 涉及布局的修改必须通过浏览器截图或实际页面检查。
+- UI E2E 默认使用稳定版 Chrome；本地已有其他 Playwright 支持的 Chromium 通道时，可通过 `PLAYWRIGHT_BROWSER_CHANNEL` 显式指定，例如 `msedge`。CI 不设置该变量并继续使用 Chrome。
 - 具体 UI 规范见 [UI/UX 与 Arco Design 规范](ui-ux.md)。
 - 改动菜单、路由、页面层级、Store、API 或公共组件前，先核对 [前端页面架构](frontend-architecture.md)。
 - 改动业务动作、状态、审批、文件版本或角色权限前，同步核对 [前端业务流程](frontend-business-flows.md)。
-- 正式约束见 [前端重构实施规范](frontend-architecture-refactored.md)；[前端整体重构评审稿](frontend-rebuild-review.md) 不作为当前事实来源。
+- 正式约束见 [前端实施规范](frontend-architecture-refactored.md)；[前端整体重构评审稿](frontend-rebuild-review.md) 不作为当前事实来源。
 
 ## 后端开发
 
 ```powershell
-pnpm --filter ./delivery-platform-server lint
-pnpm --filter ./delivery-platform-server type-check
-pnpm --filter ./delivery-platform-server test
-pnpm --filter ./delivery-platform-server build
+pnpm --dir delivery-platform-server lint
+pnpm --dir delivery-platform-server type-check
+pnpm --dir delivery-platform-server test
+pnpm --dir delivery-platform-server build
 ```
 
 后端约定：

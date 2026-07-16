@@ -51,6 +51,9 @@ export interface ProjectArchiveTargetItem {
   approvalTemplateId?: string | null
   ownerRoleId?: string | null
   allowMultipleFiles: boolean
+  allowedExtensions?: string[] | null
+  maxFileSize?: string | number | null
+  namingRule?: string | null
   sourceStableKey?: string | null
   isTemporary: boolean
   temporaryReason?: string | null

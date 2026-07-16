@@ -9,15 +9,19 @@ pnpm --dir delivery-platform-web lint
 pnpm --dir delivery-platform-web type-check
 pnpm --dir delivery-platform-web test
 pnpm --dir delivery-platform-web build
-pnpm --filter ./delivery-platform-server lint
-pnpm --filter ./delivery-platform-server type-check
-pnpm --filter ./delivery-platform-server test
-pnpm --filter ./delivery-platform-server build
+pnpm --dir delivery-platform-web budget
+pnpm --dir delivery-platform-server lint
+pnpm --dir delivery-platform-server type-check
+pnpm --dir delivery-platform-server test
+pnpm --dir delivery-platform-server build
 pnpm --dir delivery-platform-server exec prisma validate
 docker compose --env-file .env.example -f docker-compose.yml config -q
 docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.prod.yml config -q
 docker compose --env-file .env.local.example -f docker-compose.test.yml config -q
+node scripts/verify-doc-facts.mjs
 ```
+
+开始开发前可执行 `node scripts/preflight.mjs` 检查 Node.js、pnpm、工作区依赖、真实验收环境文件和 Docker Compose 可用性；发布验收使用 `--require-docker` 将 Docker 缺失升级为失败。前端体积预算按未压缩产物执行：单个常规 JavaScript 分块不超过 850 KiB、CSS 不超过 450 KiB、Worker/ES module 不超过 1500 KiB，常规 JavaScript 总量不超过 2600 KiB。预算用于阻止意外整体引入大依赖，同时给现有 Arco 和 PDF 预览分块保留有限余量。
 
 Lint 命令会修正可自动修复的格式；执行后必须重新检查工作区差异。生产构建允许报告分块体积警告，但不允许类型、测试、Lint 或构建错误。
 
@@ -31,7 +35,7 @@ Lint 命令会修正可自动修复的格式；执行后必须重新检查工作
 $env:E2E_API_BASE_URL='http://127.0.0.1:3000/api/v1'
 $env:E2E_USERNAME='<测试账号>'
 $env:E2E_PASSWORD='<测试密码>'
-pnpm --filter ./delivery-platform-server test:e2e --runInBand
+pnpm --dir delivery-platform-server test:e2e -- --runInBand
 ```
 
 该套件验证真实 HTTP 响应包装、登录、Refresh Cookie 轮换和项目扁平分页。`E2E_USERNAME`、`E2E_PASSWORD` 缺失时认证用例必须失败，不能以跳过伪装通过。
@@ -48,6 +52,8 @@ pnpm --dir delivery-platform-web test:smoke:api
 ## 真实浏览器验收
 
 涉及登录、项目、档案、审核、标准、知识、文件预览或设置时，必须把前端连接到真实 NestJS API 后使用浏览器验证。`scripts/local-test-server.mjs` 只用于页面演示和前端局部开发，不能替代权限、数据范围、事务、MinIO 和审核并发验证。
+
+UI E2E 默认使用稳定版 Chrome。开发机可通过 `PLAYWRIGHT_BROWSER_CHANNEL` 显式选择 Playwright 支持的本地 Chromium 通道，例如 `msedge`；CI 不设置该变量，继续使用 Chrome。浏览器通道差异不能降低真实 API、权限、MinIO 或 Worker 的验收范围。
 
 至少覆盖：
 
@@ -76,6 +82,9 @@ pnpm --dir delivery-platform-web test:smoke:api
 8. 标准历史结构化正文必须物化为经流式 checksum 校验的真实 MinIO 文件；每个有效 StandardVersion 都有唯一主文件。KnowledgeVersion 必须严格满足 FILE/MARKDOWN/LINK 三选一，支持文件归属和 published pointer 一致。
 9. UI 翻译退役只允许把 `translations` 原子归档为 `retired_ui_translations_20260713`，部署表计数报告必须证明行数未减少；运行时 Prisma、seed 和 API 不再读写该表。
 10. 迁移失败不得继续启动 API 或 Worker；回滚必须成对恢复数据库和 MinIO。
+11. `_prisma_migrations` 必须恰好包含源码中的 29 个有效迁移，每个迁移完成且 `migration.sql` SHA-256 与数据库记录一致；数据库中不得存在源码缺失的有效迁移。
+12. 三组 migrator apply 完成后捕获全部业务表计数，第二次 seed 后逐表比较；任一表新增、减少或消失均阻断应用启动。
+13. 真实浏览器验收必须上传私有 PNG、通过鉴权下载并逐字节回读原文件，等待 File Worker 生成 WebP 缩略图，并确认 `ArchiveFileUploaded` 与 `FileProcessingCompleted` Outbox 事件进入终态。
 
 ## 权限与数据范围矩阵
 
@@ -89,33 +98,47 @@ pnpm --dir delivery-platform-web test:smoke:api
 - 文件审核动作只允许当前步骤指派人执行，多人会签并发只能产生一个终态。
 - 设置只读账号落到第一个可访问设置页；无任何可访问页时进入 `/forbidden`，不清除有效会话。
 
-## 2026-07-13 验收记录
+## 2026-07-16 当前验收状态
 
-本轮最终工作区已完成不依赖 Docker daemon 的合并门禁：前端 lint、类型检查、40 个 Vitest 文件 / 175 个用例和生产构建通过；后端 lint、类型检查、67 个 Jest 套件 / 464 个用例、Prisma schema/client 生成和生产构建通过；三组 Compose 静态解析、Bash 语法、ShellCheck 与完整部署契约通过。前端构建仅保留既有分块体积和 user store 动静态导入警告。
+当前仓库扫描范围为 618 个受版本控制或待纳入版本控制的文件。实现规模包括：前端 174 个 TypeScript/Vue 文件、30 个 `views/` Vue 文件、25 个运行时 API 文件和 41 个测试文件；后端 233 个 TypeScript 文件、27 个 Controller、39 个 Service、27 个 Module、156 个 HTTP 路由和 29 个 Prisma migration。发布迁移另有 3 个 Prisma 验收脚本，分别核对应用迁移与校验和、二次 seed 全库表计数以及 MinIO/File Worker/Outbox Worker 一致性。
 
-以下真实 MySQL、Redis、MinIO 和浏览器结果是新增两条 migration 前的 26 migration 基线；最终 28 migration、内容物化和共享服务器发布必须由同一目标提交的 GitHub `integration`/`deploy` 或服务器复验补充，不能用该基线替代：
+本地自动化结果：
 
-基线在隔离临时 MySQL、Redis、MinIO 和真实 NestJS API 上完成：
+- 前端 Vitest：40 个测试文件、174 个用例全部通过。
+- 前端 ESLint（只读模式）、TypeScript 类型检查和生产构建通过；构建保留分块体积和 user store 动静态导入提示。
+- 后端 Prisma Client：按当前 schema 生成成功。
+- 后端 Jest：70 个测试套件、492 个用例全部通过。
+- 后端 ESLint（只读模式）、TypeScript 类型检查、生产构建和 Prisma schema 校验通过。
+- 代码规则扫描：前后端源码未发现新增无约束 `any`，未发现其他 UI 组件库导入；前端常规业务请求集中在 `src/api/`，统一文件预览组件按只读会话使用受控 `fetch` 获取预览内容。
+- 文档事实已按当前项目字段、统一进度命令、归档列表、迁移数量和测试数量校正。
 
-- 前端 lint、TypeScript 检查和生产构建通过；Vitest 40 个测试文件、173 个用例全部通过。
-- 后端 lint、TypeScript 检查和生产构建通过；Jest 63 个测试套件、369 个用例全部通过，Prisma schema 校验通过。
-- NestJS 真实 API E2E 2 个用例、Playwright 真实依赖就绪冒烟 2 个用例、Chrome 管理员/项目经理关键流程 2 个用例全部通过；三套 Docker Compose 配置解析通过。
-- 26 个 migration 顺序成功且无未完成或回滚记录；seed 连续两次成功，目标权限、项目成员、档案模板和项目计数稳定。
-- 当前隔离库包含 10 个有效项目、450 个档案文件夹、690 个基线档案项和 1 个多人会签验收临时档案项；档案项、档案文件、文件版本、审核步骤和审核指派的孤儿关联均为 0，开放迁移异常为 0。
-- 代表性旧项目升级后原状态归档、目标状态/阶段正确，旧运行时列已退出；无效目标状态和重复有效成员均为 0。
-- 项目创建幂等、revision 冲突、阶段修改、暂停、档案快照、受限角色分页和敏感字段裁剪通过。
-- 系统分页、上传扩展名/大小和登录失败次数配置在运行时生效。
-- PDF 实际写入 MinIO；`{version}` 命名规则、首个独立文件、幂等重试、预览、下载和审计通过。
-- 需审核档案文件由实际指派人通过后，ReviewTask、FileVersion、LogicalFile 和当前版本指针同时进入终态。
-- `ANY_N` 真实多人会签使用 2 名直接指派人和阈值 2 完成并发审批；两名指派人各保留一条动作，任务只生成一条去重的 `ReviewTaskApproved` 终态 Outbox 事件，文件当前版本只晋级一次。
-- File Worker 与 Outbox Worker 均连续运行且重启次数为 0；终态通知已处理，无投递目标的创建通知按契约标记 `SKIPPED`。未配置可选文件转换器时，转换任务以 `FILE_CONVERTER_NOT_CONFIGURED` 进入受控失败，不伪造预览产物。
-- QEMU 压力验收复现 Prisma `P1017` 关闭连接；认证资料和 JWT 权限重载现仅对该瞬时错误执行一次幂等读取重试，写入与事务不自动重试。修复后真实登录、Refresh 轮换和两角色 Chrome 流程复验通过。
-- 项目物理删除对有关联项目返回包含阻断计数的 409 并记录失败审计；无关联测试项目删除成功并保留成功审计。
-- 浏览器验证管理员和项目经理登录、项目、档案、审核深链、PDF Canvas、模板、日志、角色权限矩阵、标准和知识页面；项目经理只看到 7 个范围内项目，金额为空且无物理删除按钮，最终项目页控制台无警告或错误。
+本地真实依赖验收使用 Ubuntu 24.04 WSL2、Docker Engine 29.6.1、containerd 2.2.6 和 Docker Compose 5.3.1；应用镜像固定 Node.js 20 与 pnpm 10.34.4，依赖由锁文件冷构建。MySQL 8、Redis 7、MinIO、NestJS、前端、File Worker 和 Outbox Worker 均在隔离 Compose 项目中运行。
 
-该记录只证明明确标注的本地门禁与隔离环境基线；没有同一提交的共享环境部署成功记录时，不得把它表述为生产或测试服务器已发布。
+当前真实验收结果：
+
+- `_prisma_migrations` 精确包含源码中的 29 个 migration，全部完成且 SHA-256 校验和一致。
+- 三组数据 migrator 的 dry-run、apply 和只读 verify 全部通过；第二次 seed 前后的 86 张表计数逐表一致。
+- `/api/v1/ready` 的 database、redis、storage 全部为 `ok`；真实 API E2E 2 个用例、Playwright API 冒烟 2 个用例全部通过。
+- Chromium 浏览器关键流程 4 个场景全部通过，覆盖管理员导航、项目全生命周期、项目经理数据范围与敏感字段裁剪，以及私有 PNG 上传、逐字节下载和 WebP 缩略图读取。
+- 运行时核验确认 LogicalFile、FileVersion、MinIO 对象、`THUMBNAIL` 输出资产、`ArchiveFileUploaded` 和 `FileProcessingCompleted` Outbox 事件一致。
+- 后端、前端、MySQL、Redis、MinIO、File Worker 和 Outbox Worker 的重启次数均为 0。
+
+这些结果证明当前工作区在隔离真实依赖环境中的发布事务和关键业务链路可运行。测试服务器或生产环境是否发布成功，仍只由同一目标提交的 GitHub `integration`、`deploy`、服务器 release id 和就绪检查共同判定。
 
 ## GitHub 部署验收
+
+测试服务器发布还必须验证以下重置与数据生成契约：
+
+1. `DEPLOY_TARGET_ID` 与服务器 `.deploy/target-id` 完全一致后才允许继续。
+2. 数据删除只能作用于名称包含 `test` 的独立 Compose 项目；缺少
+   `DEPLOY_ENV=test`、40 位 commit 或显式确认时必须失败。
+3. 重置后不得残留该 Compose 项目的 MySQL、Redis、MinIO 命名卷或
+   `backups/git-deploy*` 历史备份。
+4. migration、基础 seed、API、Worker 和前端健康后，才运行随机测试数据生成器。
+5. `prisma/verify-test-data.ts` 必须输出清单中全部数据集的实际数量，且每项均
+   不少于 `TEST_DATA_MIN_COUNT`（默认 20）。
+6. `bash scripts/test-test-server-release.sh` 必须通过，证明生产环境、错误 Compose
+   项目、缺少确认和不足 20 条等情况都会失败关闭。
 
 推送后以同一提交的实际结果为准：
 
@@ -127,4 +150,4 @@ pnpm --dir delivery-platform-web test:smoke:api
 6. migration 可能写库后的失败不得启动旧代码；日志必须明确显示“保留目标并停服”或“v3 成对数据/环境/不可变运行时已验证恢复”，不能只以 `/ready` 作为旧版本兼容证据。
 7. 失败时保存诊断与回滚事实；“工作流已配置”不等于“当前版本部署成功”。
 
-2026-07-10 的历史测试环境发布记录只用于追溯旧基线，不覆盖本轮整体重构。
+部署状态只以同一目标提交的 GitHub `integration` 与 `deploy` 结果、服务器 release id 和就绪检查为准。

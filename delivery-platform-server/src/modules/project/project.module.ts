@@ -6,6 +6,7 @@ import { ReviewModule } from '../review/review.module';
 import { SystemConfigModule } from '../system-config/system-config.module';
 
 import { ProjectAccessService } from './project-access.service';
+import { ProjectConfigurationService } from './project-configuration.service';
 import { ProjectController } from './project.controller';
 import { ProjectService } from './project.service';
 
@@ -17,7 +18,7 @@ import { ProjectService } from './project.service';
     SystemConfigModule,
   ],
   controllers: [ProjectController],
-  providers: [ProjectService, ProjectAccessService],
-  exports: [ProjectService, ProjectAccessService],
+  providers: [ProjectService, ProjectAccessService, ProjectConfigurationService],
+  exports: [ProjectService, ProjectAccessService, ProjectConfigurationService],
 })
 export class ProjectModule {}

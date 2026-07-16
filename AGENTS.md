@@ -23,7 +23,7 @@
 ## 全局工程规则
 
 1. 后端必须做最终权限校验，前端权限只用于界面展示。
-2. API 成功响应统一为 `{ code, message, data, timestamp }`，异常响应由全局过滤器输出。
+2. API 成功响应统一为 `{ code, message, data, timestamp, traceId }`，异常响应由全局过滤器输出，并使用同一 `traceId` 关联请求、响应和审计日志。
 3. 金额必须保存原币种、原金额、汇率、折算币种、折算金额和汇率日期。
 4. 文件实体存储在 MinIO，数据库只保存索引、版本、审批和预览元数据。
 5. 国家、币种、语言、项目类型、档案模板、检查模板和审批规则必须配置化。
@@ -80,10 +80,10 @@ pnpm --dir delivery-platform-web lint
 pnpm --dir delivery-platform-web type-check
 pnpm --dir delivery-platform-web test
 pnpm --dir delivery-platform-web build
-pnpm --filter ./delivery-platform-server lint
-pnpm --filter ./delivery-platform-server type-check
-pnpm --filter ./delivery-platform-server test
-pnpm --filter ./delivery-platform-server build
+pnpm --dir delivery-platform-server lint
+pnpm --dir delivery-platform-server type-check
+pnpm --dir delivery-platform-server test
+pnpm --dir delivery-platform-server build
 docker compose --env-file .env.example -f docker-compose.yml config -q
 docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.prod.yml config -q
 ```

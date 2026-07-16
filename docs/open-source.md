@@ -14,6 +14,7 @@
 - vue-i18n：用于多语言能力。
 - md-editor-v3：用于 Markdown 编辑和只读预览。
 - PDF.js / pdfjs-dist：用于 PDF 在线预览。
+- Viewer.js、PhotoSwipe 与 OpenSeadragon：用于普通图片、全屏画廊和大图分层预览。
 
 ## 后端主要依赖
 
@@ -28,6 +29,7 @@
 - Multer：用于文件上传解析。
 - Passport 和 passport-jwt：用于身份认证。
 - RxJS：用于响应式编程支持。
+- sharp：用于图片缩略图和预览产物生成。
 
 ## 开发工具依赖
 

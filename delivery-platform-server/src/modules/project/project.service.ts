@@ -25,6 +25,7 @@ import { QueryProjectDto } from './dto/query-project.dto';
 import { UpdateProjectProgressDto } from './dto/update-project-progress.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { ProjectAccessService } from './project-access.service';
+import { ProjectConfigurationService } from './project-configuration.service';
 import {
   hashProjectCreateRequest,
   validateProjectCreateIdempotencyKey,
@@ -118,6 +119,7 @@ export class ProjectService {
     @Inject(forwardRef(() => ReviewTaskService))
     private readonly reviewTasks: ReviewTaskService,
     private readonly systemConfig: SystemConfigService,
+    private readonly projectConfiguration: ProjectConfigurationService,
   ) {}
 
   async findAll(
@@ -471,6 +473,7 @@ export class ProjectService {
     }
 
     this.assertSensitiveWriteAllowed(dto, actor);
+    await this.projectConfiguration.validate(dto);
     const customerCode = dto.customerName ? dto.customerName.substring(0, 2).toUpperCase() : 'XX';
 
     const projectCode = await this.generateProjectCode(dto.countryCode, customerCode);
@@ -676,6 +679,7 @@ export class ProjectService {
       throw new NotFoundException('项目不存在');
     }
     this.assertProjectRevision(project.revision, dto.revision);
+    await this.projectConfiguration.validate(dto);
 
     const updateData: Prisma.ProjectUpdateInput = {};
 

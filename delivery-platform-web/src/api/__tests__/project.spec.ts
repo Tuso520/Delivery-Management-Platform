@@ -34,6 +34,12 @@ describe('projectApi refactored contract', () => {
     expect(mocks.get).toHaveBeenNthCalledWith(2, '/projects', { params })
   })
 
+  it('loads all project business options from the aggregate configuration endpoint', () => {
+    projectApi.getConfiguration()
+
+    expect(mocks.get).toHaveBeenCalledWith('/projects/configuration')
+  })
+
   it('uses PATCH for ordinary edits and never falls back to PUT', () => {
     const payload = { revision: 7, projectName: '上海交付中心' }
 

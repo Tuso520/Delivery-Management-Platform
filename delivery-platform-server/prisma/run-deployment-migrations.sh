@@ -3,6 +3,7 @@ set -eu
 
 actor_username="${INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME:-admin}"
 archive_audit_report=""
+seed_count_snapshot=""
 current_stage="migration preflight"
 
 finish_migration_run() {
@@ -10,6 +11,9 @@ finish_migration_run() {
   trap - EXIT
   if [ -n "$archive_audit_report" ]; then
     rm -f "$archive_audit_report"
+  fi
+  if [ -n "$seed_count_snapshot" ]; then
+    rm -f "$seed_count_snapshot"
   fi
   if [ "$status" -ne 0 ]; then
     printf '[migrate] failed stage: %s (exit=%s)\n' "$current_stage" "$status" >&2
@@ -33,6 +37,7 @@ done
 node <<'NODE'
 const required = [
   'DATABASE_URL',
+  'EXPECTED_MIGRATION_COUNT',
   'INTEGRATION_SECRET_ENCRYPTION_KEY',
   'SEED_ADMIN_PASSWORD',
   'SEED_DEFAULT_PASSWORD',
@@ -64,6 +69,8 @@ current_stage="schema preparation"
 node prisma/prepare-migrate.js
 current_stage="Prisma schema migration"
 ./node_modules/.bin/prisma migrate deploy
+current_stage="applied migration verification"
+./node_modules/.bin/ts-node --transpile-only prisma/verify-applied-migrations.ts
 
 # Bootstrap the configured migration actor and target reference data first.
 current_stage="first target seed"
@@ -151,8 +158,17 @@ current_stage="integration secret apply"
 
 # A second seed run is an idempotency gate and must not recreate retired data
 # or file-less standard content after the migration has converged.
+seed_count_snapshot="$(mktemp)"
+current_stage="seed count snapshot"
+./node_modules/.bin/ts-node --transpile-only prisma/verify-seed-idempotency.ts \
+  --capture "$seed_count_snapshot"
 current_stage="second target seed"
 ./node_modules/.bin/ts-node --transpile-only prisma/seed.ts
+current_stage="second seed count verification"
+./node_modules/.bin/ts-node --transpile-only prisma/verify-seed-idempotency.ts \
+  --verify "$seed_count_snapshot"
+rm -f "$seed_count_snapshot"
+seed_count_snapshot=""
 current_stage="target content strict verification"
 ./node_modules/.bin/ts-node --transpile-only prisma/migrate-target-content.ts --verify --strict
 current_stage="target foundation strict verification"

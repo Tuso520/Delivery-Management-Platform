@@ -99,8 +99,10 @@ test_workflow_remote_argument_contract() {
   local workflow="$ROOT_DIR/.github/workflows/deploy.yml"
   local index position expected
   local remote_env_pattern env_sha_pattern first_six_pattern deploy_script_pattern bundle_pattern
+  local test_release_pattern compose_project_pattern minimum_count_pattern
   local -a names=(
     APP_DIR BRANCH COMPOSE_FILES DEPLOY_REF REMOTE_ENV EXPECTED_ENV_SHA DEPLOY_SCRIPT REMOTE_BUNDLE
+    TEST_RELEASE_SCRIPT
   )
   remote_env_pattern="$(cat <<'EXPECTED'
 remote_env_arg="${remote_env:-__NOT_SET__}"
@@ -119,7 +121,19 @@ EXPECTED
 EXPECTED
 )"
   bundle_pattern="$(cat <<'EXPECTED'
-"/tmp/delivery-platform-release-${DEPLOY_REF}.bundle" <<'REMOTE'
+"/tmp/delivery-platform-release-${DEPLOY_REF}.bundle" \
+EXPECTED
+)"
+  test_release_pattern="$(cat <<'EXPECTED'
+"/tmp/delivery-platform-test-release-${DEPLOY_REF}.sh" \
+EXPECTED
+)"
+  compose_project_pattern="$(cat <<'EXPECTED'
+"$COMPOSE_PROJECT_NAME" "$TEST_DATA_MIN_COUNT" <<'REMOTE'
+EXPECTED
+)"
+  minimum_count_pattern="$(cat <<'EXPECTED'
+TEST_DATA_MIN_COUNT="${11}"
 EXPECTED
 )"
   grep -Fq "$remote_env_pattern" "$workflow" || \
@@ -132,6 +146,14 @@ EXPECTED
     fail "workflow remote invocation does not pass the deployment script as argument seven"
   grep -Fq "$bundle_pattern" "$workflow" || \
     fail "workflow remote invocation does not pass the release bundle as argument eight"
+  grep -Fq "$test_release_pattern" "$workflow" || \
+    fail "workflow remote invocation does not pass the test release helper as argument nine"
+  grep -Fq "$compose_project_pattern" "$workflow" || \
+    fail "workflow remote invocation does not pass the Compose project and minimum count"
+  grep -Fq 'COMPOSE_PROJECT_NAME="${10}"' "$workflow" || \
+    fail "workflow remote receiver is missing Compose project positional assignment"
+  grep -Fq "$minimum_count_pattern" "$workflow" || \
+    fail "workflow remote receiver is missing minimum-count positional assignment"
   [ "$(grep -Fc -- '-o ServerAliveInterval=30 -o ServerAliveCountMax=20' "$workflow")" = "4" ] || \
     fail "workflow SSH/SCP calls do not all preserve long-running deployment connections"
   [ "$(grep -Fc -- '-o ConnectTimeout=30' "$workflow")" = "4" ] || \
@@ -258,9 +280,9 @@ test_debian_build_mirror_contract() {
     fail "remote deployment does not select the regional Debian mirror"
   grep -Fq 'export DEBIAN_SECURITY_MIRROR="http://mirrors.cloud.tencent.com/debian-security"' "$workflow" ||
     fail "remote deployment does not select the regional Debian security mirror"
-  grep -Fxq 'DEBIAN_MIRROR=http://deb.debian.org/debian' "$example_env" ||
+  tr -d '\r' < "$example_env" | grep -Fxq 'DEBIAN_MIRROR=http://deb.debian.org/debian' ||
     fail ".env.example does not retain the official Debian mirror default"
-  grep -Fxq 'DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security' "$example_env" ||
+  tr -d '\r' < "$example_env" | grep -Fxq 'DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security' ||
     fail ".env.example does not retain the official Debian security mirror default"
 }
 

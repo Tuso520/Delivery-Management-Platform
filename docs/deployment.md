@@ -33,6 +33,50 @@ BRANCH=main bash deploy-git.sh deploy
 
 工作流已具备上述逻辑不等于自动部署已经跑通。首次启用或凭据变更后，必须以 GitHub Actions 中对应提交的 `resolve`、`quality`、`validate`、`integration`、`deploy` 五个作业均成功，以及测试服务器版本核对结果为准。
 
+## 测试服务器重置发布
+
+GitHub Environment `test` 的自动发布采用“重置后部署”流程，固定顺序如下：
+
+1. `resolve` 将本次发布固定为 `main` 历史中的完整 40 位 commit。
+2. `quality`、`validate` 和 `integration` 全部通过后，才允许连接测试服务器。
+3. SSH 使用离线核验的 host key，并要求服务器
+   `$DEPLOY_APP_DIR/.deploy/target-id` 与 Environment Variable
+   `DEPLOY_TARGET_ID` 完全一致；任一不一致都在删除数据前失败。
+4. 仅当 `DEPLOY_ENV=test`、`COMPOSE_PROJECT_NAME` 明确包含 `test`、
+   `CONFIRM_TEST_SERVER_RESET=YES` 且目标 commit 不可变时，停止该 Compose
+   项目并删除其 MySQL、Redis、MinIO 命名卷。
+5. 同时删除测试服务器产生的 `backups/git-deploy*` 历史备份和对应发布指针，
+   但保留 `.env`、Git 工作区、部署锁及服务器身份文件。
+6. 执行正常的镜像构建、全量 schema migration、目标数据 migrator、
+   幂等基础 seed、Worker/API/前端切换和健康检查。
+7. 部署健康后运行 `prisma/seed-test-data.ts`，随后运行
+   `prisma/verify-test-data.ts`。校验清单中的每个数据集都必须不少于
+   `TEST_DATA_MIN_COUNT`，默认和允许的最小值均为 20；任一不足都会使发布失败。
+
+该流程只属于测试 Environment。生产发布不得调用
+`scripts/test-server-release.sh`，也不得配置测试重置确认变量。
+
+首次配置测试服务器身份：
+
+```bash
+cd /www/wwwroot/delivery-platform
+install -d -m 700 .deploy
+printf '%s\n' '<由运维分配的唯一测试服务器标识>' > .deploy/target-id
+chmod 600 .deploy/target-id
+```
+
+`DEPLOY_TARGET_ID` 必须通过服务器控制台等可信通道核对后写入 GitHub
+Environment，不能在工作流中自动发现或自动接受。测试服务器 `.env` 必须显式包含：
+
+```text
+COMPOSE_PROJECT_NAME=delivery-platform-test
+```
+
+测试数据生成覆盖用户、项目、过程记录、付款、标准、知识、检查模板、工具、组织、
+通知、日志、系统配置、集成、汇率、报告、OKR、绩效、审批、技能、培训、复盘和备份记录。
+生成器使用发布 commit 派生随机分布，便于同一发布复现；它只允许在
+`DEPLOY_ENV=test` 且明确确认时运行。
+
 ## GitHub Environment 配置
 
 ### 权限边界与首次接入
@@ -59,6 +103,9 @@ DEPLOY_USER=<SSH 用户，必填>
 DEPLOY_APP_DIR=/www/wwwroot/delivery-platform
 DEPLOY_BRANCH=main
 DEPLOY_COMPOSE_FILES=docker-compose.yml:docker-compose.prod.yml
+DEPLOY_COMPOSE_PROJECT_NAME=delivery-platform-test
+DEPLOY_TARGET_ID=<与服务器 .deploy/target-id 完全一致>
+TEST_DATA_MIN_COUNT=20
 ```
 
 ### Docker 构建镜像源
@@ -202,16 +249,16 @@ prepare-migrate → prisma migrate deploy → bootstrap seed → Archive audit E
 `prisma migrate deploy` 只负责 schema 迁移，不能替代目标数据审计。首次从旧架构升级时，必须先停止旧 API 和两个 Worker，在同一维护窗口执行 schema 门禁与以下脚本；`MIGRATION_ACTOR_ID` 必须是有效启用用户：
 
 ```bash
-pnpm --filter ./delivery-platform-server prisma:audit-archive-migration
-pnpm --filter ./delivery-platform-server prisma:migrate-target-content -- --strict
-pnpm --filter ./delivery-platform-server prisma:migrate-target-content -- --apply --actor-username="$MIGRATION_ACTOR_USERNAME"
-pnpm --filter ./delivery-platform-server prisma:migrate-target-content -- --verify --strict
-pnpm --filter ./delivery-platform-server prisma:migrate-target-foundation -- --strict
-pnpm --filter ./delivery-platform-server prisma:migrate-target-foundation -- --apply --actor-username="$MIGRATION_ACTOR_USERNAME" --strict
-pnpm --filter ./delivery-platform-server prisma:migrate-target-foundation -- --verify --strict
-pnpm --filter ./delivery-platform-server prisma:migrate-integration-secrets
-pnpm --filter ./delivery-platform-server prisma:migrate-integration-secrets -- --apply --actor-username="$MIGRATION_ACTOR_USERNAME"
-pnpm --filter ./delivery-platform-server prisma:migrate-integration-secrets -- --verify
+pnpm --dir delivery-platform-server prisma:audit-archive-migration
+pnpm --dir delivery-platform-server prisma:migrate-target-content -- --strict
+pnpm --dir delivery-platform-server prisma:migrate-target-content -- --apply --actor-username="$MIGRATION_ACTOR_USERNAME"
+pnpm --dir delivery-platform-server prisma:migrate-target-content -- --verify --strict
+pnpm --dir delivery-platform-server prisma:migrate-target-foundation -- --strict
+pnpm --dir delivery-platform-server prisma:migrate-target-foundation -- --apply --actor-username="$MIGRATION_ACTOR_USERNAME" --strict
+pnpm --dir delivery-platform-server prisma:migrate-target-foundation -- --verify --strict
+pnpm --dir delivery-platform-server prisma:migrate-integration-secrets
+pnpm --dir delivery-platform-server prisma:migrate-integration-secrets -- --apply --actor-username="$MIGRATION_ACTOR_USERNAME"
+pnpm --dir delivery-platform-server prisma:migrate-integration-secrets -- --verify
 ```
 
 若通过 Compose 执行发布，上述三组命令已经由 `backend-migrate` 使用 `INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME` 自动执行；人工命令只用于预先保存报告、处理迁移异常或非 Compose 恢复，不得在自动流程外对不同密钥重复 apply。若不存在旧标准/知识或旧集成配置，dry-run 会报告 0 项，仍应保存报告。加密密钥不得复用 JWT、数据库、Redis 或 MinIO 密钥。只有二次 seed、精确表计数、外键检查和全部 strict verify 完成后，才允许启动 API 和 Worker。

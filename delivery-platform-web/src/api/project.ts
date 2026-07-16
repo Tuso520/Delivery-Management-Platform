@@ -3,6 +3,7 @@ import type { PaginatedData } from '@/types/api'
 import type {
   CreateProjectDto,
   Project,
+  ProjectConfiguration,
   ProjectMember,
   ProjectStatusActionDto,
   ProjectStatusCommand,
@@ -15,6 +16,10 @@ import type {
 } from '@/types/project'
 
 export const projectApi = {
+  getConfiguration() {
+    return request.get<ProjectConfiguration>('/projects/configuration')
+  },
+
   getList(params: QueryProjectDto) {
     return request.get<PaginatedData<Project>>('/projects', { params })
   },

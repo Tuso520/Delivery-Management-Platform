@@ -39,6 +39,38 @@ interface SessionEnvelope {
   data: { accessToken: string }
 }
 
+interface ArchiveTreeEnvelope {
+  data: {
+    folders: Array<{
+      id: string
+      items: Array<{
+        id: string
+        name: string
+        canUpload: boolean
+        reviewRequired: boolean
+        allowedExtensions?: string[] | null
+        namingRule?: string | null
+        currentVersion?: { logicalFileId?: string | null } | null
+        fileCount: number
+      }>
+    }>
+  }
+}
+
+interface FileEnvelope {
+  data: { id: string; displayName: string }
+}
+
+interface ProcessingStatusEnvelope {
+  data: Array<{
+    type: string
+    status: string
+    progress: number
+    outputAssetId?: string | null
+    errorCode?: string | null
+  }>
+}
+
 const adminUsername = process.env.E2E_ADMIN_USERNAME
 const adminPassword = process.env.E2E_ADMIN_PASSWORD
 const limitedUsername = process.env.E2E_LIMITED_USERNAME
@@ -125,8 +157,10 @@ test('administrator can use the target architecture navigation', async ({ page }
     accessToken,
     '/api/v1/projects/archived?page=1&pageSize=20',
   )
-  expect(archivedProjects.data.total).toBe(1)
-  expect(archivedProjects.data.items[0]).toMatchObject({
+  expect(archivedProjects.data.total).toBeGreaterThanOrEqual(1)
+  expect(
+    archivedProjects.data.items.find((project) => project.shortName === '示例项目 10'),
+  ).toMatchObject({
     archivedAt: expect.any(String),
     canPermanentDelete: true,
     canRestore: true,
@@ -140,10 +174,16 @@ test('administrator can use the target architecture navigation', async ({ page }
   await expect(page.getByText('VN-LG-2026-001', { exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '创建项目' })).toBeVisible()
 
-  await page.getByRole('button', { name: '归档项目' }).click()
+  await page.locator('.scope-field .arco-select-view').click()
+  await page.locator('.arco-select-option').filter({ hasText: '归档项目' }).click()
   await expect(page.getByText('示例项目 10', { exact: true })).toBeVisible({ timeout: 60_000 })
-  await expect(page.getByRole('button', { name: '恢复' })).toBeVisible({ timeout: 60_000 })
-  await expect(page.getByRole('button', { name: '永久删除' })).toBeVisible({ timeout: 60_000 })
+  const seededArchivedProjectRow = page.locator('tr').filter({ hasText: '示例项目 10' })
+  await expect(seededArchivedProjectRow.getByRole('button', { name: '恢复' })).toBeVisible({
+    timeout: 60_000,
+  })
+  await expect(seededArchivedProjectRow.getByRole('button', { name: '永久删除' })).toBeVisible({
+    timeout: 60_000,
+  })
 
   await page.goto('/#/archive')
   await expect(page).toHaveURL(/#\/archive(?:\?.*)?$/u)
@@ -256,8 +296,24 @@ test('administrator can create, edit, inspect, progress, archive and restore a p
   await expect(page.getByText(progressed.data.projectCode, { exact: true })).toBeVisible({
     timeout: 60_000,
   })
+  const detailDialog = page.locator('.project-detail-modal .arco-modal')
+  await expect(detailDialog).toBeVisible()
+  await expect(detailDialog.getByRole('heading', { name: '项目详情' })).toBeVisible()
+  await expect
+    .poll(async () => (await detailDialog.boundingBox())?.width ?? Number.POSITIVE_INFINITY)
+    .toBeLessThanOrEqual(802)
+  const detailBox = await detailDialog.boundingBox()
+  const viewport = page.viewportSize()
+  expect(detailBox).not.toBeNull()
+  expect(viewport).not.toBeNull()
+  expect(Math.abs((detailBox!.x + detailBox!.width / 2) - viewport!.width / 2)).toBeLessThan(4)
   await expect(page.getByRole('button', { name: '编辑项目' })).toBeVisible()
   await expect(page.getByRole('button', { name: '修改进度' })).toBeVisible()
+  await page.getByRole('button', { name: '关闭' }).click()
+  await expect(page).toHaveURL(/#\/projects\?/u)
+  const returnedQuery = new URLSearchParams(new URL(page.url()).hash.split('?')[1])
+  expect(returnedQuery.get('scope')).toBe('all')
+  expect(returnedQuery.get('keyword')).toBe(`${shortName} 已编辑`)
 
   const archived = await expectProjectResponse(
     await page.request.post(`/api/v1/projects/${progressed.data.id}/archive`, {
@@ -307,6 +363,105 @@ test('administrator can create, edit, inspect, progress, archive and restore a p
   )
   expect(blockedPurge.status()).toBe(409)
   expect(browserErrors).toEqual([])
+})
+
+test('administrator round-trips a private MinIO file and File Worker output', async ({ page }) => {
+  await login(page, adminUsername, adminPassword)
+  const accessToken = await getAccessToken(page)
+  const authorization = { authorization: `Bearer ${accessToken}` }
+  const projects = await fetchProjectList(
+    page,
+    accessToken,
+    '/api/v1/projects?scope=all&page=1&pageSize=20',
+  )
+  const project = projects.data.items[0]
+  expect(project).toBeDefined()
+
+  const treeResponse = await page.request.get(`/api/v1/projects/${project.id}/archive-tree`, {
+    headers: authorization,
+    timeout: 60_000,
+  })
+  expect(treeResponse.status()).toBe(200)
+  const tree = (await treeResponse.json()) as ArchiveTreeEnvelope
+  const item = tree.data.folders
+    .flatMap((folder) => folder.items)
+    .find(
+      (candidate) =>
+        candidate.canUpload &&
+        !candidate.reviewRequired &&
+        (!candidate.allowedExtensions?.length || candidate.allowedExtensions.includes('png')) &&
+        candidate.namingRule,
+    )
+  expect(
+    item,
+    'seed project must expose a non-review PNG archive item with an explicit naming rule',
+  ).toBeDefined()
+
+  const fileName = `${item!.namingRule!.replace(/\{version\}/giu, 'V1.0')}.png`
+  const currentLogicalFileId = item!.currentVersion?.logicalFileId
+  const image = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    'base64',
+  )
+  const uploadResponse = await page.request.post(
+    `/api/v1/projects/${project.id}/archive-items/${item!.id}/files`,
+    {
+      headers: { ...authorization, 'idempotency-key': `runtime-file-${Date.now()}` },
+      multipart: {
+        uploadMode: currentLogicalFileId ? 'NEW_VERSION' : 'REPLACE',
+        revisionLevel: 'MINOR',
+        ...(currentLogicalFileId
+          ? { logicalFileId: currentLogicalFileId }
+          : { createNewLogicalFile: 'true' }),
+        changeDescription: 'CI MinIO and File Worker consistency acceptance',
+        file: { name: fileName, mimeType: 'image/png', buffer: image },
+      },
+      timeout: 60_000,
+    },
+  )
+  const uploadPayload = (await uploadResponse.json()) as FileEnvelope
+  expect(uploadResponse.status(), JSON.stringify(uploadPayload)).toBe(201)
+  const uploaded = uploadPayload
+  expect(uploaded.data).toMatchObject({ id: expect.any(String), displayName: fileName })
+
+  const downloadResponse = await page.request.get(`/api/v1/files/${uploaded.data.id}/download`, {
+    headers: authorization,
+    timeout: 60_000,
+  })
+  expect(downloadResponse.status()).toBe(200)
+  expect(Buffer.from(await downloadResponse.body())).toEqual(image)
+
+  let processing: ProcessingStatusEnvelope['data'] = []
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get(
+          `/api/v1/files/${uploaded.data.id}/processing-status`,
+          { headers: authorization, timeout: 60_000 },
+        )
+        expect(response.status()).toBe(200)
+        processing = ((await response.json()) as ProcessingStatusEnvelope).data
+        const thumbnail = processing.find((job) => job.type === 'THUMBNAIL')
+        if (thumbnail?.status === 'FAILED') {
+          throw new Error(`thumbnail processing failed: ${thumbnail.errorCode ?? 'unknown'}`)
+        }
+        return thumbnail?.status
+      },
+      { timeout: 120_000, intervals: [1_000, 2_000, 5_000] },
+    )
+    .toBe('COMPLETED')
+  expect(processing.find((job) => job.type === 'THUMBNAIL')).toMatchObject({
+    progress: 100,
+    outputAssetId: expect.any(String),
+  })
+
+  const thumbnailResponse = await page.request.get(
+    `/api/v1/files/${uploaded.data.id}/thumbnail`,
+    { headers: authorization, timeout: 60_000 },
+  )
+  expect(thumbnailResponse.status()).toBe(200)
+  expect(thumbnailResponse.headers()['content-type']).toContain('image/webp')
+  expect((await thumbnailResponse.body()).byteLength).toBeGreaterThan(0)
 })
 
 test('project manager is restricted by data scope, field permissions and settings permissions', async ({

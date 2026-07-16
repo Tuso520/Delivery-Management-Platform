@@ -1,5 +1,24 @@
 # 版本记录
 
+## 2026-07-16
+
+### 当前交付状态
+
+- 项目概览支持“我的项目/全部项目”、项目类型/合同类型/产品/关键词、居中详情弹窗和独立归档列表。
+- 项目阶段、进度百分比和预计/实际验收时间使用统一进度命令；负责人字段为销售、项目经理、电气和软件负责人。
+- 项目创建使用幂等键、发布档案模版快照、可选统一审核、金额汇率快照、审计和 Outbox 事务。
+- 生产升级包含 29 个 Prisma migration，以及内容、项目档案基础数据和集成 Secret 三组 migrator 的 dry-run、apply、只读 verify。
+- 文档、架构、流程、测试和直接依赖清单已按当前源码统一。
+
+### 验证
+
+- 前端 Vitest 40 个测试文件、174 个用例通过。
+- 后端 Jest 70 个测试套件、492 个用例通过。
+- Prisma Client 按当前 schema 生成成功。
+- 前后端 ESLint（只读模式）、类型检查和生产构建通过，Prisma schema 校验通过。
+- 本地 WSL2 Docker Engine 验收通过：29 个 migration 精确匹配源码及校验和，三组 migrator、二次 seed、真实 API、MySQL、Redis、MinIO、File Worker、Outbox Worker 和 4 个关键浏览器场景全部通过，长期容器重启次数均为 0。
+- GitHub 发布仍以同一目标提交的 `integration`、`deploy`、服务器 release id 和就绪检查结果为最终依据。
+
 ## 2026-07-08
 
 ### 变更

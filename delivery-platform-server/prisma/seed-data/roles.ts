@@ -1,5 +1,7 @@
 import { DataScopeType, PrismaClient } from '@prisma/client';
+
 import { getAllPermissionCodes } from './permissions';
+
 interface RoleSeed {
   roleCode: string;
   roleName: string;

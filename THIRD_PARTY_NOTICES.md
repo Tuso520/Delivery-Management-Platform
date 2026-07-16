@@ -17,6 +17,7 @@
 | vue-i18n | 国际化 | MIT |
 | md-editor-v3 | Markdown 编辑与预览 | MIT |
 | PDF.js / pdfjs-dist | PDF 在线预览 | Apache-2.0 |
+| OpenSeadragon | 大图平移与缩放预览 | BSD-3-Clause |
 | Viewer.js | 图片缩放、旋转和查看器 | MIT |
 | PhotoSwipe | 图片全屏画廊预览 | MIT |
 
@@ -38,6 +39,7 @@
 | Passport / passport-jwt | 身份认证 | MIT |
 | reflect-metadata | TypeScript 元数据 | Apache-2.0 |
 | RxJS | 响应式编程库 | Apache-2.0 |
+| sharp | 图片缩略图与预览产物生成 | Apache-2.0 |
 | uuid | 唯一标识生成 | MIT |
 
 ## 开发与构建依赖
@@ -65,10 +67,3 @@
 - 使用自动化工具导出完整依赖许可证清单。
 - 复核 `pnpm-lock.yaml` 中的间接依赖许可证。
 - 确认示例文档、种子数据和演示项目不包含客户或内部敏感信息。
-
-## Additional File Preview Dependencies
-
-| Component | Usage | Common license |
-| --- | --- | --- |
-| OpenSeadragon | Large image pan and zoom preview | BSD-3-Clause |
-| sharp | Image thumbnail generation | Apache-2.0 |

@@ -31,6 +31,7 @@ describe('deployment migration runner', () => {
 
   it('strictly gates content, foundation, then secrets before the second seed', () => {
     const schema = source.indexOf('prisma migrate deploy');
+    const appliedMigrationVerification = source.indexOf('prisma/verify-applied-migrations.ts');
     const firstSeed = source.indexOf('prisma/seed.ts');
     const archiveAudit = source.indexOf('prisma/archive-migration-audit.ts');
     const contentDryRun = source.indexOf('prisma/migrate-target-content.ts --strict');
@@ -46,6 +47,11 @@ describe('deployment migration runner', () => {
     );
     const secretApply = source.indexOf('prisma/migrate-integration-secrets.ts', secretDryRun + 1);
     const secondSeed = source.indexOf('prisma/seed.ts', secretApply + 1);
+    const seedSnapshot = source.indexOf('prisma/verify-seed-idempotency.ts', secretApply + 1);
+    const seedCountVerification = source.indexOf(
+      'prisma/verify-seed-idempotency.ts',
+      seedSnapshot + 1,
+    );
     const contentVerify = source.indexOf('prisma/migrate-target-content.ts --verify --strict');
     const foundationVerify = source.indexOf(
       'prisma/migrate-target-foundation.ts --verify --strict',
@@ -53,7 +59,8 @@ describe('deployment migration runner', () => {
     const secretVerify = source.indexOf('prisma/migrate-integration-secrets.ts --verify');
 
     expect(schema).toBeGreaterThan(-1);
-    expect(firstSeed).toBeGreaterThan(schema);
+    expect(appliedMigrationVerification).toBeGreaterThan(schema);
+    expect(firstSeed).toBeGreaterThan(appliedMigrationVerification);
     expect(archiveAudit).toBeGreaterThan(firstSeed);
     expect(contentDryRun).toBeGreaterThan(archiveAudit);
     expect(contentApply).toBeGreaterThan(contentDryRun);
@@ -61,7 +68,9 @@ describe('deployment migration runner', () => {
     expect(foundationApply).toBeGreaterThan(foundationDryRun);
     expect(secretDryRun).toBeGreaterThan(foundationApply);
     expect(secretApply).toBeGreaterThan(secretDryRun);
-    expect(secondSeed).toBeGreaterThan(secretApply);
+    expect(seedSnapshot).toBeGreaterThan(secretApply);
+    expect(secondSeed).toBeGreaterThan(seedSnapshot);
+    expect(seedCountVerification).toBeGreaterThan(secondSeed);
     expect(contentVerify).toBeGreaterThan(secondSeed);
     expect(foundationVerify).toBeGreaterThan(contentVerify);
     expect(secretVerify).toBeGreaterThan(foundationVerify);
@@ -137,6 +146,7 @@ describe('deployment migration runner', () => {
   it('fails fast with a named stage and validates every external dependency input', () => {
     for (const name of [
       'DATABASE_URL',
+      'EXPECTED_MIGRATION_COUNT',
       'INTEGRATION_SECRET_ENCRYPTION_KEY',
       'SEED_ADMIN_PASSWORD',
       'SEED_DEFAULT_PASSWORD',
@@ -152,5 +162,7 @@ describe('deployment migration runner', () => {
     expect(source).toContain('[migrate] failed stage: %s (exit=%s)');
     expect(source).toContain('current_stage="target content strict dry-run"');
     expect(source).toContain('current_stage="integration secret verification"');
+    expect(source).toContain('current_stage="applied migration verification"');
+    expect(source).toContain('current_stage="second seed count verification"');
   });
 });

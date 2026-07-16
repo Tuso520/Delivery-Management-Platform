@@ -4,7 +4,7 @@
 
 ## 核心功能
 
-- 项目概览：支持“我的项目/全部项目”、项目分类与关键词、统一进度命令、详情抽屉及独立归档列表；原币/折算金额、验收、权限和高风险操作均由服务端终检并审计。
+- 项目概览：支持“我的项目/全部项目”、项目分类与关键词、统一进度命令、居中详情弹窗及独立归档列表；原币/折算金额、验收、权限和高风险操作均由服务端终检并审计。
 - 项目档案：创建项目时复制已发布档案模版快照，提供两级目录、临时项、只新增同步、版本留痕和统一审核。
 - 标准与知识：交付流程、检查标准和文档模版统一进入仅文件化的标准库；知识版本在文件、Markdown 和链接中严格选择一个主内容源。
 - 在线预览：统一只读预览 Office、PDF、图片、大图、Markdown、XMind、视频和音频；CAD/Visio 等使用异步转换产物。
@@ -36,12 +36,12 @@
 └── README.md
 ```
 
-历史阶段文档已经合并到 `docs/`，仓库不再维护旧的编号阶段目录。
+项目文档统一维护在根目录规范文件和 `docs/` 中。
 
 ## 快速启动
 
 ```powershell
-pnpm --filter ./delivery-platform-server type-check
+pnpm --dir delivery-platform-server type-check
 pnpm --dir delivery-platform-web build
 $env:LOCAL_TEST_ADMIN_PASSWORD = Read-Host '请输入本地模拟管理员密码'
 $env:LOCAL_TEST_PM_PASSWORD = Read-Host '请输入本地模拟项目经理密码'
@@ -71,8 +71,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\local-docker.ps1 up -Build
 - [技术架构](docs/architecture.md)
 - [前端页面架构](docs/frontend-architecture.md)
 - [前端业务流程](docs/frontend-business-flows.md)
-- [前端重构实施规范](docs/frontend-architecture-refactored.md)
-- [后端重构实施规范](docs/backend-architecture-refactored.md)
+- [前端实施规范](docs/frontend-architecture-refactored.md)
+- [后端实施规范](docs/backend-architecture-refactored.md)
 - [前端整体重构评审稿](docs/frontend-rebuild-review.md)
 - [开发规范](docs/development.md)
 - [部署运维](docs/deployment.md)
@@ -92,6 +92,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\local-docker.ps1 up -Build
 ## 生产部署
 
 生产发布采用 Git 拉取部署。代码推送到 GitHub 后，可以通过 GitHub Environment 自动 SSH 到服务器执行 `deploy-git.sh`；首次配置方式见 [部署运维](docs/deployment.md)。
+
+GitHub `test` Environment 使用隔离的重置发布：核验服务器身份后删除该测试
+Compose 项目的 MySQL、Redis、MinIO 历史卷，完成正常部署，再为 30 个测试
+数据集分别补足至少 20 条记录并逐项校验；该流程不会用于生产环境。
 
 也可以在服务器手动执行：
 

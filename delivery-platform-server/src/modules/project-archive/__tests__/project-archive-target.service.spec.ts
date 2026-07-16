@@ -53,6 +53,65 @@ describe('ProjectArchiveTargetService', () => {
     );
   });
 
+  it('returns immutable upload policy with each project archive item', async () => {
+    const updatedAt = new Date('2026-07-16T00:00:00.000Z');
+    prisma.project.findFirst.mockResolvedValue({
+      id: 'project-1',
+      projectCode: 'P-001',
+      projectName: 'Policy project',
+      currentStage: 'EXECUTION',
+      archiveTemplateId: null,
+      archiveTemplateVersionId: null,
+      archiveTemplateVersion: null,
+      archiveTemplate: null,
+      archiveFolders: [
+        {
+          id: 'folder-1',
+          name: 'Design',
+          description: null,
+          sortOrder: 10,
+          sourceStableKey: 'folder-design',
+          isTemporary: false,
+          archivedAt: null,
+          items: [
+            {
+              id: 'item-1',
+              name: 'Drawing',
+              description: null,
+              required: true,
+              reviewRequired: false,
+              approvalTemplateId: null,
+              ownerRoleId: null,
+              allowMultipleFiles: false,
+              allowedExtensions: ['pdf', 'png'],
+              maxFileSize: BigInt(10_000),
+              namingRule: 'Drawing-{version}',
+              sourceStableKey: 'item-drawing',
+              isTemporary: false,
+              temporaryReason: null,
+              archivedAt: null,
+              updatedAt,
+              ownerUser: null,
+              files: [],
+            },
+          ],
+        },
+      ],
+    });
+
+    const result = await service.getArchiveTree('project-1', {
+      ...actor,
+      permissions: [...actor.permissions, 'archive:upload'],
+    });
+
+    expect(result.folders[0].items[0]).toMatchObject({
+      allowedExtensions: ['pdf', 'png'],
+      maxFileSize: BigInt(10_000),
+      namingRule: 'Drawing-{version}',
+      canUpload: true,
+    });
+  });
+
   it('refuses to create a review-required temporary item without an approval template', async () => {
     prisma.project.findFirst.mockResolvedValue({ id: 'project-1' });
     prisma.projectArchiveFolder.findFirst.mockResolvedValue({ id: 'folder-1' });

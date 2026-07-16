@@ -12,6 +12,7 @@
 | `axios` | `1.18.1` | 运行依赖 | MIT |
 | `dayjs` | `1.11.21` | 运行依赖 | MIT |
 | `md-editor-v3` | `6.5.3` | 运行依赖 | MIT |
+| `openseadragon` | `6.0.2` | 运行依赖 | BSD-3-Clause |
 | `pdfjs-dist` | `4.10.38` | 运行依赖 | Apache-2.0 |
 | `photoswipe` | `5.4.4` | 运行依赖 | MIT |
 | `pinia` | `2.1.7` | 运行依赖 | MIT |
@@ -62,6 +63,7 @@
 | `passport-jwt` | `4.0.1` | 运行依赖 | MIT |
 | `reflect-metadata` | `0.2.2` | 运行依赖 | Apache-2.0 |
 | `rxjs` | `7.8.2` | 运行依赖 | Apache-2.0 |
+| `sharp` | `0.35.3` | 运行依赖 | Apache-2.0 |
 | `uuid` | `11.1.1` | 运行依赖 | MIT |
 | `@nestjs/cli` | `11.0.23` | 开发依赖 | MIT |
 | `@nestjs/schematics` | `11.1.0` | 开发依赖 | MIT |
@@ -93,10 +95,3 @@
 - 当前直接依赖主要为 MIT、Apache-2.0 和 BSD-2-Clause。
 - `jszip` 声明为双许可证 `MIT OR GPL-3.0-or-later`，项目可按 MIT 路径使用，但正式开源前仍需在许可证扫描中确认间接依赖。
 - 本清单未覆盖 Docker 基础镜像、系统软件和所有间接依赖，公开开源前必须补充自动化扫描结果。
-
-## Additional File Preview Dependencies
-
-| Dependency | Version | Type | License |
-| --- | --- | --- | --- |
-| `openseadragon` | `6.0.2` | runtime dependency | BSD-3-Clause |
-| `sharp` | `0.35.3` | runtime dependency | Apache-2.0 |

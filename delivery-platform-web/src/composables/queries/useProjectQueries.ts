@@ -5,7 +5,6 @@ import { countryApi } from '@/api/country'
 import { currencyApi } from '@/api/currency'
 import { languageApi } from '@/api/language'
 import { archiveTemplateApi } from '@/api/archive-template'
-import { dictionaryApi } from '@/api/platform'
 import { projectApi } from '@/api/project'
 import { projectPaymentApi } from '@/api/project-payment'
 import { queryKeys } from '@/query/keys'
@@ -37,6 +36,13 @@ export function useProjectDetailQuery(projectId: MaybeRefOrGetter<string>) {
     queryKey: computed(() => queryKeys.projects.detail(toValue(projectId))),
     queryFn: () => projectApi.getById(toValue(projectId)),
     enabled: computed(() => Boolean(toValue(projectId))),
+  })
+}
+
+export function useProjectConfigurationQuery() {
+  return useQuery({
+    queryKey: queryKeys.projects.formOptions(),
+    queryFn: projectApi.getConfiguration,
   })
 }
 
@@ -85,20 +91,8 @@ export function useProjectFormOptionsQueries(
         queryFn: languageApi.getList,
       },
       {
-        queryKey: [...queryKeys.projects.formOptions(), 'project-types'] as const,
-        queryFn: () => dictionaryApi.getByCode('project_type'),
-      },
-      {
-        queryKey: [...queryKeys.projects.formOptions(), 'contract-types'] as const,
-        queryFn: () => dictionaryApi.getByCode('contract_type'),
-      },
-      {
-        queryKey: [...queryKeys.projects.formOptions(), 'product-types'] as const,
-        queryFn: () => dictionaryApi.getByCode('product_type'),
-      },
-      {
-        queryKey: [...queryKeys.projects.formOptions(), 'project-keywords'] as const,
-        queryFn: () => dictionaryApi.getByCode('project_keyword'),
+        queryKey: queryKeys.projects.formOptions(),
+        queryFn: projectApi.getConfiguration,
       },
       {
         queryKey: queryKeys.projects.userOptions('sales-owner'),

@@ -5,7 +5,6 @@ import { archiveApi } from '@/api/archive'
 import { archiveTemplateApi } from '@/api/archive-template'
 import { countryApi } from '@/api/country'
 import { languageApi } from '@/api/language'
-import { dictionaryApi } from '@/api/platform'
 import { projectApi } from '@/api/project'
 import { queryKeys } from '@/query/keys'
 
@@ -94,8 +93,8 @@ export function useArchiveTemplateFormOptionsQueries() {
         queryFn: languageApi.getList,
       },
       {
-        queryKey: [...queryKeys.archiveTemplates.formOptions(), 'project-types'] as const,
-        queryFn: () => dictionaryApi.getByCode('project_type'),
+        queryKey: queryKeys.projects.formOptions(),
+        queryFn: projectApi.getConfiguration,
       },
     ],
   })

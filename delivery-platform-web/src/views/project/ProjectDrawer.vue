@@ -13,7 +13,6 @@ import { queryKeys } from '@/query/keys'
 import type { ArchiveTemplate } from '@/types/archive'
 import type { Country } from '@/types/country'
 import type { Currency } from '@/types/currency'
-import type { DictionaryCategory } from '@/types/platform'
 import type {
   ContractType,
   CreateProjectDto,
@@ -25,13 +24,7 @@ import type {
   UpdateProjectDto,
 } from '@/types/project'
 import { RISK_LEVEL_OPTIONS, STAGE_OPTIONS } from '@/types/project'
-import {
-  CONTRACT_TYPE_OPTIONS,
-  findProjectDictionaryOption,
-  PRODUCT_TYPE_OPTIONS,
-  PROJECT_KEYWORD_OPTIONS,
-  PROJECT_TYPE_OPTIONS,
-} from '@/utils/project-dictionaries'
+import { projectDictionaryColor, type ProjectDictionaryKind } from '@/utils/project-dictionaries'
 
 const props = defineProps<{ mode: 'create' | 'edit'; projectId?: string }>()
 const emit = defineEmits<{ saved: []; cancel: [] }>()
@@ -60,12 +53,12 @@ const formData = reactive({
 
 const idempotencyKey = ref(globalThis.crypto?.randomUUID?.() ?? `project-${Date.now()}`)
 const rules = {
-  projectName: [{ required: true, message: '请输入项目名称' }],
-  countryCode: [{ required: true, message: '请选择国家' }],
-  projectType: [{ required: true, message: '请选择项目类型' }],
-  contractType: [{ required: true, message: '请选择合同类型' }],
-  product: [{ required: true, message: '请选择产品' }],
-  archiveTemplateId: [{ required: true, message: '请选择档案模板' }],
+  projectName: [{ required: true, message: t('projects.createForm.validationName') }],
+  countryCode: [{ required: true, message: t('projects.createForm.validationCountry') }],
+  projectType: [{ required: true, message: t('projects.createForm.validationProjectType') }],
+  contractType: [{ required: true, message: t('projects.createForm.validationContractType') }],
+  product: [{ required: true, message: t('projects.createForm.validationProduct') }],
+  archiveTemplateId: [{ required: true, message: t('projects.createForm.validationArchiveTemplate') }],
 }
 
 const optionQueries = useProjectFormOptionsQueries(computed(() => !isEdit.value))
@@ -80,28 +73,22 @@ const currencyOptions = computed(() =>
     value: item.currencyCode, label: `${item.currencyName} (${item.currencyCode})`,
   })),
 )
-function configuredOptions<T extends string>(
-  index: number,
-  fallback: readonly { value: T; label: string; color: string }[],
-) {
-  const category = optionQueries.value[index].data as DictionaryCategory | undefined
-  const activeItems = category?.items.filter((item) => item.status === 'Active') ?? []
-  if (!activeItems.length) return fallback
-  return activeItems.map((item) => ({
-    value: item.itemValue as T,
-    label: item.itemLabel,
-    color: findProjectDictionaryOption(fallback, item.itemValue as T)?.color ?? 'arcoblue',
+function configuredOptions<T extends string>(key: 'projectTypes' | 'contractTypes' | 'productTypes' | 'projectKeywords', kind: ProjectDictionaryKind) {
+  return (optionQueries.value[3].data?.[key] ?? []).map((item) => ({
+    ...item,
+    value: item.value as T,
+    color: projectDictionaryColor(kind, item.value),
   }))
 }
-const projectTypeOptions = computed(() => configuredOptions<ProjectType>(3, PROJECT_TYPE_OPTIONS))
-const contractTypeOptions = computed(() => configuredOptions<ContractType>(4, CONTRACT_TYPE_OPTIONS))
-const productTypeOptions = computed(() => configuredOptions<ProductType>(5, PRODUCT_TYPE_OPTIONS))
-const projectKeywordOptions = computed(() => configuredOptions<ProjectKeyword>(6, PROJECT_KEYWORD_OPTIONS))
-const salesOptions = computed<ProjectUserReferenceOption[]>(() => optionQueries.value[7].data ?? [])
-const managerOptions = computed<ProjectUserReferenceOption[]>(() => optionQueries.value[8].data ?? [])
-const memberOptions = computed<ProjectUserReferenceOption[]>(() => optionQueries.value[9].data ?? [])
+const projectTypeOptions = computed(() => configuredOptions<ProjectType>('projectTypes', 'projectType'))
+const contractTypeOptions = computed(() => configuredOptions<ContractType>('contractTypes', 'contractType'))
+const productTypeOptions = computed(() => configuredOptions<ProductType>('productTypes', 'productType'))
+const projectKeywordOptions = computed(() => configuredOptions<ProjectKeyword>('projectKeywords', 'projectKeyword'))
+const salesOptions = computed<ProjectUserReferenceOption[]>(() => optionQueries.value[4].data ?? [])
+const managerOptions = computed<ProjectUserReferenceOption[]>(() => optionQueries.value[5].data ?? [])
+const memberOptions = computed<ProjectUserReferenceOption[]>(() => optionQueries.value[6].data ?? [])
 const archiveOptions = computed(() =>
-  ((optionQueries.value[10].data ?? []) as ArchiveTemplate[])
+  ((optionQueries.value[7].data ?? []) as ArchiveTemplate[])
     .filter((item) => item.status === 'PUBLISHED')
     .map((item) => ({ value: item.id, label: `${item.templateName} (${item.templateCode})` })),
 )
@@ -187,11 +174,11 @@ async function save(saveAsDraft = false): Promise<void> {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.lists() }),
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.summary() }),
     ])
-    Message.success(saveAsDraft ? '草稿已保存' : isEdit.value ? '项目修改已保存' : '项目已创建')
+    Message.success(saveAsDraft ? t('projects.createForm.draftSaved') : isEdit.value ? t('projects.createForm.updated') : t('projects.createForm.created'))
     emit('saved')
   } catch (error) {
     if (hasHttpStatus(error, 409)) {
-      Message.warning('项目已被其他请求更新，请刷新后重试')
+      Message.warning(t('projects.conflict'))
       await projectQuery.refetch()
     }
   }

@@ -1178,6 +1178,41 @@ describe('UnifiedFileService', () => {
     );
   });
 
+  it('exposes the generated asset identifier in processing status', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      previewJob({
+        type: 'THUMBNAIL',
+        status: 'COMPLETED',
+        progress: 100,
+        outputAssetId: 'asset-thumbnail',
+      }),
+    ]);
+    const prisma = {
+      logicalFile: { findFirst: jest.fn().mockResolvedValue(previewLogicalFile('png')) },
+      fileProcessingJob: { findMany },
+    } as unknown as PrismaService;
+    const service = new UnifiedFileService(
+      prisma,
+      {} as FileStorageService,
+      projectAccess,
+      reviewConfiguration,
+      reviewTasks,
+      operationLog,
+    );
+
+    const jobs = await service.getProcessingStatus('logical-preview', previewActor());
+
+    expect(jobs[0]).toMatchObject({
+      status: 'COMPLETED',
+      outputAssetId: 'asset-thumbnail',
+    });
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({ outputAssetId: true }),
+      }),
+    );
+  });
+
   it('uses the completed CAD conversion asset instead of the source object', async () => {
     const outputAsset = {
       ...previewLogicalFile('pdf').currentVersion.asset,

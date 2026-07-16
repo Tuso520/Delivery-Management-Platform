@@ -9,6 +9,7 @@
     "dev": "vite",
     "build": "vite build",
     "build:checked": "vue-tsc --noEmit && vite build",
+    "budget": "node ../scripts/check-web-bundle-budget.mjs",
     "type-check": "vue-tsc --noEmit",
     "preview": "vite preview",
     "lint": "eslint --ext .vue,.ts src/ --fix",
@@ -51,6 +52,7 @@
     "typescript": "5.5.4",
     "vite": "5.4.8",
     "vitest": "^2.0.0",
+    "vue-eslint-parser": "9.4.3",
     "vue-tsc": "2.0.29"
   }
 }

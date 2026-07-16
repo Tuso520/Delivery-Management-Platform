@@ -15,10 +15,10 @@ pnpm --dir delivery-platform-web lint
 pnpm --dir delivery-platform-web type-check
 pnpm --dir delivery-platform-web test
 pnpm --dir delivery-platform-web build
-pnpm --filter ./delivery-platform-server lint
-pnpm --filter ./delivery-platform-server type-check
-pnpm --filter ./delivery-platform-server test
-pnpm --filter ./delivery-platform-server build
+pnpm --dir delivery-platform-server lint
+pnpm --dir delivery-platform-server type-check
+pnpm --dir delivery-platform-server test
+pnpm --dir delivery-platform-server build
 docker compose --env-file .env.example -f docker-compose.yml config -q
 docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.prod.yml config -q
 ```

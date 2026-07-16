@@ -681,6 +681,7 @@ export class UnifiedFileService {
         status: true,
         progress: true,
         attempts: true,
+        outputAssetId: true,
         availableAt: true,
         errorCode: true,
         errorMessage: true,

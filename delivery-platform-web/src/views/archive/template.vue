@@ -28,7 +28,7 @@ import type {
 } from '@/types/archive'
 import type { Country } from '@/types/country'
 import type { Language } from '@/types/language'
-import type { DictionaryItem } from '@/types/platform'
+import type { ProjectConfigurationOption } from '@/types/project'
 import { arcoConfirm } from '@/utils/arco-dialog'
 
 interface EditableVersionItem extends Omit<
@@ -148,7 +148,7 @@ const versions = computed(() => templateVersionsQuery.data.value ?? [])
 const selectedVersion = computed(() => templateVersionQuery.data.value ?? null)
 const countries = computed<Country[]>(() => formOptionQueries.value[0].data?.items ?? [])
 const languages = computed<Language[]>(() => formOptionQueries.value[1].data ?? [])
-const projectTypes = computed<DictionaryItem[]>(() => formOptionQueries.value[2].data?.items ?? [])
+const projectTypes = computed<ProjectConfigurationOption[]>(() => formOptionQueries.value[2].data?.projectTypes ?? [])
 const loading = computed(() => templateListQuery.isFetching.value)
 const detailLoading = computed(
   () =>
@@ -760,9 +760,9 @@ watch(
               <a-select v-model="createForm.projectType" allow-clear>
                 <a-option
                   v-for="item in projectTypes"
-                  :key="item.id"
-                  :value="item.itemValue"
-                  :label="item.itemLabel"
+                  :key="item.value"
+                  :value="item.value"
+                  :label="item.label"
                 />
               </a-select>
             </a-form-item>

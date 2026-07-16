@@ -153,4 +153,16 @@ describe('fixed UI text internationalization contract', () => {
       )
     }
   })
+
+  it('keeps project page validation, notifications and confirmations in locale files', () => {
+    for (const file of [
+      'src/views/project/index.vue',
+      'src/views/project/ProjectDrawer.vue',
+      'src/views/project/detail.vue',
+    ]) {
+      expect(readSource(file), `${file} still contains fixed Chinese UI copy`).not.toMatch(
+        /\p{Script=Han}/u,
+      )
+    }
+  })
 })

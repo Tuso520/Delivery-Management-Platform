@@ -1,6 +1,7 @@
 import { defineConfig } from '@playwright/test'
 
 const webBaseUrl = process.env.PLAYWRIGHT_WEB_BASE_URL?.trim().replace(/\/+$/, '')
+const browserChannel = process.env.PLAYWRIGHT_BROWSER_CHANNEL?.trim() || 'chrome'
 
 if (!webBaseUrl) {
   throw new Error(
@@ -22,7 +23,7 @@ export default defineConfig({
   use: {
     baseURL: webBaseUrl,
     browserName: 'chromium',
-    channel: 'chrome',
+    channel: browserChannel,
     locale: 'zh-CN',
     actionTimeout: 20_000,
     navigationTimeout: 40_000,

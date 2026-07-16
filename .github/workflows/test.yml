@@ -18,6 +18,10 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 10.34.4
+      - name: 开发环境预检
+        run: node scripts/preflight.mjs
+      - name: 文档事实检查
+        run: node scripts/verify-doc-facts.mjs
       - name: 安装后端依赖
         working-directory: delivery-platform-server
         run: pnpm install --frozen-lockfile
@@ -45,8 +49,8 @@ jobs:
       - name: 前端测试
         working-directory: delivery-platform-web
         run: pnpm test
-      - name: 前端构建
+      - name: 前端构建与体积预算
         working-directory: delivery-platform-web
-        run: pnpm build
+        run: pnpm build && pnpm budget
       - name: Docker Compose 配置检查
         run: docker compose --env-file .env.local.example -f docker-compose.test.yml config -q

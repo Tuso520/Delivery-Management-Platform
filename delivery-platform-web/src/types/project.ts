@@ -34,32 +34,23 @@ export type ProjectSort =
 
 export type AcceptanceTimeType = 'ACTUAL' | 'EXPECTED' | 'NONE'
 export type ProjectScope = 'mine' | 'all'
-export type ProjectType =
-  | 'FACTORY'
-  | 'DATA_CENTER'
-  | 'COMMERCIAL'
-  | 'MEDICAL'
-  | 'RAIL_TRANSIT'
-  | 'LIGHTWEIGHT'
-export type ContractType = 'EPC' | 'EMC' | 'POC'
-export type ProductType = 'DEEPSIGHT' | 'DEEPBOT'
-export type ProjectKeyword =
-  | 'NEW_BUILD'
-  | 'RENOVATION'
-  | 'MAIN_MATERIAL'
-  | 'CONSTRUCTION'
-  | 'SOFTWARE_COMMISSIONING'
-  | 'HARDWARE_COMMISSIONING'
-  | 'CHILLER_ENERGY_SAVING'
-  | 'HVAC_ENERGY_SAVING'
-  | 'AIR_COMPRESSOR_ENERGY_SAVING'
-  | 'EMCS_SYSTEM'
-  | 'ENERGY_MANAGEMENT_SYSTEM'
-  | 'SOFTWARE_SYSTEM'
-  | 'CHILLER_PLANT_CONTROL'
-  | 'HIGH_EFFICIENCY_PLANT_ROOM'
-  | 'PLATFORM_CUSTOMIZATION'
-  | 'RESEARCH'
+export type ProjectType = string
+export type ContractType = string
+export type ProductType = string
+export type ProjectKeyword = string
+
+export interface ProjectConfigurationOption {
+  value: string
+  label: string
+  extraData: unknown
+}
+
+export interface ProjectConfiguration {
+  projectTypes: ProjectConfigurationOption[]
+  contractTypes: ProjectConfigurationOption[]
+  productTypes: ProjectConfigurationOption[]
+  projectKeywords: ProjectConfigurationOption[]
+}
 
 export interface Project {
   id: string

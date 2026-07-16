@@ -110,7 +110,9 @@ jobs:
       - name: 校验 Git 部署脚本
         run: |
           bash -n deploy-git.sh
+          bash -n scripts/test-server-release.sh
           bash scripts/test-deploy-git.sh
+          bash scripts/test-test-server-release.sh
 
   integration:
     name: 真实依赖与核心 E2E
@@ -124,6 +126,7 @@ jobs:
       MINIO_BUCKET: delivery-platform
       INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME: admin
       SEED_RESET_EXISTING_USER_PASSWORDS: "true"
+      EXPECTED_MIGRATION_COUNT: "29"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -272,6 +275,11 @@ jobs:
           E2E_ADMIN_PASSWORD="$SEED_ADMIN_PASSWORD" \
           E2E_LIMITED_PASSWORD="$SEED_DEFAULT_PASSWORD" \
           pnpm test:e2e
+      - name: 验证 MinIO 与异步任务一致性
+        run: |
+          docker compose --env-file /dev/null -f docker-compose.test.yml -f docker-compose.ci.yml \
+            run --rm --no-deps backend-migrate \
+            ./node_modules/.bin/ts-node --transpile-only prisma/verify-runtime-consistency.ts
       - name: 输出容器状态
         if: ${{ always() }}
         run: docker compose --env-file /dev/null -f docker-compose.test.yml -f docker-compose.ci.yml ps -a
@@ -292,10 +300,13 @@ jobs:
       SERVER_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
       SERVER_ENV_FILE_B64: ${{ secrets.DEPLOY_ENV_FILE_B64 }}
       SERVER_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      SERVER_TARGET_ID: ${{ vars.DEPLOY_TARGET_ID }}
       SERVER_PORT: ${{ vars.DEPLOY_PORT || '22' }}
       APP_DIR: ${{ vars.DEPLOY_APP_DIR || '/www/wwwroot/delivery-platform' }}
       BRANCH: main
       COMPOSE_FILES: ${{ vars.DEPLOY_COMPOSE_FILES || 'docker-compose.yml:docker-compose.prod.yml' }}
+      COMPOSE_PROJECT_NAME: ${{ vars.DEPLOY_COMPOSE_PROJECT_NAME || 'delivery-platform-test' }}
+      TEST_DATA_MIN_COUNT: ${{ vars.TEST_DATA_MIN_COUNT || '20' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -309,12 +320,22 @@ jobs:
       - name: 校验部署密钥配置
         run: |
           missing=0
-          for name in SERVER_HOST SERVER_USER SERVER_SSH_KEY SERVER_KNOWN_HOSTS; do
+          for name in SERVER_HOST SERVER_USER SERVER_SSH_KEY SERVER_KNOWN_HOSTS SERVER_TARGET_ID; do
             if [ -z "${!name}" ]; then
               echo "::error::$name is required for environment ${DEPLOY_ENV}"
               missing=1
             fi
           done
+          [[ "$COMPOSE_PROJECT_NAME" == *test* || "$COMPOSE_PROJECT_NAME" == *testing* ]] || {
+            echo "::error::DEPLOY_COMPOSE_PROJECT_NAME must identify an isolated test project"
+            missing=1
+          }
+          [[ "$TEST_DATA_MIN_COUNT" =~ ^[0-9]+$ ]] &&
+            [ "$TEST_DATA_MIN_COUNT" -ge 20 ] &&
+            [ "$TEST_DATA_MIN_COUNT" -le 200 ] || {
+              echo "::error::TEST_DATA_MIN_COUNT must be an integer between 20 and 200"
+              missing=1
+            }
           exit "$missing"
 
       - name: 配置 SSH
@@ -336,11 +357,12 @@ jobs:
         run: |
           remote_bundle="/tmp/delivery-platform-release-${DEPLOY_REF}.bundle"
           remote_script="/tmp/delivery-platform-deploy-${DEPLOY_REF}.sh"
+          remote_test_release="/tmp/delivery-platform-test-release-${DEPLOY_REF}.sh"
           scp -i ~/.ssh/deploy_key -P "$SERVER_PORT" \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o ConnectTimeout=30 \
             -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
-            /tmp/delivery-platform-release.bundle deploy-git.sh \
+            /tmp/delivery-platform-release.bundle deploy-git.sh scripts/test-server-release.sh \
             "$SERVER_USER@$SERVER_HOST:/tmp/"
 
           ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
@@ -348,12 +370,15 @@ jobs:
             -o ConnectTimeout=30 \
             -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
             "$SERVER_USER@$SERVER_HOST" 'bash -s' -- \
-            "$APP_DIR" "$DEPLOY_REF" "$remote_bundle" "$remote_script" <<'REMOTE'
+            "$APP_DIR" "$DEPLOY_REF" "$remote_bundle" "$remote_script" \
+            "$remote_test_release" "$SERVER_TARGET_ID" <<'REMOTE'
           set -Eeuo pipefail
           APP_DIR="$1"
           DEPLOY_REF="$2"
           REMOTE_BUNDLE="$3"
           REMOTE_SCRIPT="$4"
+          REMOTE_TEST_RELEASE="$5"
+          EXPECTED_TARGET_ID="$6"
           umask 077
 
           test -d "$APP_DIR/.git" || {
@@ -361,16 +386,23 @@ jobs:
             exit 1
           }
           install -d -m 700 "$APP_DIR/.deploy"
+          test -f "$APP_DIR/.deploy/target-id" &&
+            test ! -L "$APP_DIR/.deploy/target-id" &&
+            test "$(cat "$APP_DIR/.deploy/target-id")" = "$EXPECTED_TARGET_ID" || {
+              echo "::error::test-server target identity does not match DEPLOY_TARGET_ID" >&2
+              exit 1
+            }
           mv -f /tmp/delivery-platform-release.bundle "$REMOTE_BUNDLE"
           mv -f /tmp/deploy-git.sh "$REMOTE_SCRIPT"
+          mv -f /tmp/test-server-release.sh "$REMOTE_TEST_RELEASE"
           chmod 600 "$REMOTE_BUNDLE"
-          chmod 700 "$REMOTE_SCRIPT"
+          chmod 700 "$REMOTE_SCRIPT" "$REMOTE_TEST_RELEASE"
 
           cleanup_failed_upload() {
             status="$?"
             trap - EXIT
             if [ "$status" -ne 0 ]; then
-              rm -f "$REMOTE_BUNDLE" "$REMOTE_SCRIPT"
+              rm -f "$REMOTE_BUNDLE" "$REMOTE_SCRIPT" "$REMOTE_TEST_RELEASE"
             fi
             exit "$status"
           }
@@ -417,7 +449,9 @@ jobs:
             "$SERVER_USER@$SERVER_HOST" 'bash -s' -- \
             "$APP_DIR" "$BRANCH" "$COMPOSE_FILES" "$DEPLOY_REF" "$remote_env_arg" "$env_sha_arg" \
             "/tmp/delivery-platform-deploy-${DEPLOY_REF}.sh" \
-            "/tmp/delivery-platform-release-${DEPLOY_REF}.bundle" <<'REMOTE'
+            "/tmp/delivery-platform-release-${DEPLOY_REF}.bundle" \
+            "/tmp/delivery-platform-test-release-${DEPLOY_REF}.sh" \
+            "$COMPOSE_PROJECT_NAME" "$TEST_DATA_MIN_COUNT" <<'REMOTE'
           set -Eeuo pipefail
           APP_DIR="$1"
           BRANCH="$2"
@@ -427,6 +461,9 @@ jobs:
           EXPECTED_ENV_SHA="$6"
           DEPLOY_SCRIPT="$7"
           REMOTE_BUNDLE="$8"
+          TEST_RELEASE_SCRIPT="$9"
+          COMPOSE_PROJECT_NAME="${10}"
+          TEST_DATA_MIN_COUNT="${11}"
           DEPLOY_RUN_ID="${DEPLOY_REF:0:12}-$(date +%s)-$$"
           export DEPLOY_RUN_ID
           if [ "$REMOTE_ENV" = "__NOT_SET__" ]; then
@@ -444,13 +481,15 @@ jobs:
             if [ -n "$REMOTE_ENV" ]; then
               rm -f "$REMOTE_ENV"
             fi
-            rm -f "$DEPLOY_SCRIPT" "$REMOTE_BUNDLE"
+            rm -f "$DEPLOY_SCRIPT" "$REMOTE_BUNDLE" "$TEST_RELEASE_SCRIPT"
             exit "$status"
           }
           trap cleanup_remote_files EXIT
 
           cd "$APP_DIR"
           export APP_DIR BRANCH COMPOSE_FILES
+          export COMPOSE_PROJECT_NAME
+          export DEPLOY_ENV=test
           export SKIP_GIT_FETCH=YES
           export DEPLOY_ENV_UPLOAD_PATH="$REMOTE_ENV"
           export DEPLOY_ENV_UPLOAD_SHA256="$EXPECTED_ENV_SHA"
@@ -465,7 +504,14 @@ jobs:
           fi
 
           bash "$DEPLOY_SCRIPT" prune-unused-images-predeploy
+          CONFIRM_TEST_SERVER_RESET=YES \
+            DEPLOY_SCRIPT="$DEPLOY_SCRIPT" \
+            bash "$TEST_RELEASE_SCRIPT" reset
           bash "$DEPLOY_SCRIPT" deploy
+          CONFIRM_TEST_DATA_SEED=YES \
+            DEPLOY_SCRIPT="$DEPLOY_SCRIPT" \
+            TEST_DATA_MIN_COUNT="$TEST_DATA_MIN_COUNT" \
+            bash "$TEST_RELEASE_SCRIPT" seed
           bash "$DEPLOY_SCRIPT" status
           prune_status=0
           final_status=0
