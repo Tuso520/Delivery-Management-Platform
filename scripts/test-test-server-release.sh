@@ -86,6 +86,8 @@ grep -Fq 'prisma/verify-test-data.ts' "$calls" || fail "test-data verifier was n
 
 workflow="$ROOT_DIR/.github/workflows/deploy.yml"
 grep -Fq 'DEPLOY_TARGET_ID' "$workflow" || fail "workflow has no server identity binding"
+grep -Fq 'DEPLOY_TARGET_BOOTSTRAP' "$workflow" || fail "workflow has no explicit target identity bootstrap gate"
+grep -Fq 'TARGET_BOOTSTRAP="$7"' "$workflow" || fail "workflow does not bind the bootstrap gate remotely"
 grep -Fq 'CONFIRM_TEST_SERVER_RESET=YES' "$workflow" || fail "workflow does not confirm reset"
 grep -Fq 'CONFIRM_TEST_DATA_SEED=YES' "$workflow" || fail "workflow does not confirm test-data seed"
 grep -Fq 'TEST_DATA_MIN_COUNT' "$workflow" || fail "workflow does not configure minimum data count"

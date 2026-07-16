@@ -66,7 +66,12 @@ chmod 600 .deploy/target-id
 ```
 
 `DEPLOY_TARGET_ID` 必须通过服务器控制台等可信通道核对后写入 GitHub
-Environment，不能在工作流中自动发现或自动接受。测试服务器 `.env` 必须显式包含：
+Environment，不能在工作流中自动发现或自动接受。首次接管既有测试服务器且
+`target-id` 尚不存在时，可临时设置 `DEPLOY_TARGET_BOOTSTRAP=YES`。工作流只会在
+目标文件完全不存在时原子创建身份文件，不会覆盖已有身份或放过不一致；首次部署
+成功后必须立即改回 `DEPLOY_TARGET_BOOTSTRAP=NO`。日常发布保持 `NO`。
+
+测试服务器 `.env` 必须显式包含：
 
 ```text
 COMPOSE_PROJECT_NAME=delivery-platform-test
@@ -105,6 +110,7 @@ DEPLOY_BRANCH=main
 DEPLOY_COMPOSE_FILES=docker-compose.yml:docker-compose.prod.yml
 DEPLOY_COMPOSE_PROJECT_NAME=delivery-platform-test
 DEPLOY_TARGET_ID=<与服务器 .deploy/target-id 完全一致>
+DEPLOY_TARGET_BOOTSTRAP=NO
 TEST_DATA_MIN_COUNT=20
 ```
 

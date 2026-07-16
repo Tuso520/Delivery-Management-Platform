@@ -301,6 +301,7 @@ jobs:
       SERVER_ENV_FILE_B64: ${{ secrets.DEPLOY_ENV_FILE_B64 }}
       SERVER_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
       SERVER_TARGET_ID: ${{ vars.DEPLOY_TARGET_ID }}
+      SERVER_TARGET_BOOTSTRAP: ${{ vars.DEPLOY_TARGET_BOOTSTRAP || 'NO' }}
       SERVER_PORT: ${{ vars.DEPLOY_PORT || '22' }}
       APP_DIR: ${{ vars.DEPLOY_APP_DIR || '/www/wwwroot/delivery-platform' }}
       BRANCH: main
@@ -328,6 +329,10 @@ jobs:
           done
           [[ "$COMPOSE_PROJECT_NAME" == *test* || "$COMPOSE_PROJECT_NAME" == *testing* ]] || {
             echo "::error::DEPLOY_COMPOSE_PROJECT_NAME must identify an isolated test project"
+            missing=1
+          }
+          [[ "$SERVER_TARGET_BOOTSTRAP" == "YES" || "$SERVER_TARGET_BOOTSTRAP" == "NO" ]] || {
+            echo "::error::DEPLOY_TARGET_BOOTSTRAP must be YES or NO"
             missing=1
           }
           [[ "$TEST_DATA_MIN_COUNT" =~ ^[0-9]+$ ]] &&
@@ -371,7 +376,7 @@ jobs:
             -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
             "$SERVER_USER@$SERVER_HOST" 'bash -s' -- \
             "$APP_DIR" "$DEPLOY_REF" "$remote_bundle" "$remote_script" \
-            "$remote_test_release" "$SERVER_TARGET_ID" <<'REMOTE'
+            "$remote_test_release" "$SERVER_TARGET_ID" "$SERVER_TARGET_BOOTSTRAP" <<'REMOTE'
           set -Eeuo pipefail
           APP_DIR="$1"
           DEPLOY_REF="$2"
@@ -379,13 +384,24 @@ jobs:
           REMOTE_SCRIPT="$4"
           REMOTE_TEST_RELEASE="$5"
           EXPECTED_TARGET_ID="$6"
+          TARGET_BOOTSTRAP="$7"
           umask 077
 
           test -d "$APP_DIR/.git" || {
             echo "::error::APP_DIR is not an initialized Git repository: $APP_DIR" >&2
             exit 1
           }
+          if [ -e "$APP_DIR/.deploy" ] && [ -L "$APP_DIR/.deploy" ]; then
+            echo "::error::deployment state directory must not be a symbolic link" >&2
+            exit 1
+          fi
           install -d -m 700 "$APP_DIR/.deploy"
+          if [ ! -e "$APP_DIR/.deploy/target-id" ] && [ "$TARGET_BOOTSTRAP" = "YES" ]; then
+            target_id_tmp="$APP_DIR/.deploy/target-id.bootstrap.$$"
+            printf '%s\n' "$EXPECTED_TARGET_ID" > "$target_id_tmp"
+            chmod 600 "$target_id_tmp"
+            mv -f "$target_id_tmp" "$APP_DIR/.deploy/target-id"
+          fi
           test -f "$APP_DIR/.deploy/target-id" &&
             test ! -L "$APP_DIR/.deploy/target-id" &&
             test "$(cat "$APP_DIR/.deploy/target-id")" = "$EXPECTED_TARGET_ID" || {
