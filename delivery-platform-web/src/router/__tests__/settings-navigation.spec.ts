@@ -34,6 +34,15 @@ describe('settings navigation contract', () => {
     })
   })
 
+  it('checks legacy setting route permissions before forwarding to center anchors', () => {
+    const group = shellRoutes.find((route) => route.name === 'SettingsGroup')
+    const legacyRoutes = (group?.children ?? []).filter((route) => route.name !== 'SettingsCenter')
+
+    expect(legacyRoutes).toHaveLength(6)
+    expect(legacyRoutes.every((route) => route.redirect === undefined)).toBe(true)
+    expect(legacyRoutes.every((route) => route.beforeEnter !== undefined)).toBe(true)
+  })
+
   it('removes retired country, language and storage management entry points', () => {
     expect(settingItems.map((item) => item.name)).not.toContain('Country')
     expect(settingItems.map((item) => item.name)).not.toContain('Language')

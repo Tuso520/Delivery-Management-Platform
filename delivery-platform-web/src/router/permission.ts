@@ -25,11 +25,9 @@ router.beforeEach(async (to, from, next) => {
     return
   }
 
-  // Redirected legacy setting routes retain their original, narrower permission
-  // boundary even though they render the unified settings center.
-  const permissionMeta = to.redirectedFrom?.meta.permissions ?? to.meta?.permissions
-  if (permissionMeta) {
-    const requiredPerms = permissionMeta as string[]
+  // Route-level permission check
+  if (to.meta?.permissions) {
+    const requiredPerms = to.meta.permissions as string[]
     const isSuperAdmin = userStore.userInfo?.roles.includes('SUPER_ADMIN') ?? false
     const hasPerm = isSuperAdmin ||
       requiredPerms.some(p => userStore.userInfo?.permissions?.includes(p))

@@ -4,6 +4,8 @@ import type { RouteLocationNormalizedLoaded, RouteRecordRaw } from 'vue-router'
 import BasicLayout from '@/layouts/BasicLayout.vue'
 import NotFound from '@/views/NotFound.vue'
 import type { MenuItem } from '@/store/permission'
+
+const loadSettingsCenter = () => import('@/views/system/settings-center.vue')
 import i18n from '@/locales'
 
 type NavigationSurface = 'main' | 'settings'
@@ -304,7 +306,7 @@ export const shellRoutes: RouteRecordRaw[] = [
       {
         path: '/settings',
         name: 'SettingsCenter',
-        component: () => import('@/views/system/settings-center.vue'),
+        component: loadSettingsCenter,
         meta: {
           title: 'routes.settings',
           icon: 'Setting',
@@ -319,7 +321,8 @@ export const shellRoutes: RouteRecordRaw[] = [
       {
         path: 'currency',
         name: 'Currency',
-        redirect: '/settings#currency',
+        component: loadSettingsCenter,
+        beforeEnter: () => ({ path: '/settings', hash: '#currency' }),
         meta: {
           title: 'menu.systemCurrency',
           icon: 'Coin',
@@ -331,7 +334,8 @@ export const shellRoutes: RouteRecordRaw[] = [
       {
         path: 'notifications',
         name: 'Notifications',
-        redirect: '/settings#notifications',
+        component: loadSettingsCenter,
+        beforeEnter: () => ({ path: '/settings', hash: '#notifications' }),
         meta: {
           title: 'menu.systemNotification',
           icon: 'Bell',
@@ -343,7 +347,8 @@ export const shellRoutes: RouteRecordRaw[] = [
       {
         path: 'approvals',
         name: 'Approvals',
-        redirect: '/settings#approvals',
+        component: loadSettingsCenter,
+        beforeEnter: () => ({ path: '/settings', hash: '#approvals' }),
         meta: {
           title: 'menu.systemApproval',
           icon: 'Finished',
@@ -355,7 +360,8 @@ export const shellRoutes: RouteRecordRaw[] = [
       {
         path: 'logs',
         name: 'Logs',
-        redirect: '/settings#logs',
+        component: loadSettingsCenter,
+        beforeEnter: () => ({ path: '/settings', hash: '#logs' }),
         meta: {
           title: 'menu.systemLogs',
           icon: 'Tickets',
@@ -367,7 +373,8 @@ export const shellRoutes: RouteRecordRaw[] = [
       {
         path: 'system',
         name: 'SystemConfig',
-        redirect: '/settings#system',
+        component: loadSettingsCenter,
+        beforeEnter: () => ({ path: '/settings', hash: '#system' }),
         meta: {
           title: 'menu.systemConfig',
           icon: 'Operation',
@@ -379,7 +386,8 @@ export const shellRoutes: RouteRecordRaw[] = [
       {
         path: 'integrations',
         name: 'Integrations',
-        redirect: '/settings#integrations',
+        component: loadSettingsCenter,
+        beforeEnter: () => ({ path: '/settings', hash: '#integrations' }),
         meta: {
           title: 'menu.systemIntegration',
           icon: 'Link',
