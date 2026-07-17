@@ -127,6 +127,14 @@ watch(
     }
 
     if (!page || page <= 1) {
+      if (
+        props.loading &&
+        requestedPage.value > 1 &&
+        accumulatedData.value.length > 0 &&
+        rows.length === 0
+      ) {
+        return
+      }
       accumulatedData.value = [...rows]
       requestedPage.value = 0
       remoteExhausted.value = rows.length < props.pagination.pageSize

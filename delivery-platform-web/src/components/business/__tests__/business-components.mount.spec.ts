@@ -149,7 +149,14 @@ describe('BusinessTable mount contract', () => {
       name: `项目 ${index + 21}`,
     }))
     await wrapper.setProps({
+      data: [],
+      loading: true,
+      pagination: { page: 1, pageSize: 20, total: 0 },
+    })
+    expect(wrapper.getComponent(TableStub).props('data')).toHaveLength(20)
+    await wrapper.setProps({
       data: secondPage,
+      loading: false,
       pagination: { page: 2, pageSize: 20, total: 40 },
     })
     expect(wrapper.getComponent(TableStub).props('data')).toHaveLength(40)
