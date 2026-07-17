@@ -11,6 +11,10 @@ const PROJECT_DICTIONARIES = {
   projectKeywords: ['PROJECT_KEYWORD', 'project_keyword'],
 } as const;
 
+// Existing projects and integrations may still submit these pre-field-center
+// values. They remain write-compatible without becoming selectable defaults.
+const LEGACY_PROJECT_TYPE_VALUES = new Set(['DATA_CENTER', 'LIGHTWEIGHT']);
+
 type ProjectDictionaryKey = keyof typeof PROJECT_DICTIONARIES;
 
 export interface ProjectConfigurationOption {
@@ -71,7 +75,12 @@ export class ProjectConfigurationService {
       return;
     }
     const configuration = await this.getConfiguration();
-    this.assertValue('项目类型', fields.projectType, configuration.projectTypes);
+    this.assertValue(
+      '项目类型',
+      fields.projectType,
+      configuration.projectTypes,
+      LEGACY_PROJECT_TYPE_VALUES,
+    );
     this.assertValue('合同类型', fields.contractType, configuration.contractTypes);
     this.assertValue('产品类型', fields.product, configuration.productTypes);
     for (const keyword of fields.keywords ?? []) {
@@ -83,8 +92,13 @@ export class ProjectConfigurationService {
     fieldName: string,
     value: string | undefined,
     options: ProjectConfigurationOption[],
+    compatibleValues?: ReadonlySet<string>,
   ): void {
-    if (value !== undefined && !options.some((option) => option.value === value)) {
+    if (
+      value !== undefined &&
+      !options.some((option) => option.value === value) &&
+      !compatibleValues?.has(value)
+    ) {
       throw new BadRequestException(`${fieldName}不是当前启用的配置项`);
     }
   }

@@ -43,6 +43,8 @@ describe('ProjectConfigurationService', () => {
         keywords: ['NEW_BUILD'],
       }),
     ).resolves.toBeUndefined();
+    await expect(service.validate({ projectType: 'DATA_CENTER' })).resolves.toBeUndefined();
+    await expect(service.validate({ projectType: 'LIGHTWEIGHT' })).resolves.toBeUndefined();
     await expect(service.validate({ projectType: 'DISABLED_VALUE' })).rejects.toBeInstanceOf(
       BadRequestException,
     );

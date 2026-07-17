@@ -145,6 +145,7 @@ describe('application navigation', () => {
     expect(permissionSource).toContain("if (to.path === '/login')")
     expect(permissionSource).toContain('query: { redirect: to.fullPath }')
     expect(permissionSource).not.toContain('await userStore.ensureProfile()')
+    expect(permissionSource).toContain('to.redirectedFrom?.meta.permissions ?? to.meta?.permissions')
     expect(permissionSource).toContain("next('/forbidden')")
     expect(permissionSource).not.toContain('userStore.resetState()')
     expect(loginSource).toContain('getFirstAccessiblePath(')
