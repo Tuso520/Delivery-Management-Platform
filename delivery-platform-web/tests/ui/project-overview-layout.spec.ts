@@ -76,8 +76,8 @@ async function projectTableMetrics(page: Page) {
     const viewport = panel.querySelector<HTMLElement>('.business-table__viewport')
     const table = panel.querySelector<HTMLElement>('.arco-table-element')
     const actions = panel.querySelector<HTMLElement>('.page-toolbar__actions')
-    const firstRow = panel.querySelector<HTMLElement>('.arco-table-tbody .arco-table-tr')
-    if (!viewport || !table || !actions || !firstRow) {
+    const firstCell = panel.querySelector<HTMLElement>('.arco-table-td')
+    if (!viewport || !table || !actions || !firstCell) {
       throw new Error('Project overview layout nodes are incomplete')
     }
     const panelBox = panel.getBoundingClientRect()
@@ -88,7 +88,7 @@ async function projectTableMetrics(page: Page) {
         .every((cell) => getComputedStyle(cell).whiteSpace === 'nowrap'),
       hasHorizontalOverflow: viewport.scrollWidth > viewport.clientWidth,
       hasVerticalOverflow: viewport.scrollHeight > viewport.clientHeight,
-      rowHeight: Math.round(firstRow.getBoundingClientRect().height),
+      rowHeight: Math.round(firstCell.getBoundingClientRect().height),
       tableLayout: getComputedStyle(table).tableLayout,
       tableMinWidthCoversViewport: table.getBoundingClientRect().width >= viewport.clientWidth,
     }

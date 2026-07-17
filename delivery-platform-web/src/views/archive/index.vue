@@ -434,10 +434,6 @@ watch(
     }
     if (!projectList.some((project) => project.id === selectedProjectId.value)) {
       selectedProjectId.value = projectList[0].id
-      void router.replace({
-        path: route.path,
-        query: { ...route.query, projectId: selectedProjectId.value },
-      })
     }
   },
   { immediate: true },
