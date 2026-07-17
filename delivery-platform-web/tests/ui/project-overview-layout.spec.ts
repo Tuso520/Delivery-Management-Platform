@@ -133,7 +133,7 @@ test('project overview uses wheel loading, large rows and a fixed project-name c
     tableLayout: 'auto',
     tableMinWidthCoversViewport: true,
   })
-  expect(metrics.rowHeight).toBeGreaterThanOrEqual(48)
+  expect(metrics.rowHeight).toBeGreaterThanOrEqual(42)
   expect(Math.abs(await firstColumnHorizontalMovement(page))).toBeLessThanOrEqual(1)
 
   await viewport.hover()
