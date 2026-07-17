@@ -484,8 +484,18 @@ const openTool = async (tool: ToolDefinition) => {
 .category-summary-grid {
   display: grid;
   flex: 0 0 auto;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 16px 20px;
+  grid-auto-columns: minmax(180px, 1fr);
+  grid-auto-flow: column;
+  gap: 20px;
+  padding-bottom: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+}
+
+.category-summary-grid :deep(.stat-card),
+.category-summary-grid :deep(.stat-card__label) {
+  white-space: nowrap;
 }
 
 .catalog-heading {
@@ -626,13 +636,6 @@ const openTool = async (tool: ToolDefinition) => {
   padding-top: 8px;
 }
 
-@media (max-width: 900px) {
-  .category-summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-  }
-}
-
 @media (max-width: 600px) {
   .catalog-heading,
   .form-grid {
@@ -640,7 +643,6 @@ const openTool = async (tool: ToolDefinition) => {
     grid-template-columns: 1fr;
   }
 
-  .category-summary-grid,
   .tool-grid {
     grid-template-columns: 1fr;
   }
