@@ -9,6 +9,7 @@ dist/
 .vscode/
 .idea/
 coverage/
+test-results/
 *.local
 RELEASE_ID
 RELEASE_MANIFEST.txt
