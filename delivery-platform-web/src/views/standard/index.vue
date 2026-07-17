@@ -1304,18 +1304,15 @@ watch(
 
 :deep(.library-list-panel > .business-table),
 :deep(.library-list-panel .business-table__viewport > .arco-table) {
-  min-height: 0;
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  overflow: hidden;
+  width: max-content;
+  min-width: 100%;
+  overflow: visible;
 }
 
 :deep(.library-list-panel .arco-table-container) {
-  min-width: 0;
-  min-height: 0;
-  flex: 1;
-  overflow: auto;
+  width: max-content;
+  min-width: 100%;
+  overflow: visible;
   border: 0;
   border-radius: 0;
 }

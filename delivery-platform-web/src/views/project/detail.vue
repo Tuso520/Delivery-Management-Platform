@@ -81,7 +81,14 @@ async function archiveProject(): Promise<void> {
   emit('close')
 }
 function date(value?: string | null): string { return value ? value.slice(0, 10) : '—' }
-function money(value?: number | null): string { return value == null ? '—' : new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value) }
+function money(value?: number | null): string {
+  return value == null
+    ? '—'
+    : new Intl.NumberFormat('zh-CN', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(value)
+}
 function member(role: string): string { return project.value?.members?.find((item) => item.projectRole === role)?.user?.realName || '—' }
 function configuredOption(key: 'projectTypes' | 'contractTypes' | 'productTypes' | 'projectKeywords', value?: string | null) {
   return configurationQuery.data.value?.[key].find((item) => item.value === value)

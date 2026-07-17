@@ -349,6 +349,36 @@ describe('ProjectService', () => {
     });
   });
 
+  it('stores contract and converted amounts with two decimal places', async () => {
+    prisma.project.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(mockProject);
+    prisma.project.create.mockResolvedValue(mockProject);
+    prisma.exchangeRate.findFirst.mockResolvedValue({
+      rate: new Prisma.Decimal('7.2'),
+      rateDate: new Date('2026-07-17T00:00:00.000Z'),
+      source: 'test',
+    });
+
+    await service.create(
+      {
+        projectName: '金额精度项目',
+        countryCode: 'VN',
+        archiveTemplateId,
+        contractCurrency: 'USD',
+        baseCurrency: 'CNY',
+        contractAmount: 100.1,
+      },
+      sensitiveActor,
+      idempotencyKey,
+    );
+
+    const createData = prisma.project.create.mock.calls[0]?.[0]?.data as {
+      contractAmount: Prisma.Decimal;
+      convertedAmount: Prisma.Decimal;
+    };
+    expect(createData.contractAmount.toFixed(2)).toBe('100.10');
+    expect(createData.convertedAmount.toFixed(2)).toBe('720.72');
+  });
+
   it('returns the same project for the same actor, key and canonical request payload', async () => {
     const originalDto: CreateProjectDto = {
       projectName: '幂等项目',

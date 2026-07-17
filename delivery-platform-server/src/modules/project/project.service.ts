@@ -477,8 +477,12 @@ export class ProjectService {
     const customerCode = dto.customerName ? dto.customerName.substring(0, 2).toUpperCase() : 'XX';
 
     const projectCode = await this.generateProjectCode(dto.countryCode, customerCode);
+    const contractAmount =
+      dto.contractAmount === undefined
+        ? undefined
+        : new Prisma.Decimal(dto.contractAmount).toDecimalPlaces(2);
     const amountData = await this.resolveAmountData(
-      dto.contractAmount,
+      contractAmount,
       dto.contractCurrency,
       dto.baseCurrency,
     );
@@ -507,7 +511,7 @@ export class ProjectService {
             keywords: dto.keywords ?? Prisma.JsonNull,
             contractCurrency: dto.contractCurrency,
             baseCurrency: dto.baseCurrency,
-            contractAmount: dto.contractAmount ?? undefined,
+            contractAmount,
             contractNo: dto.contractNo,
             contractSignedAt: dto.contractSignedAt ? new Date(dto.contractSignedAt) : null,
             ...amountData,
@@ -694,7 +698,11 @@ export class ProjectService {
     if (dto.keywords !== undefined) updateData.keywords = dto.keywords;
     if (dto.contractCurrency !== undefined) updateData.contractCurrency = dto.contractCurrency;
     if (dto.baseCurrency !== undefined) updateData.baseCurrency = dto.baseCurrency;
-    if (dto.contractAmount !== undefined) updateData.contractAmount = dto.contractAmount;
+    const contractAmount =
+      dto.contractAmount === undefined
+        ? undefined
+        : new Prisma.Decimal(dto.contractAmount).toDecimalPlaces(2);
+    if (contractAmount !== undefined) updateData.contractAmount = contractAmount;
     if (dto.contractNo !== undefined) updateData.contractNo = dto.contractNo;
     if (dto.contractSignedAt !== undefined) {
       updateData.contractSignedAt = dto.contractSignedAt ? new Date(dto.contractSignedAt) : null;
@@ -705,7 +713,7 @@ export class ProjectService {
       dto.baseCurrency !== undefined
     ) {
       const amountData = await this.resolveAmountData(
-        dto.contractAmount ?? project.contractAmount?.toNumber(),
+        contractAmount ?? project.contractAmount ?? undefined,
         dto.contractCurrency ?? project.contractCurrency ?? undefined,
         dto.baseCurrency ?? project.baseCurrency ?? undefined,
       );
@@ -1021,7 +1029,7 @@ export class ProjectService {
   }
 
   private async resolveAmountData(
-    amount?: number,
+    amount?: number | Prisma.Decimal,
     contractCurrency?: string,
     baseCurrency?: string,
   ): Promise<{
@@ -1036,11 +1044,11 @@ export class ProjectService {
     if (!contractCurrency || !baseCurrency) {
       throw new BadRequestException('填写合同金额时必须选择原币和折算币种');
     }
-    const originalAmount = new Prisma.Decimal(amount);
+    const originalAmount = new Prisma.Decimal(amount).toDecimalPlaces(2);
     if (contractCurrency === baseCurrency) {
       return {
         exchangeRate: new Prisma.Decimal(1),
-        convertedAmount: originalAmount,
+        convertedAmount: originalAmount.toDecimalPlaces(2),
         exchangeRateDate: new Date(),
         exchangeRateSource: 'identity',
       };
@@ -1059,7 +1067,7 @@ export class ProjectService {
     }
     return {
       exchangeRate: rate.rate,
-      convertedAmount: originalAmount.mul(rate.rate),
+      convertedAmount: originalAmount.mul(rate.rate).toDecimalPlaces(2),
       exchangeRateDate: rate.rateDate,
       exchangeRateSource: rate.source,
     };

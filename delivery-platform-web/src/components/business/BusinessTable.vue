@@ -3,9 +3,12 @@ import {
   computed,
   Fragment,
   isVNode,
+  onBeforeUnmount,
+  onMounted,
   ref,
   useAttrs,
   useSlots,
+  useTemplateRef,
   watch,
   type Slots,
   type VNode,
@@ -64,7 +67,7 @@ const props = withDefaults(
     defaultExpandAllRows: false,
     columns: () => [],
     scroll: () => ({ x: 'max-content' }),
-    size: 'medium',
+    size: 'large',
     showHeader: true,
   },
 )
@@ -76,6 +79,9 @@ const emit = defineEmits<{
 
 const attrs = useAttrs()
 const slots = useSlots()
+const viewportRef = useTemplateRef<HTMLElement>('viewport')
+const viewportWidth = ref(0)
+let resizeObserver: ResizeObserver | undefined
 const visibleCount = ref(props.batchSize)
 const accumulatedData = ref<Array<Record<string, unknown>>>([])
 const requestedPage = ref(0)
@@ -96,6 +102,17 @@ const resolvedColumns = computed(() =>
   props.columns.length > 0
     ? props.columns
     : extractDeclarativeColumns(slots.default?.() ?? slots.columns?.()),
+)
+const preferredTableWidth = computed(() =>
+  resolvedColumns.value.reduce((total, column) => total + preferredColumnWidth(column), 0),
+)
+const shouldDistributeColumns = computed(
+  () => viewportWidth.value > 0 && preferredTableWidth.value <= viewportWidth.value,
+)
+const tableColumns = computed(() =>
+  shouldDistributeColumns.value
+    ? resolvedColumns.value.map((column) => withoutExplicitWidth(column))
+    : resolvedColumns.value,
 )
 const errorMessage = computed(() =>
   props.error instanceof Error ? props.error.message : props.error || '',
@@ -143,10 +160,43 @@ function loadNextBatch(): void {
 }
 
 function handleViewportScroll(event: Event): void {
-  const viewport = event.target as HTMLElement
+  const viewport = event.currentTarget as HTMLElement
   const remaining = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
   if (remaining <= 120) loadNextBatch()
 }
+
+function preferredColumnWidth(column: TableColumnData): number {
+  if (column.children?.length) {
+    return column.children.reduce((total, child) => total + preferredColumnWidth(child), 0)
+  }
+  const candidate = column.width ?? column.minWidth
+  return typeof candidate === 'number' ? candidate : Number.parseFloat(String(candidate || 120)) || 120
+}
+
+function withoutExplicitWidth(column: TableColumnData): TableColumnData {
+  const rest = { ...column }
+  delete rest.width
+  delete rest.minWidth
+  return {
+    ...rest,
+    ...(column.children?.length
+      ? { children: column.children.map((child) => withoutExplicitWidth(child)) }
+      : {}),
+  }
+}
+
+onMounted(() => {
+  const viewport = viewportRef.value
+  if (!viewport) return
+  viewportWidth.value = viewport.clientWidth
+  if (typeof ResizeObserver === 'undefined') return
+  resizeObserver = new ResizeObserver(([entry]) => {
+    viewportWidth.value = entry?.contentRect.width ?? viewport.clientWidth
+  })
+  resizeObserver.observe(viewport)
+})
+
+onBeforeUnmount(() => resizeObserver?.disconnect())
 
 function flattenVNodes(value: VNodeChild | undefined): VNode[] {
   if (value == null || typeof value === 'boolean') return []
@@ -200,14 +250,14 @@ function extractDeclarativeColumns(value: VNodeChild | undefined): TableColumnDa
     @retry="emit('retry')"
   />
   <div v-else class="business-table">
-    <div class="business-table__viewport" @scroll.passive.capture="handleViewportScroll">
+    <div ref="viewport" class="business-table__viewport" @scroll.passive="handleViewportScroll">
       <a-table
         v-bind="attrs"
         :data="tableData"
         :loading="loading"
         :row-key="rowKey"
         :pagination="false"
-        :columns="resolvedColumns"
+        :columns="tableColumns"
         :scroll="scroll"
         :size="size"
         :show-header="showHeader"
@@ -233,6 +283,8 @@ function extractDeclarativeColumns(value: VNodeChild | undefined): TableColumnDa
 
 <style scoped lang="scss">
 .business-table {
+  width: 100%;
+  max-width: 100%;
   display: flex;
   min-height: 0;
   min-width: 0;
@@ -240,10 +292,33 @@ function extractDeclarativeColumns(value: VNodeChild | undefined): TableColumnDa
 }
 
 .business-table__viewport {
+  width: 100%;
   min-height: 0;
   max-height: calc(100vh - 240px);
   flex: 1;
   overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.business-table__viewport :deep(.arco-table),
+.business-table__viewport :deep(.arco-table-container),
+.business-table__viewport :deep(.arco-table-content) {
+  width: max-content;
+  min-width: 100%;
+  overflow: visible !important;
+}
+
+.business-table__viewport :deep(.arco-table-element) {
+  width: max-content;
+  min-width: 100%;
+  table-layout: auto;
+}
+
+.business-table__viewport :deep(.arco-table-th),
+.business-table__viewport :deep(.arco-table-td),
+.business-table__viewport :deep(.arco-table-cell) {
+  white-space: nowrap;
 }
 
 .business-table__loading-more {

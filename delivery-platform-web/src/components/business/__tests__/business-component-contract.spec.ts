@@ -53,7 +53,18 @@ describe('business component adoption contract', () => {
     expect(table).toContain('remaining <= 120')
     expect(table).toContain("emit('pageChange', nextPage)")
     expect(table).toContain('accumulatedData.value.length >= props.pagination.total')
+    expect(table).toContain('@scroll.passive="handleViewportScroll"')
     expect(table).not.toContain('<a-pagination')
+  })
+
+  it('uses one adaptive scroll viewport and keeps every table cell on one line', () => {
+    const table = source('src/components/business/BusinessTable.vue')
+    expect(table).toContain('shouldDistributeColumns')
+    expect(table).toContain('withoutExplicitWidth')
+    expect(table).toContain('width: max-content')
+    expect(table).toContain('min-width: 100%')
+    expect(table).toContain('white-space: nowrap')
+    expect(table).toContain("size: 'large'")
   })
 
   it('removes the global page and Arco compatibility layer', () => {

@@ -90,7 +90,7 @@ export class CreateProjectDto {
 
   @ApiPropertyOptional({ description: '合同金额' })
   @IsOptional()
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   contractAmount?: number;
 

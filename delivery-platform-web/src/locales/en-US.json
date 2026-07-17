@@ -1440,6 +1440,8 @@
     "security": "Protected organization access",
     "accountAccess": "ACCOUNT ACCESS",
     "languageAria": "Interface language",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
     "username": "Username",
     "password": "Password",
     "loginBtn": "Login",

@@ -553,7 +553,7 @@ watch(
               <BusinessTable
                 :data="folder.items"
                 row-key="id"
-                size="small"
+                size="medium"
                 :scroll="{ x: 960 }"
                 :empty-title="t('archive.emptyFolder')"
               >
@@ -1029,6 +1029,14 @@ watch(
   align-content: start;
   gap: 16px;
   padding: 12px 16px 16px;
+}
+
+.folder-tree,
+.folder-card,
+.folder-card :deep(.arco-card),
+.folder-card :deep(.business-table) {
+  width: 100%;
+  min-width: 0;
 }
 
 .folder-tree {

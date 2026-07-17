@@ -1440,6 +1440,8 @@
     "security": "企业账号安全访问",
     "accountAccess": "账号访问",
     "languageAria": "界面语言",
+    "showPassword": "显示密码",
+    "hidePassword": "隐藏密码",
     "username": "用户名",
     "password": "密码",
     "loginBtn": "登 录",

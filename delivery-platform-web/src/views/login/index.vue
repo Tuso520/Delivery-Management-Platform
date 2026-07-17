@@ -4,7 +4,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Message } from '@arco-design/web-vue'
 import type { FormInstance } from '@arco-design/web-vue'
-import { IconLock, IconRight, IconUser } from '@arco-design/web-vue/es/icon'
+import {
+  IconEye,
+  IconEyeInvisible,
+  IconLock,
+  IconRight,
+  IconUser,
+} from '@arco-design/web-vue/es/icon'
 import type { FormRules } from '@/types/arco'
 import { useAuth } from '@/composables/useAuth'
 import { usePublicSystemConfigQuery } from '@/composables/queries/useAdministrationQueries'
@@ -22,6 +28,7 @@ const publicConfigQuery = usePublicSystemConfigQuery()
 
 const formRef = useTemplateRef<FormInstance>('loginFormRef')
 const loading = shallowRef(false)
+const passwordVisible = shallowRef(false)
 const platformName = computed(
   () => publicConfigQuery.data.value?.['platform.name'] || t('app.title'),
 )
@@ -51,6 +58,8 @@ const copy = computed(() => {
     success: t('login.loginSuccess'),
     failure: t('login.loginFailed'),
     security: t('login.security'),
+    showPassword: t('login.showPassword'),
+    hidePassword: t('login.hidePassword'),
   }
 })
 
@@ -175,13 +184,24 @@ async function handleLogin(): Promise<void> {
           <a-form-item :label="copy.password" field="password">
             <a-input
               v-model="loginForm.password"
-              type="password"
+              :type="passwordVisible ? 'text' : 'password'"
               :placeholder="copy.password"
               size="large"
               :input-attrs="{ autocomplete: 'current-password' }"
             >
               <template #prefix>
                 <IconLock />
+              </template>
+              <template #suffix>
+                <button
+                  type="button"
+                  class="password-visibility"
+                  :aria-label="passwordVisible ? copy.hidePassword : copy.showPassword"
+                  @click="passwordVisible = !passwordVisible"
+                >
+                  <IconEyeInvisible v-if="passwordVisible" />
+                  <IconEye v-else />
+                </button>
               </template>
             </a-input>
           </a-form-item>
@@ -208,6 +228,17 @@ async function handleLogin(): Promise<void> {
 </template>
 
 <style scoped lang="scss">
+.password-visibility {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  color: var(--color-text-3);
+  background: transparent;
+  cursor: pointer;
+}
+
 .login-page {
   width: 100%;
   min-height: 100dvh;

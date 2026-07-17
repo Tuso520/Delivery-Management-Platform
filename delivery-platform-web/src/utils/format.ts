@@ -67,7 +67,7 @@ export function formatAdaptiveNumber(
   const numericValue = typeof value === 'number' ? value : Number(value)
   if (!Number.isFinite(numericValue)) return placeholder
 
-  const fractionDigits = Number.isInteger(numericValue) ? 0 : (options.fractionDigits ?? 2)
+  const fractionDigits = options.fractionDigits ?? (Number.isInteger(numericValue) ? 0 : 2)
   return new Intl.NumberFormat('zh-CN', {
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits,

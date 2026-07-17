@@ -211,7 +211,7 @@ function acceptance(project: Project): string {
     : date(project.expectedAcceptanceAt)
 }
 function amount(value?: number | string | null): string {
-  return formatAdaptiveNumber(value, { placeholder: '—' })
+  return formatAdaptiveNumber(value, { placeholder: '—', fractionDigits: 2 })
 }
 function memberName(project: Project, role: string): string {
   return project.members?.find((item) => item.projectRole === role)?.user?.realName || '—'
@@ -636,19 +636,15 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
 }
 
 :deep(.project-list-panel .business-table__viewport > .arco-table) {
-  min-height: 0;
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  overflow: hidden;
+  width: max-content;
+  min-width: 100%;
+  overflow: visible;
 }
 
 :deep(.project-list-panel .arco-table-container) {
-  min-width: 0;
-  min-height: 0;
-  flex: 1 1 auto;
-  overflow-x: auto;
-  overflow-y: auto;
+  width: max-content;
+  min-width: 100%;
+  overflow: visible;
   border: 0;
   border-radius: 0;
 }

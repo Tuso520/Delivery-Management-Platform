@@ -9,6 +9,13 @@ describe('formatAdaptiveNumber', () => {
     expect(formatAdaptiveNumber(1234567.126)).toBe('1,234,567.13')
   })
 
+  it('honors an explicit two-decimal money format for integer values', () => {
+    expect(formatAdaptiveNumber(1234567, { fractionDigits: 2 })).toBe('1,234,567.00')
+    expect(formatAdaptiveNumber('987654321012', { fractionDigits: 2 })).toBe(
+      '987,654,321,012.00',
+    )
+  })
+
   it('accepts numeric strings without producing NaN', () => {
     expect(formatAdaptiveNumber('987654321012')).toBe('987,654,321,012')
     expect(formatAdaptiveNumber('1000.567')).toBe('1,000.57')

@@ -26,14 +26,25 @@ describe('project overview and overlay contract', () => {
     expect(overview).toContain('size="large"')
     expect(overview).toContain(':width="224" fixed="left"')
     expect(overview).toContain("join(' · ') || '—'")
-    expect(overview).toContain('formatAdaptiveNumber(value')
+    expect(overview).toContain("fractionDigits: 2")
     expect(overview).toContain('table-layout: auto !important')
     expect(overview).toContain('flex-wrap: nowrap')
     expect(table).toContain('batchSize: 20')
+    expect(table).toContain("size: 'large'")
+    expect(table).toContain('white-space: nowrap')
+    expect(table).toContain('width: max-content')
+    expect(table).toContain('min-width: 100%')
     expect(table).toContain("emit('pageChange', nextPage)")
     expect(table).not.toContain('<a-pagination')
     expect(overview).not.toContain(':width="280"')
     expect(overview).not.toContain(':width="160"')
+  })
+
+  it('shows a password visibility control on the login form', () => {
+    const login = source('src/views/login/index.vue')
+    expect(login).toContain('class="password-visibility"')
+    expect(login).toContain(":type=\"passwordVisible ? 'text' : 'password'\"")
+    expect(login).toContain('IconEyeInvisible')
   })
 
   it('uses one ProjectDrawer for create and edit with the required business form components', () => {
