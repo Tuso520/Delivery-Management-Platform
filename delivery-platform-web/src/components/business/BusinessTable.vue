@@ -50,6 +50,7 @@ const props = withDefaults(
     defaultExpandAllRows?: boolean
     columns?: TableColumnData[]
     scroll?: TableScroll
+    preserveColumnWidths?: boolean
     size?: 'mini' | 'small' | 'medium' | 'large'
     showHeader?: boolean
   }>(),
@@ -67,6 +68,7 @@ const props = withDefaults(
     defaultExpandAllRows: false,
     columns: () => [],
     scroll: () => ({ x: 'max-content' }),
+    preserveColumnWidths: false,
     size: 'large',
     showHeader: true,
   },
@@ -107,7 +109,10 @@ const preferredTableWidth = computed(() =>
   resolvedColumns.value.reduce((total, column) => total + preferredColumnWidth(column), 0),
 )
 const shouldDistributeColumns = computed(
-  () => viewportWidth.value > 0 && preferredTableWidth.value <= viewportWidth.value,
+  () =>
+    !props.preserveColumnWidths &&
+    viewportWidth.value > 0 &&
+    preferredTableWidth.value <= viewportWidth.value,
 )
 const tableColumns = computed(() =>
   shouldDistributeColumns.value
@@ -257,7 +262,13 @@ function extractDeclarativeColumns(value: VNodeChild | undefined): TableColumnDa
     :retry-label="retryLabel"
     @retry="emit('retry')"
   />
-  <div v-else class="business-table">
+  <div
+    v-else
+    :class="[
+      'business-table',
+      { 'business-table--preserve-column-widths': preserveColumnWidths },
+    ]"
+  >
     <div ref="viewport" class="business-table__viewport" @scroll.passive="handleViewportScroll">
       <a-table
         v-bind="attrs"
@@ -321,6 +332,12 @@ function extractDeclarativeColumns(value: VNodeChild | undefined): TableColumnDa
   width: max-content;
   min-width: 100%;
   table-layout: auto;
+}
+
+.business-table--preserve-column-widths
+  .business-table__viewport
+  :deep(.arco-table-element) {
+  table-layout: fixed;
 }
 
 .business-table__viewport :deep(.arco-table-th),

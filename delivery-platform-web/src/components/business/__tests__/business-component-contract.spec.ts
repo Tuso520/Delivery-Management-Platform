@@ -61,10 +61,18 @@ describe('business component adoption contract', () => {
     const table = source('src/components/business/BusinessTable.vue')
     expect(table).toContain('shouldDistributeColumns')
     expect(table).toContain('withoutExplicitWidth')
+    expect(table).toContain('!props.preserveColumnWidths')
+    expect(table).toContain('business-table--preserve-column-widths')
     expect(table).toContain('width: max-content')
     expect(table).toContain('min-width: 100%')
     expect(table).toContain('white-space: nowrap')
     expect(table).toContain("size: 'large'")
+  })
+
+  it('keeps archive template columns stable at their declared total width', () => {
+    const archiveTemplate = source('src/views/archive/template.vue')
+    expect(archiveTemplate).toContain('preserve-column-widths')
+    expect(archiveTemplate).toContain(':scroll="{ x: 1250 }"')
   })
 
   it('removes the global page and Arco compatibility layer', () => {

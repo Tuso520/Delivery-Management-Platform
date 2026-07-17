@@ -214,6 +214,8 @@ stateDiagram-v2
 
 入口：`/archive-template`；路由权限 `archive_template:view`。
 
+档案模版列表使用合计 1250px 的固定列宽和固定表格布局，可用宽度不足时仅在表格容器内横向滚动；数据刷新、权限按钮变化和容器尺寸变化不触发列宽重新分配。
+
 ### 5.1 模版版本流程
 
 ```mermaid

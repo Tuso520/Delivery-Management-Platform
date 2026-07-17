@@ -644,7 +644,8 @@ watch(
         :data="records"
         :loading="loading"
         row-key="id"
-        :scroll="{ x: 1050 }"
+        :scroll="{ x: 1250 }"
+        preserve-column-widths
       >
         <a-table-column :title="t('archiveTemplate.columns.name')" :width="250">
           <template #cell="{ record }">

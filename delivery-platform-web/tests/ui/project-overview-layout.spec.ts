@@ -146,3 +146,39 @@ test('project overview uses wheel loading, large rows and a fixed project-name c
   await page.waitForTimeout(500)
   expect(scenario.requestCount).toBe(completedRequestCount)
 })
+
+test('archive template table keeps its declared column widths stable', async ({ page }) => {
+  await login(page)
+  await page.goto('/#/archive-template')
+  await expect(page.locator('.template-link').first()).toBeVisible({ timeout: 60_000 })
+
+  const metrics = await page.locator('.table-card').evaluate(async (card) => {
+    const table = card.querySelector<HTMLElement>('.arco-table-element')
+    const viewport = card.querySelector<HTMLElement>('.business-table__viewport')
+    if (!table || !viewport) throw new Error('Archive template table nodes are incomplete')
+
+    const snapshots: string[] = []
+    for (let frame = 0; frame < 20; frame += 1) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+      const headerWidths = [...table.querySelectorAll<HTMLElement>('thead .arco-table-th')]
+        .map((header) => Math.round(header.getBoundingClientRect().width))
+      snapshots.push(`${Math.round(table.getBoundingClientRect().width)}:${headerWidths.join(',')}`)
+    }
+
+    return {
+      distinctWidthSnapshots: new Set(snapshots).size,
+      hasPreservedWidthClass: Boolean(
+        card.querySelector('.business-table--preserve-column-widths'),
+      ),
+      scrollWidth: viewport.scrollWidth,
+      tableLayout: getComputedStyle(table).tableLayout,
+    }
+  })
+
+  expect(metrics).toMatchObject({
+    distinctWidthSnapshots: 1,
+    hasPreservedWidthClass: true,
+    tableLayout: 'fixed',
+  })
+  expect(metrics.scrollWidth).toBeGreaterThanOrEqual(1250)
+})
