@@ -155,11 +155,6 @@ function handlePageChange(page: number): void {
   queryParams.page = page
 }
 
-function handleSizeChange(pageSize: number): void {
-  queryParams.pageSize = pageSize
-  queryParams.page = 1
-}
-
 function openCreate(): void {
   isEdit.value = false
   currentId.value = ''
@@ -393,7 +388,6 @@ async function handleResetPassword(): Promise<void> {
         stripe
         @retry="userListQuery.refetch()"
         @page-change="handlePageChange"
-        @page-size-change="handleSizeChange"
       >
         <a-table-column data-index="username" title="用户名" :width="140" />
         <a-table-column data-index="realName" title="真实姓名" :width="120" />

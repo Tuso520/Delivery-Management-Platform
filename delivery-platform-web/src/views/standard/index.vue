@@ -305,12 +305,6 @@ function changePage(page: number): void {
   void applyListQuery()
 }
 
-function changePageSize(pageSize: number): void {
-  query.pageSize = pageSize
-  query.page = 1
-  void applyListQuery()
-}
-
 function selectSummary(status?: StandardStatus): void {
   query.status = query.status === status ? undefined : status
   query.page = 1
@@ -788,7 +782,6 @@ watch(
         row-key="id"
         @retry="fetchList"
         @page-change="changePage"
-        @page-size-change="changePageSize"
       >
         <template #name="{ record }">
           <button class="record-link" type="button" @click="openDetail(record)">
@@ -938,11 +931,9 @@ watch(
               <h2>{{ t('standard.versions') }}</h2>
               <span>{{ t('standard.versionCount', { count: detail.versions?.length || 0 }) }}</span>
             </header>
-            <a-table
+            <BusinessTable
               :columns="versionColumns"
               :data="detail.versions || []"
-              :pagination="false"
-              :bordered="{ cell: false }"
               :scroll="{ x: 980 }"
               row-key="id"
               size="small"
@@ -996,7 +987,7 @@ watch(
                   </a-button>
                 </a-space>
               </template>
-            </a-table>
+            </BusinessTable>
           </section>
 
           <section class="detail-section">
@@ -1312,7 +1303,7 @@ watch(
 }
 
 :deep(.library-list-panel > .business-table),
-:deep(.library-list-panel .business-table > .arco-table) {
+:deep(.library-list-panel .business-table__viewport > .arco-table) {
   min-height: 0;
   display: flex;
   flex: 1;
@@ -1348,14 +1339,6 @@ watch(
   padding-left: 16px;
   border-color: var(--library-border);
   white-space: nowrap;
-}
-
-:deep(.library-list-panel .business-table__pagination) {
-  min-height: 57px;
-  align-items: center;
-  margin-top: auto;
-  padding: 12px 16px;
-  border-top: 1px solid var(--library-border);
 }
 
 .record-link {

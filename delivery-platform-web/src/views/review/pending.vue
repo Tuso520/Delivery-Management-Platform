@@ -172,10 +172,6 @@ function handlePageChange(page: number): void {
   void updateQuery({ page })
 }
 
-function handlePageSizeChange(pageSize: number): void {
-  void updateQuery({ page: 1, pageSize })
-}
-
 function canAct(task: ReviewTask): boolean {
   return canActOnReviewTask(task, currentUserId.value, currentPermissions.value, currentRoles.value)
 }
@@ -350,11 +346,13 @@ watch(
         <BusinessTable
           :loading="listLoading"
           :data="reviewList"
+          :pagination="pagination"
           row-key="id"
           bordered
           stripe
           :scroll="{ x: 1420 }"
           class="review-table"
+          @page-change="handlePageChange"
         >
           <template #empty>
             <a-empty :description="t('review.empty')" />
@@ -440,20 +438,6 @@ watch(
             </template>
           </a-table-column>
         </BusinessTable>
-
-        <div class="pagination-wrapper">
-          <a-pagination
-            :current="pagination.page"
-            :page-size="pagination.pageSize"
-            :page-size-options="[10, 20, 50, 100]"
-            :total="pagination.total"
-            show-total
-            show-page-size
-            show-jumper
-            @change="handlePageChange"
-            @page-size-change="handlePageSizeChange"
-          />
-        </div>
       </template>
     </a-card>
 
@@ -744,13 +728,6 @@ watch(
 .progress-label {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-}
-
-.pagination-wrapper {
-  display: flex;
-  flex: 0 0 auto;
-  justify-content: flex-end;
-  padding-top: 8px;
 }
 
 .drawer-loading {

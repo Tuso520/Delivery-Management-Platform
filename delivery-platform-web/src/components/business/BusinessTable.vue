@@ -3,8 +3,10 @@ import {
   computed,
   Fragment,
   isVNode,
+  ref,
   useAttrs,
   useSlots,
+  watch,
   type Slots,
   type VNode,
   type VNodeChild,
@@ -39,7 +41,7 @@ const props = withDefaults(
     retryLabel?: string
     rowKey?: string
     pagination?: PaginationState | null
-    pageSizeOptions?: number[]
+    batchSize?: number
     bordered?: boolean
     stripe?: boolean
     defaultExpandAllRows?: boolean
@@ -56,7 +58,7 @@ const props = withDefaults(
     retryLabel: '',
     rowKey: 'id',
     pagination: null,
-    pageSizeOptions: () => [10, 20, 50, 100],
+    batchSize: 20,
     bordered: false,
     stripe: false,
     defaultExpandAllRows: false,
@@ -70,16 +72,25 @@ const props = withDefaults(
 const emit = defineEmits<{
   retry: []
   pageChange: [page: number]
-  pageSizeChange: [pageSize: number]
 }>()
 
 const attrs = useAttrs()
 const slots = useSlots()
-const tableData = computed(() => props.data as Array<Record<string, unknown>>)
+const visibleCount = ref(props.batchSize)
+const accumulatedData = ref<Array<Record<string, unknown>>>([])
+const requestedPage = ref(0)
+const remoteExhausted = ref(false)
+const sourceData = computed(() => props.data as Array<Record<string, unknown>>)
+const tableData = computed(() =>
+  props.pagination ? accumulatedData.value : sourceData.value.slice(0, visibleCount.value),
+)
+const hasMore = computed(() =>
+  props.pagination
+    ? !remoteExhausted.value && accumulatedData.value.length < props.pagination.total
+    : visibleCount.value < sourceData.value.length,
+)
 const forwardedSlotNames = computed(() =>
-  Object.keys(slots).filter(
-    (name) => name !== 'default' && name !== 'columns' && name !== 'empty',
-  ),
+  Object.keys(slots).filter((name) => name !== 'default' && name !== 'columns' && name !== 'empty'),
 )
 const resolvedColumns = computed(() =>
   props.columns.length > 0
@@ -89,6 +100,53 @@ const resolvedColumns = computed(() =>
 const errorMessage = computed(() =>
   props.error instanceof Error ? props.error.message : props.error || '',
 )
+
+watch(
+  [sourceData, () => props.pagination?.page, () => props.rowKey],
+  ([rows, page, rowKey]) => {
+    if (!props.pagination) {
+      visibleCount.value = props.batchSize
+      return
+    }
+
+    if (!page || page <= 1) {
+      accumulatedData.value = [...rows]
+      requestedPage.value = 0
+      remoteExhausted.value = rows.length < props.pagination.pageSize
+      return
+    }
+
+    const merged = new Map<unknown, Record<string, unknown>>()
+    for (const row of accumulatedData.value) merged.set(row[rowKey], row)
+    for (const row of rows) merged.set(row[rowKey], row)
+    accumulatedData.value = [...merged.values()]
+    requestedPage.value = 0
+    remoteExhausted.value =
+      rows.length < props.pagination.pageSize ||
+      accumulatedData.value.length >= props.pagination.total
+  },
+  { immediate: true },
+)
+
+function loadNextBatch(): void {
+  if (props.loading || !hasMore.value) return
+
+  if (!props.pagination) {
+    visibleCount.value = Math.min(visibleCount.value + props.batchSize, sourceData.value.length)
+    return
+  }
+
+  const nextPage = props.pagination.page + 1
+  if (requestedPage.value === nextPage) return
+  requestedPage.value = nextPage
+  emit('pageChange', nextPage)
+}
+
+function handleViewportScroll(event: Event): void {
+  const viewport = event.target as HTMLElement
+  const remaining = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
+  if (remaining <= 120) loadNextBatch()
+}
 
 function flattenVNodes(value: VNodeChild | undefined): VNode[] {
   if (value == null || typeof value === 'boolean') return []
@@ -142,54 +200,56 @@ function extractDeclarativeColumns(value: VNodeChild | undefined): TableColumnDa
     @retry="emit('retry')"
   />
   <div v-else class="business-table">
-    <a-table
-      v-bind="attrs"
-      :data="tableData"
-      :loading="loading"
-      :row-key="rowKey"
-      :pagination="false"
-      :columns="resolvedColumns"
-      :scroll="scroll"
-      :size="size"
-      :show-header="showHeader"
-      :bordered="bordered"
-      :stripe="stripe"
-      :default-expand-all-rows="defaultExpandAllRows"
-    >
-      <template v-for="slotName in forwardedSlotNames" #[slotName]="slotProps">
-        <slot :name="slotName" v-bind="slotProps" />
-      </template>
-      <template #empty>
-        <slot name="empty">
-          <EmptyState :title="emptyTitle" :description="emptyDescription" />
-        </slot>
-      </template>
-    </a-table>
-    <div v-if="pagination" class="business-table__pagination">
-      <a-pagination
-        :current="pagination.page"
-        :page-size="pagination.pageSize"
-        :page-size-options="pageSizeOptions"
-        :total="pagination.total"
-        show-total
-        show-page-size
-        show-jumper
-        @change="emit('pageChange', $event)"
-        @page-size-change="emit('pageSizeChange', $event)"
-      />
+    <div class="business-table__viewport" @scroll.passive.capture="handleViewportScroll">
+      <a-table
+        v-bind="attrs"
+        :data="tableData"
+        :loading="loading"
+        :row-key="rowKey"
+        :pagination="false"
+        :columns="resolvedColumns"
+        :scroll="scroll"
+        :size="size"
+        :show-header="showHeader"
+        :bordered="bordered"
+        :stripe="stripe"
+        :default-expand-all-rows="defaultExpandAllRows"
+      >
+        <template v-for="slotName in forwardedSlotNames" #[slotName]="slotProps">
+          <slot :name="slotName" v-bind="slotProps" />
+        </template>
+        <template #empty>
+          <slot name="empty">
+            <EmptyState :title="emptyTitle" :description="emptyDescription" />
+          </slot>
+        </template>
+      </a-table>
+      <div v-if="loading && tableData.length > 0" class="business-table__loading-more">
+        <a-spin :size="18" />
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped lang="scss">
 .business-table {
+  display: flex;
+  min-height: 0;
   min-width: 0;
+  flex-direction: column;
 }
 
-.business-table__pagination {
+.business-table__viewport {
+  min-height: 0;
+  max-height: calc(100vh - 240px);
+  flex: 1;
+  overflow: auto;
+}
+
+.business-table__loading-more {
   display: flex;
-  justify-content: flex-end;
-  padding-top: 10px;
-  overflow-x: auto;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
 }
 </style>

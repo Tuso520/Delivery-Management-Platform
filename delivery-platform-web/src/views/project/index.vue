@@ -6,12 +6,28 @@ import { useI18n } from 'vue-i18n'
 import { useMutation } from '@tanstack/vue-query'
 
 import { projectApi } from '@/api/project'
-import { BusinessDrawer, BusinessModal, BusinessTable, PageContainer, PageToolbar, StatCard } from '@/components/business'
-import { useArchivedProjectListQuery, useProjectConfigurationQuery, useProjectListQuery, useProjectSummaryQuery } from '@/composables/queries/useProjectQueries'
+import {
+  BusinessDrawer,
+  BusinessModal,
+  BusinessTable,
+  PageContainer,
+  PageToolbar,
+  StatCard,
+} from '@/components/business'
+import {
+  useArchivedProjectListQuery,
+  useProjectConfigurationQuery,
+  useProjectListQuery,
+  useProjectSummaryQuery,
+} from '@/composables/queries/useProjectQueries'
 import type { Project, ProjectScope, ProjectSummaryFilter, QueryProjectDto } from '@/types/project'
 import { arcoConfirm } from '@/utils/arco-dialog'
 import { formatAdaptiveNumber } from '@/utils/format'
-import { PROJECT_STAGE_COLORS, projectDictionaryColor, type ProjectDictionaryKind } from '@/utils/project-dictionaries'
+import {
+  PROJECT_STAGE_COLORS,
+  projectDictionaryColor,
+  type ProjectDictionaryKind,
+} from '@/utils/project-dictionaries'
 import { localizeProjectStage } from '@/utils/project-localization'
 
 import ProjectDetail from './detail.vue'
@@ -24,7 +40,8 @@ type ProjectViewMode = ProjectScope | 'archived'
 const scope = ref<ProjectScope>((route.query.scope as ProjectScope) || 'mine')
 const archivedView = ref(route.query.view === 'archived')
 const filters = ref<QueryProjectDto>({
-  page: Number(route.query.page) || 1, pageSize: Number(route.query.pageSize) || 20,
+  page: Number(route.query.page) || 1,
+  pageSize: Number(route.query.pageSize) || 20,
   keyword: typeof route.query.keyword === 'string' ? route.query.keyword : '',
   scope: scope.value,
   summaryFilter: (route.query.summaryFilter as ProjectSummaryFilter) || 'ALL',
@@ -34,20 +51,42 @@ const listQuery = useProjectListQuery(filters)
 const archivedQuery = useArchivedProjectListQuery(filters)
 const summaryQuery = useProjectSummaryQuery(scope)
 const configurationQuery = useProjectConfigurationQuery()
-const activeQuery = computed(() => archivedView.value ? archivedQuery : listQuery)
+const activeQuery = computed(() => (archivedView.value ? archivedQuery : listQuery))
 const projects = computed(() => activeQuery.value.data.value?.items ?? [])
 const pagination = computed(() => ({
   page: activeQuery.value.data.value?.page ?? 1,
   pageSize: activeQuery.value.data.value?.pageSize ?? 20,
   total: activeQuery.value.data.value?.total ?? 0,
 }))
-const summary = computed(() => summaryQuery.data.value ?? { total: 0, active: 0, accepted: 0, highRisk: 0 })
-const viewMode = computed<ProjectViewMode>(() => archivedView.value ? 'archived' : scope.value)
+const summary = computed(
+  () => summaryQuery.data.value ?? { total: 0, active: 0, accepted: 0, highRisk: 0 },
+)
+const viewMode = computed<ProjectViewMode>(() => (archivedView.value ? 'archived' : scope.value))
 const summaryCards = computed(() => [
-  { key: 'ALL' as const, label: t('projects.stats.total'), value: summary.value.total, tone: 'blue' as const },
-  { key: 'ACTIVE' as const, label: t('projects.stats.active'), value: summary.value.active, tone: 'green' as const },
-  { key: 'ACCEPTED' as const, label: t('projects.stats.accepted'), value: summary.value.accepted, tone: 'cyan' as const },
-  { key: 'HIGH_RISK' as const, label: t('projects.stats.highRisk'), value: summary.value.highRisk, tone: 'red' as const },
+  {
+    key: 'ALL' as const,
+    label: t('projects.stats.total'),
+    value: summary.value.total,
+    tone: 'blue' as const,
+  },
+  {
+    key: 'ACTIVE' as const,
+    label: t('projects.stats.active'),
+    value: summary.value.active,
+    tone: 'green' as const,
+  },
+  {
+    key: 'ACCEPTED' as const,
+    label: t('projects.stats.accepted'),
+    value: summary.value.accepted,
+    tone: 'cyan' as const,
+  },
+  {
+    key: 'HIGH_RISK' as const,
+    label: t('projects.stats.highRisk'),
+    value: summary.value.highRisk,
+    tone: 'red' as const,
+  },
 ])
 
 const drawerMode = computed<'create' | 'edit' | 'view' | null>(() => {
@@ -59,25 +98,36 @@ const drawerMode = computed<'create' | 'edit' | 'view' | null>(() => {
 const drawerProjectId = computed(() => String(route.params.projectId || ''))
 const editorDrawerVisible = computed({
   get: () => drawerMode.value === 'create' || drawerMode.value === 'edit',
-  set: (value) => { if (!value) void closeOverlay() },
+  set: (value) => {
+    if (!value) void closeOverlay()
+  },
 })
 const detailModalVisible = computed({
   get: () => drawerMode.value === 'view',
-  set: (value) => { if (!value) void closeOverlay() },
+  set: (value) => {
+    if (!value) void closeOverlay()
+  },
 })
 
 async function syncUrl(): Promise<void> {
   filters.value.scope = scope.value
-  await router.replace({ path: '/projects', query: {
-    scope: scope.value === 'mine' ? undefined : scope.value,
-    view: archivedView.value ? 'archived' : undefined,
-    keyword: filters.value.keyword || undefined,
-    summaryFilter: filters.value.summaryFilter === 'ALL' ? undefined : filters.value.summaryFilter,
-    page: filters.value.page === 1 ? undefined : String(filters.value.page),
-    pageSize: filters.value.pageSize === 20 ? undefined : String(filters.value.pageSize),
-  } })
+  await router.replace({
+    path: '/projects',
+    query: {
+      scope: scope.value === 'mine' ? undefined : scope.value,
+      view: archivedView.value ? 'archived' : undefined,
+      keyword: filters.value.keyword || undefined,
+      summaryFilter:
+        filters.value.summaryFilter === 'ALL' ? undefined : filters.value.summaryFilter,
+      page: filters.value.page === 1 ? undefined : String(filters.value.page),
+      pageSize: filters.value.pageSize === 20 ? undefined : String(filters.value.pageSize),
+    },
+  })
 }
-function search(): void { filters.value.page = 1; void syncUrl() }
+function search(): void {
+  filters.value.page = 1
+  void syncUrl()
+}
 function changeView(value: ProjectViewMode): void {
   archivedView.value = value === 'archived'
   if (value !== 'archived') scope.value = value
@@ -85,10 +135,19 @@ function changeView(value: ProjectViewMode): void {
   filters.value.page = 1
   void syncUrl()
 }
-function selectSummary(key: ProjectSummaryFilter): void { archivedView.value = false; filters.value.summaryFilter = key; filters.value.page = 1; void syncUrl() }
-function changePage(page: number): void { filters.value.page = page; void syncUrl() }
-function changePageSize(pageSize: number): void { filters.value.pageSize = pageSize; filters.value.page = 1; void syncUrl() }
-async function refresh(): Promise<void> { await Promise.allSettled([listQuery.refetch(), archivedQuery.refetch(), summaryQuery.refetch()]) }
+function selectSummary(key: ProjectSummaryFilter): void {
+  archivedView.value = false
+  filters.value.summaryFilter = key
+  filters.value.page = 1
+  void syncUrl()
+}
+function changePage(page: number): void {
+  filters.value.page = page
+  void syncUrl()
+}
+async function refresh(): Promise<void> {
+  await Promise.allSettled([listQuery.refetch(), archivedQuery.refetch(), summaryQuery.refetch()])
+}
 function openProject(project: Project): void {
   void router.push({ path: `/projects/${project.id}`, query: route.query })
 }
@@ -98,40 +157,68 @@ async function closeOverlay(): Promise<void> {
 async function openEditor(): Promise<void> {
   await router.push({ path: `/projects/${drawerProjectId.value}/edit`, query: route.query })
 }
-async function saved(): Promise<void> { await closeOverlay(); await refresh() }
+async function saved(): Promise<void> {
+  await closeOverlay()
+  await refresh()
+}
 
 const archiveMutation = useMutation({
   mutationFn: ({ project, command }: { project: Project; command: 'archive' | 'restore' }) =>
-    projectApi.changeStatus(project.id, command, { revision: project.revision }), retry: false,
+    projectApi.changeStatus(project.id, command, { revision: project.revision }),
+  retry: false,
   onSuccess: refresh,
 })
 const deleteMutation = useMutation({
-  mutationFn: (id: string) => projectApi.permanentDelete(id), retry: false, onSuccess: refresh,
+  mutationFn: (id: string) => projectApi.permanentDelete(id),
+  retry: false,
+  onSuccess: refresh,
 })
 async function restore(project: Project): Promise<void> {
-  await arcoConfirm(t('projects.restoreConfirm', { name: displayName(project) }), t('projects.restoreTitle'))
+  await arcoConfirm(
+    t('projects.restoreConfirm', { name: displayName(project) }),
+    t('projects.restoreTitle'),
+  )
   await archiveMutation.mutateAsync({ project, command: 'restore' })
   Message.success(t('projects.restoredSuccess'))
 }
 async function permanentDelete(project: Project): Promise<void> {
-  await arcoConfirm(t('projects.deleteConfirm', { name: displayName(project) }), t('projects.deleteTitle'), { type: 'error', confirmButtonText: t('projects.deleteContinue') })
-  await arcoConfirm(t('projects.finalDeleteConfirm'), t('projects.finalDeleteTitle'), { type: 'error', confirmButtonText: t('projects.deleteAction') })
+  await arcoConfirm(
+    t('projects.deleteConfirm', { name: displayName(project) }),
+    t('projects.deleteTitle'),
+    { type: 'error', confirmButtonText: t('projects.deleteContinue') },
+  )
+  await arcoConfirm(t('projects.finalDeleteConfirm'), t('projects.finalDeleteTitle'), {
+    type: 'error',
+    confirmButtonText: t('projects.deleteAction'),
+  })
   await deleteMutation.mutateAsync(project.id)
   Message.success(t('projects.deletedSuccess'))
 }
-function displayName(project: Project): string { return project.shortName?.trim() || project.projectName }
+function displayName(project: Project): string {
+  return project.shortName?.trim() || project.projectName
+}
 function region(project: Project): string {
   const country = (project.countryName || project.countryCode || '').trim()
   const city = (project.cityName || project.city || '').trim()
   return [country, city].filter(Boolean).join(' · ') || '—'
 }
-function date(value?: string | null): string { return value ? value.slice(0, 10) : '—' }
-function acceptance(project: Project): string { return project.actualAcceptanceAt ? date(project.actualAcceptanceAt) : date(project.expectedAcceptanceAt) }
+function date(value?: string | null): string {
+  return value ? value.slice(0, 10) : '—'
+}
+function acceptance(project: Project): string {
+  return project.actualAcceptanceAt
+    ? date(project.actualAcceptanceAt)
+    : date(project.expectedAcceptanceAt)
+}
 function amount(value?: number | string | null): string {
   return formatAdaptiveNumber(value, { placeholder: '—' })
 }
-function memberName(project: Project, role: string): string { return project.members?.find((item) => item.projectRole === role)?.user?.realName || '—' }
-function stageColor(project: Project): string { return PROJECT_STAGE_COLORS[project.currentStage] }
+function memberName(project: Project, role: string): string {
+  return project.members?.find((item) => item.projectRole === role)?.user?.realName || '—'
+}
+function stageColor(project: Project): string {
+  return PROJECT_STAGE_COLORS[project.currentStage]
+}
 function configuredOption(key: 'projectTypes' | 'contractTypes', value?: string | null) {
   return configurationQuery.data.value?.[key].find((item) => item.value === value)
 }
@@ -159,10 +246,7 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
       <PageToolbar class="project-toolbar">
         <template #filters>
           <div class="scope-field">
-            <a-select
-              :model-value="viewMode"
-              @change="changeView($event as ProjectViewMode)"
-            >
+            <a-select :model-value="viewMode" @change="changeView($event as ProjectViewMode)">
               <a-option value="mine" :label="t('projects.scope.mine')" />
               <a-option value="all" :label="t('projects.scope.all')" />
               <a-option value="archived" :label="t('projects.archiveView.archived')" />
@@ -196,9 +280,9 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
         :loading="activeQuery.isFetching.value"
         :pagination="pagination"
         :scroll="{ x: 'max-content' }"
+        size="large"
         row-key="id"
         @page-change="changePage"
-        @page-size-change="changePageSize"
       >
         <a-table-column :title="t('projects.columns.name')" :width="224" fixed="left">
           <template #cell="{ record: row }">
@@ -214,13 +298,27 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
             <span class="nowrap">{{ region(row) }}</span>
           </template>
         </a-table-column>
-        <a-table-column v-if="!archivedView" :title="t('projects.columns.classification')" :min-width="150">
+        <a-table-column
+          v-if="!archivedView"
+          :title="t('projects.columns.classification')"
+          :min-width="150"
+        >
           <template #cell="{ record: row }">
             <a-space :wrap="false">
-              <a-tag v-if="row.projectType" :color="configuredColor('projectType', row.projectType)">
-                {{ configuredOption('projectTypes', row.projectType)?.label || row.projectType }}
-              </a-tag><a-tag v-if="row.contractType" :color="configuredColor('contractType', row.contractType)">
-                {{ configuredOption('contractTypes', row.contractType)?.label || row.contractType }}
+              <a-tag
+                v-if="row.projectType"
+                :color="configuredColor('projectType', row.projectType)"
+              >
+                {{
+                  configuredOption('projectTypes', row.projectType)?.label || row.projectType
+                }}
+              </a-tag><a-tag
+                v-if="row.contractType"
+                :color="configuredColor('contractType', row.contractType)"
+              >
+                {{
+                  configuredOption('contractTypes', row.contractType)?.label || row.contractType
+                }}
               </a-tag><span v-if="!row.projectType && !row.contractType">—</span>
             </a-space>
           </template>
@@ -236,26 +334,46 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
           :min-width="96"
           data-index="contractType"
         />
-        <a-table-column v-if="!archivedView" :title="t('projects.columns.currentStage')" :min-width="104">
+        <a-table-column
+          v-if="!archivedView"
+          :title="t('projects.columns.currentStage')"
+          :min-width="104"
+        >
           <template #cell="{ record: row }">
             <a-tag :color="stageColor(row)">
               {{ localizeProjectStage(row.currentStage, 'zh-CN') }}
             </a-tag>
           </template>
         </a-table-column>
-        <a-table-column v-if="!archivedView" :title="t('projects.columns.progress')" :min-width="160">
+        <a-table-column
+          v-if="!archivedView"
+          :title="t('projects.columns.progress')"
+          :min-width="160"
+        >
           <template #cell="{ record: row }">
             <div class="progress">
-              <a-progress :percent="(row.progressPercent || 0) / 100" :show-text="false" size="small" /><span>{{ row.progressPercent ?? 0 }}%</span>
+              <a-progress
+                :percent="(row.progressPercent || 0) / 100"
+                :show-text="false"
+                size="small"
+              /><span>{{ row.progressPercent ?? 0 }}%</span>
             </div>
           </template>
         </a-table-column>
-        <a-table-column v-if="!archivedView" :title="t('projects.columns.signedAt')" :min-width="104">
+        <a-table-column
+          v-if="!archivedView"
+          :title="t('projects.columns.signedAt')"
+          :min-width="104"
+        >
           <template #cell="{ record: row }">
             {{ date(row.contractSignedAt) }}
           </template>
         </a-table-column>
-        <a-table-column v-if="!archivedView" :title="t('projects.columns.acceptanceAt')" :min-width="104">
+        <a-table-column
+          v-if="!archivedView"
+          :title="t('projects.columns.acceptanceAt')"
+          :min-width="104"
+        >
           <template #cell="{ record: row }">
             {{ acceptance(row) }}
           </template>
@@ -268,7 +386,9 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
         >
           <template #cell="{ record: row }">
             <span class="money-cell">
-              {{ row.contractCurrency ? `${row.contractCurrency} ${amount(row.contractAmount)}` : '—' }}
+              {{
+                row.contractCurrency ? `${row.contractCurrency} ${amount(row.contractAmount)}` : '—'
+              }}
             </span>
           </template>
         </a-table-column>
@@ -284,12 +404,20 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
             </span>
           </template>
         </a-table-column>
-        <a-table-column v-if="archivedView" :title="t('projects.columns.archivedBy')" :min-width="104">
+        <a-table-column
+          v-if="archivedView"
+          :title="t('projects.columns.archivedBy')"
+          :min-width="104"
+        >
           <template #cell="{ record: row }">
             {{ row.archivedByUser?.realName || '—' }}
           </template>
         </a-table-column>
-        <a-table-column v-if="archivedView" :title="t('projects.columns.archivedAt')" :min-width="152">
+        <a-table-column
+          v-if="archivedView"
+          :title="t('projects.columns.archivedAt')"
+          :min-width="152"
+        >
           <template #cell="{ record: row }">
             {{ row.archivedAt ? row.archivedAt.slice(0, 16).replace('T', ' ') : '—' }}
           </template>
@@ -304,11 +432,7 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
             {{ memberName(row, 'PROJECT_MANAGER') }}
           </template>
         </a-table-column>
-        <a-table-column
-          v-if="archivedView"
-          :title="t('common.action')"
-          :min-width="168"
-        >
+        <a-table-column v-if="archivedView" :title="t('common.action')" :min-width="168">
           <template #cell="{ record: row }">
             <a-space :wrap="false">
               <a-button type="text" @click="openProject(row)">
@@ -369,7 +493,7 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
   height: 100%;
   overflow: hidden;
   color: #1d2129;
-  font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: Inter, 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
 
 .summary-grid {
@@ -511,7 +635,7 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
   overflow: hidden;
 }
 
-:deep(.project-list-panel .business-table > .arco-table) {
+:deep(.project-list-panel .business-table__viewport > .arco-table) {
   min-height: 0;
   display: flex;
   flex: 1 1 auto;
@@ -552,32 +676,6 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
 
 :deep(.project-list-panel .arco-table-tr:hover .arco-table-td) {
   background: #e8f3ff;
-}
-
-:deep(.project-list-panel .business-table__pagination) {
-  height: 57px;
-  min-height: 57px;
-  box-sizing: border-box;
-  align-items: center;
-  margin-top: auto;
-  padding: 12px 16px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  border-top: 1px solid var(--project-border);
-  white-space: nowrap;
-}
-
-:deep(.project-list-panel .business-table__pagination .arco-pagination) {
-  min-width: max-content;
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  margin: 0;
-  white-space: nowrap;
-}
-
-:deep(.project-list-panel .business-table__pagination .arco-pagination > *) {
-  flex: 0 0 auto;
 }
 
 :deep(.project-page .arco-btn),

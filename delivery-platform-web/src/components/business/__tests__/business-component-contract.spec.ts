@@ -46,6 +46,16 @@ describe('business component adoption contract', () => {
     expect(drawer).toContain('props.width ?? widths[props.size]')
   })
 
+  it('uses container infinite loading instead of pagination controls', () => {
+    const table = source('src/components/business/BusinessTable.vue')
+
+    expect(table).toContain('batchSize: 20')
+    expect(table).toContain('remaining <= 120')
+    expect(table).toContain("emit('pageChange', nextPage)")
+    expect(table).toContain('accumulatedData.value.length >= props.pagination.total')
+    expect(table).not.toContain('<a-pagination')
+  })
+
   it('removes the global page and Arco compatibility layer', () => {
     const global = source('src/styles/global.scss')
     expect(global).not.toContain('compatibility layer')

@@ -19,15 +19,19 @@ describe('project overview and overlay contract', () => {
     expect(overview).not.toContain('project:stage:update')
   })
 
-  it('keeps the project table adaptive, single-line and locally stabilizes pagination', () => {
+  it('keeps the project table adaptive, single-line and uses the confirmed larger row size', () => {
     const overview = source('src/views/project/index.vue')
+    const table = source('src/components/business/BusinessTable.vue')
     expect(overview).toContain(':scroll="{ x: \'max-content\' }"')
+    expect(overview).toContain('size="large"')
     expect(overview).toContain(':width="224" fixed="left"')
     expect(overview).toContain("join(' · ') || '—'")
     expect(overview).toContain('formatAdaptiveNumber(value')
     expect(overview).toContain('table-layout: auto !important')
-    expect(overview).toContain('height: 57px')
     expect(overview).toContain('flex-wrap: nowrap')
+    expect(table).toContain('batchSize: 20')
+    expect(table).toContain("emit('pageChange', nextPage)")
+    expect(table).not.toContain('<a-pagination')
     expect(overview).not.toContain(':width="280"')
     expect(overview).not.toContain(':width="160"')
   })

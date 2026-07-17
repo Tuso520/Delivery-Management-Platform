@@ -39,23 +39,6 @@ const TableStub = defineComponent({
   `,
 })
 
-const PaginationStub = defineComponent({
-  name: 'APagination',
-  props: {
-    current: Number,
-    pageSize: Number,
-    total: Number,
-    pageSizeOptions: { type: Array as PropType<number[]>, default: () => [] },
-  },
-  emits: ['change', 'page-size-change'],
-  template: `
-    <nav data-testid="pagination">
-      <button data-testid="page-change" @click="$emit('change', 3)">page</button>
-      <button data-testid="page-size-change" @click="$emit('page-size-change', 50)">size</button>
-    </nav>
-  `,
-})
-
 const ErrorStateStub = defineComponent({
   name: 'ErrorState',
   props: { title: String, retryLabel: String },
@@ -107,26 +90,29 @@ describe('BusinessTable mount contract', () => {
   const global = {
     stubs: {
       ATable: TableStub,
-      APagination: PaginationStub,
+      ASpin: true,
       ErrorState: ErrorStateStub,
       EmptyState: EmptyStateStub,
     },
   }
 
-  it('forwards table state and emits pagination changes', async () => {
-    const data = [{ id: 'row-1', name: '项目 A' }]
+  it('forwards table state and loads remote pages near the container bottom', async () => {
+    const data = Array.from({ length: 20 }, (_, index) => ({
+      id: `row-${index + 1}`,
+      name: `项目 ${index + 1}`,
+    }))
     const columns = [{ title: '项目名称', dataIndex: 'name' }]
     const wrapper = mount(BusinessTable, {
       props: {
         data,
-        loading: true,
+        loading: false,
         rowKey: 'id',
         columns,
         size: 'small',
         showHeader: false,
         bordered: true,
         stripe: true,
-        pagination: { page: 2, pageSize: 20, total: 80 },
+        pagination: { page: 1, pageSize: 20, total: 40 },
       },
       attrs: { 'data-source': 'project-list' },
       global,
@@ -135,7 +121,7 @@ describe('BusinessTable mount contract', () => {
     const table = wrapper.getComponent(TableStub)
     expect(table.props()).toMatchObject({
       data,
-      loading: true,
+      loading: false,
       rowKey: 'id',
       columns,
       size: 'small',
@@ -147,18 +133,54 @@ describe('BusinessTable mount contract', () => {
     })
     expect(table.attributes('data-source')).toBe('project-list')
 
-    const pagination = wrapper.getComponent(PaginationStub)
-    expect(pagination.props()).toMatchObject({ current: 2, pageSize: 20, total: 80 })
-    await pagination.get('[data-testid="page-change"]').trigger('click')
-    await pagination.get('[data-testid="page-size-change"]').trigger('click')
-    expect(wrapper.emitted('pageChange')).toEqual([[3]])
-    expect(wrapper.emitted('pageSizeChange')).toEqual([[50]])
+    expect(wrapper.find('[data-testid="pagination"]').exists()).toBe(false)
+
+    const viewport = wrapper.get('.business-table__viewport')
+    Object.defineProperties(viewport.element, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 500 },
+      scrollTop: { configurable: true, value: 420 },
+    })
+    await viewport.trigger('scroll')
+    expect(wrapper.emitted('pageChange')).toEqual([[2]])
+
+    const secondPage = Array.from({ length: 20 }, (_, index) => ({
+      id: `row-${index + 21}`,
+      name: `项目 ${index + 21}`,
+    }))
+    await wrapper.setProps({
+      data: secondPage,
+      pagination: { page: 2, pageSize: 20, total: 40 },
+    })
+    expect(wrapper.getComponent(TableStub).props('data')).toHaveLength(40)
+    await viewport.trigger('scroll')
+    expect(wrapper.emitted('pageChange')).toEqual([[2]])
+  })
+
+  it('reveals local rows in batches of twenty', async () => {
+    const data = Array.from({ length: 45 }, (_, index) => ({ id: `row-${index + 1}` }))
+    const wrapper = mount(BusinessTable, { props: { data }, global })
+    const viewport = wrapper.get('.business-table__viewport')
+
+    expect(wrapper.getComponent(TableStub).props('data')).toHaveLength(20)
+    Object.defineProperties(viewport.element, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 500 },
+      scrollTop: { configurable: true, value: 420 },
+    })
+    await viewport.trigger('scroll')
+    expect(wrapper.getComponent(TableStub).props('data')).toHaveLength(40)
+    await viewport.trigger('scroll')
+    expect(wrapper.getComponent(TableStub).props('data')).toHaveLength(45)
   })
 
   it('converts declarative column children into the columns contract', () => {
     const DeclarativeColumn = defineComponent({
       name: 'TableColumn',
-      setup: (_props, { slots }) => () => slots.default?.(),
+      setup:
+        (_props, { slots }) =>
+        () =>
+          slots.default?.(),
     })
     const wrapper = mount(BusinessTable, {
       props: { data: [{ id: 'row-1' }] },

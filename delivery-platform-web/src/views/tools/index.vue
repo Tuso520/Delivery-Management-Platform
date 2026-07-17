@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import {
@@ -14,6 +14,7 @@ import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import { useI18n } from 'vue-i18n'
 
 import { toolApi } from '@/api/tools'
+import { PageContainer, StatCard } from '@/components/business'
 import { usePermission } from '@/composables/usePermission'
 import { useToolsQuery } from '@/composables/queries/useOperationsQueries'
 import { queryKeys } from '@/query/keys'
@@ -80,6 +81,21 @@ const visibleTools = computed(() => {
   if (!activeCategory.value) return tools.value
   return tools.value.filter((tool) => tool.category === activeCategory.value)
 })
+const visibleToolCount = ref(20)
+const renderedTools = computed(() => visibleTools.value.slice(0, visibleToolCount.value))
+const allEnabledCount = computed(() => tools.value.filter((tool) => tool.enabled).length)
+
+watch([visibleTools, activeCategory], () => {
+  visibleToolCount.value = 20
+})
+
+function loadMoreTools(event: Event): void {
+  const container = event.currentTarget as HTMLElement
+  const remaining = container.scrollHeight - container.scrollTop - container.clientHeight
+  if (remaining <= 120 && visibleToolCount.value < visibleTools.value.length) {
+    visibleToolCount.value = Math.min(visibleToolCount.value + 20, visibleTools.value.length)
+  }
+}
 
 const toolMutation = useMutation({
   mutationFn: (variables: ToolMutationVariables) => {
@@ -238,36 +254,31 @@ const openTool = async (tool: ToolDefinition) => {
 </script>
 
 <template>
-  <div class="tools-page">
-    <aside class="category-panel">
-      <div class="panel-heading">
-        <div>
-          <h2>{{ t('tools.catalog') }}</h2>
-          <p>{{ t('tools.catalogDescription') }}</p>
-        </div>
-      </div>
-
-      <button
-        class="category-item"
-        :class="{ active: !activeCategory }"
-        type="button"
-        @click="selectCategory('')"
+  <PageContainer class="tools-page" gap="compact" :scrollable="false">
+    <section class="category-summary-grid" :aria-label="t('tools.catalog')">
+      <StatCard
+        :label="t('tools.all')"
+        :value="tools.length"
+        :active="!activeCategory"
+        interactive
+        tone="blue"
+        @select="selectCategory('')"
       >
-        <span>{{ t('tools.all') }}</span>
-        <strong>{{ tools.length }}</strong>
-      </button>
-      <button
-        v-for="category in categories"
+        <small v-if="canManage">{{ allEnabledCount }} {{ t('tools.enabled') }}</small>
+      </StatCard>
+      <StatCard
+        v-for="(category, index) in categories"
         :key="category.name"
-        class="category-item"
-        :class="{ active: activeCategory === category.name }"
-        type="button"
-        @click="selectCategory(category.name)"
+        :label="category.name"
+        :value="category.total"
+        :active="activeCategory === category.name"
+        interactive
+        :tone="(['green', 'cyan', 'red', 'blue'] as const)[index % 4]"
+        @select="selectCategory(category.name)"
       >
-        <span>{{ category.name }}</span>
-        <strong>{{ canManage ? `${category.enabled}/${category.total}` : category.total }}</strong>
-      </button>
-    </aside>
+        <small v-if="canManage">{{ category.enabled }} {{ t('tools.enabled') }}</small>
+      </StatCard>
+    </section>
 
     <main class="catalog-panel">
       <header class="catalog-heading">
@@ -314,67 +325,69 @@ const openTool = async (tool: ToolDefinition) => {
 
       <a-empty v-else-if="visibleTools.length === 0" :description="t('tools.empty')" />
 
-      <section v-else class="tool-grid" :aria-label="t('tools.listAria')">
-        <a-card
-          v-for="tool in visibleTools"
-          :key="tool.id"
-          class="tool-card"
-          :class="{ disabled: !tool.enabled }"
-          :bordered="true"
-        >
-          <div class="tool-card-heading">
-            <span class="tool-icon"><IconTool /></span>
-            <div class="tool-title">
-              <h3>{{ tool.name }}</h3>
-              <a-space size="mini">
-                <a-tag :color="tool.toolType === 'EXTERNAL' ? 'arcoblue' : 'purple'">
-                  {{ tool.toolType === 'EXTERNAL' ? t('tools.external') : t('tools.internal') }}
-                </a-tag>
-                <a-tag v-if="canManage" :color="tool.enabled ? 'green' : 'gray'">
-                  {{ tool.enabled ? t('tools.enabled') : t('tools.disabled') }}
-                </a-tag>
-              </a-space>
+      <div v-else class="tool-scroll" @scroll.passive="loadMoreTools">
+        <section class="tool-grid" :aria-label="t('tools.listAria')">
+          <a-card
+            v-for="tool in renderedTools"
+            :key="tool.id"
+            class="tool-card"
+            :class="{ disabled: !tool.enabled }"
+            :bordered="true"
+          >
+            <div class="tool-card-heading">
+              <span class="tool-icon"><IconTool /></span>
+              <div class="tool-title">
+                <h3>{{ tool.name }}</h3>
+                <a-space size="mini">
+                  <a-tag :color="tool.toolType === 'EXTERNAL' ? 'arcoblue' : 'purple'">
+                    {{ tool.toolType === 'EXTERNAL' ? t('tools.external') : t('tools.internal') }}
+                  </a-tag>
+                  <a-tag v-if="canManage" :color="tool.enabled ? 'green' : 'gray'">
+                    {{ tool.enabled ? t('tools.enabled') : t('tools.disabled') }}
+                  </a-tag>
+                </a-space>
+              </div>
             </div>
-          </div>
 
-          <p class="tool-description">
-            {{ tool.description || t('tools.noDescription') }}
-          </p>
+            <p class="tool-description">
+              {{ tool.description || t('tools.noDescription') }}
+            </p>
 
-          <footer class="tool-actions">
-            <a-button
-              type="primary"
-              size="small"
-              :disabled="!tool.enabled || !tool.routeOrUrl"
-              @click="openTool(tool)"
-            >
-              <template #icon>
-                <IconLaunch />
-              </template>
-              {{ t('tools.open') }}
-            </a-button>
-            <a-space v-if="canManage" size="mini">
-              <a-button type="text" size="small" @click="openEdit(tool)">
-                <template #icon>
-                  <IconEdit />
-                </template>
-                {{ t('common.edit') }}
-              </a-button>
+            <footer class="tool-actions">
               <a-button
-                type="text"
+                type="primary"
                 size="small"
-                :status="tool.enabled ? 'danger' : 'success'"
-                @click="toggleTool(tool)"
+                :disabled="!tool.enabled || !tool.routeOrUrl"
+                @click="openTool(tool)"
               >
                 <template #icon>
-                  <IconPoweroff />
+                  <IconLaunch />
                 </template>
-                {{ tool.enabled ? t('tools.disable') : t('tools.enable') }}
+                {{ t('tools.open') }}
               </a-button>
-            </a-space>
-          </footer>
-        </a-card>
-      </section>
+              <a-space v-if="canManage" size="mini">
+                <a-button type="text" size="small" @click="openEdit(tool)">
+                  <template #icon>
+                    <IconEdit />
+                  </template>
+                  {{ t('common.edit') }}
+                </a-button>
+                <a-button
+                  type="text"
+                  size="small"
+                  :status="tool.enabled ? 'danger' : 'success'"
+                  @click="toggleTool(tool)"
+                >
+                  <template #icon>
+                    <IconPoweroff />
+                  </template>
+                  {{ tool.enabled ? t('tools.disable') : t('tools.enable') }}
+                </a-button>
+              </a-space>
+            </footer>
+          </a-card>
+        </section>
+      </div>
     </main>
 
     <a-modal
@@ -458,29 +471,23 @@ const openTool = async (tool: ToolDefinition) => {
         </a-button>
       </div>
     </a-modal>
-  </div>
+  </PageContainer>
 </template>
 
 <style scoped lang="scss">
 .tools-page {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.category-summary-grid {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  min-height: 100%;
-  gap: 8px;
+  flex: 0 0 auto;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px 20px;
 }
 
-.category-panel,
-.catalog-panel {
-  min-width: 0;
-  background: var(--color-bg-2);
-  border: 1px solid var(--color-border-2);
-}
-
-.category-panel {
-  padding: 16px 10px;
-}
-
-.panel-heading,
 .catalog-heading {
   h1,
   h2,
@@ -500,42 +507,23 @@ const openTool = async (tool: ToolDefinition) => {
   }
 }
 
-.panel-heading {
-  padding: 0 8px 14px;
-
-  h2 {
-    font-size: 16px;
-  }
-}
-
-.category-item {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  justify-content: space-between;
-  padding: 9px 10px;
-  color: var(--color-text-2);
-  font: inherit;
-  text-align: left;
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-
-  strong {
-    color: var(--color-text-3);
-    font-size: 12px;
-    font-weight: 500;
-  }
-
-  &:hover,
-  &.active {
-    color: rgb(var(--primary-6));
-    background: var(--color-primary-light-1);
-  }
+.category-summary-grid small {
+  display: block;
+  margin-top: 6px;
+  color: var(--color-text-3);
+  font-size: 12px;
 }
 
 .catalog-panel {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   padding: 16px;
+  overflow: hidden;
+  background: var(--color-bg-2);
+  border: 1px solid var(--color-border-2);
 }
 
 .catalog-heading {
@@ -552,8 +540,16 @@ const openTool = async (tool: ToolDefinition) => {
 
 .tool-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  column-gap: 24px;
+  row-gap: 20px;
+}
+
+.tool-scroll {
+  min-height: 0;
+  flex: 1;
+  padding: 2px;
+  overflow: auto;
 }
 
 .tool-card {
@@ -631,13 +627,9 @@ const openTool = async (tool: ToolDefinition) => {
 }
 
 @media (max-width: 900px) {
-  .tools-page {
-    grid-template-columns: 1fr;
-  }
-
-  .category-panel {
-    max-height: 240px;
-    overflow-y: auto;
+  .category-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
   }
 }
 
@@ -645,6 +637,11 @@ const openTool = async (tool: ToolDefinition) => {
   .catalog-heading,
   .form-grid {
     display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .category-summary-grid,
+  .tool-grid {
     grid-template-columns: 1fr;
   }
 }

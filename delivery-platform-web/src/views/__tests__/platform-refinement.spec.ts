@@ -48,4 +48,17 @@ describe('platform refinement regression', () => {
     expect(variables).toContain('$color-bg-page: #f7f8fa')
     expect(sidebar).toContain('background: var(--color-bg-2)')
   })
+
+  it('uses filterable category statistics and an infinite tool card grid', () => {
+    const tools = readSource('src/views/tools/index.vue')
+
+    expect(tools).toContain('<section class="category-summary-grid"')
+    expect(tools).toContain('<StatCard')
+    expect(tools).toContain('interactive')
+    expect(tools).toContain('v-for="tool in renderedTools"')
+    expect(tools).toContain('visibleToolCount.value + 20')
+    expect(tools).toContain('column-gap: 24px')
+    expect(tools).toContain('row-gap: 20px')
+    expect(tools).not.toContain('class="category-panel"')
+  })
 })
