@@ -3,10 +3,12 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 
 const PROJECT_DICTIONARIES = {
-  projectTypes: 'project_type',
-  contractTypes: 'contract_type',
-  productTypes: 'product_type',
-  projectKeywords: 'project_keyword',
+  // projectType historically stores customer type. Keep this mapping until the
+  // project model gains a dedicated customerType field.
+  projectTypes: ['CUSTOMER_TYPE', 'project_type'],
+  contractTypes: ['CONTRACT_TYPE', 'contract_type'],
+  productTypes: ['PRODUCT_TYPE', 'product_type'],
+  projectKeywords: ['PROJECT_KEYWORD', 'project_keyword'],
 } as const;
 
 type ProjectDictionaryKey = keyof typeof PROJECT_DICTIONARIES;
@@ -33,7 +35,7 @@ export class ProjectConfigurationService {
   async getConfiguration(): Promise<ProjectConfiguration> {
     const categories = await this.prisma.dictionaryCategory.findMany({
       where: {
-        categoryCode: { in: Object.values(PROJECT_DICTIONARIES) },
+        categoryCode: { in: Object.values(PROJECT_DICTIONARIES).flat() },
         status: 'Active',
       },
       select: {
@@ -48,9 +50,9 @@ export class ProjectConfigurationService {
 
     const byCode = new Map(categories.map((category) => [category.categoryCode, category.items]));
     return Object.fromEntries(
-      Object.entries(PROJECT_DICTIONARIES).map(([key, code]) => [
+      Object.entries(PROJECT_DICTIONARIES).map(([key, codes]) => [
         key,
-        (byCode.get(code) ?? []).map((item) => ({
+        (codes.map((code) => byCode.get(code)).find((items) => items !== undefined) ?? []).map((item) => ({
           value: item.itemValue,
           label: item.itemLabel,
           extraData: item.extraData,

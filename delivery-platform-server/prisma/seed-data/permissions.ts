@@ -437,6 +437,12 @@ const permissionDefs: PermissionSeed[] = [
     action: 'view',
   },
   {
+    permissionCode: 'field_setting:manage',
+    permissionName: '管理字段设置',
+    resource: 'field_setting',
+    action: 'manage',
+  },
+  {
     permissionCode: 'currency:manage',
     permissionName: '管理币种与汇率',
     resource: 'currency',

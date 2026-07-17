@@ -12,6 +12,7 @@ vi.mock('@/api/request', () => ({ default: mocks }))
 
 import { approvalTemplateApi } from '@/api/approval'
 import { currencyApi } from '@/api/currency'
+import { fieldConfigurationApi, fieldOptionsApi } from '@/api/field-configuration'
 import { integrationApi } from '@/api/integration'
 import { notificationApi } from '@/api/notification'
 import { operationLogApi, systemSettingsApi } from '@/api/system'
@@ -115,5 +116,25 @@ describe('target settings API contracts', () => {
     expect(mocks.get).toHaveBeenNthCalledWith(2, '/integrations/FEISHU/sync-logs', {
       params: { page: 1, pageSize: 20 },
     })
+  })
+
+  it('uses the unified field configuration and business option endpoints', () => {
+    fieldConfigurationApi.getCategories()
+    fieldConfigurationApi.getValues('category-1', '中国')
+    fieldConfigurationApi.create('category-1', { name: '日本', code: 'JP', sortOrder: 80 })
+    fieldConfigurationApi.update('value-1', { name: '日本国', code: 'JP', sortOrder: 90 })
+    fieldConfigurationApi.changeStatus('value-1', 'Inactive')
+    fieldConfigurationApi.sort('category-1', [{ id: 'value-1', sortOrder: 10 }])
+    fieldConfigurationApi.getReferenceStatus('value-1')
+    fieldConfigurationApi.remove('value-1')
+    fieldOptionsApi.getByCode('COUNTRY')
+
+    expect(mocks.get).toHaveBeenCalledWith('/field-config/categories')
+    expect(mocks.get).toHaveBeenCalledWith('/field-config/categories/category-1/values', { params: { keyword: '中国' } })
+    expect(mocks.post).toHaveBeenCalledWith('/field-config/categories/category-1/values', { name: '日本', code: 'JP', sortOrder: 80 })
+    expect(mocks.patch).toHaveBeenCalledWith('/field-config/values/value-1/status', { status: 'Inactive' })
+    expect(mocks.put).toHaveBeenCalledWith('/field-config/categories/category-1/sort', { items: [{ id: 'value-1', sortOrder: 10 }] })
+    expect(mocks.get).toHaveBeenCalledWith('/field-options/COUNTRY')
+    expect(mocks.delete).toHaveBeenCalledWith('/field-config/values/value-1')
   })
 })

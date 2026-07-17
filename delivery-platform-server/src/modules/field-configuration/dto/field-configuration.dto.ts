@@ -1,0 +1,84 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform, Type } from 'class-transformer';
+import {
+  ArrayMinSize,
+  IsArray,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+  ValidateNested,
+} from 'class-validator';
+
+const trim = ({ value }: { value: unknown }) => typeof value === 'string' ? value.trim() : value;
+const upperOptional = ({ value }: { value: unknown }) =>
+  typeof value === 'string' ? value.trim().toUpperCase() || undefined : value;
+
+export class QueryFieldValuesDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(100)
+  keyword?: string;
+}
+
+export class CreateFieldValueDto {
+  @ApiProperty()
+  @Transform(trim)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
+  name!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @Transform(upperOptional)
+  @IsString()
+  @Matches(/^[A-Z][A-Z0-9_-]{0,99}$/u, { message: '编码只能包含大写字母、数字、下划线和连字符，且必须以字母开头' })
+  code?: string;
+
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(999999)
+  sortOrder?: number;
+}
+
+export class UpdateFieldValueDto extends CreateFieldValueDto {}
+
+export class ChangeFieldValueStatusDto {
+  @ApiProperty({ enum: ['Active', 'Inactive'] })
+  @IsIn(['Active', 'Inactive'])
+  status!: 'Active' | 'Inactive';
+}
+
+export class FieldValueSortItemDto {
+  @ApiProperty()
+  @IsUUID()
+  id!: string;
+
+  @ApiProperty()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(999999)
+  sortOrder!: number;
+}
+
+export class SortFieldValuesDto {
+  @ApiProperty({ type: [FieldValueSortItemDto] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => FieldValueSortItemDto)
+  items!: FieldValueSortItemDto[];
+}

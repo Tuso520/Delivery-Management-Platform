@@ -51,6 +51,7 @@ const roleCatalog: RoleSeed[] = [
       'department:manage',
       'dictionary:view',
       'dictionary:manage',
+      'field_setting:manage',
     ],
   },
   {
@@ -65,6 +66,7 @@ const roleCatalog: RoleSeed[] = [
         'role:',
         'permission:',
         'system_setting:manage',
+        'field_setting:',
         'integration:',
       ];
       return !excludedPrefixes.some((prefix) => code.startsWith(prefix));

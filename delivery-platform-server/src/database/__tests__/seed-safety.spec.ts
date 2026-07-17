@@ -501,9 +501,18 @@ describe('deployment seed safety', () => {
     const categoryCodes = categoryUpsert.mock.calls.map(([call]) => call.where.categoryCode);
     expect(categoryCodes).toEqual(
       expect.arrayContaining([
-        'project_type',
-        'project_lifecycle_status',
-        'project_delivery_stage',
+        'COUNTRY',
+        'CUSTOMER_TYPE',
+        'CONTRACT_TYPE',
+        'PRODUCT_TYPE',
+        'PROJECT_KEYWORD',
+        'CURRENCY',
+        'PROJECT_STAGE',
+        'PROJECT_STATUS',
+        'STANDARD_CATEGORY',
+        'KNOWLEDGE_CATEGORY',
+        'JOB_POSITION',
+        'PROJECT_TYPE',
         'archive_file_type',
         'standard_type',
         'knowledge_content_type',

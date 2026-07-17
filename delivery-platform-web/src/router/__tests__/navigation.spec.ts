@@ -35,18 +35,11 @@ describe('application navigation', () => {
     ])
   })
 
-  it('keeps settings out of the sidebar and exposes only target setting entries', () => {
+  it('keeps settings out of the sidebar and exposes one unified settings center', () => {
     expect(menuItems.flatMap((group) => group.children ?? [])).not.toContainEqual(
       expect.objectContaining({ name: 'Currency' }),
     )
-    expect(settingItems.map((item) => item.title)).toEqual([
-      'menu.systemCurrency',
-      'menu.systemNotification',
-      'menu.systemApproval',
-      'menu.systemLogs',
-      'menu.systemConfig',
-      'menu.systemIntegration',
-    ])
+    expect(settingItems.map((item) => item.title)).toEqual(['routes.settings'])
   })
 
   it('registers only the canonical project routes', () => {

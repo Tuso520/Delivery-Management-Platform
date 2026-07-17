@@ -19,6 +19,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { CountryModule } from './modules/country/country.module';
 import { CurrencyModule } from './modules/currency/currency.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { FieldConfigurationModule } from './modules/field-configuration/field-configuration.module';
 import { FileModule } from './modules/file/file.module';
 import { KnowledgeModule } from './modules/knowledge/knowledge.module';
 import { LanguageModule } from './modules/language/language.module';
@@ -75,6 +76,7 @@ import { UserModule } from './modules/user/user.module';
     OutboxModule,
     OperationLogModule,
     SystemConfigModule,
+    FieldConfigurationModule,
     KnowledgeModule,
     ToolModule,
     PlatformModule,

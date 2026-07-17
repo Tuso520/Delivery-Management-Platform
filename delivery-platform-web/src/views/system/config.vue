@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, toRaw, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import { useI18n } from 'vue-i18n'
@@ -19,6 +19,7 @@ import {
 import { usePermission } from '@/composables/usePermission'
 import { queryKeys } from '@/query/keys'
 import type { SystemSettings } from '@/types/settings'
+import FieldSettings from './FieldSettings.vue'
 
 function createDefaults(): SystemSettings {
   return {
@@ -126,7 +127,7 @@ function formatOffset(value?: number): string {
 watch(
   () => settingsQuery.data.value,
   (value) => {
-    if (value) settings.value = structuredClone(value)
+    if (value) settings.value = structuredClone(toRaw(value))
   },
   { immediate: true },
 )
@@ -288,6 +289,8 @@ watch(
           {{ t('systemConfig.timeReadOnly') }}
         </p>
       </SectionCard>
+
+      <FieldSettings v-if="hasPermission('field_setting:manage')" />
 
       <StickyActionBar
         :message="canManage ? t('systemConfig.auditHint') : t('systemConfig.readOnlySaveHint')"
