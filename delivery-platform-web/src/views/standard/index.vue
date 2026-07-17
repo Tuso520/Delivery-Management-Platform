@@ -7,6 +7,7 @@ import type { TableColumnData } from '@arco-design/web-vue'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 
 import { standardApi } from '@/api/standard'
+import { BusinessTable, PageContainer, PageToolbar, StatCard } from '@/components/business'
 import {
   useStandardDetailQuery,
   useStandardListQuery,
@@ -74,7 +75,13 @@ const localizedRelationTypeOptions = computed(() =>
 )
 
 const columns = computed<TableColumnData[]>(() => [
-  { title: t('standard.fields.name'), dataIndex: 'name', slotName: 'name', minWidth: 250 },
+  {
+    title: t('standard.fields.name'),
+    dataIndex: 'name',
+    slotName: 'name',
+    width: 250,
+    fixed: 'left',
+  },
   { title: t('standard.fields.type'), dataIndex: 'type', slotName: 'type', width: 128 },
   { title: t('standard.fields.currentVersion'), slotName: 'version', width: 96 },
   { title: t('common.status'), dataIndex: 'status', slotName: 'status', width: 96 },
@@ -200,21 +207,29 @@ const hasActiveDraftVersion = computed(() =>
 )
 
 const summaryItems = computed(() => [
-  { key: undefined, label: t('standard.summary.total'), value: summary.value.total },
+  {
+    key: undefined,
+    label: t('standard.summary.total'),
+    value: summary.value.total,
+    tone: 'blue' as const,
+  },
   {
     key: 'IN_REVIEW' as StandardStatus,
     label: t('standard.summary.inReview'),
     value: summary.value.inReview,
+    tone: 'cyan' as const,
   },
   {
     key: 'PUBLISHED' as StandardStatus,
     label: t('standard.status.PUBLISHED'),
     value: summary.value.published,
+    tone: 'green' as const,
   },
   {
     key: 'ARCHIVED' as StandardStatus,
     label: t('standard.status.ARCHIVED'),
     value: summary.value.archived,
+    tone: 'red' as const,
   },
 ])
 
@@ -287,6 +302,12 @@ function resetSearch(): void {
 
 function changePage(page: number): void {
   query.page = page
+  void applyListQuery()
+}
+
+function changePageSize(pageSize: number): void {
+  query.pageSize = pageSize
+  query.page = 1
   void applyListQuery()
 }
 
@@ -713,89 +734,61 @@ watch(
 </script>
 
 <template>
-  <section class="domain-page">
-    <header class="page-toolbar">
-      <div>
-        <h1>{{ t('standard.title') }}</h1>
-        <p>{{ t('standard.subtitle') }}</p>
-      </div>
-      <a-space size="small">
-        <a-button size="small" :loading="loading" @click="refreshPage">
-          {{ t('standard.refresh') }}
-        </a-button>
-        <a-button
-          v-if="canCreate"
-          size="small"
-          type="primary"
-          @click="openCreate"
-        >
-          {{ t('standard.create') }}
-        </a-button>
-      </a-space>
-    </header>
-
-    <div class="summary-strip" :aria-label="t('standard.summary.aria')">
-      <button
+  <PageContainer class="domain-page" gap="compact" :scrollable="false">
+    <section class="summary-grid" :aria-label="t('standard.summary.aria')">
+      <StatCard
         v-for="item in summaryItems"
         :key="item.label"
-        type="button"
-        class="summary-cell"
-        :class="{ active: query.status === item.key }"
-        @click="selectSummary(item.key)"
-      >
-        <span>{{ item.label }}</span>
-        <strong>{{ item.value }}</strong>
-      </button>
-    </div>
+        :label="item.label"
+        :value="item.value"
+        :tone="item.tone"
+        :active="query.status === item.key"
+        interactive
+        @select="selectSummary(item.key)"
+      />
+    </section>
 
-    <a-form
-      :model="query"
-      class="filter-bar"
-      layout="inline"
-      @submit.prevent="search"
-    >
-      <a-form-item field="keyword" :label="t('standard.keyword')">
-        <a-input
-          v-model="query.keyword"
-          allow-clear
-          :placeholder="t('standard.searchPlaceholder')"
-          style="width: 360px"
-          @press-enter="search"
-        />
-      </a-form-item>
-      <a-form-item>
-        <a-button type="primary" html-type="submit">
-          {{ t('standard.query') }}
-        </a-button>
-        <a-button v-if="query.keyword || query.status" @click="resetSearch">
-          {{ t('common.reset') }}
-        </a-button>
-      </a-form-item>
-    </a-form>
+    <section class="library-list-panel">
+      <PageToolbar class="library-toolbar">
+        <template #filters>
+          <div class="search-group">
+            <a-input
+              v-model="query.keyword"
+              class="keyword-input"
+              allow-clear
+              :placeholder="t('standard.searchPlaceholder')"
+              @press-enter="search"
+            />
+            <a-button type="primary" class="search-button" @click="search">
+              {{ t('standard.query') }}
+            </a-button>
+          </div>
+          <a-button v-if="query.keyword || query.status" @click="resetSearch">
+            {{ t('common.reset') }}
+          </a-button>
+        </template>
+        <template #actions>
+          <a-button :loading="loading" @click="refreshPage">
+            {{ t('standard.refresh') }}
+          </a-button>
+          <a-button v-if="canCreate" type="primary" @click="openCreate">
+            {{ t('standard.create') }}
+          </a-button>
+        </template>
+      </PageToolbar>
 
-    <a-alert
-      v-if="loadError"
-      type="error"
-      :show-icon="true"
-      class="load-error"
-    >
-      {{ loadError }}
-      <template #action>
-        <a-button size="mini" @click="fetchList">
-          {{ t('standard.retry') }}
-        </a-button>
-      </template>
-    </a-alert>
-
-    <div class="table-panel">
-      <a-table
+      <BusinessTable
         :columns="columns"
         :data="list"
         :loading="loading"
-        :pagination="false"
-        :bordered="{ cell: false }"
-        :scroll="{ x: 1120 }"
+        :error="loadError"
+        :retry-label="t('standard.retry')"
+        :pagination="{ page: query.page, pageSize: query.pageSize, total }"
+        :scroll="{ x: 'max-content' }"
         row-key="id"
+        @retry="fetchList"
+        @page-change="changePage"
+        @page-size-change="changePageSize"
       >
         <template #name="{ record }">
           <button class="record-link" type="button" @click="openDetail(record)">
@@ -860,18 +853,8 @@ watch(
             "
           />
         </template>
-      </a-table>
-      <a-pagination
-        v-if="total > query.pageSize"
-        :current="query.page"
-        :page-size="query.pageSize"
-        :total="total"
-        show-total
-        size="small"
-        class="pagination"
-        @change="changePage"
-      />
-    </div>
+      </BusinessTable>
+    </section>
 
     <a-drawer
       :visible="detailVisible"
@@ -1231,107 +1214,148 @@ watch(
         </a-form-item>
       </a-form>
     </a-modal>
-  </section>
+  </PageContainer>
 </template>
 
 <style scoped lang="scss">
 .domain-page {
-  min-height: 100%;
-  display: grid;
-  align-content: start;
-  gap: 8px;
+  --library-border: #e5e6eb;
+  height: 100%;
+  overflow: hidden;
+  color: #1d2129;
+  font-family: Inter, 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
 
-.page-toolbar {
-  min-height: 58px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 8px 12px;
-  border: 1px solid var(--color-border-2);
-  background: var(--color-bg-2);
-
-  h1 {
-    margin: 0;
-    font-size: 17px;
-    line-height: 1.4;
-  }
-  p {
-    margin: 2px 0 0;
-    color: var(--color-text-3);
-    font-size: 12px;
-  }
-}
-
-.summary-strip {
+.summary-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  border: 1px solid var(--color-border-2);
-  background: var(--color-bg-2);
+  gap: 12px;
 }
 
-.summary-cell {
-  min-height: 62px;
+:deep(.summary-grid .stat-card) {
+  min-height: 72px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 10px 16px;
+  padding: 14px 16px;
+  border-color: var(--library-border);
+  border-radius: 2px;
+  background: #fff;
+}
+
+:deep(.summary-grid .stat-card--active) {
+  border-color: var(--library-border);
+  border-top: 2px solid rgb(var(--stat-color));
+  background: rgb(var(--primary-1));
+  box-shadow: none;
+}
+
+:deep(.summary-grid .stat-card__label) {
+  color: #4e5969;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+:deep(.summary-grid .stat-card__value) {
+  margin: 0 0 0 12px;
+  font-size: 30px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.library-list-panel {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--library-border);
+  border-radius: 2px;
+  background: #fff;
+}
+
+.library-toolbar {
+  flex: 0 0 auto;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--library-border);
+}
+
+.library-toolbar :deep(.page-toolbar__filters) {
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+}
+
+.library-toolbar :deep(.page-toolbar__actions) {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  margin-left: auto;
+}
+
+.search-group {
+  display: flex;
+  align-items: stretch;
+}
+
+.keyword-input {
+  width: min(360px, 38vw);
+}
+
+.search-group :deep(.keyword-input .arco-input-wrapper) {
+  border-radius: 2px 0 0 2px;
+}
+
+.search-button {
+  margin-left: -1px;
+  border-radius: 0 2px 2px 0 !important;
+}
+
+:deep(.library-list-panel > .business-table),
+:deep(.library-list-panel .business-table > .arco-table) {
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+:deep(.library-list-panel .arco-table-container) {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
   border: 0;
-  border-right: 1px solid var(--color-border-2);
-  color: var(--color-text-2);
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-  transition:
-    background-color 160ms ease,
-    transform 160ms ease;
-
-  &:last-child {
-    border-right: 0;
-  }
-  &:hover,
-  &.active {
-    background: rgb(var(--primary-1));
-    color: rgb(var(--primary-6));
-  }
-  &:active {
-    transform: scale(0.98);
-  }
-  span {
-    font-size: 12px;
-  }
-  strong {
-    font-size: 22px;
-    font-weight: 650;
-  }
-}
-
-.filter-bar {
-  padding: 10px 12px 2px;
-  border: 1px solid var(--color-border-2);
-  background: var(--color-bg-2);
-}
-
-.load-error {
   border-radius: 0;
 }
-.table-panel {
-  min-width: 0;
-  border: 1px solid var(--color-border-2);
-  background: var(--color-bg-2);
+
+:deep(.library-list-panel .arco-table-element) {
+  width: max-content;
+  min-width: 100%;
+  table-layout: auto !important;
 }
-.table-panel :deep(.arco-table-th),
-.table-panel :deep(.arco-table-cell) {
-  padding: 8px 10px;
-  font-size: 12px;
+
+:deep(.library-list-panel .arco-table-th) {
+  height: 42px;
+  background: #f7f8fa;
+  color: #4e5969;
+  font-weight: 500;
 }
-.pagination {
-  display: flex;
-  justify-content: flex-end;
-  padding: 10px 12px;
-  border-top: 1px solid var(--color-border-2);
+
+:deep(.library-list-panel .arco-table-th),
+:deep(.library-list-panel .arco-table-td) {
+  padding-right: 16px;
+  padding-left: 16px;
+  border-color: var(--library-border);
+  white-space: nowrap;
+}
+
+:deep(.library-list-panel .business-table__pagination) {
+  min-height: 57px;
+  align-items: center;
+  margin-top: auto;
+  padding: 12px 16px;
+  border-top: 1px solid var(--library-border);
 }
 
 .record-link {
@@ -1452,19 +1476,18 @@ watch(
 }
 
 @media (max-width: 900px) {
-  .page-toolbar,
   .detail-command-bar {
     align-items: flex-start;
     flex-direction: column;
   }
-  .summary-strip {
+  .summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .summary-cell:nth-child(2) {
-    border-right: 0;
+  .library-toolbar :deep(.page-toolbar__filters) {
+    flex-wrap: wrap;
   }
-  .summary-cell:nth-child(-n + 2) {
-    border-bottom: 1px solid var(--color-border-2);
+  .keyword-input {
+    width: 100%;
   }
   .relation-row {
     grid-template-columns: 92px minmax(0, 1fr) 56px;

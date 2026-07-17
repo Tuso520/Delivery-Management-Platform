@@ -134,6 +134,24 @@ describe('standard and knowledge target flows', () => {
     expect(knowledge).not.toContain("query: { mode: 'view', id:")
   })
 
+  it('uses the project-overview page frame for both libraries', () => {
+    for (const file of ['src/views/standard/index.vue', 'src/views/knowledge/index.vue']) {
+      const page = readSource(file)
+
+      expect(page).toContain(
+        '<PageContainer class="domain-page" gap="compact" :scrollable="false">',
+      )
+      expect(page).toContain('<section class="summary-grid"')
+      expect(page).toContain('<section class="library-list-panel">')
+      expect(page).toContain('<PageToolbar class="library-toolbar">')
+      expect(page).toContain('<BusinessTable')
+      expect(page).toContain(':scroll="{ x: \'max-content\' }"')
+      expect(page).toContain("fixed: 'left'")
+      expect(page).not.toContain('class="summary-strip"')
+      expect(page).not.toContain('class="filter-bar"')
+    }
+  })
+
   it('uses controlled draft-file uploads and never asks users for internal file ids', () => {
     const standard = readSource('src/views/standard/index.vue')
     const knowledge = readSource('src/views/knowledge/index.vue')

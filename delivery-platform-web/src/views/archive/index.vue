@@ -445,10 +445,56 @@ watch(
 </script>
 
 <template>
-  <PageContainer class="archive-page">
-    <PageToolbar :title="t('archive.title')" :description="t('archive.subtitle')">
-      <template #actions>
-        <a-space>
+  <PageContainer class="archive-page" gap="compact" :scrollable="false">
+    <section class="summary-grid">
+      <StatCard :label="t('archive.summary.completion')" :value="`${completionRate}%`" tone="blue">
+        <a-progress :percent="completionRate / 100" :show-text="false" />
+      </StatCard>
+      <StatCard
+        :label="t('archive.summary.items')"
+        :value="`${completedItems} / ${totalItems}`"
+        tone="green"
+      >
+        <small>{{ t('archive.summary.completedAll') }}</small>
+      </StatCard>
+      <StatCard
+        :label="t('archive.summary.required')"
+        :value="`${requiredCompleted} / ${requiredTotal}`"
+        tone="cyan"
+      >
+        <small>{{ t('archive.summary.completedRequired') }}</small>
+      </StatCard>
+      <StatCard :label="t('archive.summary.scale')" :value="activeFolders.length" tone="red">
+        <small>{{ t('archive.summary.twoLevelFolders') }}</small>
+      </StatCard>
+    </section>
+
+    <section class="archive-workspace-panel">
+      <PageToolbar class="archive-toolbar">
+        <template #filters>
+          <div class="project-picker">
+            <span class="field-label">{{ t('archive.selectProject') }}</span>
+            <a-select
+              :model-value="selectedProjectId"
+              :loading="loadingProjects"
+              allow-search
+              :placeholder="t('archive.projectSearchPlaceholder')"
+              @search="projectKeyword = $event"
+              @change="changeProject"
+            >
+              <a-option
+                v-for="project in filteredProjects"
+                :key="project.id"
+                :value="project.id"
+                :label="`${project.projectName}（${project.projectCode}）`"
+              />
+            </a-select>
+            <a-button type="text" :disabled="!selectedProjectId" @click="viewProject">
+              {{ t('archive.projectDetail') }}
+            </a-button>
+          </div>
+        </template>
+        <template #actions>
           <Can permission="archive:item:create_temporary">
             <a-button :disabled="!tree" @click="openTemporaryItem">
               {{ t('archive.temporaryCreate') }}
@@ -459,213 +505,164 @@ watch(
               {{ t('archive.syncTemplate') }}
             </a-button>
           </Can>
-        </a-space>
-      </template>
-    </PageToolbar>
+        </template>
+      </PageToolbar>
 
-    <SectionCard class="project-selector" :bordered="false">
-      <div class="selector-row">
-        <div class="project-picker">
-          <span class="field-label">{{ t('archive.selectProject') }}</span>
-          <a-select
-            :model-value="selectedProjectId"
-            :loading="loadingProjects"
-            allow-search
-            :placeholder="t('archive.projectSearchPlaceholder')"
-            @search="projectKeyword = $event"
-            @change="changeProject"
-          >
-            <a-option
-              v-for="project in filteredProjects"
-              :key="project.id"
-              :value="project.id"
-              :label="`${project.projectName}（${project.projectCode}）`"
-            />
-          </a-select>
-          <a-button type="text" :disabled="!selectedProjectId" @click="viewProject">
-            {{
-              t('archive.projectDetail')
-            }}
-          </a-button>
-        </div>
-        <div v-if="tree" class="project-meta">
-          <span>{{ tree.project.code }}</span>
-          <a-tag>
-            {{
-              tree.template.version
-                ? t('archive.templateVersion', { version: tree.template.version })
-                : t('archive.noTemplateVersion')
-            }}
-          </a-tag>
-          <a-tag v-if="tree.template.hasDiff" color="orange">
-            {{
-              t('archive.templateHasAdditions')
-            }}
-          </a-tag>
-        </div>
+      <div v-if="tree" class="project-meta">
+        <span>{{ tree.project.code }}</span>
+        <a-tag>
+          {{
+            tree.template.version
+              ? t('archive.templateVersion', { version: tree.template.version })
+              : t('archive.noTemplateVersion')
+          }}
+        </a-tag>
+        <a-tag v-if="tree.template.hasDiff" color="orange">
+          {{ t('archive.templateHasAdditions') }}
+        </a-tag>
       </div>
-    </SectionCard>
 
-    <a-spin :loading="loadingTree" class="archive-loading">
-      <template v-if="tree">
-        <section class="summary-grid">
-          <StatCard :label="t('archive.summary.completion')" :value="`${completionRate}%`">
-            <a-progress :percent="completionRate / 100" :show-text="false" />
-          </StatCard>
-          <StatCard
-            :label="t('archive.summary.items')"
-            :value="`${completedItems} / ${totalItems}`"
-          >
-            <small>{{ t('archive.summary.completedAll') }}</small>
-          </StatCard>
-          <StatCard
-            :label="t('archive.summary.required')"
-            :value="`${requiredCompleted} / ${requiredTotal}`"
-          >
-            <small>{{ t('archive.summary.completedRequired') }}</small>
-          </StatCard>
-          <StatCard :label="t('archive.summary.scale')" :value="activeFolders.length">
-            <small>{{ t('archive.summary.twoLevelFolders') }}</small>
-          </StatCard>
-        </section>
+      <a-spin :loading="loadingTree" class="archive-loading">
+        <template v-if="tree">
+          <a-empty v-if="!activeFolders.length" :description="t('archive.emptySnapshot')" />
 
-        <a-empty v-if="!activeFolders.length" :description="t('archive.emptySnapshot')" />
-
-        <section v-else class="folder-tree">
-          <SectionCard
-            v-for="folder in activeFolders"
-            :key="folder.id"
-            class="folder-card"
-            :bordered="false"
-          >
-            <template #title>
-              <div class="folder-title">
-                <div>
-                  <strong>{{ folder.name }}</strong>
-                  <span v-if="folder.description">{{ folder.description }}</span>
-                </div>
-                <div class="folder-progress">
-                  <span>{{ folder.completedCount }} / {{ folder.totalCount }}</span>
-                  <a-progress
-                    size="small"
-                    :percent="folderProgress(folder) / 100"
-                    :show-text="false"
-                  />
-                </div>
-              </div>
-            </template>
-
-            <BusinessTable
-              :data="folder.items"
-              row-key="id"
-              size="small"
-              :scroll="{ x: 960 }"
-              :empty-title="t('archive.emptyFolder')"
+          <section v-else class="folder-tree">
+            <SectionCard
+              v-for="folder in activeFolders"
+              :key="folder.id"
+              class="folder-card"
+              :bordered="false"
             >
-              <template #columns>
-                <a-table-column :title="t('archive.columns.itemName')" :width="280">
-                  <template #cell="{ record }">
-                    <button
-                      class="item-title"
-                      :class="{
-                        disabled:
-                          !record.currentVersion || record.currentVersion.canPreview === false,
-                      }"
-                      type="button"
-                      @click="previewItem(record)"
-                    >
-                      <span>{{ record.name }}</span>
-                      <a-tag v-if="record.required" size="small" color="red">
-                        {{
-                          t('archive.required')
-                        }}
-                      </a-tag>
-                      <a-tag v-if="record.isTemporary" size="small">
-                        {{
-                          t('archive.temporary')
-                        }}
-                      </a-tag>
-                    </button>
-                    <p v-if="record.description" class="item-description">
-                      {{ record.description }}
-                    </p>
-                  </template>
-                </a-table-column>
-                <a-table-column :title="t('archive.columns.fileStatus')" :width="120">
-                  <template #cell="{ record }">
-                    <StatusBadge domain="archive" :status="normalizeArchiveStatus(record.status)" />
-                    <span v-if="record.pendingReviewSummary.count" class="review-count">
-                      {{
-                        t('archive.reviewTaskCount', {
-                          count: record.pendingReviewSummary.count,
-                        })
-                      }}
-                    </span>
-                  </template>
-                </a-table-column>
-                <a-table-column :title="t('archive.columns.currentVersion')" :width="150">
-                  <template #cell="{ record }">
-                    <span v-if="record.currentVersion">
-                      {{ record.currentVersion.version }}
-                      <small v-if="record.fileCount > 1">{{
-                        t('archive.fileCount', { count: record.fileCount })
-                      }}</small>
-                    </span>
-                    <span v-else>—</span>
-                  </template>
-                </a-table-column>
-                <a-table-column :title="t('archive.columns.owner')" :width="130">
-                  <template #cell="{ record }">
-                    {{
-                      record.owner?.realName || record.owner?.username || t('archive.unassigned')
-                    }}
-                  </template>
-                </a-table-column>
-                <a-table-column :title="t('archive.columns.updatedAt')" :width="120">
-                  <template #cell="{ record }">
-                    {{ formatDate(record.updatedAt) }}
-                  </template>
-                </a-table-column>
-                <a-table-column :title="t('common.action')" :width="180" fixed="right">
-                  <template #cell="{ record }">
-                    <a-space size="mini">
-                      <a-button
-                        v-if="record.canUpload"
-                        type="text"
-                        size="mini"
-                        @click="openUpload(record)"
-                      >
-                        {{
-                          record.currentVersion ? t('archive.uploadNewVersion') : t('common.upload')
-                        }}
-                      </a-button>
-                      <a-button
-                        v-if="record.canArchive"
-                        type="text"
-                        size="mini"
-                        status="danger"
-                        @click="archiveItem(record)"
-                      >
-                        {{ t('archive.archiveItem.action') }}
-                      </a-button>
-                      <a-button
-                        v-if="record.canRestore"
-                        type="text"
-                        size="mini"
-                        @click="restoreItem(record)"
-                      >
-                        {{ t('archive.restore') }}
-                      </a-button>
-                    </a-space>
-                  </template>
-                </a-table-column>
+              <template #title>
+                <div class="folder-title">
+                  <div>
+                    <strong>{{ folder.name }}</strong>
+                    <span v-if="folder.description">{{ folder.description }}</span>
+                  </div>
+                  <div class="folder-progress">
+                    <span>{{ folder.completedCount }} / {{ folder.totalCount }}</span>
+                    <a-progress
+                      size="small"
+                      :percent="folderProgress(folder) / 100"
+                      :show-text="false"
+                    />
+                  </div>
+                </div>
               </template>
-            </BusinessTable>
-          </SectionCard>
-        </section>
-      </template>
-      <a-empty v-else-if="!loadingTree" :description="t('archive.selectAccessibleProject')" />
-    </a-spin>
+
+              <BusinessTable
+                :data="folder.items"
+                row-key="id"
+                size="small"
+                :scroll="{ x: 960 }"
+                :empty-title="t('archive.emptyFolder')"
+              >
+                <template #columns>
+                  <a-table-column :title="t('archive.columns.itemName')" :width="280" fixed="left">
+                    <template #cell="{ record }">
+                      <button
+                        class="item-title"
+                        :class="{
+                          disabled:
+                            !record.currentVersion || record.currentVersion.canPreview === false,
+                        }"
+                        type="button"
+                        @click="previewItem(record)"
+                      >
+                        <span>{{ record.name }}</span>
+                        <a-tag v-if="record.required" size="small" color="red">
+                          {{ t('archive.required') }}
+                        </a-tag>
+                        <a-tag v-if="record.isTemporary" size="small">
+                          {{ t('archive.temporary') }}
+                        </a-tag>
+                      </button>
+                      <p v-if="record.description" class="item-description">
+                        {{ record.description }}
+                      </p>
+                    </template>
+                  </a-table-column>
+                  <a-table-column :title="t('archive.columns.fileStatus')" :width="120">
+                    <template #cell="{ record }">
+                      <StatusBadge
+                        domain="archive"
+                        :status="normalizeArchiveStatus(record.status)"
+                      />
+                      <span v-if="record.pendingReviewSummary.count" class="review-count">
+                        {{
+                          t('archive.reviewTaskCount', {
+                            count: record.pendingReviewSummary.count,
+                          })
+                        }}
+                      </span>
+                    </template>
+                  </a-table-column>
+                  <a-table-column :title="t('archive.columns.currentVersion')" :width="150">
+                    <template #cell="{ record }">
+                      <span v-if="record.currentVersion">
+                        {{ record.currentVersion.version }}
+                        <small v-if="record.fileCount > 1">{{
+                          t('archive.fileCount', { count: record.fileCount })
+                        }}</small>
+                      </span>
+                      <span v-else>—</span>
+                    </template>
+                  </a-table-column>
+                  <a-table-column :title="t('archive.columns.owner')" :width="130">
+                    <template #cell="{ record }">
+                      {{
+                        record.owner?.realName || record.owner?.username || t('archive.unassigned')
+                      }}
+                    </template>
+                  </a-table-column>
+                  <a-table-column :title="t('archive.columns.updatedAt')" :width="120">
+                    <template #cell="{ record }">
+                      {{ formatDate(record.updatedAt) }}
+                    </template>
+                  </a-table-column>
+                  <a-table-column :title="t('common.action')" :width="180" fixed="right">
+                    <template #cell="{ record }">
+                      <a-space size="mini">
+                        <a-button
+                          v-if="record.canUpload"
+                          type="text"
+                          size="mini"
+                          @click="openUpload(record)"
+                        >
+                          {{
+                            record.currentVersion
+                              ? t('archive.uploadNewVersion')
+                              : t('common.upload')
+                          }}
+                        </a-button>
+                        <a-button
+                          v-if="record.canArchive"
+                          type="text"
+                          size="mini"
+                          status="danger"
+                          @click="archiveItem(record)"
+                        >
+                          {{ t('archive.archiveItem.action') }}
+                        </a-button>
+                        <a-button
+                          v-if="record.canRestore"
+                          type="text"
+                          size="mini"
+                          @click="restoreItem(record)"
+                        >
+                          {{ t('archive.restore') }}
+                        </a-button>
+                      </a-space>
+                    </template>
+                  </a-table-column>
+                </template>
+              </BusinessTable>
+            </SectionCard>
+          </section>
+        </template>
+        <a-empty v-else-if="!loadingTree" :description="t('archive.selectAccessibleProject')" />
+      </a-spin>
+    </section>
 
     <BusinessModal
       v-model:visible="uploadVisible"
@@ -718,9 +715,7 @@ watch(
           :label="t('archive.multipleFileItem')"
         >
           <a-checkbox v-model="uploadForm.createAsNewFile">
-            {{
-              t('archive.uploadAsIndependent')
-            }}
+            {{ t('archive.uploadAsIndependent') }}
           </a-checkbox>
         </a-form-item>
         <a-form-item :label="t('archive.changeDescription')">
@@ -734,14 +729,10 @@ watch(
         <a-progress v-if="uploading" :percent="uploadProgress / 100" />
         <div class="modal-actions">
           <a-button :disabled="uploading" @click="uploadVisible = false">
-            {{
-              t('common.cancel')
-            }}
+            {{ t('common.cancel') }}
           </a-button>
           <a-button type="primary" :loading="uploading" @click="submitUpload">
-            {{
-              t('archive.confirmUpload')
-            }}
+            {{ t('archive.confirmUpload') }}
           </a-button>
         </div>
       </a-form>
@@ -818,31 +809,21 @@ watch(
             {{ t('archive.required') }}
           </a-checkbox>
           <a-checkbox v-model="temporaryForm.reviewRequired">
-            {{
-              t('archive.reviewRequired')
-            }}
+            {{ t('archive.reviewRequired') }}
           </a-checkbox>
           <a-checkbox v-model="temporaryForm.allowMultipleFiles">
-            {{
-              t('archive.allowMultipleFiles')
-            }}
+            {{ t('archive.allowMultipleFiles') }}
           </a-checkbox>
           <a-checkbox v-model="temporaryForm.suggestedForTemplate">
-            {{
-              t('archive.suggestTemplate')
-            }}
+            {{ t('archive.suggestTemplate') }}
           </a-checkbox>
         </a-space>
         <div class="modal-actions">
           <a-button :disabled="temporarySaving" @click="temporaryVisible = false">
-            {{
-              t('common.cancel')
-            }}
+            {{ t('common.cancel') }}
           </a-button>
           <a-button type="primary" :loading="temporarySaving" @click="saveTemporaryItem">
-            {{
-              t('common.create')
-            }}
+            {{ t('common.create') }}
           </a-button>
         </div>
       </a-form>
@@ -911,9 +892,7 @@ watch(
           </template>
           <div class="modal-actions">
             <a-button :disabled="syncSaving" @click="syncVisible = false">
-              {{
-                t('common.close')
-              }}
+              {{ t('common.close') }}
             </a-button>
             <a-button
               v-if="templateDiff.canSync"
@@ -932,11 +911,13 @@ watch(
 
 <style scoped lang="scss">
 .archive-page {
-  display: grid;
-  gap: 16px;
+  --archive-border: #e5e6eb;
+  height: 100%;
+  overflow: hidden;
+  color: #1d2129;
+  font-family: Inter, 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
 
-.selector-row,
 .folder-title,
 .modal-actions,
 .diff-summary {
@@ -944,10 +925,6 @@ watch(
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-}
-
-.project-selector :deep(.arco-card-body) {
-  padding: 14px 16px;
 }
 
 .project-picker,
@@ -972,18 +949,86 @@ watch(
   gap: 12px;
 }
 
+:deep(.summary-grid .stat-card) {
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-color: var(--archive-border);
+  border-radius: 2px;
+  background: #fff;
+}
+
+:deep(.summary-grid .stat-card__label) {
+  color: #4e5969;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+:deep(.summary-grid .stat-card__value) {
+  margin: 0 0 0 12px;
+  font-size: 30px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
 .summary-grid small {
   color: var(--color-text-3);
 }
 
+.archive-workspace-panel {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--archive-border);
+  border-radius: 2px;
+  background: #fff;
+}
+
+.archive-toolbar {
+  flex: 0 0 auto;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--archive-border);
+}
+
+.archive-toolbar :deep(.page-toolbar__filters) {
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+}
+
+.archive-toolbar :deep(.page-toolbar__actions) {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  margin-left: auto;
+}
+
+.project-meta {
+  min-height: 38px;
+  flex: 0 0 auto;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--archive-border);
+  background: #f7f8fa;
+}
+
 .archive-loading {
-  display: grid;
-  min-height: 240px;
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  overflow: auto;
 }
 
 .archive-loading :deep(.arco-spin-children) {
+  width: 100%;
+  min-height: 100%;
   display: grid;
+  align-content: start;
   gap: 16px;
+  padding: 12px 16px 16px;
 }
 
 .folder-tree {
@@ -1082,9 +1127,8 @@ watch(
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .selector-row {
-    align-items: flex-start;
-    flex-direction: column;
+  .archive-toolbar :deep(.page-toolbar__filters) {
+    flex-wrap: wrap;
   }
 }
 
