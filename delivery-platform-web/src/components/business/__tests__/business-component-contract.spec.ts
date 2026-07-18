@@ -31,7 +31,7 @@ describe('business component adoption contract', () => {
 
     expect(source('src/views/system/config.vue')).toContain('<StickyActionBar')
     expect(source('src/views/project/ProjectDrawer.vue')).toContain('<StickyActionBar')
-    expect(source('src/views/project/index.vue')).toContain('<StatCard')
+    expect(source('src/views/project/index.vue')).toContain('class="summary-band"')
     expect(source('src/views/archive/index.vue')).toContain('<StatCard')
   })
 

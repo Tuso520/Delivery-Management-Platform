@@ -80,6 +80,9 @@
     "notFound": "页面不存在"
   },
   "shell": {
+    "productTitle": "交付管理中心",
+    "notifications": "通知",
+    "breadcrumb": "面包屑",
     "userFallback": "用户",
     "toggleSidebar": "切换侧边栏",
     "closeMenu": "关闭菜单",
@@ -719,15 +722,36 @@
     "scope": { "mine": "我的项目", "all": "全部项目" },
     "archiveView": { "normal": "返回正常项目", "archived": "归档项目" },
     "archiveHint": "归档后项目将从正常列表移入归档列表。",
-    "sections": { "basic": "项目基本信息", "classification": "项目分类", "planContract": "阶段、计划与合同", "planProgress": "计划、阶段与进度", "riskArchive": "风险与档案", "riskNotes": "风险与备注" },
-    "progress": { "update": "修改进度", "currentStage": "当前阶段", "newStage": "新阶段", "percent": "项目进度（%）", "reason": "变更说明", "rollbackRequired": "阶段回退时必填", "updated": "项目进度已更新" },
+    "sections": {
+      "basic": "项目基本信息",
+      "classification": "项目分类",
+      "planContract": "阶段、计划与合同",
+      "planProgress": "计划、阶段与进度",
+      "riskArchive": "风险与档案",
+      "riskNotes": "风险与备注"
+    },
+    "progress": {
+      "update": "修改进度",
+      "currentStage": "当前阶段",
+      "newStage": "新阶段",
+      "percent": "项目进度（%）",
+      "reason": "变更说明",
+      "rollbackRequired": "阶段回退时必填",
+      "updated": "项目进度已更新"
+    },
     "loadFailed": "项目列表加载失败",
     "summaryAria": "项目概览统计",
     "stats": {
       "total": "项目总数",
       "active": "进行中",
+      "activeProjects": "进行中的项目",
       "accepted": "已验收",
-      "highRisk": "高风险"
+      "acceptedThisYear": "今年验收项目",
+      "highRisk": "高风险",
+      "totalAmount": "项目金额（CNY）",
+      "acceptedAmount": "确收金额（CNY）",
+      "tenThousands": "万",
+      "items": "个"
     },
     "searchPlaceholder": "搜索项目名称、项目编号或客户名称",
     "refresh": "刷新",
@@ -739,6 +763,7 @@
     "columns": {
       "name": "项目名称",
       "region": "区域",
+      "customerType": "客户类型",
       "classification": "项目分类",
       "archivedBy": "归档人",
       "archivedAt": "归档时间",

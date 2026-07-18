@@ -22,7 +22,13 @@ export const PROJECT_DELIVERY_STAGES = [
 
 export type ProjectDeliveryStage = (typeof PROJECT_DELIVERY_STAGES)[number];
 
-export const PROJECT_SUMMARY_FILTERS = ['ALL', 'ACTIVE', 'ACCEPTED', 'HIGH_RISK'] as const;
+export const PROJECT_SUMMARY_FILTERS = [
+  'ALL',
+  'ACTIVE',
+  'ACCEPTED',
+  'ACCEPTED_THIS_YEAR',
+  'HIGH_RISK',
+] as const;
 
 export type ProjectSummaryFilter = (typeof PROJECT_SUMMARY_FILTERS)[number];
 

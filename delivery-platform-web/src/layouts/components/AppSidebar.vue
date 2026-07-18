@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { IconMenuFold, IconMenuUnfold } from '@arco-design/web-vue/es/icon'
 import type { MenuItem } from '@/store/permission'
 import { resolveMenuIcon } from '@/utils/menu-icons'
 
@@ -10,14 +11,8 @@ const props = defineProps<{
   menus: MenuItem[]
   menuReady: boolean
 }>()
-
+const emit = defineEmits<{ select: [path: string]; toggle: [] }>()
 const { t } = useI18n()
-
-const emit = defineEmits<{
-  select: [path: string]
-  toggle: []
-}>()
-
 const defaultOpenKeys = computed(() =>
   props.menus
     .filter((menu) => menu.children?.some((child) => child.path === props.activeMenu))
@@ -27,38 +22,22 @@ const defaultOpenKeys = computed(() =>
 function resolveMenuTitle(menu: MenuItem): string {
   return t(menu.title)
 }
-
-function handleMenuClick(key: string): void {
-  emit('select', key)
-}
 </script>
 
 <template>
   <aside class="layout-aside" :class="{ collapsed }">
-    <div
-      class="logo-section"
-      tabindex="0"
-      role="button"
-      :aria-label="t('shell.toggleSidebar')"
-      @click="emit('toggle')"
-      @keyup.enter="emit('toggle')"
-    >
-      <img src="@/assets/logo.svg" alt="" class="logo-mark" />
-      <span v-if="!collapsed" class="logo-text">{{ t('app.title') }}</span>
-    </div>
-
     <a-menu
-      v-if="menus.length > 0"
+      v-if="menus.length"
       :selected-keys="[activeMenu]"
       :default-open-keys="defaultOpenKeys"
       :collapsed="collapsed"
       :accordion="true"
       auto-open-selected
       class="sidebar-menu"
-      @menu-item-click="handleMenuClick"
+      @menu-item-click="emit('select', $event)"
     >
       <template v-for="menu in menus" :key="menu.name">
-        <a-sub-menu v-if="menu.children && menu.children.length > 0" :key="menu.path">
+        <a-sub-menu v-if="menu.children?.length" :key="menu.path">
           <template #icon>
             <component :is="resolveMenuIcon(menu.icon)" />
           </template>
@@ -72,7 +51,6 @@ function handleMenuClick(key: string): void {
             {{ resolveMenuTitle(child) }}
           </a-menu-item>
         </a-sub-menu>
-
         <a-menu-item v-else :key="menu.path">
           <template #icon>
             <component :is="resolveMenuIcon(menu.icon)" />
@@ -81,9 +59,16 @@ function handleMenuClick(key: string): void {
         </a-menu-item>
       </template>
     </a-menu>
-
     <div v-else-if="!collapsed" class="menu-empty">
-      <span>{{ menuReady ? t('shell.noAccessibleMenu') : t('shell.loadingMenu') }}</span>
+      {{ menuReady ? t('shell.noAccessibleMenu') : t('shell.loadingMenu') }}
+    </div>
+    <div class="collapse-area">
+      <a-button type="text" class="collapse-button" @click="emit('toggle')">
+        <template #icon>
+          <IconMenuUnfold v-if="collapsed" /><IconMenuFold v-else />
+        </template>
+        <span class="sr-only">{{ t('shell.toggleSidebar') }}</span>
+      </a-button>
     </div>
   </aside>
 </template>
@@ -91,108 +76,84 @@ function handleMenuClick(key: string): void {
 <style scoped lang="scss">
 .layout-aside {
   position: relative;
-  width: 240px;
-  height: 100dvh;
+  width: 180px;
+  height: 100%;
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   background: var(--color-bg-2);
-  border-right: 1px solid var(--color-border-2);
   transition: width 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-
   &.collapsed {
-    width: 64px;
+    width: 48px;
   }
 }
-
-.logo-section {
-  position: relative;
-  z-index: 1;
-  height: 48px;
-  min-height: 48px;
-  padding: 0 18px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  cursor: pointer;
-  color: var(--color-text-1);
-  border-bottom: 1px solid var(--color-border-2);
-}
-
-.logo-section:focus-visible {
-  outline: 2px solid rgb(var(--primary-6));
-  outline-offset: -2px;
-}
-
-.logo-mark {
-  width: 28px;
-  height: 28px;
-  flex: 0 0 auto;
-}
-
-.logo-text {
-  overflow: hidden;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 22px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .sidebar-menu {
   width: auto;
   flex: 1;
-  padding: 8px;
-  overflow-x: hidden;
-  overflow-y: auto;
+  padding: 4px 8px;
+  overflow: auto;
   border-right: 0;
 }
-
 .sidebar-menu :deep(.arco-menu-inner) {
   padding: 0;
 }
-
 .sidebar-menu :deep(.arco-menu-item),
 .sidebar-menu :deep(.arco-menu-inline-header) {
   height: 40px;
   margin: 2px 0;
-  border-radius: 4px;
-  font-weight: 500;
+  border-radius: 2px;
+  font-weight: 400;
 }
-
+.sidebar-menu :deep(.arco-menu-icon) {
+  font-size: 18px;
+}
 .sidebar-menu :deep(.arco-menu-selected) {
-  background: rgb(var(--primary-1));
-  color: rgb(var(--primary-6));
+  background: #f2f3f5;
+  color: #165dff;
 }
-
-.menu-empty {
-  min-height: 160px;
-  padding: 34px 20px;
+.sidebar-menu :deep(.arco-menu-item:hover),
+.sidebar-menu :deep(.arco-menu-inline-header:hover) {
+  background: #f7f8fa;
+  color: #165dff;
+}
+.collapse-area {
+  padding: 12px;
   display: flex;
-  align-items: center;
-  flex-direction: column;
-  gap: 12px;
-  color: var(--color-text-3);
+  justify-content: flex-end;
+}
+.collapse-button {
+  width: 24px;
+  height: 24px;
+  border-radius: 2px;
+  background: #f7f8fa;
+  color: #4e5969;
+}
+.menu-empty {
+  padding: 32px 16px;
+  color: #86909c;
   font-size: 12px;
-  line-height: 1.6;
   text-align: center;
 }
-
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
 @media (max-width: 900px) {
   .layout-aside {
     position: fixed;
-    inset: 0 auto 0 0;
+    inset: 60px auto 0 0;
     z-index: 1001;
-    width: 240px !important;
+    width: 180px !important;
     transform: translateX(0);
-
     &.collapsed {
       transform: translateX(-100%);
     }
   }
 }
-
 @media (prefers-reduced-motion: reduce) {
   .layout-aside {
     transition: none;

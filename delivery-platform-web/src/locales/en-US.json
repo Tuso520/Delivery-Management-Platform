@@ -80,6 +80,9 @@
     "notFound": "Not Found"
   },
   "shell": {
+    "productTitle": "Delivery Management Center",
+    "notifications": "Notifications",
+    "breadcrumb": "Breadcrumb",
     "userFallback": "User",
     "toggleSidebar": "Toggle sidebar",
     "closeMenu": "Close menu",
@@ -719,15 +722,36 @@
     "scope": { "mine": "My Projects", "all": "All Projects" },
     "archiveView": { "normal": "Active Projects", "archived": "Archived Projects" },
     "archiveHint": "Archived projects move from the active list to the archive list.",
-    "sections": { "basic": "Project Information", "classification": "Project Classification", "planContract": "Stage, Plan, and Contract", "planProgress": "Plan, Stage, and Progress", "riskArchive": "Risk and Archive", "riskNotes": "Risk and Notes" },
-    "progress": { "update": "Update Progress", "currentStage": "Current Stage", "newStage": "New Stage", "percent": "Progress (%)", "reason": "Change Note", "rollbackRequired": "Required when moving to an earlier stage", "updated": "Project progress updated" },
+    "sections": {
+      "basic": "Project Information",
+      "classification": "Project Classification",
+      "planContract": "Stage, Plan, and Contract",
+      "planProgress": "Plan, Stage, and Progress",
+      "riskArchive": "Risk and Archive",
+      "riskNotes": "Risk and Notes"
+    },
+    "progress": {
+      "update": "Update Progress",
+      "currentStage": "Current Stage",
+      "newStage": "New Stage",
+      "percent": "Progress (%)",
+      "reason": "Change Note",
+      "rollbackRequired": "Required when moving to an earlier stage",
+      "updated": "Project progress updated"
+    },
     "loadFailed": "Failed to load projects",
     "summaryAria": "Project overview statistics",
     "stats": {
       "total": "Total Projects",
       "active": "Active",
+      "activeProjects": "Active Projects",
       "accepted": "Accepted",
-      "highRisk": "High Risk"
+      "acceptedThisYear": "Accepted This Year",
+      "highRisk": "High Risk",
+      "totalAmount": "Project Amount (CNY)",
+      "acceptedAmount": "Accepted Amount (CNY)",
+      "tenThousands": "×10k",
+      "items": ""
     },
     "searchPlaceholder": "Search project name, code or customer",
     "refresh": "Refresh",
@@ -739,6 +763,7 @@
     "columns": {
       "name": "Project Name",
       "region": "Region",
+      "customerType": "Customer Type",
       "classification": "Classification",
       "archivedBy": "Archived By",
       "archivedAt": "Archived At",

@@ -15,6 +15,7 @@ import { menuItems, resolveRouteTitle, settingItems } from '@/router'
 import type { LocaleCode } from '@/store/locale'
 import AppHeader from './components/AppHeader.vue'
 import AppSidebar from './components/AppSidebar.vue'
+import AppBreadcrumb from './components/AppBreadcrumb.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -24,9 +25,7 @@ const permissionStore = usePermissionStore()
 const localeStore = useLocaleStore()
 const isMobile = ref(false)
 const { t } = useI18n()
-
 permissionStore.setMenus(menuItems)
-
 const sidebarCollapsed = computed(() => appStore.sidebarCollapsed)
 const filteredMenus = computed(() => permissionStore.filteredMenus)
 const filteredSettings = computed(() =>
@@ -37,146 +36,122 @@ const filteredSettings = computed(() =>
   ),
 )
 const activeMenu = computed(() => resolveActiveMenuPath(filteredMenus.value, route.path))
+const activeGroup = computed(() =>
+  filteredMenus.value.find((menu) =>
+    menu.children?.some((child) => child.path === activeMenu.value),
+  ),
+)
+const groupTitle = computed(() => (activeGroup.value ? t(activeGroup.value.title) : ''))
 const userName = computed(
   () => userStore.userInfo?.realName || userStore.userInfo?.username || t('shell.userFallback'),
 )
 const pageTitle = computed(() => resolveRouteTitle(route.meta, localeStore.currentLocale))
-
 watchEffect(() => {
   document.title = `${pageTitle.value} - ${t('app.title')}`
 })
-
 function handleMenuSelect(path: string): void {
   void router.push(path)
   if (isMobile.value) appStore.setSidebarCollapsed(true)
 }
-
-function handleSettingSelect(path: string): void {
-  void router.push(path)
-}
-
-function handleLanguageChange(locale: LocaleCode): void {
-  localeStore.setLocale(locale)
-}
-
-function handleThemeChange(theme: ThemeMode): void {
-  appStore.setTheme(theme)
-}
-
-function handleLogout(): void {
-  void userStore.logout()
-}
-
 function syncViewport(): void {
   isMobile.value = window.innerWidth <= 900
   if (isMobile.value) appStore.setSidebarCollapsed(true)
 }
-
 onMounted(() => {
   syncViewport()
   window.addEventListener('resize', syncViewport)
 })
-
-onBeforeUnmount(() => {
-  window.removeEventListener('resize', syncViewport)
-})
+onBeforeUnmount(() => window.removeEventListener('resize', syncViewport))
 </script>
 
 <template>
   <div class="basic-layout">
-    <AppSidebar
-      :collapsed="sidebarCollapsed"
-      :active-menu="activeMenu"
-      :menus="filteredMenus"
-      :menu-ready="userStore.profileInitialized"
-      @select="handleMenuSelect"
-      @toggle="appStore.toggleSidebar"
+    <AppHeader
+      :user-name="userName"
+      :current-locale="localeStore.currentLocale"
+      :theme-mode="appStore.theme"
+      :settings="filteredSettings"
+      @toggle-sidebar="appStore.toggleSidebar"
+      @setting-select="router.push"
+      @language-change="(value: LocaleCode) => localeStore.setLocale(value)"
+      @theme-change="(value: ThemeMode) => appStore.setTheme(value)"
+      @logout="userStore.logout"
     />
-    <button
-      v-if="isMobile && !sidebarCollapsed"
-      class="drawer-backdrop"
-      type="button"
-      :aria-label="t('shell.closeMenu')"
-      @click="appStore.setSidebarCollapsed(true)"
-    />
-
-    <div class="layout-content">
-      <AppHeader
-        :sidebar-collapsed="sidebarCollapsed"
-        :page-title="pageTitle"
-        :user-name="userName"
-        :current-locale="localeStore.currentLocale"
-        :theme-mode="appStore.theme"
-        :settings="filteredSettings"
-        @toggle-sidebar="appStore.toggleSidebar"
-        @setting-select="handleSettingSelect"
-        @language-change="handleLanguageChange"
-        @theme-change="handleThemeChange"
-        @logout="handleLogout"
+    <div class="layout-body">
+      <AppSidebar
+        :collapsed="sidebarCollapsed"
+        :active-menu="activeMenu"
+        :menus="filteredMenus"
+        :menu-ready="userStore.profileInitialized"
+        @select="handleMenuSelect"
+        @toggle="appStore.toggleSidebar"
       />
-
-      <main class="layout-main">
-        <router-view />
-      </main>
+      <button
+        v-if="isMobile && !sidebarCollapsed"
+        class="drawer-backdrop"
+        type="button"
+        :aria-label="t('shell.closeMenu')"
+        @click="appStore.setSidebarCollapsed(true)"
+      />
+      <div class="layout-content">
+        <AppBreadcrumb :group-title="groupTitle" :page-title="pageTitle" />
+        <main class="layout-main">
+          <router-view />
+        </main>
+      </div>
     </div>
   </div>
 </template>
 
-<style scoped lang="scss">
+<style scoped>
 .basic-layout {
   width: 100%;
   height: 100dvh;
   min-height: 100dvh;
   display: flex;
-  flex-direction: row;
-  overflow: hidden;
-  background: var(--color-fill-1);
-}
-
-.layout-content {
-  width: 0;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  flex: 1 1 auto;
-  display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: #f7f8fa;
+  font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
-
+.layout-body {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+}
+.layout-content {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 13px;
+  overflow: hidden;
+}
 .layout-main {
   width: 100%;
   min-width: 0;
   min-height: 0;
-  flex: 1 1 auto;
-  padding: 20px;
+  flex: 1;
+  margin-top: 6px;
   overflow: auto;
-  background: var(--color-fill-1);
+  border-radius: 4px;
 }
-
 .drawer-backdrop {
   position: fixed;
-  inset: 0;
+  inset: 60px 0 0;
   z-index: 1000;
   border: 0;
   background: rgba(29, 33, 41, 0.42);
 }
-
-@media (min-width: 1440px) {
-  .layout-main {
-    padding: 24px;
-  }
-}
-
-@media (max-width: 1024px) {
-  .layout-main {
-    padding: 16px;
-  }
-}
-
-@media (max-width: 600px) {
-  .layout-main {
+@media (max-width: 900px) {
+  .layout-content {
     padding: 12px;
+  }
+}
+@media (max-width: 600px) {
+  .layout-content {
+    padding: 8px;
   }
 }
 </style>

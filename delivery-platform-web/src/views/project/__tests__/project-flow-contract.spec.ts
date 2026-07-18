@@ -5,14 +5,16 @@ import { describe, expect, it } from 'vitest'
 const source = (file: string) => readFileSync(resolve(process.cwd(), file), 'utf8')
 
 describe('project overview and overlay contract', () => {
-  it('renders scoped search, semantic summary cards and a normal list without actions', () => {
+  it('renders scoped search, the Figma five-metric band and a normal list without actions', () => {
     const overview = source('src/views/project/index.vue')
     expect(overview).toContain("t('projects.scope.mine')")
     expect(overview).toContain("t('projects.scope.all')")
+    expect(overview).toContain("id: 'amount'")
     expect(overview).toContain("tone: 'blue'")
     expect(overview).toContain("tone: 'green'")
-    expect(overview).toContain("tone: 'cyan'")
+    expect(overview).toContain("tone: 'orange'")
     expect(overview).toContain("tone: 'red'")
+    expect(overview).toContain("filter: 'ACCEPTED_THIS_YEAR'")
     expect(overview).toContain('displayName(project)')
     expect(overview).toContain('v-if="archivedView"')
     expect(overview).toContain(':title="t(\'common.action\')"')
@@ -24,10 +26,11 @@ describe('project overview and overlay contract', () => {
     const table = source('src/components/business/BusinessTable.vue')
     expect(overview).toContain(':scroll="{ x: \'max-content\' }"')
     expect(overview).toContain('size="large"')
-    expect(overview).toContain(':width="224" fixed="left"')
+    expect(overview).toContain(':width="103" fixed="left"')
     expect(overview).toContain("join(' · ') || '—'")
-    expect(overview).toContain("fractionDigits: 2")
-    expect(overview).toContain('table-layout: auto !important')
+    expect(overview).toContain('fractionDigits: 2')
+    expect(overview).toContain('table-layout: fixed !important')
+    expect(overview).toContain('preserve-column-widths')
     expect(overview).toContain('flex-wrap: nowrap')
     expect(table).toContain('batchSize: 20')
     expect(table).toContain("size: 'large'")
@@ -37,7 +40,7 @@ describe('project overview and overlay contract', () => {
     expect(table).toContain("emit('pageChange', nextPage)")
     expect(table).not.toContain('<a-pagination')
     expect(overview).not.toContain(':width="280"')
-    expect(overview).not.toContain(':width="160"')
+    expect(overview).toContain(':width="152"')
   })
 
   it('shows a password visibility control on the login form', () => {
