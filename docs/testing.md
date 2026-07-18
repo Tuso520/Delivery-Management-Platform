@@ -100,7 +100,7 @@ UI E2E 默认使用稳定版 Chrome。开发机可通过 `PLAYWRIGHT_BROWSER_CHA
 
 ## 2026-07-16 当前验收状态
 
-当前仓库扫描范围为 633 个受版本控制或待纳入版本控制的文件。实现规模包括：前端 178 个 TypeScript/Vue 文件、32 个 `views/` Vue 文件、26 个运行时 API 文件和 41 个测试文件；后端 238 个 TypeScript 文件、28 个 Controller、40 个 Service、28 个 Module、165 个 HTTP 路由和 30 个 Prisma migration。发布迁移另有 3 个 Prisma 验收脚本，分别核对应用迁移与校验和、二次 seed 全库表计数以及 MinIO/File Worker/Outbox Worker 一致性。
+当前仓库扫描范围为 634 个受版本控制或待纳入版本控制的文件。实现规模包括：前端 179 个 TypeScript/Vue 文件、32 个 `views/` Vue 文件、26 个运行时 API 文件和 41 个测试文件；后端 238 个 TypeScript 文件、28 个 Controller、40 个 Service、28 个 Module、165 个 HTTP 路由和 30 个 Prisma migration。发布迁移另有 3 个 Prisma 验收脚本，分别核对应用迁移与校验和、二次 seed 全库表计数以及 MinIO/File Worker/Outbox Worker 一致性。
 
 本地自动化结果：
 

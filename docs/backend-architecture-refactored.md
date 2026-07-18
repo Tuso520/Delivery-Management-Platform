@@ -482,11 +482,14 @@ GET /dashboard/recent-activities
   total: number
   active: number
   accepted: number
+  acceptedThisYear: number
   highRisk: number
+  totalConvertedAmount: number | null
+  acceptedConvertedAmount: number | null
 }
 ```
 
-所有统计必须按数据范围计算。
+所有统计必须按数据范围计算。两个折算金额字段仅向具有 `project:view_financial` 的用户返回；今年验收按当前 UTC 自然年统计，不改变历史 `accepted` 与 `highRisk` 字段的兼容语义。
 
 ### 我的待办
 
@@ -618,7 +621,10 @@ scope=mine|all
   total
   active
   accepted
+  acceptedThisYear
   highRisk
+  totalConvertedAmount
+  acceptedConvertedAmount
 }
 ```
 

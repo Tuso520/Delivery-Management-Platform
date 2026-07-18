@@ -84,8 +84,9 @@ async function projectTableMetrics(page: Page) {
     const actionBox = actions.getBoundingClientRect()
     return {
       actionsRightAligned: panelBox.right - actionBox.right <= 17,
-      allCellsNoWrap: [...panel.querySelectorAll<HTMLElement>('.arco-table-th, .arco-table-td')]
-        .every((cell) => getComputedStyle(cell).whiteSpace === 'nowrap'),
+      allCellsNoWrap: [
+        ...panel.querySelectorAll<HTMLElement>('.arco-table-th, .arco-table-td'),
+      ].every((cell) => getComputedStyle(cell).whiteSpace === 'nowrap'),
       hasHorizontalOverflow: viewport.scrollWidth > viewport.clientWidth,
       hasVerticalOverflow: viewport.scrollHeight > viewport.clientHeight,
       rowHeight: Math.round(firstCell.getBoundingClientRect().height),
@@ -107,7 +108,9 @@ async function firstColumnHorizontalMovement(page: Page): Promise<number> {
   })
 }
 
-test('project overview uses wheel loading, large rows and a fixed project-name column', async ({ page }) => {
+test('project overview uses wheel loading, large rows and a fixed project-name column', async ({
+  page,
+}) => {
   await login(page)
   const scenario = createProjectScenario()
   await page.route(
@@ -130,7 +133,7 @@ test('project overview uses wheel loading, large rows and a fixed project-name c
     allCellsNoWrap: true,
     hasHorizontalOverflow: true,
     hasVerticalOverflow: true,
-    tableLayout: 'auto',
+    tableLayout: 'fixed',
     tableMinWidthCoversViewport: true,
   })
   expect(metrics.rowHeight).toBeGreaterThanOrEqual(42)
@@ -160,8 +163,9 @@ test('archive template table keeps its declared column widths stable', async ({ 
     const snapshots: string[] = []
     for (let frame = 0; frame < 20; frame += 1) {
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-      const headerWidths = [...table.querySelectorAll<HTMLElement>('thead .arco-table-th')]
-        .map((header) => Math.round(header.getBoundingClientRect().width))
+      const headerWidths = [...table.querySelectorAll<HTMLElement>('thead .arco-table-th')].map(
+        (header) => Math.round(header.getBoundingClientRect().width),
+      )
       snapshots.push(`${Math.round(table.getBoundingClientRect().width)}:${headerWidths.join(',')}`)
     }
 

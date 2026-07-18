@@ -127,6 +127,7 @@ describe('ProjectService', () => {
         delete: jest.fn(),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         count: jest.fn(),
+        aggregate: jest.fn().mockResolvedValue({ _sum: { convertedAmount: null } }),
       },
       projectMember: { upsert: jest.fn() },
       projectArchiveFile: { count: jest.fn().mockResolvedValue(0) },
@@ -251,10 +252,7 @@ describe('ProjectService', () => {
     prisma.project.count.mockResolvedValue(0);
     prisma.project.findMany.mockResolvedValue([]);
 
-    await service.findAll(
-      { keyword: 'AC', lifecycleStatus: 'ACTIVE', scope: 'all' },
-      publicActor,
-    );
+    await service.findAll({ keyword: 'AC', lifecycleStatus: 'ACTIVE', scope: 'all' }, publicActor);
 
     expect(prisma.project.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -791,13 +789,17 @@ describe('ProjectService', () => {
       .mockResolvedValueOnce(8)
       .mockResolvedValueOnce(4)
       .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(2)
       .mockResolvedValueOnce(1);
 
     await expect(service.getSummary(publicActor, 'all')).resolves.toEqual({
       total: 8,
       active: 4,
       accepted: 2,
+      acceptedThisYear: 2,
       highRisk: 1,
+      totalConvertedAmount: null,
+      acceptedConvertedAmount: null,
     });
     expect(projectAccess.buildProjectWhere).toHaveBeenCalledWith('user-1');
     expect(prisma.project.count).toHaveBeenNthCalledWith(2, {
@@ -807,6 +809,24 @@ describe('ProjectService', () => {
           { status: 'ACTIVE', archivedAt: null },
         ],
       },
+    });
+  });
+
+  it('returns scoped CNY summary amounts only with financial permission', async () => {
+    prisma.project.count
+      .mockResolvedValueOnce(8)
+      .mockResolvedValueOnce(4)
+      .mockResolvedValueOnce(3)
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(1);
+    prisma.project.aggregate
+      .mockResolvedValueOnce({ _sum: { convertedAmount: new Prisma.Decimal('28565000') } })
+      .mockResolvedValueOnce({ _sum: { convertedAmount: new Prisma.Decimal('15683000') } });
+
+    await expect(service.getSummary(financialActor, 'mine')).resolves.toMatchObject({
+      totalConvertedAmount: 28565000,
+      acceptedConvertedAmount: 15683000,
+      acceptedThisYear: 2,
     });
   });
 

@@ -330,7 +330,9 @@ export class ProjectService {
           { ...project, countryName: countryNames.get(project.countryCode) ?? null },
           actor,
         ),
-        archivedByUser: project.archivedBy ? (archivedUserById.get(project.archivedBy) ?? null) : null,
+        archivedByUser: project.archivedBy
+          ? (archivedUserById.get(project.archivedBy) ?? null)
+          : null,
       })),
       page,
       pageSize,
@@ -338,11 +340,17 @@ export class ProjectService {
     };
   }
 
-  async getSummary(actor: ProjectActor, requestedScope: ProjectScope = 'mine'): Promise<{
+  async getSummary(
+    actor: ProjectActor,
+    requestedScope: ProjectScope = 'mine',
+  ): Promise<{
     total: number;
     active: number;
     accepted: number;
+    acceptedThisYear: number;
     highRisk: number;
+    totalConvertedAmount: number | null;
+    acceptedConvertedAmount: number | null;
   }> {
     const userId = this.getUserId(actor);
     if (!userId) {
@@ -351,25 +359,55 @@ export class ProjectService {
     const allowedScope = await this.projectAccess.buildProjectWhere(userId);
     const scope = this.buildRequestedScope(allowedScope, requestedScope, userId);
     const activeScope: Prisma.ProjectWhereInput = { AND: [scope, { archivedAt: null }] };
-    const [total, active, accepted, highRisk] = await Promise.all([
-      this.prisma.project.count({ where: activeScope }),
-      this.prisma.project.count({
-        where: {
-          AND: [activeScope, this.buildSummaryFilterWhere('ACTIVE')],
-        },
-      }),
-      this.prisma.project.count({
-        where: {
-          AND: [activeScope, this.buildSummaryFilterWhere('ACCEPTED')],
-        },
-      }),
-      this.prisma.project.count({
-        where: {
-          AND: [activeScope, this.buildSummaryFilterWhere('HIGH_RISK')],
-        },
-      }),
-    ]);
-    return { total, active, accepted, highRisk };
+    const currentYear = new Date().getUTCFullYear();
+    const acceptedThisYearWhere: Prisma.ProjectWhereInput = {
+      actualAcceptanceAt: {
+        gte: new Date(Date.UTC(currentYear, 0, 1)),
+        lt: new Date(Date.UTC(currentYear + 1, 0, 1)),
+      },
+    };
+    const [total, active, accepted, acceptedThisYear, highRisk, totalAmount, acceptedAmount] =
+      await Promise.all([
+        this.prisma.project.count({ where: activeScope }),
+        this.prisma.project.count({
+          where: {
+            AND: [activeScope, this.buildSummaryFilterWhere('ACTIVE')],
+          },
+        }),
+        this.prisma.project.count({
+          where: {
+            AND: [activeScope, this.buildSummaryFilterWhere('ACCEPTED')],
+          },
+        }),
+        this.prisma.project.count({ where: { AND: [activeScope, acceptedThisYearWhere] } }),
+        this.prisma.project.count({
+          where: {
+            AND: [activeScope, this.buildSummaryFilterWhere('HIGH_RISK')],
+          },
+        }),
+        this.prisma.project.aggregate({
+          where: activeScope,
+          _sum: { convertedAmount: true },
+        }),
+        this.prisma.project.aggregate({
+          where: { AND: [activeScope, this.buildSummaryFilterWhere('ACCEPTED')] },
+          _sum: { convertedAmount: true },
+        }),
+      ]);
+    const canViewFinancial = this.canViewFinancial(actor);
+    return {
+      total,
+      active,
+      accepted,
+      acceptedThisYear,
+      highRisk,
+      totalConvertedAmount: canViewFinancial
+        ? (totalAmount._sum.convertedAmount?.toNumber() ?? 0)
+        : null,
+      acceptedConvertedAmount: canViewFinancial
+        ? (acceptedAmount._sum.convertedAmount?.toNumber() ?? 0)
+        : null,
+    };
   }
 
   async findById(id: string, actor?: ProjectActor, auditContext?: ProjectReadAuditContext) {
@@ -1219,8 +1257,8 @@ export class ProjectService {
   private hasPermission(actor: ProjectActor | undefined, permission: string): boolean {
     return Boolean(
       actor &&
-        typeof actor !== 'string' &&
-        (this.isSuperAdmin(actor) || actor.permissions.includes(permission)),
+      typeof actor !== 'string' &&
+      (this.isSuperAdmin(actor) || actor.permissions.includes(permission)),
     );
   }
 
@@ -1259,6 +1297,15 @@ export class ProjectService {
     }
     if (filter === 'ACCEPTED') {
       return { actualAcceptanceAt: { not: null } };
+    }
+    if (filter === 'ACCEPTED_THIS_YEAR') {
+      const year = new Date().getUTCFullYear();
+      return {
+        actualAcceptanceAt: {
+          gte: new Date(Date.UTC(year, 0, 1)),
+          lt: new Date(Date.UTC(year + 1, 0, 1)),
+        },
+      };
     }
     return { riskLevel: { in: [RiskLevel.High, RiskLevel.Critical] } };
   }
@@ -1456,7 +1503,8 @@ export class ProjectService {
     const canViewFinancial = this.canViewFinancial(actor);
     const canViewContract = this.canViewContract(actor);
     const canViewAcceptance = this.canViewAcceptance(actor);
-    const salesOwner = project.members?.find((member) => member.projectRole === 'SALES_OWNER')?.user ?? null;
+    const salesOwner =
+      project.members?.find((member) => member.projectRole === 'SALES_OWNER')?.user ?? null;
     const projectManager =
       project.members?.find((member) => member.projectRole === 'PROJECT_MANAGER')?.user ?? null;
     const visibleExpectedAcceptanceAt = canViewAcceptance ? expectedAcceptanceAt : null;
@@ -1499,5 +1547,4 @@ export class ProjectService {
       canPermanentDelete: Boolean(project.archivedAt) && this.isSuperAdmin(actor),
     };
   }
-
 }

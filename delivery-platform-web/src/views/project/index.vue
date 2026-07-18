@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Message } from '@arco-design/web-vue'
+import {
+  IconCheckCircle,
+  IconFolder,
+  IconRefresh,
+  IconSearch,
+  IconSettings,
+  IconSafe,
+} from '@arco-design/web-vue/es/icon'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useMutation } from '@tanstack/vue-query'
@@ -12,7 +20,6 @@ import {
   BusinessTable,
   PageContainer,
   PageToolbar,
-  StatCard,
 } from '@/components/business'
 import {
   useArchivedProjectListQuery,
@@ -58,34 +65,64 @@ const pagination = computed(() => ({
   pageSize: activeQuery.value.data.value?.pageSize ?? 20,
   total: activeQuery.value.data.value?.total ?? 0,
 }))
-const summary = computed(
-  () => summaryQuery.data.value ?? { total: 0, active: 0, accepted: 0, highRisk: 0 },
-)
+const summary = computed(() => ({
+  total: 0,
+  active: 0,
+  accepted: 0,
+  acceptedThisYear: 0,
+  highRisk: 0,
+  totalConvertedAmount: null,
+  acceptedConvertedAmount: null,
+  ...(summaryQuery.data.value ?? {}),
+}))
 const viewMode = computed<ProjectViewMode>(() => (archivedView.value ? 'archived' : scope.value))
-const summaryCards = computed(() => [
+const summaryMetrics = computed(() => [
   {
+    id: 'amount',
+    icon: IconSafe,
+    label: t('projects.stats.totalAmount'),
+    value: amountInTenThousands(summary.value.totalConvertedAmount),
+    unit: summary.value.totalConvertedAmount === null ? '' : t('projects.stats.tenThousands'),
+    tone: 'purple',
+    filter: null,
+  },
+  {
+    id: 'total',
+    icon: IconFolder,
     key: 'ALL' as const,
     label: t('projects.stats.total'),
-    value: summary.value.total,
-    tone: 'blue' as const,
+    value: String(summary.value.total),
+    unit: t('projects.stats.items'),
+    tone: 'green',
+    filter: 'ALL' as const,
   },
   {
+    id: 'active',
+    icon: IconSettings,
     key: 'ACTIVE' as const,
-    label: t('projects.stats.active'),
-    value: summary.value.active,
-    tone: 'green' as const,
+    label: t('projects.stats.activeProjects'),
+    value: String(summary.value.active),
+    unit: t('projects.stats.items'),
+    tone: 'orange',
+    filter: 'ACTIVE' as const,
   },
   {
-    key: 'ACCEPTED' as const,
-    label: t('projects.stats.accepted'),
-    value: summary.value.accepted,
-    tone: 'cyan' as const,
+    id: 'accepted',
+    icon: IconCheckCircle,
+    label: t('projects.stats.acceptedThisYear'),
+    value: String(summary.value.acceptedThisYear),
+    unit: t('projects.stats.items'),
+    tone: 'blue',
+    filter: 'ACCEPTED_THIS_YEAR' as const,
   },
   {
-    key: 'HIGH_RISK' as const,
-    label: t('projects.stats.highRisk'),
-    value: summary.value.highRisk,
-    tone: 'red' as const,
+    id: 'acceptedAmount',
+    icon: IconSafe,
+    label: t('projects.stats.acceptedAmount'),
+    value: amountInTenThousands(summary.value.acceptedConvertedAmount),
+    unit: summary.value.acceptedConvertedAmount === null ? '' : t('projects.stats.tenThousands'),
+    tone: 'red',
+    filter: null,
   },
 ])
 
@@ -213,6 +250,10 @@ function acceptance(project: Project): string {
 function amount(value?: number | string | null): string {
   return formatAdaptiveNumber(value, { placeholder: '—', fractionDigits: 2 })
 }
+function amountInTenThousands(value?: number | null): string {
+  if (value === null || value === undefined) return '—'
+  return formatAdaptiveNumber(value / 10_000, { placeholder: '—', fractionDigits: 1 })
+}
 function memberName(project: Project, role: string): string {
   return project.members?.find((item) => item.projectRole === role)?.user?.realName || '—'
 }
@@ -229,17 +270,28 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
 
 <template>
   <PageContainer class="project-page" gap="compact" :scrollable="false">
-    <section class="summary-grid">
-      <StatCard
-        v-for="card in summaryCards"
-        :key="card.key"
-        :label="card.label"
-        :value="card.value"
-        :tone="card.tone"
-        interactive
-        :active="!archivedView && filters.summaryFilter === card.key"
-        @select="selectSummary(card.key)"
-      />
+    <section class="summary-band" :aria-label="t('projects.summaryAria')">
+      <button
+        v-for="metric in summaryMetrics"
+        :key="metric.id"
+        type="button"
+        class="summary-metric"
+        :class="[
+          `summary-metric--${metric.tone}`,
+          {
+            'is-active': metric.filter && !archivedView && filters.summaryFilter === metric.filter,
+          },
+        ]"
+        :disabled="!metric.filter"
+        @click="metric.filter && selectSummary(metric.filter)"
+      >
+        <span class="metric-icon"><component :is="metric.icon" /></span>
+        <span class="metric-copy">
+          <span class="metric-label">{{ metric.label }}</span>
+          <span class="metric-value">{{ metric.value }} <small>{{ metric.unit }}</small></span>
+        </span>
+      </button>
+      <a-spin v-if="summaryQuery.isFetching.value" class="summary-loading" :size="18" />
     </section>
 
     <section class="project-list-panel">
@@ -261,13 +313,17 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
               @press-enter="search"
             />
             <a-button type="primary" class="search-button" @click="search">
-              {{ t('common.search') }}
+              <template #icon>
+                <IconSearch />
+              </template>{{ t('common.search') }}
             </a-button>
           </div>
         </template>
         <template #actions>
           <a-button :loading="activeQuery.isFetching.value" @click="refresh">
-            {{ t('projects.refresh') }}
+            <template #icon>
+              <IconRefresh />
+            </template>{{ t('projects.refresh') }}
           </a-button>
           <a-button v-if="!archivedView" type="primary" @click="router.push('/projects/create')">
             {{ t('projects.create') }}
@@ -278,13 +334,18 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
       <BusinessTable
         :data="projects"
         :loading="activeQuery.isFetching.value"
+        :error="activeQuery.error.value"
+        :empty-title="t('projects.empty')"
+        :retry-label="t('common.retry')"
         :pagination="pagination"
         :scroll="{ x: 'max-content' }"
         size="large"
         row-key="id"
+        preserve-column-widths
+        @retry="refresh"
         @page-change="changePage"
       >
-        <a-table-column :title="t('projects.columns.name')" :width="224" fixed="left">
+        <a-table-column :title="t('projects.columns.name')" :width="103" fixed="left">
           <template #cell="{ record: row }">
             <a-tooltip :content="displayName(row)">
               <button class="project-link" @click="openProject(row)">
@@ -293,34 +354,22 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
             </a-tooltip>
           </template>
         </a-table-column>
-        <a-table-column :title="t('projects.columns.region')" :min-width="140">
+        <a-table-column :title="t('projects.columns.region')" :width="157">
           <template #cell="{ record: row }">
             <span class="nowrap">{{ region(row) }}</span>
           </template>
         </a-table-column>
         <a-table-column
           v-if="!archivedView"
-          :title="t('projects.columns.classification')"
-          :min-width="150"
+          :title="t('projects.columns.customerType')"
+          :width="104"
         >
           <template #cell="{ record: row }">
-            <a-space :wrap="false">
-              <a-tag
-                v-if="row.projectType"
-                :color="configuredColor('projectType', row.projectType)"
-              >
-                {{
-                  configuredOption('projectTypes', row.projectType)?.label || row.projectType
-                }}
-              </a-tag><a-tag
-                v-if="row.contractType"
-                :color="configuredColor('contractType', row.contractType)"
-              >
-                {{
-                  configuredOption('contractTypes', row.contractType)?.label || row.contractType
-                }}
-              </a-tag><span v-if="!row.projectType && !row.contractType">—</span>
-            </a-space>
+            <a-tag v-if="row.projectType" :color="configuredColor('projectType', row.projectType)">
+              {{
+                configuredOption('projectTypes', row.projectType)?.label || row.projectType
+              }}
+            </a-tag><span v-else>—</span>
           </template>
         </a-table-column>
         <a-table-column v-else :title="t('projects.createForm.projectType')" :min-width="104">
@@ -331,13 +380,29 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
         <a-table-column
           v-if="archivedView"
           :title="t('projects.createForm.contractType')"
-          :min-width="96"
+          :width="92"
           data-index="contractType"
         />
         <a-table-column
           v-if="!archivedView"
+          :title="t('projects.createForm.contractType')"
+          :width="92"
+        >
+          <template #cell="{ record: row }">
+            <a-tag
+              v-if="row.contractType"
+              :color="configuredColor('contractType', row.contractType)"
+            >
+              {{
+                configuredOption('contractTypes', row.contractType)?.label || row.contractType
+              }}
+            </a-tag><span v-else>—</span>
+          </template>
+        </a-table-column>
+        <a-table-column
+          v-if="!archivedView"
           :title="t('projects.columns.currentStage')"
-          :min-width="104"
+          :width="172"
         >
           <template #cell="{ record: row }">
             <a-tag :color="stageColor(row)">
@@ -345,11 +410,7 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
             </a-tag>
           </template>
         </a-table-column>
-        <a-table-column
-          v-if="!archivedView"
-          :title="t('projects.columns.progress')"
-          :min-width="160"
-        >
+        <a-table-column v-if="!archivedView" :title="t('projects.columns.progress')" :width="142">
           <template #cell="{ record: row }">
             <div class="progress">
               <a-progress
@@ -360,11 +421,7 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
             </div>
           </template>
         </a-table-column>
-        <a-table-column
-          v-if="!archivedView"
-          :title="t('projects.columns.signedAt')"
-          :min-width="104"
-        >
+        <a-table-column v-if="!archivedView" :title="t('projects.columns.signedAt')" :width="107">
           <template #cell="{ record: row }">
             {{ date(row.contractSignedAt) }}
           </template>
@@ -372,7 +429,7 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
         <a-table-column
           v-if="!archivedView"
           :title="t('projects.columns.acceptanceAt')"
-          :min-width="104"
+          :width="107"
         >
           <template #cell="{ record: row }">
             {{ acceptance(row) }}
@@ -381,8 +438,7 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
         <a-table-column
           v-if="!archivedView"
           :title="t('projects.columns.contractAmount')"
-          :min-width="192"
-          align="right"
+          :width="152"
         >
           <template #cell="{ record: row }">
             <span class="money-cell">
@@ -395,8 +451,7 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
         <a-table-column
           v-if="!archivedView"
           :title="t('projects.columns.convertedCny')"
-          :min-width="160"
-          align="right"
+          :width="144"
         >
           <template #cell="{ record: row }">
             <span class="money-cell">
@@ -422,12 +477,12 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
             {{ row.archivedAt ? row.archivedAt.slice(0, 16).replace('T', ' ') : '—' }}
           </template>
         </a-table-column>
-        <a-table-column :title="t('projects.columns.sales')" :min-width="96">
+        <a-table-column :title="t('projects.columns.sales')" :width="100" align="center">
           <template #cell="{ record: row }">
             {{ memberName(row, 'SALES_OWNER') }}
           </template>
         </a-table-column>
-        <a-table-column :title="t('projects.columns.manager')" :min-width="96">
+        <a-table-column :title="t('projects.columns.manager')" :width="110" align="center">
           <template #cell="{ record: row }">
             {{ memberName(row, 'PROJECT_MANAGER') }}
           </template>
@@ -491,51 +546,110 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
 .project-page {
   --project-border: #e5e6eb;
   height: 100%;
+  padding: 13px;
   overflow: hidden;
+  border-radius: 4px;
+  background: #fff;
   color: #1d2129;
-  font-family: Inter, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
 
-.summary-grid {
+.summary-band {
+  position: relative;
+  min-height: 100px;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border-top: 1px solid var(--project-border);
+  border-bottom: 1px solid var(--project-border);
 }
 
-:deep(.summary-grid .stat-card) {
-  min-height: 72px;
+.summary-metric {
+  position: relative;
+  min-width: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  border-color: var(--project-border);
-  border-radius: 2px;
-  background: #fff;
+  gap: 12px;
+  padding: 16px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
 }
-
-:deep(.summary-grid .stat-card--interactive:hover) {
-  border-color: rgb(var(--primary-3));
-  background: rgb(var(--primary-1));
+.summary-metric:not(:last-of-type)::after {
+  content: '';
+  position: absolute;
+  top: 20px;
+  right: 0;
+  width: 1px;
+  height: 60px;
+  background: var(--project-border);
 }
-
-:deep(.summary-grid .stat-card--active) {
-  border-color: var(--project-border);
-  border-top: 2px solid rgb(var(--stat-color));
-  background: rgb(var(--primary-1));
-  box-shadow: none;
+.summary-metric:not(:disabled) {
+  cursor: pointer;
 }
-
-:deep(.summary-grid .stat-card__label) {
-  color: #4e5969;
-  font-size: 14px;
-  font-weight: 500;
+.summary-metric:not(:disabled):hover,
+.summary-metric.is-active {
+  background: #f7f8fa;
 }
-
-:deep(.summary-grid .stat-card__value) {
-  margin: 0 0 0 12px;
-  font-size: 30px;
+.metric-icon {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #eceefb;
+  color: #6f7cff;
+  font-size: 24px;
+  box-shadow: inset 0 0 0 5px rgba(255, 255, 255, 0.55);
+}
+.summary-metric--green .metric-icon {
+  background: #e6f7ed;
+  color: #00b42a;
+}
+.summary-metric--orange .metric-icon {
+  background: #fff3e0;
+  color: #ff8a00;
+}
+.summary-metric--blue .metric-icon {
+  background: #e3f2fd;
+  color: #168cff;
+}
+.summary-metric--red .metric-icon {
+  background: #ffebed;
+  color: #f53f3f;
+}
+.metric-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.metric-label {
+  overflow: hidden;
+  color: #999ea8;
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.metric-value {
+  color: #1d2129;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 26px;
   font-variant-numeric: tabular-nums;
-  line-height: 1;
+  white-space: nowrap;
+}
+.metric-value small {
+  font-size: 12px;
+  font-weight: 400;
+}
+.summary-loading {
+  position: absolute;
+  top: 8px;
+  right: 8px;
 }
 
 .project-list-panel {
@@ -544,15 +658,15 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
   flex: 1;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--project-border);
-  border-radius: 2px;
+  border: 0;
+  border-radius: 0;
   background: #fff;
 }
 
 .project-toolbar {
   flex: 0 0 auto;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--project-border);
+  min-height: 44px;
+  padding: 6px 0;
 }
 
 .project-toolbar :deep(.page-toolbar__filters) {
@@ -568,40 +682,48 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
 }
 
 .scope-field {
-  width: 128px;
-  flex: 0 0 128px;
+  width: 125px;
+  flex: 0 0 125px;
 }
 
 .scope-field :deep(.arco-select) {
   width: 100%;
 }
+.scope-field :deep(.arco-select-view-single),
+.search-group :deep(.arco-input-wrapper) {
+  background: #f2f3f5;
+  border-color: #f2f3f5;
+}
 
 .keyword-input {
-  width: min(320px, 34vw);
+  width: 273px;
 }
 
 .search-group {
   display: flex;
   align-items: stretch;
+  gap: 8px;
 }
 
 .search-group :deep(.keyword-input .arco-input-wrapper) {
-  border-radius: 2px 0 0 2px;
+  border-radius: 2px;
 }
 
 .search-button {
-  margin-left: -1px;
-  border-radius: 0 2px 2px 0 !important;
+  min-width: 82px;
+  margin-left: 0;
+  border-radius: 2px !important;
 }
 
 .project-link {
   display: block;
-  max-width: 240px;
+  max-width: 100%;
   overflow: hidden;
   border: 0;
   background: none;
-  color: rgb(var(--primary-6));
-  font-weight: 500;
+  color: #165dff;
+  font-size: 13px;
+  font-weight: 400;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -611,20 +733,24 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
 .nowrap {
   white-space: nowrap;
 }
-
 .money-cell {
   display: inline-block;
   min-width: max-content;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-
 .progress {
   display: grid;
-  grid-template-columns: minmax(80px, 1fr) 42px;
+  grid-template-columns: 62px 34px;
   align-items: center;
+  justify-content: center;
   gap: 8px;
+  color: #4e5969;
+  font-size: 12px;
   white-space: nowrap;
+}
+.progress :deep(.arco-progress-line-bar) {
+  height: 6px !important;
 }
 
 :deep(.project-list-panel > .business-table) {
@@ -633,14 +759,16 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
   flex: 1;
   flex-direction: column;
   overflow: hidden;
+  border: 1px solid var(--project-border);
 }
-
+:deep(.project-list-panel .business-table__viewport) {
+  max-height: none;
+}
 :deep(.project-list-panel .business-table__viewport > .arco-table) {
   width: max-content;
   min-width: 100%;
   overflow: visible;
 }
-
 :deep(.project-list-panel .arco-table-container) {
   width: max-content;
   min-width: 100%;
@@ -648,37 +776,83 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
   border: 0;
   border-radius: 0;
 }
-
 :deep(.project-list-panel .arco-table-element) {
   width: max-content;
   min-width: 100%;
-  table-layout: auto !important;
+  table-layout: fixed !important;
 }
-
 :deep(.project-list-panel .arco-table-th) {
-  height: 42px;
-  background: #f7f8fa;
-  color: #4e5969;
+  height: 44px;
+  background: #f2f3f5;
+  color: #1d2129;
+  font-size: 13px;
   font-weight: 500;
 }
-
+:deep(.project-list-panel .arco-table-td) {
+  height: 44px;
+  color: #1d2129;
+  font-size: 13px;
+}
 :deep(.project-list-panel .arco-table-th),
 :deep(.project-list-panel .arco-table-td) {
-  padding-right: 16px;
-  padding-left: 16px;
+  padding: 0 23px;
   border-color: var(--project-border);
   white-space: nowrap;
 }
-
+:deep(.project-list-panel .arco-table-tr:nth-child(even) .arco-table-td) {
+  background: #f7f8fa;
+}
 :deep(.project-list-panel .arco-table-tr:hover .arco-table-td) {
   background: #e8f3ff;
+}
+:deep(.project-list-panel .arco-tag) {
+  height: 18px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 9px;
+  color: #fff;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 :deep(.project-page .arco-btn),
 :deep(.project-page .arco-input-wrapper),
-:deep(.project-page .arco-select-view-single),
-:deep(.project-page .arco-tag) {
+:deep(.project-page .arco-select-view-single) {
   border-radius: 2px;
+}
+
+@media (max-width: 1100px) {
+  .summary-band {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .summary-metric:nth-of-type(3)::after {
+    display: none;
+  }
+}
+
+@media (max-width: 700px) {
+  .project-page {
+    padding: 8px;
+    overflow: auto;
+  }
+  .summary-band {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .summary-metric {
+    padding: 12px;
+  }
+  .summary-metric:nth-of-type(3)::after {
+    display: block;
+  }
+  .summary-metric:nth-of-type(even)::after {
+    display: none;
+  }
+  .project-toolbar :deep(.page-toolbar__filters) {
+    flex-wrap: wrap;
+  }
+  .keyword-input {
+    width: min(273px, calc(100vw - 42px));
+  }
 }
 
 :global(.project-detail-modal .arco-modal) {
@@ -693,19 +867,5 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
 
 :global(.project-detail-modal .arco-modal-body) {
   padding: 0;
-}
-
-@media (max-width: 900px) {
-  .summary-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .keyword-input {
-    width: 100%;
-  }
-
-  .project-toolbar :deep(.page-toolbar__filters) {
-    flex-wrap: wrap;
-  }
 }
 </style>
