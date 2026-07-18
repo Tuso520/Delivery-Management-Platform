@@ -11,7 +11,9 @@ const { t } = useI18n()
     <span class="separator">/</span>
     <span v-if="groupTitle" class="muted">{{ groupTitle }}</span>
     <span v-if="groupTitle" class="separator">/</span>
-    <h1 class="page-title">{{ pageTitle }}</h1>
+    <h1 class="page-title">
+      {{ pageTitle }}
+    </h1>
   </nav>
 </template>
 
