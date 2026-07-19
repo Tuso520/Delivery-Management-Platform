@@ -24,6 +24,7 @@
     "review": "文件审核",
     "system": "系统设置",
     "systemCurrency": "币种与汇率",
+    "systemFields": "字段配置",
     "systemApproval": "审批配置",
     "systemIntegration": "接口集成",
     "systemLogs": "操作日志",

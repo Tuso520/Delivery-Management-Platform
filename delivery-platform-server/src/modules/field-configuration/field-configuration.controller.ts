@@ -26,7 +26,7 @@ export class FieldConfigurationController {
   @Get('categories/:categoryId/values')
   @RequirePermissions({ all: ['field_setting:manage'] })
   findValues(@Param('categoryId') categoryId: string, @Query() query: QueryFieldValuesDto) {
-    return this.service.findValues(categoryId, query.keyword);
+    return this.service.findValues(categoryId, query);
   }
 
   @Post('categories/:categoryId/values')

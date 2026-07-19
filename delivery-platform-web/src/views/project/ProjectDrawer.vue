@@ -25,6 +25,7 @@ import type {
 } from '@/types/project'
 import { RISK_LEVEL_OPTIONS, STAGE_OPTIONS } from '@/types/project'
 import { projectDictionaryColor, type ProjectDictionaryKind } from '@/utils/project-dictionaries'
+import ProjectPaymentPlan from './components/ProjectPaymentPlan.vue'
 
 const props = defineProps<{ mode: 'create' | 'edit'; projectId?: string }>()
 const emit = defineEmits<{ saved: []; cancel: [] }>()
@@ -423,6 +424,14 @@ async function save(saveAsDraft = false): Promise<void> {
           />
         </FormGrid>
       </FormSection>
+
+      <ProjectPaymentPlan
+        v-if="isEdit && projectQuery.data.value"
+        :project-id="projectQuery.data.value.id"
+        :contract-amount="formData.contractAmount"
+        :contract-currency="formData.contractCurrency"
+        :converted-currency="formData.baseCurrency"
+      />
     </a-form>
 
     <StickyActionBar>

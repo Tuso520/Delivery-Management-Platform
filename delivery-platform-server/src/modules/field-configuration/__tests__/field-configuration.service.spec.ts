@@ -35,6 +35,22 @@ function item(overrides: Record<string, unknown> = {}) {
 }
 
 describe('FieldConfigurationService', () => {
+  it('returns field values with server-side pagination', async () => {
+    const prisma = createPrismaMock();
+    prisma.dictionaryCategory.findFirst.mockResolvedValue(category);
+    prisma.dictionaryItem.count.mockResolvedValue(12);
+    prisma.dictionaryItem.findMany.mockResolvedValue([item()]);
+    const service = new FieldConfigurationService(prisma as unknown as PrismaService);
+
+    await expect(service.findValues(category.id, { page: 2, pageSize: 10, keyword: '中' }))
+      .resolves.toMatchObject({ page: 2, pageSize: 10, total: 12, items: [{ name: '中国' }] });
+    expect(prisma.dictionaryItem.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      skip: 10,
+      take: 10,
+      where: expect.objectContaining({ categoryId: category.id }),
+    }));
+  });
+
   it('requires codes for country and currency values', async () => {
     const prisma = createPrismaMock();
     prisma.dictionaryCategory.findFirst.mockResolvedValue(category);
@@ -57,8 +73,8 @@ describe('FieldConfigurationService', () => {
     prisma.dictionaryItem.findFirst.mockResolvedValue(null);
     prisma.dictionaryItem.create.mockImplementation(({ data }) => item({ ...data, itemCode: null }));
     const service = new FieldConfigurationService(prisma as unknown as PrismaService);
-    await service.create(category.id, { name: '试点项目', sortOrder: 80 }, 'admin-id');
-    expect(prisma.dictionaryItem.create).toHaveBeenCalledWith({ data: expect.objectContaining({ itemLabel: '试点项目', createdBy: 'admin-id', updatedBy: 'admin-id' }) });
+    await service.create(category.id, { name: '试点项目', sortOrder: 80, status: 'Inactive' }, 'admin-id');
+    expect(prisma.dictionaryItem.create).toHaveBeenCalledWith({ data: expect.objectContaining({ itemLabel: '试点项目', status: 'Inactive', createdBy: 'admin-id', updatedBy: 'admin-id' }) });
   });
 
   it('rejects deleting a referenced custom value and suggests preserving it', async () => {
@@ -91,5 +107,18 @@ describe('FieldConfigurationService', () => {
     prisma.dictionaryItem.findFirst.mockResolvedValue(null);
     const service = new FieldConfigurationService(prisma as unknown as PrismaService);
     await expect(service.update('item-id', { name: '中国', code: 'CHN', sortOrder: 10 }, 'admin-id')).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('does not allow the edit modal to deactivate a referenced value', async () => {
+    const prisma = createPrismaMock();
+    prisma.dictionaryItem.findUnique.mockResolvedValue(item());
+    prisma.dictionaryItem.findFirst.mockResolvedValue(null);
+    prisma.project.count.mockResolvedValue(1);
+    const service = new FieldConfigurationService(prisma as unknown as PrismaService);
+
+    await expect(service.update('item-id', {
+      name: '中国', code: 'CN', sortOrder: 10, status: 'Inactive',
+    }, 'admin-id')).rejects.toThrow('该字段值已被业务引用，不能停用');
+    expect(prisma.dictionaryItem.update).not.toHaveBeenCalled();
   });
 });

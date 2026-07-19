@@ -9,9 +9,9 @@ import { settingItems, shellRoutes } from '@/router'
 const routerSource = readFileSync(resolve(process.cwd(), 'src/router/index.ts'), 'utf8')
 
 describe('settings navigation contract', () => {
-  it('exposes one unified settings center behind the header settings surface', () => {
-    expect(settingItems.map((item) => item.title)).toEqual(['routes.settings'])
-    expect(settingItems.map((item) => item.path)).toEqual(['/settings'])
+  it('exposes settings center and the Figma field configuration page', () => {
+    expect(settingItems.map((item) => item.title)).toEqual(['routes.settings', 'menu.systemFields'])
+    expect(settingItems.map((item) => item.path)).toEqual(['/settings', '/settings/fields'])
   })
 
   it('uses target view/manage permission codes for every setting page', () => {
@@ -23,8 +23,9 @@ describe('settings navigation contract', () => {
     expect(permissions).toMatchObject({
       SettingsCenter: [
         'settings:view', 'currency:view', 'notification_rule:view', 'approval_config:view',
-        'audit_log:view', 'system_setting:view', 'integration:view', 'field_setting:manage',
+        'audit_log:view', 'system_setting:view', 'integration:view',
       ],
+      FieldSettings: ['field_setting:manage'],
       Currency: ['currency:view', 'currency:manage'],
       Notifications: ['notification_rule:view', 'notification_rule:manage'],
       Approvals: ['approval_config:view', 'approval_config:manage'],
@@ -36,7 +37,9 @@ describe('settings navigation contract', () => {
 
   it('checks legacy setting route permissions before forwarding to center anchors', () => {
     const group = shellRoutes.find((route) => route.name === 'SettingsGroup')
-    const legacyRoutes = (group?.children ?? []).filter((route) => route.name !== 'SettingsCenter')
+    const legacyRoutes = (group?.children ?? []).filter(
+      (route) => !['SettingsCenter', 'FieldSettings'].includes(String(route.name)),
+    )
 
     expect(legacyRoutes).toHaveLength(6)
     expect(legacyRoutes.every((route) => route.redirect === undefined)).toBe(true)

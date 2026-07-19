@@ -312,10 +312,22 @@ export const shellRoutes: RouteRecordRaw[] = [
           icon: 'Setting',
           permissions: [
             'settings:view', 'currency:view', 'notification_rule:view', 'approval_config:view',
-            'audit_log:view', 'system_setting:view', 'integration:view', 'field_setting:manage',
+            'audit_log:view', 'system_setting:view', 'integration:view',
           ],
           menu: true,
           order: 10,
+        },
+      },
+      {
+        path: 'fields',
+        name: 'FieldSettings',
+        component: () => import('@/views/system/FieldSettings.vue'),
+        meta: {
+          title: 'menu.systemFields',
+          icon: 'List',
+          permissions: ['field_setting:manage'],
+          menu: true,
+          order: 20,
         },
       },
       {

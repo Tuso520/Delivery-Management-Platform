@@ -19,7 +19,6 @@ import {
 import { usePermission } from '@/composables/usePermission'
 import { queryKeys } from '@/query/keys'
 import type { SystemSettings } from '@/types/settings'
-import FieldSettings from './FieldSettings.vue'
 
 function createDefaults(): SystemSettings {
   return {
@@ -289,8 +288,6 @@ watch(
           {{ t('systemConfig.timeReadOnly') }}
         </p>
       </SectionCard>
-
-      <FieldSettings v-if="hasPermission('field_setting:manage')" />
 
       <StickyActionBar
         :message="canManage ? t('systemConfig.auditHint') : t('systemConfig.readOnlySaveHint')"
