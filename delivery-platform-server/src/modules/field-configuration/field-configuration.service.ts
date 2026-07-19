@@ -4,7 +4,12 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 
 import { PrismaService } from '../../database/prisma.service';
 
-import type { CreateFieldValueDto, FieldValueSortItemDto, UpdateFieldValueDto } from './dto/field-configuration.dto';
+import type {
+  CreateFieldValueDto,
+  FieldValueSortItemDto,
+  QueryFieldValuesDto,
+  UpdateFieldValueDto,
+} from './dto/field-configuration.dto';
 
 export const FIELD_CATEGORY_CODES = [
   'COUNTRY', 'CUSTOMER_TYPE', 'CONTRACT_TYPE', 'PRODUCT_TYPE', 'PROJECT_KEYWORD',
@@ -29,16 +34,36 @@ export class FieldConfigurationService {
     });
   }
 
-  async findValues(categoryId: string, keyword?: string) {
+  async findValues(categoryId: string, query: QueryFieldValuesDto = {}) {
     await this.assertCategory(categoryId);
-    const items = await this.prisma.dictionaryItem.findMany({
-      where: {
-        categoryId,
-        ...(keyword ? { OR: [{ itemLabel: { contains: keyword } }, { itemCode: { contains: keyword } }] } : {}),
-      },
-      orderBy: [{ sortOrder: 'asc' }, { itemLabel: 'asc' }],
-    });
-    return items.map((item) => this.toValue(item));
+    const page = query.page ?? 1;
+    const pageSize = Math.min(query.pageSize ?? 10, 100);
+    const where = {
+      categoryId,
+      ...(query.keyword
+        ? {
+            OR: [
+              { itemLabel: { contains: query.keyword } },
+              { itemCode: { contains: query.keyword } },
+            ],
+          }
+        : {}),
+    };
+    const [total, items] = await this.prisma.$transaction([
+      this.prisma.dictionaryItem.count({ where }),
+      this.prisma.dictionaryItem.findMany({
+        where,
+        orderBy: [{ sortOrder: 'asc' }, { itemLabel: 'asc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ]);
+    return {
+      items: items.map((item) => this.toValue(item)),
+      page,
+      pageSize,
+      total,
+    };
   }
 
   async findEnabled(code: string) {
@@ -73,6 +98,7 @@ export class FieldConfigurationService {
         itemLabel: dto.name,
         itemCode: dto.code ?? null,
         sortOrder: dto.sortOrder ?? 0,
+        status: dto.status ?? 'Active',
         createdBy: actorId,
         updatedBy: actorId,
       },
@@ -89,9 +115,19 @@ export class FieldConfigurationService {
       throw new ConflictException('系统初始化字段的稳定编码不可修改');
     }
     if (codeChanged) await this.assertNotReferenced(current, '修改编码');
+    if (dto.status === 'Inactive' && current.status !== 'Inactive') {
+      await this.assertNotReferenced(current, '停用');
+    }
     const item = await this.prisma.dictionaryItem.update({
       where: { id },
-      data: { itemLabel: dto.name, itemCode: dto.code ?? null, itemValue: dto.code ?? current.itemValue, sortOrder: dto.sortOrder ?? current.sortOrder, updatedBy: actorId },
+      data: {
+        itemLabel: dto.name,
+        itemCode: dto.code ?? null,
+        itemValue: dto.code ?? current.itemValue,
+        sortOrder: dto.sortOrder ?? current.sortOrder,
+        status: dto.status ?? current.status,
+        updatedBy: actorId,
+      },
     });
     return this.toValue(item);
   }
@@ -109,7 +145,11 @@ export class FieldConfigurationService {
     const count = await this.prisma.dictionaryItem.count({ where: { categoryId, id: { in: items.map((item) => item.id) } } });
     if (count !== items.length) throw new BadRequestException('批量排序包含不属于当前分类的字段值');
     await this.prisma.$transaction(items.map((item) => this.prisma.dictionaryItem.update({ where: { id: item.id }, data: { sortOrder: item.sortOrder, updatedBy: actorId } })));
-    return this.findValues(categoryId);
+    const sorted = await this.prisma.dictionaryItem.findMany({
+      where: { categoryId },
+      orderBy: [{ sortOrder: 'asc' }, { itemLabel: 'asc' }],
+    });
+    return sorted.map((item) => this.toValue(item));
   }
 
   async getReferenceStatus(id: string): Promise<ReferenceStatus> {

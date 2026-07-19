@@ -511,7 +511,7 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
     <BusinessDrawer
       v-model:visible="editorDrawerVisible"
       :title="drawerMode === 'create' ? t('projects.create') : t('projects.edit')"
-      size="xl"
+      :width="944"
       :footer="false"
     >
       <ProjectDrawer
@@ -526,7 +526,7 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
     <BusinessModal
       v-model:visible="detailModalVisible"
       class="project-detail-modal"
-      :width="800"
+      :width="944"
       :footer="false"
       :closable="false"
     >

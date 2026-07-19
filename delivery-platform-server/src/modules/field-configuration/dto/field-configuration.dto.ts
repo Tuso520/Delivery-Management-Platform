@@ -16,11 +16,13 @@ import {
   ValidateNested,
 } from 'class-validator';
 
+import { PaginationDto } from '../../../common/dto/pagination.dto';
+
 const trim = ({ value }: { value: unknown }) => typeof value === 'string' ? value.trim() : value;
 const upperOptional = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim().toUpperCase() || undefined : value;
 
-export class QueryFieldValuesDto {
+export class QueryFieldValuesDto extends PaginationDto {
   @ApiPropertyOptional()
   @IsOptional()
   @Transform(trim)
@@ -51,6 +53,11 @@ export class CreateFieldValueDto {
   @Min(0)
   @Max(999999)
   sortOrder?: number;
+
+  @ApiPropertyOptional({ enum: ['Active', 'Inactive'], default: 'Active' })
+  @IsOptional()
+  @IsIn(['Active', 'Inactive'])
+  status?: 'Active' | 'Inactive';
 }
 
 export class UpdateFieldValueDto extends CreateFieldValueDto {}

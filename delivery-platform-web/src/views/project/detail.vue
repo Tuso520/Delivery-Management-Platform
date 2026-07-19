@@ -14,6 +14,7 @@ import { PROJECT_DELIVERY_STAGES, STAGE_OPTIONS } from '@/types/project'
 import { arcoConfirm } from '@/utils/arco-dialog'
 import { PROJECT_STAGE_COLORS, projectDictionaryColor, type ProjectDictionaryKind } from '@/utils/project-dictionaries'
 import { localizeProjectRisk, localizeProjectStage, localizeProjectStatus } from '@/utils/project-localization'
+import ProjectPaymentPlan from './components/ProjectPaymentPlan.vue'
 
 const props = defineProps<{ embedded?: boolean; projectId: string }>()
 const emit = defineEmits<{ edit: []; close: []; changed: [] }>()
@@ -216,6 +217,13 @@ function configuredColor(kind: ProjectDictionaryKind, value: string): string {
               </ReadonlyField>
             </FormGrid>
           </FormSection>
+
+          <ProjectPaymentPlan
+            :project-id="project.id"
+            :contract-amount="project.contractAmount"
+            :contract-currency="project.contractCurrency"
+            :converted-currency="project.baseCurrency"
+          />
         </template>
       </a-spin>
     </div>

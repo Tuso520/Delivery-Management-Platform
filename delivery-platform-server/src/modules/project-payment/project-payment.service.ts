@@ -138,7 +138,12 @@ export class ProjectPaymentService {
         paymentName: dto.paymentName,
         paymentType: dto.paymentType,
         dueDate,
-        receivedDate: dto.receivedDate ? new Date(dto.receivedDate) : undefined,
+        receivedDate:
+          dto.receivedDate === undefined
+            ? undefined
+            : dto.receivedDate
+              ? new Date(dto.receivedDate)
+              : null,
         status: this.resolveStatus(originalAmount, receivedOriginalAmount, dueDate?.toISOString()),
         ...amount,
         remark: dto.remark,

@@ -30,6 +30,7 @@ export interface SaveFieldValueDto {
   name: string
   code?: string
   sortOrder?: number
+  status?: FieldValue['status']
 }
 
 export interface FieldReferenceStatus {

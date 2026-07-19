@@ -24,6 +24,7 @@
     "review": "File Review",
     "system": "System Settings",
     "systemCurrency": "Currencies & Rates",
+    "systemFields": "Field Configuration",
     "systemApproval": "Approval Settings",
     "systemIntegration": "Integrations",
     "systemLogs": "Operation Logs",

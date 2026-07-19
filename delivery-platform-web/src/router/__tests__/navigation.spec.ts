@@ -35,11 +35,11 @@ describe('application navigation', () => {
     ])
   })
 
-  it('keeps settings out of the sidebar and exposes one unified settings center', () => {
+  it('keeps settings out of the sidebar and exposes settings plus field configuration', () => {
     expect(menuItems.flatMap((group) => group.children ?? [])).not.toContainEqual(
       expect.objectContaining({ name: 'Currency' }),
     )
-    expect(settingItems.map((item) => item.title)).toEqual(['routes.settings'])
+    expect(settingItems.map((item) => item.title)).toEqual(['routes.settings', 'menu.systemFields'])
   })
 
   it('registers only the canonical project routes', () => {

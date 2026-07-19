@@ -49,7 +49,7 @@ export class CreateProjectPaymentDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsDateString()
-  dueDate?: string;
+  dueDate?: string | null;
 
   @ApiProperty()
   @IsNumber()
@@ -73,7 +73,7 @@ export class CreateProjectPaymentDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsDateString()
-  receivedDate?: string;
+  receivedDate?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional()

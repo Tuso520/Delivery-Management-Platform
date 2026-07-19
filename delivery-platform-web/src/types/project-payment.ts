@@ -3,8 +3,8 @@ export interface ProjectPayment {
   projectId: string
   paymentName: string
   paymentType: string
-  dueDate?: string
-  receivedDate?: string
+  dueDate?: string | null
+  receivedDate?: string | null
   status: string
   originalAmount: number
   originalCurrency: string
@@ -22,11 +22,11 @@ export interface ProjectPaymentPayload {
   projectId: string
   paymentName: string
   paymentType?: string
-  dueDate?: string
+  dueDate?: string | null
   originalAmount: number
   originalCurrency: string
   convertedCurrency: string
   receivedOriginalAmount?: number
-  receivedDate?: string
+  receivedDate?: string | null
   remark?: string
 }
