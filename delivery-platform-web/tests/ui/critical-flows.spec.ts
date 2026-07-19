@@ -301,7 +301,10 @@ test('administrator can create, edit, inspect, progress, archive and restore a p
   await expect(detailDialog.getByRole('heading', { name: '项目详情' })).toBeVisible()
   await expect
     .poll(async () => (await detailDialog.boundingBox())?.width ?? Number.POSITIVE_INFINITY)
-    .toBeLessThanOrEqual(802)
+    .toBeGreaterThanOrEqual(942)
+  await expect
+    .poll(async () => (await detailDialog.boundingBox())?.width ?? 0)
+    .toBeLessThanOrEqual(946)
   const detailBox = await detailDialog.boundingBox()
   const viewport = page.viewportSize()
   expect(detailBox).not.toBeNull()
