@@ -33,7 +33,7 @@ test('administrator can render the settings center and Figma field configuration
   await expect(fieldPage.getByRole('columnheader', { name: '编码' })).toBeVisible()
   await expect(fieldPage.getByRole('columnheader', { name: '状态' })).toBeVisible()
   await fieldPage.getByRole('button', { name: '新增一行' }).click()
-  const fieldDialog = page.getByRole('dialog')
+  const fieldDialog = page.locator('.arco-modal')
   await expect(fieldDialog).toBeVisible()
   await expect(fieldDialog.getByText('字段名称', { exact: true })).toBeVisible()
   await expect(fieldDialog.getByText('字段编码', { exact: true })).toBeVisible()
