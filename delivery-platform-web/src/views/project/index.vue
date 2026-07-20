@@ -350,11 +350,7 @@ function dictionaryStyle(
             <a-select :model-value="viewMode" @change="changeView($event as ProjectViewMode)">
               <a-option value="mine" :label="t('projects.scope.mine')" />
               <a-option value="all" :label="t('projects.scope.all')" />
-              <a-option
-                v-if="archivedView"
-                value="archived"
-                :label="t('projects.archiveView.archived')"
-              />
+              <a-option value="archived" :label="t('projects.archiveView.archived')" />
               <template #arrow-icon>
                 <img class="select-down-icon" :src="selectDownIcon" alt="" />
               </template>
