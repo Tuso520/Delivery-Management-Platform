@@ -4,6 +4,9 @@ allowBuilds:
   '@prisma/engines': set this to true or false
   bcrypt: set this to true or false
   prisma: set this to true or false
+overrides:
+  multer: 2.2.0
+  qs: 6.15.3
 onlyBuiltDependencies:
   - '@nestjs/core'
   - '@prisma/client'

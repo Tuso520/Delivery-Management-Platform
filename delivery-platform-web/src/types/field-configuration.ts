@@ -17,6 +17,8 @@ export interface FieldValue {
   value: string
   name: string
   code: string | null
+  description: string | null
+  metadata: unknown
   sortOrder: number
   status: 'Active' | 'Inactive'
   isSystemDefault: boolean
@@ -29,6 +31,7 @@ export interface FieldValue {
 export interface SaveFieldValueDto {
   name: string
   code?: string
+  description?: string
   sortOrder?: number
   status?: FieldValue['status']
 }

@@ -13,10 +13,10 @@
 ### 验证
 
 - 前端 Vitest 40 个测试文件、174 个用例通过。
-- 后端 Jest 70 个测试套件、492 个用例通过。
+- 后端 Jest 71 个测试套件、507 个用例通过；前端 Vitest 41 个测试文件、190 个用例通过。
 - Prisma Client 按当前 schema 生成成功。
 - 前后端 ESLint（只读模式）、类型检查和生产构建通过，Prisma schema 校验通过。
-- 本地 WSL2 Docker Engine 验收通过：29 个 migration 精确匹配源码及校验和，三组 migrator、二次 seed、真实 API、MySQL、Redis、MinIO、File Worker、Outbox Worker 和 4 个关键浏览器场景全部通过，长期容器重启次数均为 0。
+- 本地 Docker Engine 验收通过：32 个 migration 精确匹配源码及校验和，三组 migrator、二次 seed、真实 API、MySQL、Redis、MinIO、File Worker、Outbox Worker 和字段配置关键浏览器流程全部通过。
 - GitHub 发布仍以同一目标提交的 `integration`、`deploy`、服务器 release id 和就绪检查结果为最终依据。
 
 ## 2026-07-08

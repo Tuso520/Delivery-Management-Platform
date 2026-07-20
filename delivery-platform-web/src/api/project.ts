@@ -16,8 +16,10 @@ import type {
 } from '@/types/project'
 
 export const projectApi = {
-  getConfiguration() {
-    return request.get<ProjectConfiguration>('/projects/configuration')
+  getConfiguration(includeInactive = false) {
+    return includeInactive
+      ? request.get<ProjectConfiguration>('/projects/configuration', { params: { includeInactive: true } })
+      : request.get<ProjectConfiguration>('/projects/configuration')
   },
 
   getList(params: QueryProjectDto) {

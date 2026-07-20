@@ -16,6 +16,8 @@ const selectedCategoryId = ref('')
 const values = ref<FieldValue[]>([])
 const page = ref(1)
 const total = ref(0)
+const keyword = ref('')
+const statusFilter = ref<FieldValue['status'] | ''>('')
 const loadingCategories = ref(false)
 const loadingValues = ref(false)
 const loadError = ref('')
@@ -57,6 +59,8 @@ async function loadCategories(): Promise<void> {
     if (!categories.value.some((item) => item.id === selectedCategoryId.value)) {
       selectedCategoryId.value = categories.value[0]?.id ?? ''
     }
+  } catch (error) {
+    loadError.value = error instanceof Error ? error.message : '字段分类加载失败'
   } finally {
     loadingCategories.value = false
   }
@@ -70,6 +74,8 @@ async function loadValues(): Promise<void> {
     const result = await fieldConfigurationApi.getValues(selectedCategoryId.value, {
       page: page.value,
       pageSize: PAGE_SIZE,
+      keyword: keyword.value.trim() || undefined,
+      status: statusFilter.value || undefined,
     })
     values.value = result.items
     total.value = result.total
@@ -94,6 +100,17 @@ async function selectCategory(id: string): Promise<void> {
 async function changePage(nextPage: number): Promise<void> {
   page.value = nextPage
   await loadValues()
+}
+
+async function applyFilters(): Promise<void> {
+  page.value = 1
+  await loadValues()
+}
+
+async function refresh(): Promise<void> {
+  await loadCategories()
+  await loadValues()
+  Message.success('字段配置已刷新')
 }
 
 function openCreate(): void {
@@ -135,6 +152,12 @@ async function save(): Promise<boolean> {
   }
   saving.value = true
   try {
+    if (editing.value?.status === 'Active' && form.status === 'Inactive') {
+      const reference = await fieldConfigurationApi.getReferenceStatus(editing.value.id)
+      if (reference.referenced) {
+        Message.info(`该字段已被引用 ${reference.total} 次，停用后仅保留历史回显`)
+      }
+    }
     const data: SaveFieldValueDto = {
       name,
       code,
@@ -206,6 +229,32 @@ onMounted(async () => {
       </div>
     </a-spin>
 
+    <div class="field-toolbar" aria-label="字段值查询">
+      <a-input
+        v-model="keyword"
+        allow-clear
+        placeholder="搜索名称或编码"
+        @press-enter="applyFilters"
+        @clear="applyFilters"
+      />
+      <a-button type="primary" @click="applyFilters">
+        查询
+      </a-button>
+      <a-select
+        v-model="statusFilter"
+        allow-clear
+        placeholder="全部状态"
+        @change="applyFilters"
+        @clear="applyFilters"
+      >
+        <a-option value="Active" label="启用" />
+        <a-option value="Inactive" label="停用" />
+      </a-select>
+      <a-button @click="refresh">
+        刷新
+      </a-button>
+    </div>
+
     <BusinessTable
       class="field-value-table"
       :data="values"
@@ -224,7 +273,9 @@ onMounted(async () => {
         <span>{{ record.name }}</span>
       </template>
       <template #code="{ record }">
-        {{ record.code || '—' }}
+        <span class="field-code" :title="record.code || undefined">
+          {{ record.code || '—' }}
+        </span>
       </template>
       <template #status="{ record }">
         <a-tag :color="record.status === 'Active' ? 'green' : 'gray'">
@@ -349,6 +400,15 @@ onMounted(async () => {
   margin-top: 12px;
   border: 1px solid #e5e6eb;
 }
+.field-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding-top: 12px;
+}
+.field-toolbar :deep(.arco-input-wrapper) { width: 260px; }
+.field-toolbar :deep(.arco-select-view) { width: 140px; }
 .field-value-table :deep(.business-table__viewport) { max-height: none; }
 .field-value-table :deep(.arco-table-th),
 .field-value-table :deep(.arco-table-td) {
@@ -368,6 +428,12 @@ onMounted(async () => {
   border: 0;
   border-radius: 2px;
   line-height: 18px;
+}
+.field-code {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .field-footer {
   min-height: 64px;

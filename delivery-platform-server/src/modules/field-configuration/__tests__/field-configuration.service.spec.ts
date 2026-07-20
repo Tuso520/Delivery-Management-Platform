@@ -28,9 +28,9 @@ const category = {
 function item(overrides: Record<string, unknown> = {}) {
   return {
     id: 'item-id', categoryId: category.id, itemValue: 'CN', itemLabel: '中国', itemCode: 'CN',
-    extraData: null, status: 'Active', sortOrder: 10, isSystemDefault: false,
+    description: null, extraData: null, status: 'Active', sortOrder: 10, isSystemDefault: false,
     createdBy: 'admin-id', updatedBy: 'admin-id', createdAt: new Date(), updatedAt: new Date(),
-    category, ...overrides,
+    deletedAt: null, category, ...overrides,
   };
 }
 
@@ -42,12 +42,12 @@ describe('FieldConfigurationService', () => {
     prisma.dictionaryItem.findMany.mockResolvedValue([item()]);
     const service = new FieldConfigurationService(prisma as unknown as PrismaService);
 
-    await expect(service.findValues(category.id, { page: 2, pageSize: 10, keyword: '中' }))
+    await expect(service.findValues(category.id, { page: 2, pageSize: 10, keyword: '中', status: 'Active' }))
       .resolves.toMatchObject({ page: 2, pageSize: 10, total: 12, items: [{ name: '中国' }] });
     expect(prisma.dictionaryItem.findMany).toHaveBeenCalledWith(expect.objectContaining({
       skip: 10,
       take: 10,
-      where: expect.objectContaining({ categoryId: category.id }),
+      where: expect.objectContaining({ categoryId: category.id, status: 'Active', deletedAt: null }),
     }));
   });
 
@@ -77,12 +77,47 @@ describe('FieldConfigurationService', () => {
     expect(prisma.dictionaryItem.create).toHaveBeenCalledWith({ data: expect.objectContaining({ itemLabel: '试点项目', status: 'Inactive', createdBy: 'admin-id', updatedBy: 'admin-id' }) });
   });
 
+  it('restores a soft-deleted value by stable code after its label changed', async () => {
+    const prisma = createPrismaMock();
+    prisma.dictionaryCategory.findFirst.mockResolvedValue({ ...category, categoryCode: 'PROJECT_TYPE' });
+    prisma.dictionaryItem.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(item({ itemLabel: '旧名称', itemCode: 'PILOT', itemValue: 'PILOT', deletedAt: new Date() }));
+    prisma.dictionaryItem.update.mockImplementation(({ data }) => item({ ...data }));
+    const service = new FieldConfigurationService(prisma as unknown as PrismaService);
+
+    await expect(service.create(category.id, {
+      name: '新名称', code: 'PILOT', sortOrder: 80,
+    }, 'admin-id')).resolves.toMatchObject({ name: '新名称', code: 'PILOT', status: 'Active' });
+    expect(prisma.dictionaryItem.create).not.toHaveBeenCalled();
+    expect(prisma.dictionaryItem.update).toHaveBeenCalledWith({
+      where: { id: 'item-id' },
+      data: expect.objectContaining({ itemLabel: '新名称', itemCode: 'PILOT', itemValue: 'PILOT', deletedAt: null }),
+    });
+  });
+
+  it('rejects an ambiguous restore across different soft-deleted records', async () => {
+    const prisma = createPrismaMock();
+    prisma.dictionaryCategory.findFirst.mockResolvedValue({ ...category, categoryCode: 'PROJECT_TYPE' });
+    prisma.dictionaryItem.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(item({ id: 'deleted-by-label', itemLabel: '试点项目', itemCode: 'OLD_CODE', deletedAt: new Date() }))
+      .mockResolvedValueOnce(item({ id: 'deleted-by-code', itemLabel: '旧项目', itemCode: 'PILOT', deletedAt: new Date() }));
+    const service = new FieldConfigurationService(prisma as unknown as PrismaService);
+
+    await expect(service.create(category.id, {
+      name: '试点项目', code: 'PILOT', sortOrder: 80,
+    }, 'admin-id')).rejects.toThrow('字段名称和编码分别属于不同的已删除记录');
+    expect(prisma.dictionaryItem.update).not.toHaveBeenCalled();
+  });
+
   it('rejects deleting a referenced custom value and suggests preserving it', async () => {
     const prisma = createPrismaMock();
     prisma.dictionaryItem.findUnique.mockResolvedValue(item());
     prisma.project.count.mockResolvedValue(2);
     const service = new FieldConfigurationService(prisma as unknown as PrismaService);
-    await expect(service.remove('item-id')).rejects.toThrow('该字段值已被业务引用，不能删除');
+    await expect(service.remove('item-id', 'admin-id')).rejects.toThrow('该字段值已被业务引用，不能删除');
     expect(prisma.dictionaryItem.delete).not.toHaveBeenCalled();
   });
 
@@ -90,15 +125,35 @@ describe('FieldConfigurationService', () => {
     const prisma = createPrismaMock();
     prisma.dictionaryItem.findUnique.mockResolvedValue(item({ isSystemDefault: true }));
     const service = new FieldConfigurationService(prisma as unknown as PrismaService);
-    await expect(service.remove('item-id')).rejects.toThrow('系统初始化字段不可删除，请改为停用');
+    await expect(service.remove('item-id', 'admin-id')).rejects.toThrow('系统初始化字段不可删除，请改为停用');
   });
 
-  it('deletes an unreferenced custom value', async () => {
+  it('soft deletes an unreferenced custom value', async () => {
     const prisma = createPrismaMock();
     prisma.dictionaryItem.findUnique.mockResolvedValue(item());
     const service = new FieldConfigurationService(prisma as unknown as PrismaService);
-    await expect(service.remove('item-id')).resolves.toBeNull();
-    expect(prisma.dictionaryItem.delete).toHaveBeenCalledWith({ where: { id: 'item-id' } });
+    await expect(service.remove('item-id', 'admin-id')).resolves.toBeNull();
+    expect(prisma.dictionaryItem.update).toHaveBeenCalledWith({
+      where: { id: 'item-id' },
+      data: expect.objectContaining({ status: 'Inactive', updatedBy: 'admin-id' }),
+    });
+  });
+
+  it('batch reads only active, non-deleted options in requested order', async () => {
+    const prisma = createPrismaMock();
+    prisma.dictionaryCategory.findMany.mockResolvedValue([{
+      categoryCode: 'COUNTRY',
+      categoryName: '国家',
+      items: [{ id: 'item-id', itemValue: 'CN', itemLabel: '中国', itemCode: 'CN', sortOrder: 10 }],
+    }]);
+    const service = new FieldConfigurationService(prisma as unknown as PrismaService);
+
+    await expect(service.findEnabledBatch(['CURRENCY', 'country', 'COUNTRY'])).resolves.toEqual([
+      { code: 'COUNTRY', name: '国家', values: [{ id: 'item-id', value: 'CN', name: '中国', code: 'CN', sortOrder: 10 }] },
+    ]);
+    expect(prisma.dictionaryCategory.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { categoryCode: { in: ['CURRENCY', 'COUNTRY'] }, status: 'Active' },
+    }));
   });
 
   it('prevents changing stable system default codes', async () => {
@@ -109,16 +164,17 @@ describe('FieldConfigurationService', () => {
     await expect(service.update('item-id', { name: '中国', code: 'CHN', sortOrder: 10 }, 'admin-id')).rejects.toBeInstanceOf(ConflictException);
   });
 
-  it('does not allow the edit modal to deactivate a referenced value', async () => {
+  it('allows a referenced value to be deactivated for new records while preserving history', async () => {
     const prisma = createPrismaMock();
     prisma.dictionaryItem.findUnique.mockResolvedValue(item());
     prisma.dictionaryItem.findFirst.mockResolvedValue(null);
     prisma.project.count.mockResolvedValue(1);
+    prisma.dictionaryItem.update.mockResolvedValue(item({ status: 'Inactive' }));
     const service = new FieldConfigurationService(prisma as unknown as PrismaService);
 
     await expect(service.update('item-id', {
       name: '中国', code: 'CN', sortOrder: 10, status: 'Inactive',
-    }, 'admin-id')).rejects.toThrow('该字段值已被业务引用，不能停用');
-    expect(prisma.dictionaryItem.update).not.toHaveBeenCalled();
+    }, 'admin-id')).resolves.toMatchObject({ status: 'Inactive' });
+    expect(prisma.dictionaryItem.update).toHaveBeenCalled();
   });
 });

@@ -49,6 +49,7 @@ export interface ProjectConfigurationOption {
   value: string
   label: string
   extraData: unknown
+  status: 'Active' | 'Inactive'
 }
 
 export interface ProjectConfiguration {

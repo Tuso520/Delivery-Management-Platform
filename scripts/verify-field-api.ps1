@@ -72,11 +72,13 @@ try {
   $countryOptions = Invoke-RestMethod -Headers $userHeaders -Uri 'http://127.0.0.1:33000/api/v1/field-options/COUNTRY'
   Write-Output "READONLY_STATUS=200 ACTIVE_VALUES=$($countryOptions.data.values.Count)"
   $country = $categories.data | Where-Object categoryCode -eq 'COUNTRY'
-  $countryValues = Invoke-RestMethod -Headers $adminHeaders -Uri "http://127.0.0.1:33000/api/v1/field-config/categories/$($country.id)/values"
-  $cn = $countryValues.data | Where-Object code -eq 'CN'
+  $countryValues = Invoke-RestMethod -Headers $adminHeaders -Uri "http://127.0.0.1:33000/api/v1/field-config/categories/$($country.id)/values?status=Active&keyword=CN"
+  $cn = $countryValues.data.items | Where-Object code -eq 'CN'
   $reference = Invoke-RestMethod -Headers $adminHeaders -Uri "http://127.0.0.1:33000/api/v1/field-config/values/$($cn.id)/reference-status"
   Write-Output "REFERENCE_STATUS=200 REFERENCED=$($reference.data.referenced) TOTAL=$($reference.data.total)"
   try { Invoke-RestMethod -Method Delete -Headers $adminHeaders -Uri "http://127.0.0.1:33000/api/v1/field-config/values/$($cn.id)" | Out-Null } catch { Write-Output "REFERENCED_DELETE_STATUS=$([int]$_.Exception.Response.StatusCode)" }
+  $batch = Invoke-RestMethod -Method Post -Headers $userHeaders -Uri 'http://127.0.0.1:33000/api/v1/field-options/batch' -ContentType 'application/json' -Body (@{ codes = @('COUNTRY', 'CURRENCY') } | ConvertTo-Json)
+  Write-Output "BATCH_OPTIONS_STATUS=200 COUNT=$($batch.data.Count)"
   Invoke-RestMethod -Method Delete -Headers $adminHeaders -Uri $valueUri | Out-Null
   Write-Output 'CUSTOM_DELETE_STATUS=200'
 } finally {

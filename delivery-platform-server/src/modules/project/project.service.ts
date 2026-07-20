@@ -724,7 +724,14 @@ export class ProjectService {
       throw new NotFoundException('项目不存在');
     }
     this.assertProjectRevision(project.revision, dto.revision);
-    await this.projectConfiguration.validate(dto);
+    await this.projectConfiguration.validateUpdate(dto, {
+      projectType: project.projectType ?? undefined,
+      contractType: project.contractType ?? undefined,
+      product: project.product ?? undefined,
+      keywords: Array.isArray(project.keywords)
+        ? project.keywords.filter((keyword): keyword is string => typeof keyword === 'string')
+        : [],
+    });
 
     const updateData: Prisma.ProjectUpdateInput = {};
 

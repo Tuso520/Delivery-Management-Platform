@@ -42,7 +42,7 @@ export function useProjectDetailQuery(projectId: MaybeRefOrGetter<string>) {
 export function useProjectConfigurationQuery() {
   return useQuery({
     queryKey: queryKeys.projects.formOptions(),
-    queryFn: projectApi.getConfiguration,
+    queryFn: () => projectApi.getConfiguration(),
   })
 }
 
@@ -75,6 +75,7 @@ export function useProjectUserOptionsQuery(
 
 export function useProjectFormOptionsQueries(
   includeArchiveTemplates: MaybeRefOrGetter<boolean> = true,
+  includeInactiveConfiguration: MaybeRefOrGetter<boolean> = false,
 ) {
   return useQueries({
     queries: [
@@ -91,8 +92,8 @@ export function useProjectFormOptionsQueries(
         queryFn: languageApi.getList,
       },
       {
-        queryKey: queryKeys.projects.formOptions(),
-        queryFn: projectApi.getConfiguration,
+        queryKey: computed(() => [...queryKeys.projects.formOptions(), { includeInactive: toValue(includeInactiveConfiguration) }]),
+        queryFn: () => projectApi.getConfiguration(toValue(includeInactiveConfiguration)),
       },
       {
         queryKey: queryKeys.projects.userOptions('sales-owner'),

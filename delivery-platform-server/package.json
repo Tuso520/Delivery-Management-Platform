@@ -40,12 +40,6 @@
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
   },
-  "pnpm": {
-    "overrides": {
-      "multer": "2.2.0",
-      "qs": "6.15.3"
-    }
-  },
   "dependencies": {
     "@nestjs/common": "^11.1.27",
     "@nestjs/config": "^4.0.4",

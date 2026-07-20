@@ -36,8 +36,12 @@ describe('projectApi refactored contract', () => {
 
   it('loads all project business options from the aggregate configuration endpoint', () => {
     projectApi.getConfiguration()
+    projectApi.getConfiguration(true)
 
-    expect(mocks.get).toHaveBeenCalledWith('/projects/configuration')
+    expect(mocks.get).toHaveBeenNthCalledWith(1, '/projects/configuration')
+    expect(mocks.get).toHaveBeenNthCalledWith(2, '/projects/configuration', {
+      params: { includeInactive: true },
+    })
   })
 
   it('uses PATCH for ordinary edits and never falls back to PUT', () => {

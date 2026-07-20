@@ -4,17 +4,17 @@
 
 - 字段配置中心复用并增强统一的 `DictionaryCategory`、`DictionaryItem`，不删除现有枚举、国家、币种或知识分类模型。
 - 项目配置接口优先读取新的大写分类编码，同时兼容既有小写分类编码，避免现有项目表单中断。
-- 本次只提供统一维护、管理员权限和业务只读接口，不把所有业务表单一次性改为动态字段。
-- `Project.projectType` 的历史语义实际接近“客户类型”，当前继续由 `CUSTOMER_TYPE` 提供选项；新的 `PROJECT_TYPE` 保留给后续完成数据模型语义拆分后接入。
+- 已提供统一维护、管理员权限、单分类/批量只读接口，并让项目创建和编辑的项目类型、合同类型、产品类型、项目关键词读取字段配置；新建只显示启用值，编辑可回显并保留历史停用值。
+- `Project.projectType` 已切换为 `PROJECT_TYPE` 选项源；历史项目保存的旧客户类型值在编辑时只允许原值回显和保持，不会进入新建选项。
 
 ## 仍存在的硬编码或独立配置
 
 | 字段 | 当前实现位置 | 后续接入建议 |
 | --- | --- | --- |
 | 国家 | `prisma/schema.prisma` 的 `Country`；`src/modules/country/`；前端 `src/api/country.ts`、项目和档案模板页面 | 以 `COUNTRY` 为展示选项源，保留 `Country` 的时区、语言等业务属性，并建立编码关联 |
-| 原币币种 | `prisma/schema.prisma` 的 `Currency`、汇率关系；`src/modules/currency/`；前端 `src/api/currency.ts`、`src/views/currency/index.vue` | 以 `CURRENCY` 控制可选性和排序，继续由 `Currency` 保存精度、汇率锁定等财务属性 |
-| 客户类型/项目类型 | `src/modules/project/project.constants.ts`、项目 DTO/Service；前端 `src/types/project.ts`、`src/utils/project-dictionaries.ts`、`src/views/project/ProjectDrawer.vue`、项目列表与详情 | 先为项目模型新增独立 `customerType`，迁移历史 `projectType` 语义，再分别接入 `CUSTOMER_TYPE` 与 `PROJECT_TYPE` |
-| 合同类型、产品类型、项目关键词 | 项目配置 Service 与项目 DTO；前端 `ProjectDrawer.vue`、项目列表和详情 | 表单改用 `/field-options/:code`，数据库继续保存稳定编码 |
+| 合同币种 | `prisma/schema.prisma` 的 `Currency`、汇率关系；`src/modules/currency/`；前端 `src/api/currency.ts`、`src/views/currency/index.vue` | 以 `CURRENCY` 控制可选性和排序，继续由 `Currency` 保存原币精度、汇率锁定等财务属性 |
+| 客户类型/项目类型 | 项目类型已由 `ProjectConfigurationService`、项目 DTO/Service 和 `ProjectDrawer.vue` 接入 `PROJECT_TYPE`；项目模型尚无独立 `customerType` | 后续新增 `customerType` 字段并迁移历史客户类型值，再让客户相关表单消费 `CUSTOMER_TYPE` |
+| 合同类型、产品类型、项目关键词 | 已由项目配置 Service 聚合统一字典；前端 `ProjectDrawer.vue`、项目列表和详情 | 已完成创建/编辑动态化；后续可将其他消费方直接切换到 `/field-options/:code` 或批量接口 |
 | 项目阶段 | 项目常量、状态流转 Service/DTO；前端 `src/utils/project-localization.ts`、`src/types/project.ts`、项目及工作台页面 | 选项展示可动态化，但流转规则仍需保留受控枚举和状态机校验 |
 | 项目状态 | 项目常量、状态命令与归档逻辑；前端状态徽标和本地化 | 初始化配置仅含“进行中、已验收”；运行时仍有草稿、暂停、取消和归档语义，不应在状态机改造前删除 |
 | 标准分类 | 标准模块 DTO/Service、标准发布页面及既有标准分类数据 | 先建立旧分类与 `STANDARD_CATEGORY` 编码映射，再将发布筛选与表单切换到只读接口 |
@@ -25,7 +25,7 @@
 
 ## 动态化顺序建议
 
-1. 先拆分项目的“客户类型”和“项目类型”数据语义，并为历史值建立映射。
-2. 再让项目创建/编辑、档案模板和审批模板消费统一只读接口。
+1. 新增独立的“客户类型”字段并为历史值建立映射；项目类型已完成动态化。
+2. 让档案模板和审批模板继续消费统一只读接口。
 3. 随后接入标准分类；知识分类需单独设计树形兼容方案。
 4. 最后处理阶段/状态等带业务状态机约束的字段，配置只控制展示与启用范围，不绕过后端流转规则。

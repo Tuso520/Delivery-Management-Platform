@@ -6,7 +6,7 @@ export const fieldConfigurationApi = {
   getCategories: () => request.get<FieldCategory[]>('/field-config/categories'),
   getValues: (
     categoryId: string,
-    params: { page: number; pageSize: number; keyword?: string },
+    params: { page: number; pageSize: number; keyword?: string; status?: FieldValue['status'] },
   ) => request.get<PaginatedData<FieldValue>>(`/field-config/categories/${categoryId}/values`, { params }),
   create: (categoryId: string, data: SaveFieldValueDto) => request.post<FieldValue>(`/field-config/categories/${categoryId}/values`, data),
   update: (id: string, data: SaveFieldValueDto) => request.patch<FieldValue>(`/field-config/values/${id}`, data),
@@ -18,4 +18,5 @@ export const fieldConfigurationApi = {
 
 export const fieldOptionsApi = {
   getByCode: (code: string) => request.get<EnabledFieldOptions>(`/field-options/${code}`),
+  getBatch: (codes: string[]) => request.post<EnabledFieldOptions[]>('/field-options/batch', { codes }),
 }

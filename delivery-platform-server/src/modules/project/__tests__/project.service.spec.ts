@@ -113,7 +113,7 @@ describe('ProjectService', () => {
     getDefaultProjectRiskLevel: jest.Mock;
     getDefaultProjectPageSize: jest.Mock;
   };
-  let projectConfiguration: { validate: jest.Mock };
+  let projectConfiguration: { validate: jest.Mock; validateUpdate: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -173,7 +173,10 @@ describe('ProjectService', () => {
       getDefaultProjectRiskLevel: jest.fn().mockResolvedValue('Low'),
       getDefaultProjectPageSize: jest.fn().mockResolvedValue(20),
     };
-    projectConfiguration = { validate: jest.fn().mockResolvedValue(undefined) };
+    projectConfiguration = {
+      validate: jest.fn().mockResolvedValue(undefined),
+      validateUpdate: jest.fn().mockResolvedValue(undefined),
+    };
     service = new ProjectService(
       prisma as unknown as PrismaService,
       projectAccess as unknown as ProjectAccessService,

@@ -82,7 +82,7 @@ UI E2E 默认使用稳定版 Chrome。开发机可通过 `PLAYWRIGHT_BROWSER_CHA
 8. 标准历史结构化正文必须物化为经流式 checksum 校验的真实 MinIO 文件；每个有效 StandardVersion 都有唯一主文件。KnowledgeVersion 必须严格满足 FILE/MARKDOWN/LINK 三选一，支持文件归属和 published pointer 一致。
 9. UI 翻译退役只允许把 `translations` 原子归档为 `retired_ui_translations_20260713`，部署表计数报告必须证明行数未减少；运行时 Prisma、seed 和 API 不再读写该表。
 10. 迁移失败不得继续启动 API 或 Worker；回滚必须成对恢复数据库和 MinIO。
-11. `_prisma_migrations` 必须恰好包含源码中的 29 个有效迁移，每个迁移完成且 `migration.sql` SHA-256 与数据库记录一致；数据库中不得存在源码缺失的有效迁移。
+11. `_prisma_migrations` 必须恰好包含源码中的 32 个有效迁移，每个迁移完成且 `migration.sql` SHA-256 与数据库记录一致；数据库中不得存在源码缺失的有效迁移。
 12. 三组 migrator apply 完成后捕获全部业务表计数，第二次 seed 后逐表比较；任一表新增、减少或消失均阻断应用启动。
 13. 真实浏览器验收必须上传私有 PNG、通过鉴权下载并逐字节回读原文件，等待 File Worker 生成 WebP 缩略图，并确认 `ArchiveFileUploaded` 与 `FileProcessingCompleted` Outbox 事件进入终态。
 
@@ -98,16 +98,17 @@ UI E2E 默认使用稳定版 Chrome。开发机可通过 `PLAYWRIGHT_BROWSER_CHA
 - 文件审核动作只允许当前步骤指派人执行，多人会签并发只能产生一个终态。
 - 设置只读账号落到第一个可访问设置页；无任何可访问页时进入 `/forbidden`，不清除有效会话。
 
-## 2026-07-16 当前验收状态
+## 2026-07-21 当前验收状态
 
-当前仓库扫描范围为 655 个受版本控制或待纳入版本控制的文件。实现规模包括：前端 180 个 TypeScript/Vue 文件、33 个 `views/` Vue 文件、26 个运行时 API 文件和 41 个测试文件；后端 238 个 TypeScript 文件、28 个 Controller、40 个 Service、28 个 Module、165 个 HTTP 路由和 30 个 Prisma migration。发布迁移另有 3 个 Prisma 验收脚本，分别核对应用迁移与校验和、二次 seed 全库表计数以及 MinIO/File Worker/Outbox Worker 一致性。
+当前仓库扫描范围为 658 个受版本控制或待纳入版本控制的文件。实现规模包括：前端 180 个 TypeScript/Vue 文件、33 个 `views/` Vue 文件、26 个运行时 API 文件和 41 个测试文件；后端 238 个 TypeScript 文件、28 个 Controller、40 个 Service、28 个 Module、167 个 HTTP 路由和 32 个 Prisma migration。发布迁移另有 3 个 Prisma 验收脚本，分别核对应用迁移与校验和、二次 seed 全库表计数以及 MinIO/File Worker/Outbox Worker 一致性。
 
 本地自动化结果：
 
 - 前端 Vitest：41 个测试文件、183 个用例全部通过。
 - 前端 ESLint（只读模式）、TypeScript 类型检查和生产构建通过；构建保留分块体积和 user store 动静态导入提示。
 - 后端 Prisma Client：按当前 schema 生成成功。
-- 后端 Jest：70 个测试套件、492 个用例全部通过。
+- 后端 Jest：71 个测试套件、507 个用例全部通过。
+- 前端 Vitest：41 个测试文件、190 个用例全部通过。
 - 后端 ESLint（只读模式）、TypeScript 类型检查、生产构建和 Prisma schema 校验通过。
 - 代码规则扫描：前后端源码未发现新增无约束 `any`，未发现其他 UI 组件库导入；前端常规业务请求集中在 `src/api/`，统一文件预览组件按只读会话使用受控 `fetch` 获取预览内容。
 - 文档事实已按当前项目字段、统一进度命令、归档列表、迁移数量和测试数量校正。
@@ -116,7 +117,7 @@ UI E2E 默认使用稳定版 Chrome。开发机可通过 `PLAYWRIGHT_BROWSER_CHA
 
 当前真实验收结果：
 
-- `_prisma_migrations` 精确包含源码中的 29 个 migration，全部完成且 SHA-256 校验和一致。
+- `_prisma_migrations` 精确包含源码中的 32 个 migration，全部完成且 SHA-256 校验和一致。
 - 三组数据 migrator 的 dry-run、apply 和只读 verify 全部通过；第二次 seed 前后的 86 张表计数逐表一致。
 - `/api/v1/ready` 的 database、redis、storage 全部为 `ok`；真实 API E2E 2 个用例、Playwright API 冒烟 2 个用例全部通过。
 - Chromium 浏览器关键流程 4 个场景全部通过，覆盖管理员导航、项目全生命周期、项目经理数据范围与敏感字段裁剪，以及私有 PNG 上传、逐字节下载和 WebP 缩略图读取。

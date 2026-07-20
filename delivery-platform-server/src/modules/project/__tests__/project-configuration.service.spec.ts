@@ -11,7 +11,7 @@ describe('ProjectConfigurationService', () => {
     ['project_keyword', 'NEW_BUILD', '新建项目'],
   ].map(([categoryCode, itemValue, itemLabel]) => ({
     categoryCode,
-    items: [{ itemValue, itemLabel, extraData: null }],
+    items: [{ itemValue, itemLabel, extraData: null, status: 'Active' }],
   }));
   const prisma = {
     dictionaryCategory: { findMany: jest.fn().mockResolvedValue(categories) },
@@ -22,10 +22,10 @@ describe('ProjectConfigurationService', () => {
 
   it('returns all project dictionaries from active database configuration', async () => {
     await expect(service.getConfiguration()).resolves.toEqual({
-      projectTypes: [{ value: 'FACTORY', label: '工厂', extraData: null }],
-      contractTypes: [{ value: 'EPC', label: 'EPC', extraData: null }],
-      productTypes: [{ value: 'DEEPSIGHT', label: 'DeepSight', extraData: null }],
-      projectKeywords: [{ value: 'NEW_BUILD', label: '新建项目', extraData: null }],
+      projectTypes: [{ value: 'FACTORY', label: '工厂', extraData: null, status: 'Active' }],
+      contractTypes: [{ value: 'EPC', label: 'EPC', extraData: null, status: 'Active' }],
+      productTypes: [{ value: 'DEEPSIGHT', label: 'DeepSight', extraData: null, status: 'Active' }],
+      projectKeywords: [{ value: 'NEW_BUILD', label: '新建项目', extraData: null, status: 'Active' }],
     });
     expect(prisma.dictionaryCategory.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -48,5 +48,16 @@ describe('ProjectConfigurationService', () => {
     await expect(service.validate({ projectType: 'DISABLED_VALUE' })).rejects.toBeInstanceOf(
       BadRequestException,
     );
+  });
+
+  it('allows an unchanged historical inactive value during project editing', async () => {
+    await expect(service.validateUpdate(
+      { contractType: 'HISTORICAL' },
+      { contractType: 'HISTORICAL' },
+    )).resolves.toBeUndefined();
+    await expect(service.validateUpdate(
+      { contractType: 'OTHER_DISABLED' },
+      { contractType: 'HISTORICAL' },
+    )).rejects.toBeInstanceOf(BadRequestException);
   });
 });

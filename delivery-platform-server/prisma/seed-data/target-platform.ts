@@ -146,12 +146,12 @@ const fieldConfigurationDictionaries: readonly DictionarySeed[] = [
   { code: 'CONTRACT_TYPE', name: '合同类型', items: ['EPC', 'EMC', 'POC'].map((value) => ({ value, label: value })) },
   { code: 'PRODUCT_TYPE', name: '产品类型', items: [{ value: 'DEEPSIGHT', label: 'DeepSight' }, { value: 'DEEPBOT', label: 'DeepBot' }] },
   { code: 'PROJECT_KEYWORD', name: '项目关键词', items: [['NEW_BUILD', '新建项目'], ['RENOVATION', '改造项目'], ['MAIN_MATERIAL', '主材'], ['CONSTRUCTION', '施工'], ['SOFTWARE_COMMISSIONING', '软件调试'], ['HARDWARE_COMMISSIONING', '硬件调试'], ['CHILLER_ENERGY_SAVING', '冷站节能'], ['HVAC_ENERGY_SAVING', '空调节能'], ['AIR_COMPRESSOR_ENERGY_SAVING', '空压节能'], ['FMCS', 'FMCS'], ['ENERGY_MANAGEMENT', '能管'], ['SOFTWARE', '软件'], ['CHILLER_GROUP_CONTROL', '冷站群控'], ['HIGH_EFFICIENCY_PLANT_ROOM', '高效机房'], ['PLATFORM_CUSTOMIZATION', '平台定开'], ['RESEARCH', '课题研究']].map(([value, label]) => ({ value, label })) },
-  { code: 'CURRENCY', name: '原币币种', items: [['CNY', '人民币'], ['VND', '越南盾'], ['THB', '泰铢'], ['IDR', '印尼盾'], ['MYR', '马来西亚林吉特'], ['OMR', '阿曼里亚尔'], ['SGD', '新加坡元']].map(([value, label]) => ({ value, label })) },
+  { code: 'CURRENCY', name: '合同币种', items: [['CNY', '人民币'], ['VND', '越南盾'], ['THB', '泰铢'], ['IDR', '印尼盾'], ['MYR', '马来西亚林吉特'], ['OMR', '阿曼里亚尔'], ['SGD', '新加坡元']].map(([value, label]) => ({ value, label })) },
   { code: 'PROJECT_STAGE', name: '项目阶段', items: [['STARTUP', '启动'], ['DEEPENING', '深化'], ['PROCUREMENT', '采购'], ['CONSTRUCTION', '施工'], ['COMMISSIONING', '调试'], ['TESTING', '测试'], ['INTERNAL_ACCEPTANCE', '内验'], ['EXTERNAL_ACCEPTANCE', '外验'], ['WARRANTY', '维保']].map(([value, label]) => ({ value, label })) },
   { code: 'PROJECT_STATUS', name: '项目状态', items: [{ value: 'ACTIVE', label: '进行中' }, { value: 'COMPLETED', label: '已验收' }] },
   { code: 'STANDARD_CATEGORY', name: '标准分类', items: [['MANAGEMENT_POLICY', '管理制度'], ['ROLES_RESPONSIBILITIES', '岗位与职责'], ['PROCESS_SOP', '流程与SOP'], ['TECH_PRODUCT_STANDARD', '技术与产品标准'], ['WORK_SPECIFICATION', '作业规范'], ['INSPECTION_ACCEPTANCE', '检查与验收'], ['TEMPLATE_FORM', '模板与表单']].map(([value, label]) => ({ value, label })) },
   { code: 'KNOWLEDGE_CATEGORY', name: '知识分类', items: [['PROJECT_CASE_REVIEW', '项目案例与复盘'], ['BEST_PRACTICE', '最佳实践与经验'], ['FAQ_TROUBLESHOOTING', '常见问题与故障'], ['TRAINING_TUTORIAL', '培训与教程'], ['EXTERNAL_STANDARD', '外部标准与资料'], ['RESOURCE_TOOL', '资源与工具']].map(([value, label]) => ({ value, label })) },
-  { code: 'JOB_POSITION', name: '岗位', items: [['PROJECT_MANAGER', '项目经理'], ['ELECTRICAL_ENGINEER', '电气工程师'], ['SOFTWARE_ENGINEER', '软件工程师'], ['OPERATIONS_ENGINEER', '运维工程师']].map(([value, label]) => ({ value, label })) },
+  { code: 'JOB_POSITION', name: '岗位', items: [['PROJECT_MANAGER', '项目经理'], ['ELECTRICAL_ENGINEER', '电气工程师'], ['SOFTWARE_ENGINEER', '软件工程师'], ['OPERATIONS_ENGINEER', '运维工程师'], ['SALES', '销售'], ['PRESALES', '售前']].map(([value, label]) => ({ value, label })) },
   { code: 'PROJECT_TYPE', name: '项目类型', items: [['EPC_INTEGRATED', 'EPC综合'], ['SYSTEM_INTEGRATION', '系统集成'], ['EQUIPMENT_SUPPLY', '设备供货'], ['CONSTRUCTION_IMPLEMENTATION', '施工实施'], ['SOFTWARE_ONLY', '纯软件'], ['TECHNICAL_SERVICE', '技术服务'], ['GENERAL', '通用']].map(([value, label]) => ({ value, label })) },
 ] as const;
 
@@ -212,6 +212,8 @@ export async function seedTargetDictionaries(prisma: PrismaClient, actorId?: str
         categoryName: definition.name,
         sortOrder: (categoryIndex + 1) * 10,
         isSystem: fieldConfigurationCodes.has(definition.code),
+        createdBy: actorId,
+        updatedBy: actorId,
       },
       update: {},
       select: { id: true },

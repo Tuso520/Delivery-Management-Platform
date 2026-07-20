@@ -62,7 +62,7 @@ const rules = {
   archiveTemplateId: [{ required: true, message: t('projects.createForm.validationArchiveTemplate') }],
 }
 
-const optionQueries = useProjectFormOptionsQueries(computed(() => !isEdit.value))
+const optionQueries = useProjectFormOptionsQueries(computed(() => !isEdit.value), isEdit)
 const projectQuery = useProjectDetailQuery(projectId)
 const countryOptions = computed(() =>
   (optionQueries.value[0].data?.items ?? []).map((item: Country) => ({
@@ -74,17 +74,25 @@ const currencyOptions = computed(() =>
     value: item.currencyCode, label: `${item.currencyName} (${item.currencyCode})`,
   })),
 )
-function configuredOptions<T extends string>(key: 'projectTypes' | 'contractTypes' | 'productTypes' | 'projectKeywords', kind: ProjectDictionaryKind) {
-  return (optionQueries.value[3].data?.[key] ?? []).map((item) => ({
-    ...item,
-    value: item.value as T,
-    color: projectDictionaryColor(kind, item.value),
-  }))
+function configuredOptions<T extends string>(
+  key: 'projectTypes' | 'contractTypes' | 'productTypes' | 'projectKeywords',
+  kind: ProjectDictionaryKind,
+  currentValues: Array<string | undefined>,
+) {
+  const historicalValues = new Set(currentValues.filter((value): value is string => Boolean(value)))
+  return (optionQueries.value[3].data?.[key] ?? [])
+    .filter((item) => item.status === 'Active' || historicalValues.has(item.value))
+    .map((item) => ({
+      ...item,
+      value: item.value as T,
+      color: projectDictionaryColor(kind, item.value),
+      disabled: item.status !== 'Active',
+    }))
 }
-const projectTypeOptions = computed(() => configuredOptions<ProjectType>('projectTypes', 'projectType'))
-const contractTypeOptions = computed(() => configuredOptions<ContractType>('contractTypes', 'contractType'))
-const productTypeOptions = computed(() => configuredOptions<ProductType>('productTypes', 'productType'))
-const projectKeywordOptions = computed(() => configuredOptions<ProjectKeyword>('projectKeywords', 'projectKeyword'))
+const projectTypeOptions = computed(() => configuredOptions<ProjectType>('projectTypes', 'projectType', [formData.projectType]))
+const contractTypeOptions = computed(() => configuredOptions<ContractType>('contractTypes', 'contractType', [formData.contractType]))
+const productTypeOptions = computed(() => configuredOptions<ProductType>('productTypes', 'productType', [formData.product]))
+const projectKeywordOptions = computed(() => configuredOptions<ProjectKeyword>('projectKeywords', 'projectKeyword', formData.keywords))
 const salesOptions = computed<ProjectUserReferenceOption[]>(() => optionQueries.value[4].data ?? [])
 const managerOptions = computed<ProjectUserReferenceOption[]>(() => optionQueries.value[5].data ?? [])
 const memberOptions = computed<ProjectUserReferenceOption[]>(() => optionQueries.value[6].data ?? [])
@@ -232,6 +240,7 @@ async function save(saveAsDraft = false): Promise<void> {
                 :key="item.value"
                 :value="item.value"
                 :label="item.label"
+                :disabled="item.disabled"
               />
             </a-select>
           </a-form-item>
@@ -242,6 +251,7 @@ async function save(saveAsDraft = false): Promise<void> {
                 :key="item.value"
                 :value="item.value"
                 :label="item.label"
+                :disabled="item.disabled"
               />
             </a-select>
           </a-form-item>
@@ -252,6 +262,7 @@ async function save(saveAsDraft = false): Promise<void> {
                 :key="item.value"
                 :value="item.value"
                 :label="item.label"
+                :disabled="item.disabled"
               />
             </a-select>
           </a-form-item>
@@ -267,6 +278,7 @@ async function save(saveAsDraft = false): Promise<void> {
                 :key="item.value"
                 :value="item.value"
                 :label="item.label"
+                :disabled="item.disabled"
               />
             </a-select>
             <a-space v-if="formData.keywords.length" class="keyword-preview" wrap>

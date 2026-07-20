@@ -7,7 +7,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import type { JwtPayload } from '../auth/strategies/jwt.strategy';
 
-import { ChangeFieldValueStatusDto, CreateFieldValueDto, QueryFieldValuesDto, SortFieldValuesDto, UpdateFieldValueDto } from './dto/field-configuration.dto';
+import { BatchFieldOptionsDto, ChangeFieldValueStatusDto, CreateFieldValueDto, QueryFieldValuesDto, SortFieldValuesDto, UpdateFieldValueDto } from './dto/field-configuration.dto';
 import { FieldConfigurationService } from './field-configuration.service';
 
 @ApiTags('FieldConfiguration')
@@ -22,6 +22,10 @@ export class FieldConfigurationController {
   @RequirePermissions({ all: ['field_setting:manage'] })
   @ApiOperation({ summary: '获取字段设置的全部分类' })
   findCategories() { return this.service.findCategories(); }
+
+  @Get('categories/:categoryId')
+  @RequirePermissions({ all: ['field_setting:manage'] })
+  findCategory(@Param('categoryId') categoryId: string) { return this.service.findCategory(categoryId); }
 
   @Get('categories/:categoryId/values')
   @RequirePermissions({ all: ['field_setting:manage'] })
@@ -60,7 +64,7 @@ export class FieldConfigurationController {
   @Delete('values/:id')
   @RequirePermissions({ all: ['field_setting:manage'] })
   @HttpCode(HttpStatus.OK)
-  remove(@Param('id') id: string) { return this.service.remove(id); }
+  remove(@Param('id') id: string, @CurrentUser() user: JwtPayload) { return this.service.remove(id, user.sub); }
 }
 
 @ApiTags('FieldOptions')
@@ -69,6 +73,11 @@ export class FieldConfigurationController {
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class FieldOptionsController {
   constructor(private readonly service: FieldConfigurationService) {}
+
+  @Post('batch')
+  @RequirePermissions({ any: [] })
+  @ApiOperation({ summary: '批量读取多个分类的已启用字段选项' })
+  findEnabledBatch(@Body() dto: BatchFieldOptionsDto) { return this.service.findEnabledBatch(dto.codes); }
 
   @Get(':code')
   @RequirePermissions({ any: [] })

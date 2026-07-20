@@ -94,7 +94,7 @@ export function useArchiveTemplateFormOptionsQueries() {
       },
       {
         queryKey: queryKeys.projects.formOptions(),
-        queryFn: projectApi.getConfiguration,
+        queryFn: () => projectApi.getConfiguration(),
       },
     ],
   })

@@ -119,8 +119,8 @@ export class ProjectController {
     any: ['project:view', 'project:create', 'archive_template:view', 'archive_template:create'],
   })
   @ApiOperation({ summary: '获取项目表单的当前启用配置项' })
-  getConfiguration() {
-    return this.projectConfiguration.getConfiguration();
+  getConfiguration(@Query('includeInactive') includeInactive?: string) {
+    return this.projectConfiguration.getConfiguration(includeInactive === 'true');
   }
 
   @Get('archived')

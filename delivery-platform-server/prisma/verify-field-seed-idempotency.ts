@@ -15,7 +15,7 @@ const expectedCounts: Record<string, number> = {
   PROJECT_STATUS: 2,
   STANDARD_CATEGORY: 7,
   KNOWLEDGE_CATEGORY: 6,
-  JOB_POSITION: 4,
+  JOB_POSITION: 6,
   PROJECT_TYPE: 7,
 };
 
@@ -27,6 +27,7 @@ async function snapshot() {
       categoryName: true,
       isSystem: true,
       items: {
+        where: { isSystemDefault: true, deletedAt: null },
         select: { itemValue: true, itemLabel: true, itemCode: true, isSystemDefault: true },
         orderBy: [{ sortOrder: 'asc' }, { itemValue: 'asc' }],
       },

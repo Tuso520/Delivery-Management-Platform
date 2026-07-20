@@ -128,6 +128,7 @@ describe('target settings API contracts', () => {
     fieldConfigurationApi.getReferenceStatus('value-1')
     fieldConfigurationApi.remove('value-1')
     fieldOptionsApi.getByCode('COUNTRY')
+    fieldOptionsApi.getBatch(['COUNTRY', 'CURRENCY'])
 
     expect(mocks.get).toHaveBeenCalledWith('/field-config/categories')
     expect(mocks.get).toHaveBeenCalledWith('/field-config/categories/category-1/values', {
@@ -137,6 +138,7 @@ describe('target settings API contracts', () => {
     expect(mocks.patch).toHaveBeenCalledWith('/field-config/values/value-1/status', { status: 'Inactive' })
     expect(mocks.put).toHaveBeenCalledWith('/field-config/categories/category-1/sort', { items: [{ id: 'value-1', sortOrder: 10 }] })
     expect(mocks.get).toHaveBeenCalledWith('/field-options/COUNTRY')
+    expect(mocks.post).toHaveBeenCalledWith('/field-options/batch', { codes: ['COUNTRY', 'CURRENCY'] })
     expect(mocks.delete).toHaveBeenCalledWith('/field-config/values/value-1')
   })
 })

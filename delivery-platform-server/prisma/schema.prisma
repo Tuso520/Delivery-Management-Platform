@@ -1916,6 +1916,8 @@ model DictionaryCategory {
   isSystem     Boolean  @default(false) @map("is_system")
   status       String   @default("Active") @db.VarChar(20)
   sortOrder    Int      @default(0) @map("sort_order")
+  createdBy    String?  @map("created_by") @db.VarChar(36)
+  updatedBy    String?  @map("updated_by") @db.VarChar(36)
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -1925,19 +1927,21 @@ model DictionaryCategory {
 }
 
 model DictionaryItem {
-  id         String   @id @default(uuid())
-  categoryId String   @map("category_id") @db.VarChar(36)
-  itemValue  String   @map("item_value") @db.VarChar(100)
-  itemLabel  String   @map("item_label") @db.VarChar(100)
-  itemCode   String?  @map("item_code") @db.VarChar(100)
-  extraData  Json?    @map("extra_data")
-  status     String   @default("Active") @db.VarChar(20)
-  sortOrder  Int      @default(0) @map("sort_order")
-  isSystemDefault Boolean @default(false) @map("is_system_default")
-  createdBy  String?  @map("created_by") @db.VarChar(36)
-  updatedBy  String?  @map("updated_by") @db.VarChar(36)
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  id              String    @id @default(uuid())
+  categoryId      String    @map("category_id") @db.VarChar(36)
+  itemValue       String    @map("item_value") @db.VarChar(100)
+  itemLabel       String    @map("item_label") @db.VarChar(100)
+  itemCode        String?   @map("item_code") @db.VarChar(100)
+  description     String?   @db.VarChar(300)
+  extraData       Json?     @map("extra_data")
+  status          String    @default("Active") @db.VarChar(20)
+  sortOrder       Int       @default(0) @map("sort_order")
+  isSystemDefault Boolean   @default(false) @map("is_system_default")
+  createdBy       String?   @map("created_by") @db.VarChar(36)
+  updatedBy       String?   @map("updated_by") @db.VarChar(36)
+  deletedAt       DateTime? @map("deleted_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
   category DictionaryCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
@@ -1945,6 +1949,7 @@ model DictionaryItem {
   @@unique([categoryId, itemLabel], map: "dictionary_items_category_label_uq")
   @@unique([categoryId, itemCode], map: "dictionary_items_category_code_uq")
   @@index([categoryId, status])
+  @@index([categoryId, status, deletedAt], map: "dictionary_items_category_status_deleted_idx")
   @@map("dictionary_items")
 }
 

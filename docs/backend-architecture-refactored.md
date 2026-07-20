@@ -2196,7 +2196,7 @@ API 可达性
 9. 操作日志与敏感字段脱敏。
 10. 会话刷新和多端退出。
 
-当前自动化基线为 Prisma Client 按 schema 生成成功，70 个 Jest 套件、492 个用例全部通过。真实环境验收必须在同一目标提交上连续应用 29 个 migration，执行两次 seed、三组 migrator、真实 API、File Worker、Outbox Worker 和浏览器关键流程；证据与发布判定统一记录在 `docs/testing.md`。
+当前自动化基线为 Prisma Client 按 schema 生成成功，71 个 Jest 套件、507 个用例全部通过。真实环境验收必须在同一目标提交上连续应用 32 个 migration，执行两次 seed、三组 migrator、真实 API、File Worker、Outbox Worker 和浏览器关键流程；证据与发布判定统一记录在 `docs/testing.md`。
 
 ---
 
