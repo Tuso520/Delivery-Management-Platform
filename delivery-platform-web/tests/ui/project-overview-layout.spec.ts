@@ -113,6 +113,72 @@ async function firstColumnHorizontalMovement(page: Page): Promise<number> {
   })
 }
 
+async function alignmentMetrics(page: Page, zoom: 1 | 2, requireSelect = true) {
+  return page.evaluate(({ scale, shouldRequireSelect }) => {
+    document.documentElement.style.zoom = String(scale)
+
+    const centerY = (element: Element): number => {
+      const box = element.getBoundingClientRect()
+      return box.top + box.height / 2
+    }
+    const delta = (row: Element, child: Element | null): number =>
+      child ? Math.abs(centerY(row) - centerY(child)) : Number.POSITIVE_INFINITY
+
+    const primaryRows = [
+      ...document.querySelectorAll<HTMLElement>(
+        '.sidebar-menu > .arco-menu-inner > .arco-menu-item, .sidebar-menu > .arco-menu-inner > .arco-menu-inline > .arco-menu-inline-header',
+      ),
+    ]
+    const primaryDeltas = primaryRows.map((row) => ({
+      icon: delta(row, row.querySelector('.menu-icon-box')),
+      label: delta(row, row.querySelector('.menu-title, .arco-menu-item-inner')),
+      chevron: row.matches('.arco-menu-inline-header')
+        ? delta(row, row.querySelector('.menu-chevron-box'))
+        : 0,
+    }))
+    const secondaryRows = [
+      ...document.querySelectorAll<HTMLElement>(
+        '.sidebar-menu .arco-menu-inline-content > .arco-menu-item',
+      ),
+    ]
+    const select = document.querySelector<HTMLElement>('.scope-field .arco-select-view-single')
+    const selectValue = document.querySelector<HTMLElement>('.scope-field .arco-select-view-value')
+    const selectArrow = document.querySelector<HTMLElement>('.scope-field .select-arrow-box')
+    if (shouldRequireSelect && (!select || !selectValue || !selectArrow)) {
+      throw new Error('Project scope select alignment nodes are incomplete')
+    }
+
+    return {
+      primaryCount: primaryRows.length,
+      primaryMaxDelta: Math.max(
+        ...primaryDeltas.flatMap((item) => [item.icon, item.label, item.chevron]),
+      ),
+      secondaryCount: secondaryRows.length,
+      secondaryMaxDelta: Math.max(
+        ...secondaryRows.map((row) => delta(row, row.querySelector('.arco-menu-item-inner'))),
+      ),
+      secondaryLeft: secondaryRows.map((row) =>
+        Number.parseFloat(getComputedStyle(row).paddingLeft),
+      ),
+      selectValueDelta: select && selectValue ? delta(select, selectValue) : 0,
+      selectArrowDelta: select && selectArrow ? delta(select, selectArrow) : 0,
+      selectArrowCount: document.querySelectorAll('.scope-field .select-arrow-box').length,
+      defaultSelectArrowCount: document.querySelectorAll('.scope-field .arco-icon-down').length,
+      menuIconDisplay: getComputedStyle(
+        document.querySelector<HTMLElement>('.figma-menu-icon')!,
+      ).display,
+      menuIconBoxDisplay: getComputedStyle(
+        document.querySelector<HTMLElement>('.menu-icon-box')!,
+      ).display,
+      menuChevronBoxDisplay: getComputedStyle(
+        document.querySelector<HTMLElement>('.menu-chevron-box')!,
+      ).display,
+      selectArrowBoxDisplay: selectArrow ? getComputedStyle(selectArrow).display : '',
+      zoom: Number.parseFloat(getComputedStyle(document.documentElement).zoom),
+    }
+  }, { scale: zoom, shouldRequireSelect: requireSelect })
+}
+
 test('project overview matches the Figma shell with real API data at 1440x900', async ({
   page,
 }) => {
@@ -186,6 +252,57 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
 
   await expect(page.locator('.arco-message')).toHaveCount(0, { timeout: 10_000 })
   await page.screenshot({ path: acceptanceScreenshot, animations: 'disabled' })
+})
+
+test('sidebar and project scope select remain centered at 100% and 200%', async ({ page }) => {
+  const consoleErrors: string[] = []
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await login(page)
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text())
+  })
+  await page.goto('/#/projects')
+  await expect(page.locator('.scope-field .arco-select-view-single')).toBeVisible()
+
+  for (const zoom of [1, 2] as const) {
+    const metrics = await alignmentMetrics(page, zoom)
+    expect(metrics).toMatchObject({
+      primaryCount: 4,
+      selectArrowCount: 1,
+      defaultSelectArrowCount: 0,
+      menuIconDisplay: 'block',
+      menuIconBoxDisplay: 'flex',
+      menuChevronBoxDisplay: 'flex',
+      selectArrowBoxDisplay: 'flex',
+      zoom,
+    })
+    expect(metrics.secondaryCount).toBeGreaterThan(0)
+    expect(metrics.secondaryLeft.every((padding) => padding === 42)).toBe(true)
+    expect(metrics.primaryMaxDelta).toBeLessThanOrEqual(1)
+    expect(metrics.secondaryMaxDelta).toBeLessThanOrEqual(1)
+    expect(metrics.selectValueDelta).toBeLessThanOrEqual(1)
+    expect(metrics.selectArrowDelta).toBeLessThanOrEqual(1)
+  }
+  expect(consoleErrors).toEqual([])
+})
+
+test('shared sidebar alignment does not regress representative pages', async ({ page }) => {
+  const consoleErrors: string[] = []
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await login(page)
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text())
+  })
+
+  for (const path of ['/dashboard', '/standards', '/knowledge', '/settings']) {
+    await page.goto(`/#${path}`)
+    await expect(page.locator('.layout-aside')).toBeVisible()
+    const metrics = await alignmentMetrics(page, 1, false)
+    expect(metrics.primaryCount).toBe(4)
+    expect(metrics.primaryMaxDelta).toBeLessThanOrEqual(1)
+    expect(metrics.secondaryMaxDelta).toBeLessThanOrEqual(1)
+  }
+  expect(consoleErrors).toEqual([])
 })
 
 test('project overview uses wheel loading, large rows and a fixed project-name column', async ({

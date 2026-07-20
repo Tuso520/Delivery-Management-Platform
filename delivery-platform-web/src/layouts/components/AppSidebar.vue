@@ -31,6 +31,12 @@ function figmaMenuIcon(menu: MenuItem): string {
   if (menu.path.includes('system') || menu.path.includes('setting')) return menuSettingsIcon
   return menuDashboardIcon
 }
+function figmaMenuIconName(menu: MenuItem): 'dashboard' | 'project' | 'knowledge' | 'settings' {
+  if (menu.name === 'DeliveryGroup' || menu.path.includes('project')) return 'project'
+  if (menu.path.includes('standard') || menu.path.includes('knowledge')) return 'knowledge'
+  if (menu.path.includes('system') || menu.path.includes('setting')) return 'settings'
+  return 'dashboard'
+}
 function isActiveGroup(menu: MenuItem): boolean {
   return Boolean(menu.children?.some((child) => child.path === props.activeMenu))
 }
@@ -51,15 +57,23 @@ function isActiveGroup(menu: MenuItem): boolean {
       <template v-for="menu in menus" :key="menu.name">
         <a-sub-menu v-if="menu.children?.length" :key="menu.path">
           <template #icon>
-            <img class="figma-menu-icon" :src="figmaMenuIcon(menu)" alt="" />
+            <span class="menu-icon-box">
+              <img
+                :class="['figma-menu-icon', `figma-menu-icon--${figmaMenuIconName(menu)}`]"
+                :src="figmaMenuIcon(menu)"
+                alt=""
+              />
+            </span>
           </template>
           <template #title>
             <span class="menu-title">{{ resolveMenuTitle(menu) }}</span>
-            <img
-              class="menu-chevron"
-              :src="isActiveGroup(menu) ? menuChevronActiveIcon : menuChevronIcon"
-              alt=""
-            />
+            <span class="menu-chevron-box">
+              <img
+                class="menu-chevron"
+                :src="isActiveGroup(menu) ? menuChevronActiveIcon : menuChevronIcon"
+                alt=""
+              />
+            </span>
           </template>
           <a-menu-item v-for="child in menu.children" :key="child.path">
             {{ resolveMenuTitle(child) }}
@@ -67,7 +81,13 @@ function isActiveGroup(menu: MenuItem): boolean {
         </a-sub-menu>
         <a-menu-item v-else :key="menu.path">
           <template #icon>
-            <img class="figma-menu-icon" :src="figmaMenuIcon(menu)" alt="" />
+            <span class="menu-icon-box">
+              <img
+                :class="['figma-menu-icon', `figma-menu-icon--${figmaMenuIconName(menu)}`]"
+                :src="figmaMenuIcon(menu)"
+                alt=""
+              />
+            </span>
           </template>
           {{ resolveMenuTitle(menu) }}
         </a-menu-item>
@@ -113,29 +133,85 @@ function isActiveGroup(menu: MenuItem): boolean {
 .sidebar-menu :deep(.arco-menu-item),
 .sidebar-menu :deep(.arco-menu-inline-header) {
   height: 40px;
-  margin: 2px 0;
+  margin: 0 0 4px;
+  display: flex;
+  align-items: center;
   border-radius: 2px;
   font-weight: 400;
+  line-height: 22px;
+}
+.sidebar-menu :deep(.arco-menu-inline-header) {
+  gap: 16px;
+  padding: 0 12px;
+}
+.sidebar-menu :deep(.arco-menu-inline-content > .arco-menu-item) {
+  padding: 0 8px 0 42px;
+}
+.sidebar-menu :deep(.arco-menu-item-inner),
+.sidebar-menu :deep(.arco-menu-title) {
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  line-height: 22px;
 }
 .sidebar-menu :deep(.arco-menu-icon) {
   width: 18px;
   height: 18px;
-  display: inline-flex;
+  flex: 0 0 18px;
+  display: flex;
   align-items: center;
   justify-content: center;
+  margin-right: 0;
+  line-height: 0;
 }
-.figma-menu-icon {
+.menu-icon-box {
   width: 18px;
   height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+.figma-menu-icon {
   display: block;
+}
+.figma-menu-icon--dashboard {
+  width: 14.861px;
+  height: 15px;
+}
+.figma-menu-icon--project {
+  width: 14.25px;
+  height: 14.25px;
+}
+.figma-menu-icon--knowledge {
+  width: 14.25px;
+  height: 10.5px;
+}
+.figma-menu-icon--settings {
+  width: 11.083px;
+  height: 11.083px;
 }
 .menu-title {
   min-width: 0;
   flex: 1;
+  display: flex;
+  align-items: center;
+  line-height: 22px;
 }
-.menu-chevron {
+.menu-chevron-box {
   width: 14px;
   height: 14px;
+  flex: 0 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+.menu-chevron {
+  width: 8.414px;
+  height: 4.914px;
   display: block;
 }
 .sidebar-menu :deep(.arco-menu-icon-suffix) {

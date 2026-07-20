@@ -352,7 +352,9 @@ function dictionaryStyle(
               <a-option value="all" :label="t('projects.scope.all')" />
               <a-option value="archived" :label="t('projects.archiveView.archived')" />
               <template #arrow-icon>
-                <img class="select-down-icon" :src="selectDownIcon" alt="" />
+                <span class="select-arrow-box">
+                  <img class="select-down-icon" :src="selectDownIcon" alt="" />
+                </span>
               </template>
             </a-select>
           </div>
@@ -774,10 +776,43 @@ function dictionaryStyle(
 .scope-field :deep(.arco-select) {
   width: 100%;
 }
+.scope-field :deep(.arco-select-view-single) {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px;
+  line-height: 22px;
+}
+.scope-field :deep(.arco-select-view-value) {
+  min-height: 0;
+  height: 22px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  padding: 0;
+  line-height: 22px;
+}
+.scope-field :deep(.arco-select-view-suffix) {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 0;
+  line-height: 0;
+}
 .scope-field :deep(.arco-select-view-single),
 .search-group :deep(.arco-input-wrapper) {
   background: #f2f3f5;
   border-color: #f2f3f5;
+}
+.select-arrow-box {
+  width: 12px;
+  height: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
 }
 .select-down-icon {
   width: 12px;

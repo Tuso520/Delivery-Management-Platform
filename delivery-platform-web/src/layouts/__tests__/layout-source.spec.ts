@@ -54,4 +54,15 @@ describe('application shell layout', () => {
     expect(sidebarSource).toContain('menu-project.svg')
     expect(sidebarSource).toContain('menu-fold.svg')
   })
+
+  it('centers menu icons, labels and chevrons with flex containers', () => {
+    expect(sidebarSource).toContain('class="menu-icon-box"')
+    expect(sidebarSource).toContain('class="menu-chevron-box"')
+    expect(sidebarSource).toMatch(/\.menu-icon-box\s*\{[^}]*display:\s*flex[^}]*align-items:\s*center[^}]*justify-content:\s*center/s)
+    expect(sidebarSource).toMatch(/\.menu-chevron-box\s*\{[^}]*display:\s*flex[^}]*align-items:\s*center[^}]*justify-content:\s*center/s)
+    expect(sidebarSource).toMatch(/\.figma-menu-icon\s*\{[^}]*display:\s*block/s)
+    expect(sidebarSource).toMatch(/\.menu-chevron\s*\{[^}]*display:\s*block/s)
+    expect(sidebarSource).toMatch(/\.arco-menu-inline-content > \.arco-menu-item\)\s*\{[^}]*padding:\s*0 8px 0 42px/s)
+    expect(sidebarSource).not.toMatch(/(?:menu-icon-box|figma-menu-icon|menu-chevron-box|menu-chevron)[^}]*?(?:margin-top|translateY|\btop\s*:)/s)
+  })
 })
