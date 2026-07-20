@@ -172,7 +172,7 @@ test('administrator can use the target architecture navigation', async ({ page }
   })
   await expect(page.getByText('示例项目 1', { exact: true })).toBeVisible({ timeout: 60_000 })
   await expect(page.getByText('VN-LG-2026-001', { exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '创建项目' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '新建' })).toBeVisible()
 
   await page.locator('.scope-field .arco-select-view').click()
   await page.locator('.arco-select-option').filter({ hasText: '归档项目' }).click()
@@ -487,7 +487,8 @@ test('project manager is restricted by data scope, field permissions and setting
   })
   await expect(page.getByRole('button', { name: '永久删除' })).toHaveCount(0)
 
-  await expect(page.getByRole('button', { name: '打开设置' })).toBeVisible()
+  await page.locator('.user-trigger').click()
+  await expect(page.locator('.arco-dropdown-option').filter({ hasText: '参数配置' })).toHaveCount(0)
   await page.goto('/#/settings/system')
   await page.waitForURL((url) => url.hash === '#/dashboard')
   await expect(page.getByRole('heading', { name: '数据看板' })).toBeVisible()
