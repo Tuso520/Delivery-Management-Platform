@@ -6,6 +6,7 @@ dist/
 ._*
 .claude/
 .deploy/
+.ai-work/
 .vscode/
 .idea/
 coverage/

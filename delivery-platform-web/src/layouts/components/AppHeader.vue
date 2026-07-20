@@ -1,13 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  IconLanguage,
-  IconMoon,
-  IconNotification,
-  IconSettings,
-  IconSun,
-} from '@arco-design/web-vue/es/icon'
+import figmaAvatar from '@/assets/figma/project-overview/avatar.png'
 import type { LocaleCode } from '@/store/locale'
 import type { ThemeMode } from '@/store/app'
 import type { MenuItem } from '@/store/permission'
@@ -32,11 +26,8 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const userInitial = computed(() => props.userName.slice(0, 1) || 'U')
 
-function handleSettingSelect(command: DropdownCommand): void {
-  if (typeof command === 'string') emit('settingSelect', command)
-}
-
 function handleUserCommand(command: DropdownCommand): void {
+  if (typeof command === 'string' && command.startsWith('/')) emit('settingSelect', command)
   if (command === 'zh-CN' || command === 'en-US') emit('languageChange', command)
   if (command === 'light' || command === 'dark' || command === 'system')
     emit('themeChange', command)
@@ -57,46 +48,28 @@ function handleUserCommand(command: DropdownCommand): void {
     </button>
 
     <div class="header-right">
-      <a-button type="text" shape="circle" class="header-circle-button">
-        <template #icon>
-          <IconNotification />
-        </template>
-        <span class="sr-only">{{ t('shell.notifications') }}</span>
-      </a-button>
-
-      <a-dropdown trigger="click" position="br" @select="handleSettingSelect">
-        <a-button type="text" shape="circle" class="header-circle-button">
-          <template #icon>
-            <IconSettings />
-          </template>
-          <span class="sr-only">{{ t('shell.openSettings') }}</span>
-        </a-button>
+      <a-dropdown trigger="click" position="br" @select="handleUserCommand">
+        <button class="user-trigger" type="button">
+          <a-avatar :size="32" shape="square" class="user-avatar">
+            <img :src="figmaAvatar" :alt="userInitial" />
+          </a-avatar>
+          <span class="user-name">{{ userName }}</span>
+        </button>
         <template #content>
           <a-doption v-for="item in settings" :key="item.path" :value="item.path">
             {{ t(item.title) }}
           </a-doption>
-          <a-doption v-if="settings.length === 0" disabled>
-            {{ t('shell.noAccessibleSettings') }}
-          </a-doption>
-        </template>
-      </a-dropdown>
-
-      <a-dropdown trigger="click" position="br" @select="handleUserCommand">
-        <a-avatar :size="32" class="user-avatar">
-          {{ userInitial }}
-        </a-avatar>
-        <template #content>
           <a-doption value="zh-CN">
-            <IconLanguage /> {{ t('shell.locale.zhCN') }}
+            {{ t('shell.locale.zhCN') }}
           </a-doption>
           <a-doption value="en-US">
-            <IconLanguage /> English
+            English
           </a-doption>
           <a-doption value="light">
-            <IconSun /> {{ t('shell.theme.light') }}
+            {{ t('shell.theme.light') }}
           </a-doption>
           <a-doption value="dark">
-            <IconMoon /> {{ t('shell.theme.dark') }}
+            {{ t('shell.theme.dark') }}
           </a-doption>
           <a-doption value="system">
             {{ t('shell.theme.system') }}
@@ -142,7 +115,7 @@ function handleUserCommand(command: DropdownCommand): void {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: 0;
   background: #165dff;
   color: #fff;
   font-family: Inter, sans-serif;
@@ -159,19 +132,34 @@ function handleUserCommand(command: DropdownCommand): void {
 .header-right {
   display: flex;
   align-items: center;
-  gap: 16px;
-}
-.header-circle-button {
-  width: 36px;
-  height: 36px;
-  background: #f2f3f5;
-  color: #4e5969;
 }
 .user-avatar {
+  border-radius: 0;
   background: #5ebd9f;
   color: #fff;
-  cursor: pointer;
   font-weight: 600;
+}
+.user-avatar img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+.user-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #4e5969;
+  cursor: pointer;
+}
+.user-name {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 22px;
+  white-space: nowrap;
 }
 .sr-only {
   position: absolute;

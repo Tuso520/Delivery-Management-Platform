@@ -133,7 +133,10 @@ describe('ProjectService', () => {
       projectArchiveFile: { count: jest.fn().mockResolvedValue(0) },
       file: { count: jest.fn().mockResolvedValue(0) },
       reviewTask: { count: jest.fn().mockResolvedValue(0) },
-      projectPayment: { count: jest.fn().mockResolvedValue(0) },
+      projectPayment: {
+        count: jest.fn().mockResolvedValue(0),
+        aggregate: jest.fn().mockResolvedValue({ _sum: { receivedConvertedAmount: null } }),
+      },
       exchangeRate: { findFirst: jest.fn() },
       country: {
         findMany: jest.fn().mockResolvedValue([{ countryCode: 'VN', nameZh: '越南' }]),
@@ -819,14 +822,24 @@ describe('ProjectService', () => {
       .mockResolvedValueOnce(3)
       .mockResolvedValueOnce(2)
       .mockResolvedValueOnce(1);
-    prisma.project.aggregate
-      .mockResolvedValueOnce({ _sum: { convertedAmount: new Prisma.Decimal('28565000') } })
-      .mockResolvedValueOnce({ _sum: { convertedAmount: new Prisma.Decimal('15683000') } });
+    prisma.project.aggregate.mockResolvedValueOnce({
+      _sum: { convertedAmount: new Prisma.Decimal('28565000') },
+    });
+    prisma.projectPayment.aggregate.mockResolvedValueOnce({
+      _sum: { receivedConvertedAmount: new Prisma.Decimal('15683000') },
+    });
 
     await expect(service.getSummary(financialActor, 'mine')).resolves.toMatchObject({
       totalConvertedAmount: 28565000,
       acceptedConvertedAmount: 15683000,
       acceptedThisYear: 2,
+    });
+    expect(prisma.projectPayment.aggregate).toHaveBeenCalledWith({
+      where: {
+        deletedAt: null,
+        project: expect.objectContaining({ AND: expect.any(Array) }),
+      },
+      _sum: { receivedConvertedAmount: true },
     });
   });
 

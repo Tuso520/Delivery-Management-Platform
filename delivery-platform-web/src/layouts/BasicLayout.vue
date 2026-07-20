@@ -13,6 +13,7 @@ import {
 import { useLocaleStore } from '@/store/locale'
 import { menuItems, resolveRouteTitle, settingItems } from '@/router'
 import type { LocaleCode } from '@/store/locale'
+import type { MenuItem } from '@/store/permission'
 import AppHeader from './components/AppHeader.vue'
 import AppSidebar from './components/AppSidebar.vue'
 import AppBreadcrumb from './components/AppBreadcrumb.vue'
@@ -27,7 +28,6 @@ const isMobile = ref(false)
 const { t } = useI18n()
 permissionStore.setMenus(menuItems)
 const sidebarCollapsed = computed(() => appStore.sidebarCollapsed)
-const filteredMenus = computed(() => permissionStore.filteredMenus)
 const filteredSettings = computed(() =>
   filterMenusByPermissions(
     settingItems,
@@ -35,6 +35,19 @@ const filteredSettings = computed(() =>
     userStore.userInfo?.roles ?? [],
   ),
 )
+const filteredMenus = computed<MenuItem[]>(() => [
+  ...permissionStore.filteredMenus,
+  ...(filteredSettings.value.length
+    ? [
+        {
+          path: '/settings-group',
+          name: 'SettingsGroup',
+          title: 'menu.system',
+          children: filteredSettings.value,
+        },
+      ]
+    : []),
+])
 const activeMenu = computed(() => resolveActiveMenuPath(filteredMenus.value, route.path))
 const activeGroup = computed(() =>
   filteredMenus.value.find((menu) =>

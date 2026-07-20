@@ -10,8 +10,22 @@ const routerSource = readFileSync(resolve(process.cwd(), 'src/router/index.ts'),
 
 describe('settings navigation contract', () => {
   it('exposes settings center and the Figma field configuration page', () => {
-    expect(settingItems.map((item) => item.title)).toEqual(['routes.settings', 'menu.systemFields'])
-    expect(settingItems.map((item) => item.path)).toEqual(['/settings', '/settings/fields'])
+    expect(settingItems.map((item) => item.title)).toEqual([
+      'menu.systemCurrency',
+      'menu.systemApproval',
+      'menu.systemFields',
+      'menu.systemIntegration',
+      'menu.systemConfig',
+      'menu.userCenter',
+    ])
+    expect(settingItems.map((item) => item.path)).toEqual([
+      '/settings/currency',
+      '/settings/approvals',
+      '/settings/fields',
+      '/settings/integrations',
+      '/settings/system',
+      '/settings',
+    ])
   })
 
   it('uses target view/manage permission codes for every setting page', () => {
