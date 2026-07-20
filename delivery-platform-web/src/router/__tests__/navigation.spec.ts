@@ -39,7 +39,14 @@ describe('application navigation', () => {
     expect(menuItems.flatMap((group) => group.children ?? [])).not.toContainEqual(
       expect.objectContaining({ name: 'Currency' }),
     )
-    expect(settingItems.map((item) => item.title)).toEqual(['routes.settings', 'menu.systemFields'])
+    expect(settingItems.map((item) => item.title)).toEqual([
+      'menu.systemCurrency',
+      'menu.systemApproval',
+      'menu.systemFields',
+      'menu.systemIntegration',
+      'menu.systemConfig',
+      'menu.userCenter',
+    ])
   })
 
   it('registers only the canonical project routes', () => {

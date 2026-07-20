@@ -8,7 +8,7 @@ import { firstRouteParam, preservedRouteQuery } from '@/router/query-state'
 describe('authenticated route fallbacks', () => {
   it('prefers explicit main access, then settings, then public main pages', () => {
     expect(getFirstAccessiblePath(['project:view'])).toBe('/projects')
-    expect(getFirstAccessiblePath(['currency:view'])).toBe('/settings')
+    expect(getFirstAccessiblePath(['currency:view'])).toBe('/settings/currency')
     expect(getFirstAccessiblePath([])).toBe('/review')
   })
 

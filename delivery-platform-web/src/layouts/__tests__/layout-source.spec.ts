@@ -30,23 +30,28 @@ describe('application shell layout', () => {
     expect(layoutSource).toContain(':group-title="groupTitle"')
   })
 
-  it('keeps notification, settings, locale and theme capabilities available', () => {
-    expect(headerSource).toContain('<IconNotification />')
-    expect(headerSource).toContain('<IconSettings />')
-    expect(headerSource).toContain('<span class="sr-only">{{ t(\'shell.openSettings\') }}</span>')
+  it('uses the Figma avatar and keeps settings, locale and theme capabilities available', () => {
+    expect(headerSource).toContain(
+      "import figmaAvatar from '@/assets/figma/project-overview/avatar.png'",
+    )
+    expect(headerSource).toContain(':src="figmaAvatar"')
+    expect(headerSource).toContain('<span class="user-name">{{ userName }}</span>')
+    expect(headerSource).toContain('v-for="item in settings"')
     expect(headerSource).toContain('value="light"')
     expect(headerSource).toContain('value="dark"')
     expect(headerSource).toContain('value="system"')
-    expect(headerSource).toContain('<IconLanguage />')
+    expect(headerSource).not.toContain('@arco-design/web-vue/es/icon')
     expect(headerSource).toContain('value="zh-CN"')
   })
 
   it('renders route-derived menu expansion and an explicit empty state', () => {
-    expect(sidebarSource).toContain(':default-open-keys="defaultOpenKeys"')
-    expect(sidebarSource).toContain(':accordion="true"')
+    expect(sidebarSource).toContain(':open-keys="openKeys"')
+    expect(sidebarSource).toContain(':accordion="false"')
     expect(sidebarSource).toContain('return t(menu.title)')
     expect(sidebarSource).not.toContain('menu.titleEn')
     expect(sidebarSource).not.toContain('menuKeyMap')
     expect(sidebarSource).toContain("t('shell.noAccessibleMenu')")
+    expect(sidebarSource).toContain('menu-project.svg')
+    expect(sidebarSource).toContain('menu-fold.svg')
   })
 })

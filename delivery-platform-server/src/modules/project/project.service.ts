@@ -389,9 +389,12 @@ export class ProjectService {
           where: activeScope,
           _sum: { convertedAmount: true },
         }),
-        this.prisma.project.aggregate({
-          where: { AND: [activeScope, this.buildSummaryFilterWhere('ACCEPTED')] },
-          _sum: { convertedAmount: true },
+        this.prisma.projectPayment.aggregate({
+          where: {
+            deletedAt: null,
+            project: activeScope,
+          },
+          _sum: { receivedConvertedAmount: true },
         }),
       ]);
     const canViewFinancial = this.canViewFinancial(actor);
@@ -405,7 +408,7 @@ export class ProjectService {
         ? (totalAmount._sum.convertedAmount?.toNumber() ?? 0)
         : null,
       acceptedConvertedAmount: canViewFinancial
-        ? (acceptedAmount._sum.convertedAmount?.toNumber() ?? 0)
+        ? (acceptedAmount._sum.receivedConvertedAmount?.toNumber() ?? 0)
         : null,
     };
   }

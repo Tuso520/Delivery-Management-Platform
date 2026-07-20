@@ -1,7 +1,12 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
+import { resolve } from 'node:path'
 
 const adminUsername = process.env.E2E_ADMIN_USERNAME
 const adminPassword = process.env.E2E_ADMIN_PASSWORD
+const acceptanceScreenshot = resolve(
+  process.cwd(),
+  '../.ai-work/acceptance-project-overview-1440x900.png',
+)
 
 async function login(page: Page): Promise<void> {
   if (!adminUsername || !adminPassword) throw new Error('UI E2E credentials are required')
@@ -107,6 +112,81 @@ async function firstColumnHorizontalMovement(page: Page): Promise<number> {
     return Math.round(firstHeader.getBoundingClientRect().left - initialLeft)
   })
 }
+
+test('project overview matches the Figma shell with real API data at 1440x900', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await login(page)
+
+  const listResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/v1/projects?') &&
+      response.request().method() === 'GET' &&
+      response.status() === 200,
+  )
+  await page.goto('/#/projects')
+  await listResponse
+  await expect(page.locator('.summary-band')).toBeVisible()
+  await expect(page.locator('.project-link').first()).toBeVisible({ timeout: 60_000 })
+
+  const layout = await page.evaluate(() => {
+    const header = document.querySelector<HTMLElement>('.layout-header')
+    const sidebar = document.querySelector<HTMLElement>('.layout-aside')
+    const content = document.querySelector<HTMLElement>('.layout-content')
+    const summary = document.querySelector<HTMLElement>('.summary-band')
+    const toolbar = document.querySelector<HTMLElement>('.project-toolbar')
+    if (!header || !sidebar || !content || !summary || !toolbar) {
+      throw new Error('Project overview shell nodes are incomplete')
+    }
+    return {
+      headerHeight: Math.round(header.getBoundingClientRect().height),
+      sidebarWidth: Math.round(sidebar.getBoundingClientRect().width),
+      contentPaddingLeft: Math.round(Number.parseFloat(getComputedStyle(content).paddingLeft)),
+      summaryHeight: Math.round(summary.getBoundingClientRect().height),
+      toolbarHeight: Math.round(toolbar.getBoundingClientRect().height),
+    }
+  })
+
+  expect(layout).toEqual({
+    headerHeight: 60,
+    sidebarWidth: 180,
+    contentPaddingLeft: 13,
+    summaryHeight: 100,
+    toolbarHeight: 32,
+  })
+
+  for (const label of [
+    '项目金额（CNY）',
+    '项目总数',
+    '进行中的项目',
+    '今年验收项目',
+    '确收金额（CNY）',
+  ]) {
+    await expect(page.getByText(label, { exact: true })).toBeVisible()
+  }
+
+  const tableHeaders = await page
+    .locator('.project-list-panel thead .arco-table-th')
+    .allTextContents()
+  expect(tableHeaders.slice(0, 12).map((value) => value.trim())).toEqual([
+    '项目名称',
+    '项目经理 ↕',
+    '项目地点',
+    '当前阶段',
+    '项目进度',
+    '签约时间',
+    '验收时间',
+    '合同金额',
+    '折算人民币',
+    '客户类型',
+    '合同类型',
+    '销售',
+  ])
+
+  await expect(page.locator('.arco-message')).toHaveCount(0, { timeout: 10_000 })
+  await page.screenshot({ path: acceptanceScreenshot, animations: 'disabled' })
+})
 
 test('project overview uses wheel loading, large rows and a fixed project-name column', async ({
   page,

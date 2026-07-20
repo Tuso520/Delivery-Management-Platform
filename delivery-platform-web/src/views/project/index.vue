@@ -1,14 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, type CSSProperties } from 'vue'
 import { Message } from '@arco-design/web-vue'
-import {
-  IconCheckCircle,
-  IconFolder,
-  IconRefresh,
-  IconSearch,
-  IconSettings,
-  IconSafe,
-} from '@arco-design/web-vue/es/icon'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useMutation } from '@tanstack/vue-query'
@@ -27,15 +19,27 @@ import {
   useProjectListQuery,
   useProjectSummaryQuery,
 } from '@/composables/queries/useProjectQueries'
-import type { Project, ProjectScope, ProjectSummaryFilter, QueryProjectDto } from '@/types/project'
+import { usePermissionStore } from '@/store/permission'
+import type {
+  Project,
+  ProjectDeliveryStage,
+  ProjectScope,
+  ProjectSummaryFilter,
+  QueryProjectDto,
+} from '@/types/project'
 import { arcoConfirm } from '@/utils/arco-dialog'
 import { formatAdaptiveNumber } from '@/utils/format'
-import {
-  PROJECT_STAGE_COLORS,
-  projectDictionaryColor,
-  type ProjectDictionaryKind,
-} from '@/utils/project-dictionaries'
+import { projectDictionaryColor, type ProjectDictionaryKind } from '@/utils/project-dictionaries'
 import { localizeProjectStage } from '@/utils/project-localization'
+import summaryMoneyIcon from '@/assets/figma/project-overview/summary-money.svg'
+import summaryFolderIcon from '@/assets/figma/project-overview/summary-folder.svg'
+import summaryProgressIcon from '@/assets/figma/project-overview/summary-progress.svg'
+import summaryAcceptanceIcon from '@/assets/figma/project-overview/summary-acceptance.svg'
+import summaryRevenueIcon from '@/assets/figma/project-overview/summary-revenue.svg'
+import selectDownIcon from '@/assets/figma/project-overview/select-down.svg'
+import toolbarPlusIcon from '@/assets/figma/project-overview/toolbar-plus.svg'
+import toolbarQueryAsset from '@/assets/figma/project-overview/toolbar-query.png'
+import toolbarRefreshAsset from '@/assets/figma/project-overview/toolbar-refresh.png'
 
 import ProjectDetail from './detail.vue'
 import ProjectDrawer from './ProjectDrawer.vue'
@@ -43,6 +47,7 @@ import ProjectDrawer from './ProjectDrawer.vue'
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const permissionStore = usePermissionStore()
 type ProjectViewMode = ProjectScope | 'archived'
 const scope = ref<ProjectScope>((route.query.scope as ProjectScope) || 'mine')
 const archivedView = ref(route.query.view === 'archived')
@@ -79,7 +84,7 @@ const viewMode = computed<ProjectViewMode>(() => (archivedView.value ? 'archived
 const summaryMetrics = computed(() => [
   {
     id: 'amount',
-    icon: IconSafe,
+    icon: summaryMoneyIcon,
     label: t('projects.stats.totalAmount'),
     value: amountInTenThousands(summary.value.totalConvertedAmount),
     unit: summary.value.totalConvertedAmount === null ? '' : t('projects.stats.tenThousands'),
@@ -88,7 +93,7 @@ const summaryMetrics = computed(() => [
   },
   {
     id: 'total',
-    icon: IconFolder,
+    icon: summaryFolderIcon,
     key: 'ALL' as const,
     label: t('projects.stats.total'),
     value: String(summary.value.total),
@@ -98,7 +103,7 @@ const summaryMetrics = computed(() => [
   },
   {
     id: 'active',
-    icon: IconSettings,
+    icon: summaryProgressIcon,
     key: 'ACTIVE' as const,
     label: t('projects.stats.activeProjects'),
     value: String(summary.value.active),
@@ -108,7 +113,7 @@ const summaryMetrics = computed(() => [
   },
   {
     id: 'accepted',
-    icon: IconCheckCircle,
+    icon: summaryAcceptanceIcon,
     label: t('projects.stats.acceptedThisYear'),
     value: String(summary.value.acceptedThisYear),
     unit: t('projects.stats.items'),
@@ -117,7 +122,7 @@ const summaryMetrics = computed(() => [
   },
   {
     id: 'acceptedAmount',
-    icon: IconSafe,
+    icon: summaryRevenueIcon,
     label: t('projects.stats.acceptedAmount'),
     value: amountInTenThousands(summary.value.acceptedConvertedAmount),
     unit: summary.value.acceptedConvertedAmount === null ? '' : t('projects.stats.tenThousands'),
@@ -125,6 +130,7 @@ const summaryMetrics = computed(() => [
     filter: null,
   },
 ])
+const canCreateProject = computed(() => permissionStore.hasPermission('project:create'))
 
 const drawerMode = computed<'create' | 'edit' | 'view' | null>(() => {
   if (route.path === '/projects/create') return 'create'
@@ -254,17 +260,60 @@ function amountInTenThousands(value?: number | null): string {
   if (value === null || value === undefined) return '—'
   return formatAdaptiveNumber(value / 10_000, { placeholder: '—', fractionDigits: 1 })
 }
+function progressValue(project: Project): number {
+  const value = Number(project.progressPercent ?? 0)
+  return Math.min(100, Math.max(0, Number.isFinite(value) ? value : 0))
+}
 function memberName(project: Project, role: string): string {
   return project.members?.find((item) => item.projectRole === role)?.user?.realName || '—'
 }
-function stageColor(project: Project): string {
-  return PROJECT_STAGE_COLORS[project.currentStage]
+
+const stageStyles: Readonly<Record<ProjectDeliveryStage, CSSProperties>> = {
+  STARTUP: { color: '#2563eb', backgroundColor: '#dbeafe', borderColor: '#93c5fd' },
+  DEEPENING: { color: '#10b981', backgroundColor: '#d1fae5', borderColor: '#a7f3d0' },
+  PROCUREMENT: { color: '#f97316', backgroundColor: '#ffedd5', borderColor: '#fed7aa' },
+  CONSTRUCTION: { color: '#2563eb', backgroundColor: '#dbeafe', borderColor: '#93c5fd' },
+  COMMISSIONING: { color: '#f97316', backgroundColor: '#ffedd5', borderColor: '#fed7aa' },
+  TESTING: { color: '#2563eb', backgroundColor: '#dbeafe', borderColor: '#93c5fd' },
+  INTERNAL_ACCEPTANCE: {
+    color: '#10b981',
+    backgroundColor: '#d1fae5',
+    borderColor: '#a7f3d0',
+  },
+  EXTERNAL_ACCEPTANCE: {
+    color: '#10b981',
+    backgroundColor: '#d1fae5',
+    borderColor: '#a7f3d0',
+  },
+  WARRANTY: { color: '#4e5969', backgroundColor: '#f2f3f5', borderColor: '#e5e6eb' },
+}
+
+function stageStyle(project: Project): CSSProperties {
+  return stageStyles[project.currentStage]
 }
 function configuredOption(key: 'projectTypes' | 'contractTypes', value?: string | null) {
   return configurationQuery.data.value?.[key].find((item) => item.value === value)
 }
 function configuredColor(kind: ProjectDictionaryKind, value?: string | null): string | undefined {
   return value ? projectDictionaryColor(kind, value) : undefined
+}
+
+function dictionaryStyle(
+  kind: ProjectDictionaryKind,
+  value?: string | null,
+): CSSProperties | undefined {
+  if (!value) return undefined
+  const palette = configuredColor(kind, value)
+  if (palette === 'purple' || palette === 'magenta') {
+    return { color: '#722ed1', backgroundColor: '#f5e8ff' }
+  }
+  if (palette === 'green' || palette === 'lime') {
+    return { color: '#00b42a', backgroundColor: '#e8ffea' }
+  }
+  if (palette === 'orange' || palette === 'gold' || palette === 'red') {
+    return { color: '#f97316', backgroundColor: '#ffedd5' }
+  }
+  return { color: '#165dff', backgroundColor: '#e8f3ff' }
 }
 </script>
 
@@ -285,7 +334,7 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
         :disabled="!metric.filter"
         @click="metric.filter && selectSummary(metric.filter)"
       >
-        <span class="metric-icon"><component :is="metric.icon" /></span>
+        <span class="metric-icon"><img :src="metric.icon" alt="" /></span>
         <span class="metric-copy">
           <span class="metric-label">{{ metric.label }}</span>
           <span class="metric-value">{{ metric.value }} <small>{{ metric.unit }}</small></span>
@@ -301,7 +350,14 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
             <a-select :model-value="viewMode" @change="changeView($event as ProjectViewMode)">
               <a-option value="mine" :label="t('projects.scope.mine')" />
               <a-option value="all" :label="t('projects.scope.all')" />
-              <a-option value="archived" :label="t('projects.archiveView.archived')" />
+              <a-option
+                v-if="archivedView"
+                value="archived"
+                :label="t('projects.archiveView.archived')"
+              />
+              <template #arrow-icon>
+                <img class="select-down-icon" :src="selectDownIcon" alt="" />
+              </template>
             </a-select>
           </div>
           <div class="search-group">
@@ -314,18 +370,29 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
             />
             <a-button type="primary" class="search-button" @click="search">
               <template #icon>
-                <IconSearch />
-              </template>{{ t('common.search') }}
+                <span class="figma-button-icon figma-button-icon--sprite">
+                  <img :src="toolbarQueryAsset" alt="" />
+                </span>
+              </template>{{ t('projects.query') }}
             </a-button>
           </div>
         </template>
         <template #actions>
           <a-button :loading="activeQuery.isFetching.value" @click="refresh">
             <template #icon>
-              <IconRefresh />
+              <span class="figma-button-icon figma-button-icon--sprite">
+                <img :src="toolbarRefreshAsset" alt="" />
+              </span>
             </template>{{ t('projects.refresh') }}
           </a-button>
-          <a-button v-if="!archivedView" type="primary" @click="router.push('/projects/create')">
+          <a-button
+            v-if="!archivedView && canCreateProject"
+            type="primary"
+            @click="router.push('/projects/create')"
+          >
+            <template #icon>
+              <img class="figma-button-icon" :src="toolbarPlusIcon" alt="" />
+            </template>
             {{ t('projects.create') }}
           </a-button>
         </template>
@@ -345,7 +412,12 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
         @retry="refresh"
         @page-change="changePage"
       >
-        <a-table-column :title="t('projects.columns.name')" :width="103" fixed="left">
+        <a-table-column
+          :title="t('projects.columns.name')"
+          :width="120"
+          fixed="left"
+          align="center"
+        >
           <template #cell="{ record: row }">
             <a-tooltip :content="displayName(row)">
               <button class="project-link" @click="openProject(row)">
@@ -354,74 +426,58 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
             </a-tooltip>
           </template>
         </a-table-column>
-        <a-table-column :title="t('projects.columns.region')" :width="157">
+        <a-table-column :title="t('projects.columns.manager')" :width="110" align="center">
+          <template #title>
+            <span class="manager-heading">{{ t('projects.columns.manager') }} <i>↕</i></span>
+          </template>
           <template #cell="{ record: row }">
-            <span class="nowrap">{{ region(row) }}</span>
+            {{ row.projectManager?.realName || memberName(row, 'PROJECT_MANAGER') }}
           </template>
         </a-table-column>
-        <a-table-column
-          v-if="!archivedView"
-          :title="t('projects.columns.customerType')"
-          :width="104"
-        >
+        <a-table-column :title="t('projects.columns.region')" :width="160" align="center">
           <template #cell="{ record: row }">
-            <a-tag v-if="row.projectType" :color="configuredColor('projectType', row.projectType)">
-              {{
-                configuredOption('projectTypes', row.projectType)?.label || row.projectType
-              }}
-            </a-tag><span v-else>—</span>
-          </template>
-        </a-table-column>
-        <a-table-column v-else :title="t('projects.createForm.projectType')" :min-width="104">
-          <template #cell="{ record: row }">
-            {{ configuredOption('projectTypes', row.projectType)?.label || row.projectType || '—' }}
-          </template>
-        </a-table-column>
-        <a-table-column
-          v-if="archivedView"
-          :title="t('projects.createForm.contractType')"
-          :width="92"
-          data-index="contractType"
-        />
-        <a-table-column
-          v-if="!archivedView"
-          :title="t('projects.createForm.contractType')"
-          :width="92"
-        >
-          <template #cell="{ record: row }">
-            <a-tag
-              v-if="row.contractType"
-              :color="configuredColor('contractType', row.contractType)"
-            >
-              {{
-                configuredOption('contractTypes', row.contractType)?.label || row.contractType
-              }}
-            </a-tag><span v-else>—</span>
+            <span class="cell-left nowrap">{{ region(row) }}</span>
           </template>
         </a-table-column>
         <a-table-column
           v-if="!archivedView"
           :title="t('projects.columns.currentStage')"
-          :width="172"
+          :width="200"
+          align="center"
         >
           <template #cell="{ record: row }">
-            <a-tag :color="stageColor(row)">
-              {{ localizeProjectStage(row.currentStage, 'zh-CN') }}
-            </a-tag>
+            <span class="stage-cell">
+              <span class="stage-tag" :style="stageStyle(row)">
+                {{ localizeProjectStage(row.currentStage, 'zh-CN') }}
+              </span>
+            </span>
           </template>
         </a-table-column>
-        <a-table-column v-if="!archivedView" :title="t('projects.columns.progress')" :width="142">
+        <a-table-column
+          v-if="!archivedView"
+          :title="t('projects.columns.progress')"
+          :width="180"
+          align="center"
+        >
           <template #cell="{ record: row }">
             <div class="progress">
-              <a-progress
-                :percent="(row.progressPercent || 0) / 100"
-                :show-text="false"
-                size="small"
-              /><span>{{ row.progressPercent ?? 0 }}%</span>
+              <span class="progress-track">
+                <span
+                  class="progress-fill"
+                  :class="{ 'is-complete': progressValue(row) === 100 }"
+                  :style="{ width: `${progressValue(row)}%` }"
+                />
+              </span>
+              <span>{{ progressValue(row) }}%</span>
             </div>
           </template>
         </a-table-column>
-        <a-table-column v-if="!archivedView" :title="t('projects.columns.signedAt')" :width="107">
+        <a-table-column
+          v-if="!archivedView"
+          :title="t('projects.columns.signedAt')"
+          :width="120"
+          align="center"
+        >
           <template #cell="{ record: row }">
             {{ date(row.contractSignedAt) }}
           </template>
@@ -429,7 +485,8 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
         <a-table-column
           v-if="!archivedView"
           :title="t('projects.columns.acceptanceAt')"
-          :width="107"
+          :width="120"
+          align="center"
         >
           <template #cell="{ record: row }">
             {{ acceptance(row) }}
@@ -438,10 +495,11 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
         <a-table-column
           v-if="!archivedView"
           :title="t('projects.columns.contractAmount')"
-          :width="152"
+          :width="160"
+          align="center"
         >
           <template #cell="{ record: row }">
-            <span class="money-cell">
+            <span class="cell-left money-cell">
               {{
                 row.contractCurrency ? `${row.contractCurrency} ${amount(row.contractAmount)}` : '—'
               }}
@@ -451,12 +509,47 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
         <a-table-column
           v-if="!archivedView"
           :title="t('projects.columns.convertedCny')"
-          :width="144"
+          :width="160"
+          align="center"
         >
           <template #cell="{ record: row }">
-            <span class="money-cell">
+            <span class="cell-left money-cell">
               {{ amount(row.convertedAmount) === '—' ? '—' : `CNY ${amount(row.convertedAmount)}` }}
             </span>
+          </template>
+        </a-table-column>
+        <a-table-column
+          v-if="!archivedView"
+          :title="t('projects.columns.customerType')"
+          :width="120"
+          align="center"
+        >
+          <template #cell="{ record: row }">
+            <span
+              v-if="row.projectType"
+              class="dictionary-tag"
+              :style="dictionaryStyle('projectType', row.projectType)"
+            >
+              {{
+                configuredOption('projectTypes', row.projectType)?.label || row.projectType
+              }} </span><span v-else>—</span>
+          </template>
+        </a-table-column>
+        <a-table-column v-else :title="t('projects.createForm.projectType')" :width="120">
+          <template #cell="{ record: row }">
+            {{ configuredOption('projectTypes', row.projectType)?.label || row.projectType || '—' }}
+          </template>
+        </a-table-column>
+        <a-table-column :title="t('projects.createForm.contractType')" :width="110" align="center">
+          <template #cell="{ record: row }">
+            <span
+              v-if="row.contractType"
+              class="dictionary-tag"
+              :style="dictionaryStyle('contractType', row.contractType)"
+            >
+              {{
+                configuredOption('contractTypes', row.contractType)?.label || row.contractType
+              }} </span><span v-else>—</span>
           </template>
         </a-table-column>
         <a-table-column
@@ -479,12 +572,7 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
         </a-table-column>
         <a-table-column :title="t('projects.columns.sales')" :width="100" align="center">
           <template #cell="{ record: row }">
-            {{ memberName(row, 'SALES_OWNER') }}
-          </template>
-        </a-table-column>
-        <a-table-column :title="t('projects.columns.manager')" :width="110" align="center">
-          <template #cell="{ record: row }">
-            {{ memberName(row, 'PROJECT_MANAGER') }}
+            {{ row.salesOwner?.realName || memberName(row, 'SALES_OWNER') }}
           </template>
         </a-table-column>
         <a-table-column v-if="archivedView" :title="t('common.action')" :min-width="168">
@@ -559,8 +647,6 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
   min-height: 100px;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  border-top: 1px solid var(--project-border);
-  border-bottom: 1px solid var(--project-border);
 }
 
 .summary-metric {
@@ -587,8 +673,7 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
 .summary-metric:not(:disabled) {
   cursor: pointer;
 }
-.summary-metric:not(:disabled):hover,
-.summary-metric.is-active {
+.summary-metric:not(:disabled):hover {
   background: #f7f8fa;
 }
 .metric-icon {
@@ -598,11 +683,13 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
   background: #eceefb;
-  color: #6f7cff;
-  font-size: 24px;
-  box-shadow: inset 0 0 0 5px rgba(255, 255, 255, 0.55);
+  overflow: hidden;
+}
+.metric-icon img {
+  width: 46px;
+  height: 46px;
+  display: block;
 }
 .summary-metric--green .metric-icon {
   background: #e6f7ed;
@@ -665,8 +752,10 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
 
 .project-toolbar {
   flex: 0 0 auto;
-  min-height: 44px;
-  padding: 6px 0;
+  min-height: 32px;
+  height: 32px;
+  margin-bottom: 12px;
+  padding: 0;
 }
 
 .project-toolbar :deep(.page-toolbar__filters) {
@@ -694,6 +783,11 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
   background: #f2f3f5;
   border-color: #f2f3f5;
 }
+.select-down-icon {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
 
 .keyword-input {
   width: 273px;
@@ -714,6 +808,23 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
   margin-left: 0;
   border-radius: 2px !important;
 }
+.figma-button-icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+.figma-button-icon--sprite {
+  position: relative;
+  overflow: hidden;
+}
+.figma-button-icon--sprite img {
+  position: absolute;
+  top: -9px;
+  left: -16px;
+  width: 82px;
+  height: 32px;
+  max-width: none;
+}
 
 .project-link {
   display: block;
@@ -733,15 +844,21 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
 .nowrap {
   white-space: nowrap;
 }
+.cell-left {
+  width: 100%;
+  display: block;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+}
 .money-cell {
-  display: inline-block;
   min-width: max-content;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .progress {
   display: grid;
-  grid-template-columns: 62px 34px;
+  grid-template-columns: 80px 34px;
   align-items: center;
   justify-content: center;
   gap: 8px;
@@ -749,8 +866,64 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
   font-size: 12px;
   white-space: nowrap;
 }
-.progress :deep(.arco-progress-line-bar) {
-  height: 6px !important;
+.progress-track {
+  width: 80px;
+  height: 6px;
+  display: block;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #e5e6eb;
+}
+.progress-fill {
+  height: 100%;
+  display: block;
+  background: #2563eb;
+}
+.progress-fill.is-complete {
+  background: #10b981;
+}
+.stage-cell {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+}
+.stage-tag {
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px solid;
+  border-radius: 2px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.dictionary-tag {
+  min-width: 40px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  border-radius: 2px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.manager-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.manager-heading i {
+  color: #999;
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 400;
 }
 
 :deep(.project-list-panel > .business-table) {
@@ -795,7 +968,7 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
 }
 :deep(.project-list-panel .arco-table-th),
 :deep(.project-list-panel .arco-table-td) {
-  padding: 0 23px;
+  padding: 0 12px;
   border-color: var(--project-border);
   white-space: nowrap;
 }
@@ -805,16 +978,6 @@ function configuredColor(kind: ProjectDictionaryKind, value?: string | null): st
 :deep(.project-list-panel .arco-table-tr:hover .arco-table-td) {
   background: #e8f3ff;
 }
-:deep(.project-list-panel .arco-tag) {
-  height: 18px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 9px;
-  color: #fff;
-  font-size: 12px;
-  line-height: 18px;
-}
-
 :deep(.project-page .arco-btn),
 :deep(.project-page .arco-input-wrapper),
 :deep(.project-page .arco-select-view-single) {

@@ -1,16 +1,22 @@
 <script setup lang="ts">
-import { IconMenuUnfold } from '@arco-design/web-vue/es/icon'
 import { useI18n } from 'vue-i18n'
+import breadcrumbListIcon from '@/assets/figma/project-overview/breadcrumb-list.svg'
+import breadcrumbSeparatorIcon from '@/assets/figma/project-overview/breadcrumb-separator.svg'
 defineProps<{ groupTitle?: string; pageTitle: string }>()
 const { t } = useI18n()
 </script>
 
 <template>
   <nav class="app-breadcrumb" :aria-label="t('shell.breadcrumb')">
-    <IconMenuUnfold class="breadcrumb-leading" />
-    <span class="separator">/</span>
+    <img class="breadcrumb-leading" :src="breadcrumbListIcon" alt="" />
+    <img class="separator" :src="breadcrumbSeparatorIcon" alt="" />
     <span v-if="groupTitle" class="muted">{{ groupTitle }}</span>
-    <span v-if="groupTitle" class="separator">/</span>
+    <img
+      v-if="groupTitle"
+      class="separator"
+      :src="breadcrumbSeparatorIcon"
+      alt=""
+    />
     <h1 class="page-title">
       {{ pageTitle }}
     </h1>
@@ -30,9 +36,13 @@ const { t } = useI18n()
 .breadcrumb-leading {
   width: 16px;
   height: 16px;
-  color: #4e5969;
+  display: block;
 }
-.separator,
+.separator {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
 .muted {
   color: #86909c;
 }

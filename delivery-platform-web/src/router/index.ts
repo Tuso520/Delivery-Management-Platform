@@ -315,7 +315,7 @@ export const shellRoutes: RouteRecordRaw[] = [
             'audit_log:view', 'system_setting:view', 'integration:view',
           ],
           menu: true,
-          order: 10,
+          order: 60,
         },
       },
       {
@@ -327,7 +327,7 @@ export const shellRoutes: RouteRecordRaw[] = [
           icon: 'List',
           permissions: ['field_setting:manage'],
           menu: true,
-          order: 20,
+          order: 30,
         },
       },
       {
@@ -339,6 +339,7 @@ export const shellRoutes: RouteRecordRaw[] = [
           title: 'menu.systemCurrency',
           icon: 'Coin',
           permissions: ['currency:view', 'currency:manage'],
+          menu: true,
           hidden: true,
           order: 10,
         },
@@ -365,8 +366,9 @@ export const shellRoutes: RouteRecordRaw[] = [
           title: 'menu.systemApproval',
           icon: 'Finished',
           permissions: ['approval_config:view', 'approval_config:manage'],
+          menu: true,
           hidden: true,
-          order: 30,
+          order: 20,
         },
       },
       {
@@ -391,6 +393,7 @@ export const shellRoutes: RouteRecordRaw[] = [
           title: 'menu.systemConfig',
           icon: 'Operation',
           permissions: ['system_setting:view', 'system_setting:manage'],
+          menu: true,
           hidden: true,
           order: 50,
         },
@@ -404,8 +407,9 @@ export const shellRoutes: RouteRecordRaw[] = [
           title: 'menu.systemIntegration',
           icon: 'Link',
           permissions: ['integration:view', 'integration:manage'],
+          menu: true,
           hidden: true,
-          order: 60,
+          order: 40,
         },
       },
     ],
@@ -439,7 +443,9 @@ export const shellRoutes: RouteRecordRaw[] = [
 ]
 
 export const menuItems = buildNavigationFromRoutes(shellRoutes, 'main')
-export const settingItems = buildNavigationFromRoutes(shellRoutes, 'settings')[0]?.children ?? []
+export const settingItems = (
+  buildNavigationFromRoutes(shellRoutes, 'settings')[0]?.children ?? []
+).map((item) => (item.name === 'SettingsCenter' ? { ...item, title: 'menu.userCenter' } : item))
 
 export const routes: RouteRecordRaw[] = [
   {

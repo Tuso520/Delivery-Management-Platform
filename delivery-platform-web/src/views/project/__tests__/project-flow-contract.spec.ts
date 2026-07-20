@@ -26,7 +26,7 @@ describe('project overview and overlay contract', () => {
     const table = source('src/components/business/BusinessTable.vue')
     expect(overview).toContain(':scroll="{ x: \'max-content\' }"')
     expect(overview).toContain('size="large"')
-    expect(overview).toContain(':width="103" fixed="left"')
+    expect(overview).toMatch(/:width="120"\s+fixed="left"/u)
     expect(overview).toContain("join(' · ') || '—'")
     expect(overview).toContain('fractionDigits: 2')
     expect(overview).toContain('table-layout: fixed !important')
@@ -40,7 +40,11 @@ describe('project overview and overlay contract', () => {
     expect(table).toContain("emit('pageChange', nextPage)")
     expect(table).not.toContain('<a-pagination')
     expect(overview).not.toContain(':width="280"')
-    expect(overview).toContain(':width="152"')
+    expect(overview).toContain(':width="160"')
+    expect(overview).toContain('summary-money.svg')
+    expect(overview).toContain('toolbar-query.png')
+    expect(overview).toContain("backgroundColor: '#d1fae5'")
+    expect(overview).toContain("borderColor: '#a7f3d0'")
   })
 
   it('shows a password visibility control on the login form', () => {
