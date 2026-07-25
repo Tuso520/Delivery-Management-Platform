@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   filterMenusByPermissions,
   findFirstAccessibleMenuPath,
+  resolveActiveMenuGroupPath,
   resolveActiveMenuPath,
 } from '@/store/permission'
 import type { MenuItem } from '@/store/permission'
@@ -101,5 +102,14 @@ describe('filterMenusByPermissions', () => {
     expect(
       resolveActiveMenuPath(projectMenus, '/project/detail/project-1'),
     ).toBe('/project')
+  })
+
+  it('resolves only the group containing the active menu', () => {
+    expect(resolveActiveMenuGroupPath(groupedMenus, '/review')).toBe('/workspace')
+    expect(resolveActiveMenuGroupPath(groupedMenus, '/system/config')).toBe('/system')
+  })
+
+  it('does not force a group open when the active route is outside the menu tree', () => {
+    expect(resolveActiveMenuGroupPath(groupedMenus, '/profile')).toBeNull()
   })
 })

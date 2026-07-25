@@ -45,8 +45,9 @@ describe('application shell layout', () => {
   })
 
   it('renders route-derived menu expansion and an explicit empty state', () => {
-    expect(sidebarSource).toContain(':open-keys="openKeys"')
-    expect(sidebarSource).toContain(':accordion="false"')
+    expect(sidebarSource).toContain('v-model:open-keys="openKeys"')
+    expect(sidebarSource).toContain(':accordion="true"')
+    expect(sidebarSource).toContain('resolveActiveMenuGroupPath(menus, activeMenu)')
     expect(sidebarSource).toContain('return t(menu.title)')
     expect(sidebarSource).not.toContain('menu.titleEn')
     expect(sidebarSource).not.toContain('menuKeyMap')

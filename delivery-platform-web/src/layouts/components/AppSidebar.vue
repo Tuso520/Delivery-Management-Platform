@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { MenuItem } from '@/store/permission'
+import {
+  resolveActiveMenuGroupPath,
+  type MenuItem,
+} from '@/store/permission'
 import menuDashboardIcon from '@/assets/figma/project-overview/menu-dashboard.svg'
 import menuProjectIcon from '@/assets/figma/project-overview/menu-project.svg'
 import menuKnowledgeIcon from '@/assets/figma/project-overview/menu-knowledge.svg'
@@ -18,8 +21,15 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ select: [path: string]; toggle: [] }>()
 const { t } = useI18n()
-const openKeys = computed(() =>
-  props.menus.filter((menu) => Boolean(menu.children?.length)).map((menu) => menu.path),
+const openKeys = ref<string[]>([])
+
+watch(
+  [() => props.activeMenu, () => props.menus],
+  ([activeMenu, menus]) => {
+    const activeGroupPath = resolveActiveMenuGroupPath(menus, activeMenu)
+    openKeys.value = activeGroupPath ? [activeGroupPath] : []
+  },
+  { immediate: true, deep: true },
 )
 
 function resolveMenuTitle(menu: MenuItem): string {
@@ -46,10 +56,10 @@ function isActiveGroup(menu: MenuItem): boolean {
   <aside class="layout-aside" :class="{ collapsed }">
     <a-menu
       v-if="menus.length"
+      v-model:open-keys="openKeys"
       :selected-keys="[activeMenu]"
-      :open-keys="openKeys"
       :collapsed="collapsed"
-      :accordion="false"
+      :accordion="true"
       auto-open-selected
       class="sidebar-menu"
       @menu-item-click="emit('select', $event)"

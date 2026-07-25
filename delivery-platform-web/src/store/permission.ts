@@ -84,6 +84,30 @@ export function resolveActiveMenuPath(menuList: MenuItem[], routePath: string): 
   return candidatePaths.sort((left, right) => right.length - left.length)[0] ?? routePath
 }
 
+export function resolveActiveMenuGroupPath(
+  menuList: MenuItem[],
+  activeMenuPath: string,
+): string | null {
+  const findParentPath = (items: MenuItem[], parentPath?: string): string | null => {
+    for (const item of items) {
+      if (item.path === activeMenuPath) {
+        return parentPath ?? null
+      }
+
+      if (item.children?.length) {
+        const matchedParentPath = findParentPath(item.children, item.path)
+        if (matchedParentPath) {
+          return matchedParentPath
+        }
+      }
+    }
+
+    return null
+  }
+
+  return findParentPath(menuList)
+}
+
 export const usePermissionStore = defineStore('permission', () => {
   const menus = ref<MenuItem[]>([])
 
