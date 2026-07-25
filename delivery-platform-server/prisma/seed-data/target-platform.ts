@@ -134,7 +134,6 @@ const legacyTargetDictionaries: readonly DictionarySeed[] = [
     name: '通知渠道',
     items: [
       { value: 'IN_APP', label: '站内通知' },
-      { value: 'WECOM', label: '企业微信' },
       { value: 'FEISHU', label: '飞书' },
     ],
   },

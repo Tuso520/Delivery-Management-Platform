@@ -18,7 +18,7 @@ export class IntegrationController {
 
   @Get()
   @RequirePermissions({ any: ['integration:view', 'integration:manage'] })
-  @ApiOperation({ summary: '获取飞书和企业微信集成配置' })
+  @ApiOperation({ summary: '获取飞书集成配置' })
   findAll() {
     return this.integrationService.findAll();
   }

@@ -717,7 +717,7 @@ describe('OutboxDispatcherService', () => {
       externalIdentity: {
         findFirst: jest.fn().mockImplementation(({ where }: { where: { provider: string } }) => ({
           externalUserId: `${where.provider.toLowerCase()}-user-1`,
-          identifierType: where.provider === 'FEISHU' ? 'OPEN_ID' : 'USER_ID',
+          identifierType: 'OPEN_ID',
         })),
       },
     });
@@ -725,7 +725,7 @@ describe('OutboxDispatcherService', () => {
     notifications.resolve.mockResolvedValue({
       title: '待审核',
       content: '请处理',
-      channels: ['IN_APP', 'FEISHU', 'WECOM'],
+      channels: ['IN_APP', 'FEISHU'],
     });
     const sendNotification = jest.fn().mockImplementation(({ provider }: { provider: string }) => ({
       provider,
@@ -741,7 +741,7 @@ describe('OutboxDispatcherService', () => {
     await expect(service.processBatch()).resolves.toBe(1);
 
     expect(harness.upsertNotification).toHaveBeenCalledTimes(1);
-    expect(sendNotification).toHaveBeenCalledTimes(2);
+    expect(sendNotification).toHaveBeenCalledTimes(1);
     expect(sendNotification).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: 'FEISHU',
@@ -753,7 +753,7 @@ describe('OutboxDispatcherService', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           status: 'SENT',
-          receiptId: 'wecom-receipt-1',
+          receiptId: 'feishu-receipt-1',
         }),
       }),
     );

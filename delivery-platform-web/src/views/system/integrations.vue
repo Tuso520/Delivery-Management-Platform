@@ -50,7 +50,6 @@ const canManage = computed(() => hasPermission('integration:manage'))
 
 const providerOptions = computed<Array<{ provider: IntegrationProvider; label: string }>>(() => [
   { provider: 'FEISHU', label: t('integrations.providers.FEISHU') },
-  { provider: 'WECOM', label: t('integrations.providers.WECOM') },
 ])
 
 const editorVisible = ref(false)
@@ -170,16 +169,9 @@ function openEditor(row: IntegrationRow): void {
 function requiredCredentialMissing(): boolean {
   const config = selectedConfig.value
   if (!form.value.isEnabled) return false
-  if (editingProvider.value === 'FEISHU') {
-    return (
-      !form.value.appId.trim() ||
-      (!hasConfiguredSecret(config, 'appSecret') && !form.value.appSecret.trim())
-    )
-  }
   return (
-    !form.value.corpId.trim() ||
-    !form.value.agentId.trim() ||
-    (!hasConfiguredSecret(config, 'secret') && !form.value.secret.trim())
+    !form.value.appId.trim() ||
+    (!hasConfiguredSecret(config, 'appSecret') && !form.value.appSecret.trim())
   )
 }
 
@@ -264,9 +256,7 @@ function capabilityLabel(capability: string): string {
 }
 
 function hasPrimarySecret(row: IntegrationRow): boolean {
-  return row.provider === 'FEISHU'
-    ? hasConfiguredSecret(row.config, 'appSecret')
-    : hasConfiguredSecret(row.config, 'secret')
+  return hasConfiguredSecret(row.config, 'appSecret')
 }
 
 function formatDate(value?: string | null): string {
@@ -449,93 +439,67 @@ function redactText(value?: string | null): string {
           </a-form-item>
         </div>
 
-        <template v-if="editingProvider === 'FEISHU'">
-          <div class="form-grid">
-            <a-form-item :label="t('integrations.appId')" required>
-              <a-input v-model="form.appId" :max-length="200" />
-            </a-form-item>
-            <a-form-item :label="t('integrations.appSecretField')" required>
-              <a-input
-                v-model="form.appSecret"
-                type="password"
-                :placeholder="t('integrations.replaceSecretPlaceholder')"
-              />
-              <template #extra>
-                {{
-                  hasConfiguredSecret(selectedConfig, 'appSecret')
-                    ? t('integrations.configuredReplaceHint')
-                    : t('integrations.notConfiguredHint')
-                }}
-              </template>
-            </a-form-item>
-            <a-form-item :label="t('integrations.webhook')">
-              <a-input
-                v-model="form.webhookUrl"
-                type="password"
-                :placeholder="t('integrations.replaceSecretPlaceholder')"
-              />
-              <template #extra>
-                {{
-                  hasConfiguredSecret(selectedConfig, 'webhookUrl')
-                    ? t('integrations.configuredReplaceHint')
-                    : t('integrations.webhookOptionalHint')
-                }}
-              </template>
-            </a-form-item>
-            <a-form-item :label="t('integrations.verificationToken')">
-              <a-input
-                v-model="form.verificationToken"
-                type="password"
-                :placeholder="t('integrations.replaceSecretPlaceholder')"
-              />
-              <template #extra>
-                {{
-                  hasConfiguredSecret(selectedConfig, 'verificationToken')
-                    ? t('integrations.configuredReplaceHint')
-                    : t('integrations.notConfiguredHint')
-                }}
-              </template>
-            </a-form-item>
-            <a-form-item :label="t('integrations.encryptKey')">
-              <a-input
-                v-model="form.encryptKey"
-                type="password"
-                :placeholder="t('integrations.replaceSecretPlaceholder')"
-              />
-              <template #extra>
-                {{
-                  hasConfiguredSecret(selectedConfig, 'encryptKey')
-                    ? t('integrations.configuredReplaceHint')
-                    : t('integrations.notConfiguredHint')
-                }}
-              </template>
-            </a-form-item>
-          </div>
-        </template>
-        <template v-else>
-          <div class="form-grid">
-            <a-form-item :label="t('integrations.corpId')" required>
-              <a-input v-model="form.corpId" :max-length="200" />
-            </a-form-item>
-            <a-form-item :label="t('integrations.agentId')" required>
-              <a-input v-model="form.agentId" :max-length="30" />
-            </a-form-item>
-            <a-form-item :label="t('integrations.appSecret')" required>
-              <a-input
-                v-model="form.secret"
-                type="password"
-                :placeholder="t('integrations.replaceSecretPlaceholder')"
-              />
-              <template #extra>
-                {{
-                  hasConfiguredSecret(selectedConfig, 'secret')
-                    ? t('integrations.configuredReplaceHint')
-                    : t('integrations.notConfiguredHint')
-                }}
-              </template>
-            </a-form-item>
-          </div>
-        </template>
+        <div class="form-grid">
+          <a-form-item :label="t('integrations.appId')" required>
+            <a-input v-model="form.appId" :max-length="200" />
+          </a-form-item>
+          <a-form-item :label="t('integrations.appSecretField')" required>
+            <a-input
+              v-model="form.appSecret"
+              type="password"
+              :placeholder="t('integrations.replaceSecretPlaceholder')"
+            />
+            <template #extra>
+              {{
+                hasConfiguredSecret(selectedConfig, 'appSecret')
+                  ? t('integrations.configuredReplaceHint')
+                  : t('integrations.notConfiguredHint')
+              }}
+            </template>
+          </a-form-item>
+          <a-form-item :label="t('integrations.webhook')">
+            <a-input
+              v-model="form.webhookUrl"
+              type="password"
+              :placeholder="t('integrations.replaceSecretPlaceholder')"
+            />
+            <template #extra>
+              {{
+                hasConfiguredSecret(selectedConfig, 'webhookUrl')
+                  ? t('integrations.configuredReplaceHint')
+                  : t('integrations.webhookOptionalHint')
+              }}
+            </template>
+          </a-form-item>
+          <a-form-item :label="t('integrations.verificationToken')">
+            <a-input
+              v-model="form.verificationToken"
+              type="password"
+              :placeholder="t('integrations.replaceSecretPlaceholder')"
+            />
+            <template #extra>
+              {{
+                hasConfiguredSecret(selectedConfig, 'verificationToken')
+                  ? t('integrations.configuredReplaceHint')
+                  : t('integrations.notConfiguredHint')
+              }}
+            </template>
+          </a-form-item>
+          <a-form-item :label="t('integrations.encryptKey')">
+            <a-input
+              v-model="form.encryptKey"
+              type="password"
+              :placeholder="t('integrations.replaceSecretPlaceholder')"
+            />
+            <template #extra>
+              {{
+                hasConfiguredSecret(selectedConfig, 'encryptKey')
+                  ? t('integrations.configuredReplaceHint')
+                  : t('integrations.notConfiguredHint')
+              }}
+            </template>
+          </a-form-item>
+        </div>
 
         <div class="form-grid">
           <a-form-item :label="t('integrations.departmentId')">

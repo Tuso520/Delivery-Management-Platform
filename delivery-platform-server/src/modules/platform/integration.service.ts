@@ -30,12 +30,10 @@ const CONTACT_SYNC_LEASE_MS = 5 * 60_000;
 
 const PUBLIC_FIELDS: Record<TargetIntegrationProvider, readonly string[]> = {
   FEISHU: ['appId', 'contactDepartmentId', 'testRecipient'],
-  WECOM: ['corpId', 'agentId', 'contactDepartmentId', 'testRecipient'],
 };
 
 const SECRET_FIELDS: Record<TargetIntegrationProvider, readonly string[]> = {
   FEISHU: ['appSecret'],
-  WECOM: ['secret'],
 };
 
 interface IntegrationRecord {
@@ -54,7 +52,7 @@ interface IntegrationRecord {
 
 interface NormalizedExternalContact {
   externalUserId: string;
-  identifierType: 'OPEN_ID' | 'USER_ID';
+  identifierType: 'OPEN_ID';
   realName: string;
   phone?: string;
   email?: string;
@@ -242,7 +240,7 @@ export class IntegrationService {
         await this.sendNotificationWithConfiguration(configuration, {
           provider,
           recipientId: this.requiredString(configuration, 'testRecipient'),
-          identifierType: provider === 'FEISHU' ? 'OPEN_ID' : 'USER_ID',
+          identifierType: 'OPEN_ID',
           title: '交付管理平台',
           content: '接口集成测试成功。',
           idempotencyKey: `test:${record.id}:${Date.now()}`,
@@ -254,8 +252,7 @@ export class IntegrationService {
 
   async sendNotification(input: ExternalNotificationInput): Promise<ExternalNotificationReceipt> {
     const provider = this.normalizeProvider(input.provider);
-    const expectedIdentifierType = provider === 'FEISHU' ? 'OPEN_ID' : 'USER_ID';
-    if (input.identifierType !== expectedIdentifierType) {
+    if (input.identifierType !== 'OPEN_ID') {
       throw new IntegrationDeliveryError('EXTERNAL_IDENTITY_TYPE_UNSUPPORTED', false);
     }
     const record = await this.findRecordByProvider(provider);
@@ -401,35 +398,22 @@ export class IntegrationService {
   }
 
   private async acquireAccessToken(
-    provider: TargetIntegrationProvider,
+    _provider: TargetIntegrationProvider,
     configuration: Record<string, unknown>,
   ): Promise<string> {
-    if (provider === 'FEISHU') {
-      const payload = await this.fetchJson(
-        'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal',
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            app_id: this.requiredString(configuration, 'appId'),
-            app_secret: this.requiredString(configuration, 'appSecret'),
-          }),
-        },
-      );
-      const code = this.numberFrom(payload.code, -1);
-      const token = this.stringFrom(payload.tenant_access_token);
-      if (code !== 0 || !token) {
-        throw new IntegrationDeliveryError('INTEGRATION_AUTH_REJECTED', false);
-      }
-      return token;
-    }
-
-    const url = new URL('https://qyapi.weixin.qq.com/cgi-bin/gettoken');
-    url.searchParams.set('corpid', this.requiredString(configuration, 'corpId'));
-    url.searchParams.set('corpsecret', this.requiredString(configuration, 'secret'));
-    const payload = await this.fetchJson(url.toString());
-    const code = this.numberFrom(payload.errcode, -1);
-    const token = this.stringFrom(payload.access_token);
+    const payload = await this.fetchJson(
+      'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          app_id: this.requiredString(configuration, 'appId'),
+          app_secret: this.requiredString(configuration, 'appSecret'),
+        }),
+      },
+    );
+    const code = this.numberFrom(payload.code, -1);
+    const token = this.stringFrom(payload.tenant_access_token);
     if (code !== 0 || !token) {
       throw new IntegrationDeliveryError('INTEGRATION_AUTH_REJECTED', false);
     }
@@ -441,9 +425,7 @@ export class IntegrationService {
     configuration: Record<string, unknown>,
   ): Promise<NormalizedExternalContact[]> {
     const token = await this.acquireAccessToken(provider, configuration);
-    return provider === 'FEISHU'
-      ? this.fetchFeishuContacts(token, configuration)
-      : this.fetchWecomContacts(token, configuration);
+    return this.fetchFeishuContacts(token, configuration);
   }
 
   private async fetchFeishuContacts(
@@ -486,84 +468,37 @@ export class IntegrationService {
     return contacts;
   }
 
-  private async fetchWecomContacts(
-    token: string,
-    configuration: Record<string, unknown>,
-  ): Promise<NormalizedExternalContact[]> {
-    const url = new URL('https://qyapi.weixin.qq.com/cgi-bin/user/list');
-    url.searchParams.set('access_token', token);
-    url.searchParams.set(
-      'department_id',
-      this.optionalString(configuration.contactDepartmentId) ?? '1',
-    );
-    url.searchParams.set('fetch_child', '1');
-    const payload = await this.fetchJson(url.toString());
-    const code = this.numberFrom(payload.errcode, -1);
-    if (code !== 0) {
-      throw new IntegrationDeliveryError('INTEGRATION_CONTACT_SYNC_REJECTED', false);
-    }
-    const userlist = Array.isArray(payload.userlist) ? payload.userlist : [];
-    return userlist.flatMap((item) => {
-      const contact = this.normalizeWecomContact(item);
-      return contact ? [contact] : [];
-    });
-  }
-
   private async sendNotificationWithConfiguration(
     configuration: Record<string, unknown>,
     input: ExternalNotificationInput,
   ): Promise<ExternalNotificationReceipt> {
     const message = this.truncateExternalMessage(`${input.title}\n${input.content}`);
     const provider = input.provider;
-    if (provider === 'FEISHU') {
-      const token = await this.acquireAccessToken(provider, configuration);
-      const url = new URL('https://open.feishu.cn/open-apis/im/v1/messages');
-      url.searchParams.set('receive_id_type', 'open_id');
-      const payload = await this.fetchJson(url.toString(), {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          receive_id: input.recipientId,
-          msg_type: 'text',
-          content: JSON.stringify({ text: message }),
-          uuid: this.feishuDeliveryUuid(input.idempotencyKey),
-        }),
-      });
-      const code = this.numberFrom(payload.code, -1);
-      if (code !== 0) {
-        throw new IntegrationDeliveryError('INTEGRATION_DELIVERY_REJECTED', false);
-      }
-      const data = this.asRecord(payload.data);
-      return {
-        provider,
-        receiptId: this.optionalString(data.message_id) ?? null,
-      };
-    }
-
     const token = await this.acquireAccessToken(provider, configuration);
-    const url = new URL('https://qyapi.weixin.qq.com/cgi-bin/message/send');
-    url.searchParams.set('access_token', token);
+    const url = new URL('https://open.feishu.cn/open-apis/im/v1/messages');
+    url.searchParams.set('receive_id_type', 'open_id');
     const payload = await this.fetchJson(url.toString(), {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({
-        touser: input.recipientId,
-        msgtype: 'text',
-        agentid: Number(this.requiredString(configuration, 'agentId')),
-        text: { content: message },
-        safe: 0,
-        enable_duplicate_check: 1,
-        duplicate_check_interval: 1800,
+        receive_id: input.recipientId,
+        msg_type: 'text',
+        content: JSON.stringify({ text: message }),
+        uuid: this.feishuDeliveryUuid(input.idempotencyKey),
       }),
     });
-    const code = this.numberFrom(payload.errcode, -1);
+    const code = this.numberFrom(payload.code, -1);
     if (code !== 0) {
       throw new IntegrationDeliveryError('INTEGRATION_DELIVERY_REJECTED', false);
     }
-    return { provider, receiptId: this.optionalString(payload.msgid) ?? null };
+    const data = this.asRecord(payload.data);
+    return {
+      provider,
+      receiptId: this.optionalString(data.message_id) ?? null,
+    };
   }
 
   private async acquireContactSyncLease(record: IntegrationRecord): Promise<ContactSyncLease> {
@@ -844,20 +779,6 @@ export class IntegrationService {
     };
   }
 
-  private normalizeWecomContact(value: unknown): NormalizedExternalContact | null {
-    const item = this.asRecord(value);
-    const externalUserId = this.stringFrom(item.userid);
-    const realName = this.stringFrom(item.name);
-    if (!externalUserId || !realName) return null;
-    return {
-      externalUserId,
-      identifierType: 'USER_ID',
-      realName,
-      phone: this.normalizePhone(item.mobile),
-      email: this.normalizeEmail(item.email),
-    };
-  }
-
   private async fetchJson(url: string, init?: RequestInit): Promise<Record<string, unknown>> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10_000);
@@ -954,8 +875,7 @@ export class IntegrationService {
 
   private normalizeProvider(value: string): TargetIntegrationProvider {
     if (value === 'FEISHU') return 'FEISHU';
-    if (value === 'WECOM') return 'WECOM';
-    throw new BadRequestException('接口集成仅支持 FEISHU 和 WECOM');
+    throw new BadRequestException('接口集成仅支持 FEISHU');
   }
 
   private assertProviderFields(
@@ -984,18 +904,12 @@ export class IntegrationService {
   }
 
   private assertRequiredConfiguration(
-    provider: TargetIntegrationProvider,
+    _provider: TargetIntegrationProvider,
     publicConfig: Record<string, unknown>,
     secrets: Record<string, unknown>,
   ): void {
-    const missingPublic =
-      provider === 'FEISHU'
-        ? !this.optionalString(publicConfig.appId)
-        : !this.optionalString(publicConfig.corpId) || !this.optionalString(publicConfig.agentId);
-    const hasRequiredSecret =
-      provider === 'FEISHU'
-        ? Boolean(this.optionalString(secrets.appSecret))
-        : Boolean(this.optionalString(secrets.secret));
+    const missingPublic = !this.optionalString(publicConfig.appId);
+    const hasRequiredSecret = Boolean(this.optionalString(secrets.appSecret));
     if (missingPublic || !hasRequiredSecret) {
       throw new BadRequestException('启用或调用集成前必须完整配置身份凭据');
     }
@@ -1079,12 +993,11 @@ export class IntegrationService {
   }
 
   private provisionedUsername(provider: TargetIntegrationProvider, externalUserId: string): string {
-    const prefix = provider === 'FEISHU' ? 'fs' : 'wx';
     const digest = createHash('sha256')
       .update(`${provider}:${externalUserId}`, 'utf8')
       .digest('hex')
       .slice(0, 40);
-    return `${prefix}_${digest}`;
+    return `fs_${digest}`;
   }
 
   private feishuDeliveryUuid(idempotencyKey: string): string {
@@ -1120,7 +1033,7 @@ export class IntegrationService {
       .slice(0, 1000);
   }
 
-  private defaultConfigName(provider: TargetIntegrationProvider): string {
-    return provider === 'FEISHU' ? '飞书集成' : '企业微信集成';
+  private defaultConfigName(_provider: TargetIntegrationProvider): string {
+    return '飞书集成';
   }
 }

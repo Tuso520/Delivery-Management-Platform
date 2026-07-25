@@ -11,9 +11,6 @@ export interface IntegrationEditorForm {
   webhookUrl: string
   verificationToken: string
   encryptKey: string
-  corpId: string
-  agentId: string
-  secret: string
   contactDepartmentId: string
   testRecipient: string
 }
@@ -31,9 +28,6 @@ export function emptyIntegrationForm(
     webhookUrl: '',
     verificationToken: '',
     encryptKey: '',
-    corpId: '',
-    agentId: '',
-    secret: '',
     contactDepartmentId: '',
     testRecipient: '',
   }
@@ -58,15 +52,12 @@ export function hydrateIntegrationForm(
     isEnabled: config.isEnabled,
     appId: visibleValue(config.configuration.appId),
     webhookUrl: '',
-    corpId: visibleValue(config.configuration.corpId),
-    agentId: visibleValue(config.configuration.agentId),
     contactDepartmentId: visibleValue(config.configuration.contactDepartmentId),
     testRecipient: visibleValue(config.configuration.testRecipient),
     // Secret fields stay empty until the user explicitly replaces them.
     appSecret: '',
     verificationToken: '',
     encryptKey: '',
-    secret: '',
   }
 }
 
@@ -82,7 +73,7 @@ function assignNonEmpty(
 }
 
 export function buildIntegrationUpdate(
-  provider: IntegrationProvider,
+  _provider: IntegrationProvider,
   form: IntegrationEditorForm,
 ): UpdateIntegrationDto {
   const payload: UpdateIntegrationDto = {
@@ -95,23 +86,17 @@ export function buildIntegrationUpdate(
   assignNonEmpty(payload, 'contactDepartmentId', form.contactDepartmentId)
   assignNonEmpty(payload, 'testRecipient', form.testRecipient)
 
-  if (provider === 'FEISHU') {
-    assignNonEmpty(payload, 'appId', form.appId)
-    assignNonEmpty(payload, 'appSecret', form.appSecret)
-    assignNonEmpty(payload, 'verificationToken', form.verificationToken)
-    assignNonEmpty(payload, 'encryptKey', form.encryptKey)
-  } else {
-    assignNonEmpty(payload, 'corpId', form.corpId)
-    assignNonEmpty(payload, 'agentId', form.agentId)
-    assignNonEmpty(payload, 'secret', form.secret)
-  }
+  assignNonEmpty(payload, 'appId', form.appId)
+  assignNonEmpty(payload, 'appSecret', form.appSecret)
+  assignNonEmpty(payload, 'verificationToken', form.verificationToken)
+  assignNonEmpty(payload, 'encryptKey', form.encryptKey)
 
   return payload
 }
 
 export function hasConfiguredSecret(
   config: IntegrationConfig | undefined,
-  key: 'appSecret' | 'webhookUrl' | 'verificationToken' | 'encryptKey' | 'secret',
+  key: 'appSecret' | 'webhookUrl' | 'verificationToken' | 'encryptKey',
 ): boolean {
   return Boolean(config?.configuration[key])
 }

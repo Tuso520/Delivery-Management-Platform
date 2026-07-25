@@ -285,7 +285,7 @@ flowchart TD
 | `currency.ts`                                | 币种、汇率同步与锁定                            | `/currencies`                                              |
 | `notification.ts`                            | 当前页面使用通知规则；通知列表方法保留在 API 层 | `/notification-rules`、`/notifications`                    |
 | `approval.ts`                                | 审批模版                                        | `/approval-templates`                                      |
-| `integration.ts`                             | 飞书/企业微信配置、测试、同步、日志             | `/integrations`                                            |
+| `integration.ts`                             | 飞书配置、测试、同步、日志                      | `/integrations`                                            |
 | `system.ts`                                  | 系统设置、系统时间、审计、登录公开配置          | `/system-settings`、`/system-time`、`/audit-logs`          |
 | `platform.ts` / `country.ts` / `language.ts` | 字典、部门、角色引用及项目/模版选项             | `/dictionaries`、`/references`、`/countries`、`/languages` |
 | `user.ts` / `role.ts` / `permission.ts`      | 隐藏组织权限页                                  | `/users`、`/roles`、`/permissions`                         |

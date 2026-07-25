@@ -52,17 +52,6 @@ const notificationRules = [
 
 const integrations = [
   {
-    provider: 'WECOM',
-    aliases: ['WECOM', 'wecom', 'WECHAT_WORK', 'wechat_work', 'enterprise_wechat'],
-    configName: '企业微信集成',
-    configValue: {
-      corpId: '',
-      agentId: '',
-      contactDepartmentId: '1',
-      testRecipient: '',
-    },
-  },
-  {
     provider: 'FEISHU',
     aliases: ['FEISHU', 'feishu'],
     configName: '飞书集成',

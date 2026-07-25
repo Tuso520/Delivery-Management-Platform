@@ -7,7 +7,7 @@ import {
   parseIntegrationSecretMigrationOptions,
 } from './integration-secret-migration-options';
 
-type Provider = 'FEISHU' | 'WECOM';
+type Provider = 'FEISHU';
 
 const prisma = new PrismaClient();
 const args = process.argv.slice(2);
@@ -18,15 +18,12 @@ let actorUsername: string | undefined;
 
 const aliases: Record<Provider, readonly string[]> = {
   FEISHU: ['FEISHU', 'feishu'],
-  WECOM: ['WECOM', 'wecom', 'WECHAT_WORK', 'wechat_work', 'enterprise_wechat'],
 };
 const publicFields: Record<Provider, readonly string[]> = {
   FEISHU: ['appId', 'contactDepartmentId', 'testRecipient'],
-  WECOM: ['corpId', 'agentId', 'contactDepartmentId', 'testRecipient'],
 };
 const secretFields: Record<Provider, readonly string[]> = {
   FEISHU: ['appSecret'],
-  WECOM: ['secret'],
 };
 
 interface MigrationReport {
@@ -77,7 +74,6 @@ function hasAnyOwnField(source: Record<string, unknown>, keys: readonly string[]
 function normalizeProvider(value: string): Provider | null {
   const normalized = value.trim().toUpperCase();
   if (normalized === 'FEISHU') return 'FEISHU';
-  if (['WECOM', 'WECHAT_WORK', 'ENTERPRISE_WECHAT'].includes(normalized)) return 'WECOM';
   return null;
 }
 
@@ -147,7 +143,7 @@ async function main(): Promise<void> {
   const actor = apply ? await assertActor() : null;
   const key = apply || verify ? encryptionKey() : null;
   const records = await prisma.integrationConfig.findMany({
-    where: { provider: { in: [...aliases.FEISHU, ...aliases.WECOM] } },
+    where: { provider: { in: [...aliases.FEISHU] } },
     orderBy: { id: 'asc' },
   });
   report.scanned = records.length;

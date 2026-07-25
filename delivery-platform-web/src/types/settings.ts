@@ -1,6 +1,6 @@
 import type { PaginatedData } from './api'
 
-export type NotificationChannel = 'IN_APP' | 'FEISHU' | 'WECOM'
+export type NotificationChannel = 'IN_APP' | 'FEISHU'
 
 export type NotificationRecipientPolicyType =
   | 'BUSINESS_OWNER'
@@ -116,7 +116,7 @@ export interface SystemTime {
   utcOffsetMinutes: number
 }
 
-export type IntegrationProvider = 'FEISHU' | 'WECOM'
+export type IntegrationProvider = 'FEISHU'
 
 export interface IntegrationConfiguration {
   appId?: string | null
@@ -124,9 +124,6 @@ export interface IntegrationConfiguration {
   webhookUrl?: string | null
   verificationToken?: string | null
   encryptKey?: string | null
-  corpId?: string | null
-  agentId?: string | null
-  secret?: string | null
   contactDepartmentId?: string | null
   testRecipient?: string | null
 }
@@ -151,9 +148,6 @@ export interface UpdateIntegrationDto {
   webhookUrl?: string
   verificationToken?: string
   encryptKey?: string
-  corpId?: string
-  agentId?: string
-  secret?: string
   contactDepartmentId?: string
   testRecipient?: string
 }

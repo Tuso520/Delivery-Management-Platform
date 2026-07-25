@@ -27,7 +27,7 @@ export class QueryNotificationDto extends PaginationDto {
   notificationType?: string;
 }
 
-export const NOTIFICATION_CHANNELS = ['IN_APP', 'FEISHU', 'WECOM'] as const;
+export const NOTIFICATION_CHANNELS = ['IN_APP', 'FEISHU'] as const;
 export type NotificationChannel = (typeof NOTIFICATION_CHANNELS)[number];
 
 export const NOTIFICATION_RECIPIENT_POLICY_TYPES = [
@@ -68,7 +68,7 @@ export class CreateTargetNotificationRuleDto {
   @ApiProperty({ enum: NOTIFICATION_CHANNELS, isArray: true })
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(3)
+  @ArrayMaxSize(2)
   @IsIn(NOTIFICATION_CHANNELS, { each: true })
   channels: NotificationChannel[];
 
@@ -108,7 +108,7 @@ export class UpdateTargetNotificationRuleDto {
   @IsOptional()
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(3)
+  @ArrayMaxSize(2)
   @IsIn(NOTIFICATION_CHANNELS, { each: true })
   channels?: NotificationChannel[];
 

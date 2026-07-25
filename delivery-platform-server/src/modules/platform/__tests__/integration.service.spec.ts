@@ -28,7 +28,7 @@ interface IntegrationRecordFixture {
 
 interface ContactFixture {
   externalUserId: string;
-  identifierType: 'OPEN_ID' | 'USER_ID';
+  identifierType: 'OPEN_ID';
   realName: string;
   phone?: string;
   email?: string;
@@ -43,7 +43,7 @@ interface IntegrationInternals {
   acquireContactSyncLease(record: IntegrationRecordFixture): Promise<ContactSyncLeaseFixture>;
   persistUnifiedContacts(
     record: IntegrationRecordFixture,
-    provider: 'FEISHU' | 'WECOM',
+    provider: 'FEISHU',
     contacts: ContactFixture[],
     lease: ContactSyncLeaseFixture,
   ): Promise<{
@@ -53,7 +53,7 @@ interface IntegrationInternals {
     disabled: number;
     conflicts: number;
   }>;
-  encryptSecrets(provider: 'FEISHU' | 'WECOM', secrets: Record<string, unknown>): string;
+  encryptSecrets(provider: 'FEISHU', secrets: Record<string, unknown>): string;
 }
 
 describe('IntegrationService secured configuration', () => {
@@ -461,53 +461,6 @@ describe('IntegrationService secured configuration', () => {
     }
   });
 
-  it('enables Enterprise WeChat duplicate checking for retry safety', async () => {
-    const prisma = {
-      integrationConfig: { findFirst: jest.fn() },
-    } as unknown as PrismaService;
-    const service = new IntegrationService(prisma, configService(), operationLog());
-    const internals = service as unknown as IntegrationInternals;
-    const record = integrationRecordFixture({
-      provider: 'WECOM',
-      configValue: { corpId: 'corp-id', agentId: '1000001' },
-      encryptedConfig: internals.encryptSecrets('WECOM', {
-        secret: 'test-secret',
-      }),
-      isEnabled: true,
-    });
-    (
-      prisma.integrationConfig.findFirst as jest.MockedFunction<
-        typeof prisma.integrationConfig.findFirst
-      >
-    ).mockResolvedValue(record);
-    const fetchMock = jest
-      .spyOn(global, 'fetch')
-      .mockResolvedValueOnce(jsonResponse({ errcode: 0, access_token: 'token-1' }))
-      .mockResolvedValueOnce(jsonResponse({ errcode: 0, msgid: 'msg-1' }));
-    try {
-      await service.sendNotification({
-        provider: 'WECOM',
-        recipientId: 'wecom-user-1',
-        identifierType: 'USER_ID',
-        title: '待审核',
-        content: '请处理',
-        idempotencyKey: 'event-1:user-1:WECOM',
-      });
-
-      const [, request] = fetchMock.mock.calls.find(([url]) =>
-        String(url).includes('/message/send'),
-      ) ?? [undefined, undefined];
-      const body = JSON.parse(String(request?.body)) as Record<string, unknown>;
-      expect(body).toEqual(
-        expect.objectContaining({
-          enable_duplicate_check: 1,
-          duplicate_check_interval: 1800,
-        }),
-      );
-    } finally {
-      fetchMock.mockRestore();
-    }
-  });
 });
 
 function integrationRecordFixture(

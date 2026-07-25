@@ -57,7 +57,7 @@ describe('NotificationService ownership', () => {
       notificationRule: {
         findFirst: jest.fn().mockResolvedValue({
           isEnabled: true,
-          channels: ['FEISHU', 'WECOM'],
+          channels: ['FEISHU'],
           recipientPolicy: { type: 'ROLE', values: ['PROJECT_MANAGER'] },
         }),
       },
@@ -74,7 +74,7 @@ describe('NotificationService ownership', () => {
     await expect(service.resolveDeliveryPlan(input)).resolves.toEqual({
       title: input.title,
       content: input.content,
-      channels: ['FEISHU', 'WECOM'],
+      channels: ['FEISHU'],
     });
     await expect(service.resolveDeliveryPlan({ ...input, userId: 'user-2' })).resolves.toBeNull();
   });

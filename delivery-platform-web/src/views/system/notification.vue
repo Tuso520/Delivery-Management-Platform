@@ -82,7 +82,6 @@ const saving = computed(() => ruleMutation.isPending.value)
 const channelOptions = computed<Array<{ label: string; value: NotificationChannel }>>(() => [
   { label: t('notifications.channelsMap.IN_APP'), value: 'IN_APP' },
   { label: t('notifications.channelsMap.FEISHU'), value: 'FEISHU' },
-  { label: t('notifications.channelsMap.WECOM'), value: 'WECOM' },
 ])
 
 const recipientOptions = computed<

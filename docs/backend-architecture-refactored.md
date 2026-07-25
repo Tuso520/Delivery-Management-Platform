@@ -1687,7 +1687,6 @@ POST /currencies/:code/disable
 ```text
 IN_APP
 FEISHU
-WECOM
 ```
 
 ### 模型
@@ -1818,7 +1817,6 @@ GET   /system-time
 
 ```text
 FEISHU
-WECOM
 ```
 
 能力：
@@ -1904,10 +1902,10 @@ BullMQ + Redis
 - Worker 通过 `PENDING -> PROCESSING` 条件更新原子抢占事件，以 `availableAt` 作为处理租约；租约超时后允许其他实例回收。
 - 失败事件最多尝试 5 次，使用指数退避；达到上限进入 `DEAD`，只记录稳定错误码，不保存或输出事件载荷、密钥和外部错误正文。
 - 已处理事件进入 `PROCESSED`；不支持的事件进入 `SKIPPED` 并记录 `UNSUPPORTED_EVENT_TYPE`，不得静默伪装为已投递。
-- 所有渠道使用 `${eventId}:${userId}:${channel}` 作为稳定投递键，并由 `NotificationDelivery` 的数据库唯一约束去重。Worker 在通知写入或外部发送后异常重试，也不会重复生成站内通知；飞书同时使用稳定且不超过 50 字符的 `uuid`，企业微信启用服务端重复检查。
+- 所有渠道使用 `${eventId}:${userId}:${channel}` 作为稳定投递键，并由 `NotificationDelivery` 的数据库唯一约束去重。Worker 在通知写入或外部发送后异常重试，也不会重复生成站内通知；飞书同时使用稳定且不超过 50 字符的 `uuid`。
 - `ReviewTaskCreated` 通知当前活动步骤审核人；审核通过或驳回通知提交人；项目事件通知项目负责人和成员；文件处理完成通知上传人；标准、知识和档案模板发布通知创建人、提交人。
 - `ArchiveFileUploaded` 已产生审核任务时，由 `ReviewTaskCreated` 通知替代，避免重复；无需审核时通知档案项负责人、项目负责人和成员。`CurrencyRateUpdated` 是明确无需用户通知的已处理事件。
-- `IN_APP`、`FEISHU` 和 `WECOM` 均由独立 Worker 真实投递并保存逐通道回执。永久缺少配置或外部身份时记录 `SKIPPED` 和稳定错误码；网络等暂时失败记录 `FAILED` 并随 Outbox 指数退避，达到上限后事件进入 `DEAD`。仅配置外部渠道且全部跳过的事件不得标记为 `PROCESSED`。
+- `IN_APP` 和 `FEISHU` 均由独立 Worker 真实投递并保存逐通道回执。永久缺少配置或外部身份时记录 `SKIPPED` 和稳定错误码；网络等暂时失败记录 `FAILED` 并随 Outbox 指数退避，达到上限后事件进入 `DEAD`。仅配置外部渠道且全部跳过的事件不得标记为 `PROCESSED`。
 
 ---
 
@@ -2041,7 +2039,7 @@ process-records 独立业务页
 
 ## 17.5 接口集成收敛
 
-UI 和业务流程只保留飞书、企业微信；以下集成已退出：
+UI 和业务流程只保留飞书；以下集成已退出：
 
 ```text
 SMTP
@@ -2051,7 +2049,7 @@ Webhook
 候选人员审批独立工作流
 ```
 
-飞书和企业微信通讯录同步使用租约和 revision 防并发，匹配结果直接写统一用户与 `ExternalIdentity`；冲突、未匹配和停用项进入脱敏同步日志，不建立候选人审批双轨。Secret 使用 AES-256-GCM 独立密钥加密，API 只返回掩码。
+飞书通讯录同步使用租约和 revision 防并发，匹配结果直接写统一用户与 `ExternalIdentity`；冲突、未匹配和停用项进入脱敏同步日志，不建立候选人审批双轨。Secret 使用 AES-256-GCM 独立密钥加密，API 只返回掩码。
 
 ---
 
@@ -2123,7 +2121,7 @@ Prisma 迁移已新增目标档案、文件、审核、标准、知识、Outbox�
 | 审核 | ReviewTask/Step/Assignee/ActionEvent，SINGLE/ALL_SIGN/ANY_N/SERIAL/PARALLEL，活动键唯一约束与并发终态保护 |
 | 标准与知识 | 独立版本、乐观 revision、统一审核发布、当前发布指针、历史版本和软归档 |
 | 设置与审计 | 币种汇率、通知规则、审批快照、系统配置、操作日志明细与脱敏 |
-| 集成与通知 | 仅 FEISHU/WECOM；AES-256-GCM Secret、通讯录租约同步、ExternalIdentity、Outbox Worker、NotificationDelivery 回执与通道幂等 |
+| 集成与通知 | 仅 FEISHU；AES-256-GCM Secret、通讯录租约同步、ExternalIdentity、Outbox Worker、NotificationDelivery 回执与通道幂等 |
 | 运行边界 | 只注册当前 Controller、Service、统一预览与权限守卫；迁移源表只读保留，种子仅维护运行时数据 |
 
 File Worker 和 Outbox Worker 都是生产运行单元，不应与 API 合并成进程内定时器。多实例通过数据库条件更新原子领取，租约过期可回收；达到最大尝试次数后保留失败/死信事实。外部消息只有服务商返回成功并写入回执后才是 `SENT`，缺少身份或配置时记录稳定的 `SKIPPED` 原因。
@@ -2157,7 +2155,7 @@ File Worker 和 Outbox Worker 都是生产运行单元，不应与 API 合并成
 - 知识审核发布
 - 归档和恢复
 - 审计日志写入
-- 飞书/企业微信同步
+- 飞书同步
 
 ## 21.3 角色矩阵测试
 
@@ -2361,5 +2359,5 @@ POST /files/drafts
 6. 标准、知识和档案模版发布后不可直接修改，必须创建新版本。
 7. 文件预览只读、安全、可审计，复杂格式异步转换。
 8. 设置入口所有人可见，写操作按权限控制。
-9. 飞书和企业微信只承担通讯录同步和通知。
+9. 飞书只承担通讯录同步和通知。
 10. 旧流程、旧页面和重复 API 已退出运行时；历史表只读保留，不继续双轨读写。

@@ -319,7 +319,7 @@
   },
   "notifications": {
     "title": "通知规则",
-    "description": "按业务事件配置站内、飞书和企业微信通知，不在此处保存渠道密钥。",
+    "description": "按业务事件配置站内和飞书通知，不在此处保存渠道密钥。",
     "create": "新增规则",
     "readOnly": "当前为只读模式",
     "readOnlyHint": "你可以查看通知规则，但没有新增、编辑、启停或删除权限。",
@@ -349,8 +349,7 @@
     "enableRule": "启用规则",
     "channelsMap": {
       "IN_APP": "站内",
-      "FEISHU": "飞书",
-      "WECOM": "企业微信"
+      "FEISHU": "飞书"
     },
     "recipients": {
       "BUSINESS_OWNER": "业务负责人",
@@ -528,7 +527,7 @@
   },
   "integrations": {
     "title": "接口集成",
-    "description": "仅保留飞书和企业微信，用于通讯录同步与通知发送。",
+    "description": "飞书用于通讯录同步与通知发送。",
     "refresh": "刷新",
     "readOnly": "当前为只读模式",
     "readOnlyHint": "你可以查看配置状态和同步日志，但不能修改凭据、测试或同步通讯录。",
@@ -540,12 +539,10 @@
     "secretWarning": "Secret 安全提示",
     "secretWarningHint": "已保存的 Secret 只显示 ******。如需替换，必须在编辑窗口重新输入完整内容。",
     "providers": {
-      "FEISHU": "飞书",
-      "WECOM": "企业微信"
+      "FEISHU": "飞书"
     },
     "defaultNames": {
-      "FEISHU": "飞书集成",
-      "WECOM": "企业微信集成"
+      "FEISHU": "飞书集成"
     },
     "columns": {
       "provider": "服务商",
@@ -590,9 +587,6 @@
     "notConfiguredHint": "尚未配置。",
     "webhook": "机器人 Webhook",
     "webhookOptionalHint": "可选，仅允许飞书官方 HTTPS 地址。",
-    "corpId": "企业 ID",
-    "agentId": "应用 Agent ID",
-    "appSecret": "应用 Secret",
     "departmentId": "通讯录部门 ID",
     "departmentPlaceholder": "留空使用服务商根部门",
     "testRecipient": "测试消息接收人 ID",

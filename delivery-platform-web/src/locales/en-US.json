@@ -319,7 +319,7 @@
   },
   "notifications": {
     "title": "Notification Rules",
-    "description": "Configure in-app, Feishu and WeCom notifications by business event. Channel secrets are not stored here.",
+    "description": "Configure in-app and Feishu notifications by business event. Channel secrets are not stored here.",
     "create": "New Rule",
     "readOnly": "Read-only Mode",
     "readOnlyHint": "You can view notification rules but cannot create, edit, enable, disable or delete them.",
@@ -349,8 +349,7 @@
     "enableRule": "Enable Rule",
     "channelsMap": {
       "IN_APP": "In App",
-      "FEISHU": "Feishu",
-      "WECOM": "WeCom"
+      "FEISHU": "Feishu"
     },
     "recipients": {
       "BUSINESS_OWNER": "Business Owner",
@@ -528,7 +527,7 @@
   },
   "integrations": {
     "title": "Integrations",
-    "description": "Feishu and WeCom are available for contact synchronization and notifications.",
+    "description": "Feishu is available for contact synchronization and notifications.",
     "refresh": "Refresh",
     "readOnly": "Read-only Mode",
     "readOnlyHint": "You can view configuration status and sync logs but cannot edit credentials, test connections or sync contacts.",
@@ -540,12 +539,10 @@
     "secretWarning": "Secret Security Notice",
     "secretWarningHint": "Saved secrets are displayed only as ******. Enter the complete value again to replace one.",
     "providers": {
-      "FEISHU": "Feishu",
-      "WECOM": "WeCom"
+      "FEISHU": "Feishu"
     },
     "defaultNames": {
-      "FEISHU": "Feishu Integration",
-      "WECOM": "WeCom Integration"
+      "FEISHU": "Feishu Integration"
     },
     "columns": {
       "provider": "Provider",
@@ -590,9 +587,6 @@
     "notConfiguredHint": "Not configured.",
     "webhook": "Bot Webhook",
     "webhookOptionalHint": "Optional; only official Feishu HTTPS addresses are allowed.",
-    "corpId": "Enterprise ID",
-    "agentId": "Application Agent ID",
-    "appSecret": "Application Secret",
     "departmentId": "Contact Department ID",
     "departmentPlaceholder": "Leave blank to use the provider root department",
     "testRecipient": "Test Message Recipient ID",

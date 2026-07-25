@@ -262,8 +262,7 @@ export class NotificationService {
     const normalized = channel.trim().toUpperCase();
     if (normalized === 'IN_APP') return 'IN_APP';
     if (normalized === 'FEISHU') return 'FEISHU';
-    if (normalized === 'WECOM') return 'WECOM';
-    throw new BadRequestException('通知渠道仅支持 IN_APP、FEISHU、WECOM');
+    throw new BadRequestException('通知渠道仅支持 IN_APP、FEISHU');
   }
 
   private normalizeRecipientPolicy(policy: NotificationRecipientPolicyDto): {

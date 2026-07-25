@@ -5,14 +5,13 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
 
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 
-export const TARGET_INTEGRATION_PROVIDERS = ['FEISHU', 'WECOM'] as const;
+export const TARGET_INTEGRATION_PROVIDERS = ['FEISHU'] as const;
 export type TargetIntegrationProvider =
   (typeof TARGET_INTEGRATION_PROVIDERS)[number];
 
@@ -47,26 +46,6 @@ export class UpdateTargetIntegrationDto {
   @MinLength(1)
   @MaxLength(500)
   appSecret?: string;
-
-  @ApiPropertyOptional({ description: '企业微信企业 ID' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(200)
-  corpId?: string;
-
-  @ApiPropertyOptional({ description: '企业微信应用 Agent ID' })
-  @IsOptional()
-  @IsString()
-  @Matches(/^\d+$/)
-  @MaxLength(30)
-  agentId?: string;
-
-  @ApiPropertyOptional({ writeOnly: true, description: '企业微信应用 Secret' })
-  @IsOptional()
-  @IsString()
-  @MinLength(1)
-  @MaxLength(500)
-  secret?: string;
 
   @ApiPropertyOptional({ description: '通讯录同步部门 ID' })
   @IsOptional()
