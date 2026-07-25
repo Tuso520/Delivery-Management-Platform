@@ -30,7 +30,7 @@ describe('business component adoption contract', () => {
     for (const path of tablePages) expect(source(path)).toContain('<BusinessTable')
 
     expect(source('src/views/system/config.vue')).toContain('<StickyActionBar')
-    expect(source('src/views/project/ProjectDrawer.vue')).toContain('<StickyActionBar')
+    expect(source('src/views/project/ProjectDetailDialog.vue')).toContain('class="project-detail-dialog"')
     expect(source('src/views/project/index.vue')).toContain('class="summary-band"')
     expect(source('src/views/archive/index.vue')).toContain('<StatCard')
   })
