@@ -25,7 +25,7 @@ test('管理员可以完成字段配置全流程并保持 Figma 桌面布局', a
   await page.evaluate(() => { window.location.hash = '/settings' })
   await page.waitForURL(/#\/settings$/u)
 
-  await expect(page.getByRole('heading', { name: '设置中心' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '用户中心' })).toBeVisible()
   await page.evaluate(() => { window.location.hash = '/settings/fields' })
   await page.waitForURL(/#\/settings\/fields$/u)
 
