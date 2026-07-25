@@ -293,12 +293,16 @@ test('administrator can create, edit, inspect, progress, archive and restore a p
 
   await page.goto(`/#/projects?scope=all&keyword=${encodeURIComponent(`${shortName} 已编辑`)}`)
   await page.getByText(`${shortName} 已编辑`, { exact: true }).click()
-  await expect(page.getByText(progressed.data.projectCode, { exact: true })).toBeVisible({
-    timeout: 60_000,
-  })
-  const detailDialog = page.locator('.project-detail-modal .arco-modal')
-  await expect(detailDialog).toBeVisible()
+  const detailDialog = page.locator('.project-detail-dialog .arco-modal')
+  await expect(detailDialog).toBeVisible({ timeout: 60_000 })
   await expect(detailDialog.getByRole('heading', { name: '项目详情' })).toBeVisible()
+  await expect(
+    detailDialog
+      .locator('.arco-form-item')
+      .filter({ hasText: /^\s*项目编号/u })
+      .first()
+      .locator('input'),
+  ).toHaveValue(progressed.data.projectCode)
   await expect
     .poll(async () => (await detailDialog.boundingBox())?.width ?? Number.POSITIVE_INFINITY)
     .toBeGreaterThanOrEqual(942)
@@ -310,8 +314,8 @@ test('administrator can create, edit, inspect, progress, archive and restore a p
   expect(detailBox).not.toBeNull()
   expect(viewport).not.toBeNull()
   expect(Math.abs((detailBox!.x + detailBox!.width / 2) - viewport!.width / 2)).toBeLessThan(4)
-  await expect(page.getByRole('button', { name: '编辑项目' })).toBeVisible()
-  await expect(page.getByRole('button', { name: '修改进度' })).toBeVisible()
+  await expect(detailDialog.getByRole('button', { name: '保存' })).toHaveCount(0)
+  await expect(detailDialog.locator('input:not([disabled])')).toHaveCount(0)
   await page.getByRole('button', { name: '关闭' }).click()
   await expect(page).toHaveURL(/#\/projects\?/u)
   const returnedQuery = new URLSearchParams(new URL(page.url()).hash.split('?')[1])
