@@ -49,7 +49,7 @@ describe('ProjectPaymentService sensitive read audit', () => {
       tx,
     );
     expect(result.items[0]).toEqual(
-      expect.objectContaining({ originalAmount: 100, convertedAmount: 700 }),
+      expect.objectContaining({ originalAmount: '100.00', convertedAmount: '700.00' }),
     );
   });
 
@@ -76,5 +76,5 @@ describe('ProjectPaymentService sensitive read audit', () => {
 });
 
 function decimal(value: number) {
-  return { toNumber: () => value };
+  return { toFixed: (digits: number) => value.toFixed(digits) };
 }

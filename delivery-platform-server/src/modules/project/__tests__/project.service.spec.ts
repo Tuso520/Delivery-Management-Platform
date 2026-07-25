@@ -41,6 +41,10 @@ describe('ProjectService', () => {
       'project:update',
     ],
   };
+  const paymentActor: Pick<JwtPayload, 'sub' | 'permissions' | 'roles'> = {
+    ...sensitiveActor,
+    permissions: [...sensitiveActor.permissions, 'payment:operate'],
+  };
   const mockProject = {
     id: 'project-1',
     projectCode: 'VN-AC-2026-001',
@@ -94,6 +98,7 @@ describe('ProjectService', () => {
     projectProcessRecord: Record<string, jest.Mock>;
     outboxEvent: Record<string, jest.Mock>;
     approvalTemplate: Record<string, jest.Mock>;
+    user: Record<string, jest.Mock>;
     $transaction: jest.Mock;
   };
   let projectAccess: {
@@ -129,13 +134,17 @@ describe('ProjectService', () => {
         count: jest.fn(),
         aggregate: jest.fn().mockResolvedValue({ _sum: { convertedAmount: null } }),
       },
-      projectMember: { upsert: jest.fn() },
+      projectMember: { upsert: jest.fn(), updateMany: jest.fn() },
       projectArchiveFile: { count: jest.fn().mockResolvedValue(0) },
       file: { count: jest.fn().mockResolvedValue(0) },
       reviewTask: { count: jest.fn().mockResolvedValue(0) },
       projectPayment: {
         count: jest.fn().mockResolvedValue(0),
         aggregate: jest.fn().mockResolvedValue({ _sum: { receivedConvertedAmount: null } }),
+        findMany: jest.fn().mockResolvedValue([]),
+        create: jest.fn(),
+        update: jest.fn(),
+        updateMany: jest.fn(),
       },
       exchangeRate: { findFirst: jest.fn() },
       country: {
@@ -145,6 +154,9 @@ describe('ProjectService', () => {
       projectProcessRecord: { create: jest.fn() },
       outboxEvent: { create: jest.fn() },
       approvalTemplate: { findMany: jest.fn().mockResolvedValue([]) },
+      user: {
+        findFirst: jest.fn().mockImplementation(({ where }) => ({ id: where.id })),
+      },
       $transaction: jest.fn(),
     };
     prisma.$transaction.mockImplementation(
@@ -226,9 +238,9 @@ describe('ProjectService', () => {
       expect.objectContaining({
         contractCurrency: 'USD',
         baseCurrency: 'CNY',
-        contractAmount: 100000,
-        exchangeRate: 7.2,
-        convertedAmount: 720000,
+        contractAmount: '100000.00',
+        exchangeRate: '7.20000000',
+        convertedAmount: '720000.00',
       }),
     );
   });
@@ -369,7 +381,7 @@ describe('ProjectService', () => {
         archiveTemplateId,
         contractCurrency: 'USD',
         baseCurrency: 'CNY',
-        contractAmount: 100.1,
+        contractAmount: '100.1',
       },
       sensitiveActor,
       idempotencyKey,
@@ -381,6 +393,114 @@ describe('ProjectService', () => {
     };
     expect(createData.contractAmount.toFixed(2)).toBe('100.10');
     expect(createData.convertedAmount.toFixed(2)).toBe('720.72');
+  });
+
+  it('creates the project and its complete payment plan in the same transaction', async () => {
+    prisma.project.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(mockProject);
+    prisma.project.create.mockResolvedValue(mockProject);
+
+    await service.create(
+      {
+        projectName: '统一款项项目',
+        countryCode: 'VN',
+        archiveTemplateId,
+        contractCurrency: 'CNY',
+        baseCurrency: 'CNY',
+        contractAmount: '1000000000000000.00',
+        paymentPlans: [
+          {
+            paymentName: '首付款',
+            originalAmount: '300000000000000.00',
+            originalCurrency: 'CNY',
+            convertedCurrency: 'CNY',
+            receivedOriginalAmount: '0',
+          },
+          {
+            paymentName: '尾款',
+            originalAmount: '700000000000000.00',
+            originalCurrency: 'CNY',
+            convertedCurrency: 'CNY',
+            receivedOriginalAmount: '0',
+          },
+        ],
+      },
+      paymentActor,
+      idempotencyKey,
+    );
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.projectPayment.create).toHaveBeenCalledTimes(2);
+    expect(prisma.projectPayment.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        projectId: 'project-1',
+        paymentName: '首付款',
+        originalAmount: new Prisma.Decimal('300000000000000.00'),
+        convertedAmount: new Prisma.Decimal('300000000000000.00'),
+      }),
+    });
+  });
+
+  it('rejects a payment plan whose amount total differs from the contract amount', async () => {
+    await expect(
+      service.create(
+        {
+          projectName: '款项金额错误项目',
+          countryCode: 'VN',
+          archiveTemplateId,
+          contractCurrency: 'CNY',
+          baseCurrency: 'CNY',
+          contractAmount: '100.00',
+          paymentPlans: [
+            {
+              paymentName: '首付款',
+              originalAmount: '99.99',
+              originalCurrency: 'CNY',
+              convertedCurrency: 'CNY',
+            },
+          ],
+        },
+        paymentActor,
+        idempotencyKey,
+      ),
+    ).rejects.toThrow('款项计划金额合计必须等于合同金额');
+    expect(prisma.project.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects an invalid signed, start and acceptance date order on the server', async () => {
+    await expect(
+      service.create(
+        {
+          projectName: '日期错误项目',
+          countryCode: 'VN',
+          archiveTemplateId,
+          contractSignedAt: '2026-08-01',
+          startDate: '2026-07-01',
+        },
+        sensitiveActor,
+        idempotencyKey,
+      ),
+    ).rejects.toThrow('开始时间不能早于签约时间');
+
+    expect(prisma.project.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a project manager who does not hold the active manager role', async () => {
+    prisma.user.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.create(
+        {
+          projectName: '岗位错误项目',
+          countryCode: 'VN',
+          archiveTemplateId,
+          projectManagerId: 'member-1',
+        },
+        sensitiveActor,
+        idempotencyKey,
+      ),
+    ).rejects.toThrow('项目经理不符合岗位要求');
+
+    expect(prisma.project.create).not.toHaveBeenCalled();
   });
 
   it('returns the same project for the same actor, key and canonical request payload', async () => {
@@ -659,7 +779,7 @@ describe('ProjectService', () => {
           archiveTemplateId,
           contractCurrency: 'USD',
           baseCurrency: 'CNY',
-          contractAmount: 100,
+          contractAmount: '100',
         },
         publicActor,
         idempotencyKey,
@@ -709,6 +829,141 @@ describe('ProjectService', () => {
         afterData: expect.objectContaining({ revision: 2 }),
       }),
     });
+  });
+
+  it('updates, creates and soft-deletes the complete payment plan in the project transaction', async () => {
+    const updatedProject = {
+      ...mockProject,
+      contractCurrency: 'CNY',
+      baseCurrency: 'CNY',
+      contractAmount: new Prisma.Decimal('100.00'),
+      exchangeRate: new Prisma.Decimal(1),
+      convertedAmount: new Prisma.Decimal('100.00'),
+      revision: 2,
+    };
+    prisma.project.findFirst
+      .mockResolvedValueOnce(mockProject)
+      .mockResolvedValueOnce(updatedProject);
+    prisma.project.findUniqueOrThrow.mockResolvedValue(updatedProject);
+    prisma.projectPayment.findMany.mockResolvedValue([
+      { id: 'payment-keep' },
+      { id: 'payment-remove' },
+    ]);
+
+    await service.update(
+      'project-1',
+      {
+        revision: 1,
+        contractCurrency: 'CNY',
+        baseCurrency: 'CNY',
+        contractAmount: '100.00',
+        paymentPlans: [
+          {
+            id: 'payment-keep',
+            paymentName: '首付款',
+            originalAmount: '40.00',
+            originalCurrency: 'CNY',
+            convertedCurrency: 'CNY',
+          },
+          {
+            paymentName: '尾款',
+            originalAmount: '60.00',
+            originalCurrency: 'CNY',
+            convertedCurrency: 'CNY',
+          },
+        ],
+      },
+      paymentActor,
+    );
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.projectPayment.updateMany).toHaveBeenCalledWith({
+      where: {
+        projectId: 'project-1',
+        id: { in: ['payment-remove'] },
+        deletedAt: null,
+      },
+      data: { deletedAt: expect.any(Date) },
+    });
+    expect(prisma.projectPayment.update).toHaveBeenCalledWith({
+      where: { id: 'payment-keep' },
+      data: expect.objectContaining({
+        paymentName: '首付款',
+        originalAmount: new Prisma.Decimal('40.00'),
+        deletedAt: null,
+      }),
+    });
+    expect(prisma.projectPayment.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        projectId: 'project-1',
+        paymentName: '尾款',
+        originalAmount: new Prisma.Decimal('60.00'),
+        createdBy: 'user-1',
+      }),
+    });
+  });
+
+  it('clears a removed leadership assignment and its project membership atomically', async () => {
+    const updatedProject = {
+      ...mockProject,
+      projectManagerId: null,
+      revision: 2,
+    };
+    prisma.project.findFirst
+      .mockResolvedValueOnce({ ...mockProject, projectManagerId: 'manager-1' })
+      .mockResolvedValueOnce(updatedProject);
+    prisma.project.findUniqueOrThrow.mockResolvedValue(updatedProject);
+
+    await service.update(
+      'project-1',
+      { revision: 1, projectManagerId: null },
+      sensitiveActor,
+    );
+
+    expect(prisma.project.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ projectManagerId: null }),
+      }),
+    );
+    expect(prisma.projectMember.updateMany).toHaveBeenCalledWith({
+      where: {
+        projectId: 'project-1',
+        projectRole: 'PROJECT_MANAGER',
+        deletedAt: null,
+      },
+      data: { deletedAt: expect.any(Date) },
+    });
+  });
+
+  it('rejects a payment id from another project before mutating the payment collection', async () => {
+    prisma.project.findFirst.mockResolvedValue(mockProject);
+    prisma.projectPayment.findMany.mockResolvedValue([{ id: 'payment-local' }]);
+
+    await expect(
+      service.update(
+        'project-1',
+        {
+          revision: 1,
+          contractCurrency: 'CNY',
+          baseCurrency: 'CNY',
+          contractAmount: '100.00',
+          paymentPlans: [
+            {
+              id: 'payment-foreign',
+              paymentName: '错误款项',
+              originalAmount: '100.00',
+              originalCurrency: 'CNY',
+              convertedCurrency: 'CNY',
+            },
+          ],
+        },
+        paymentActor,
+      ),
+    ).rejects.toThrow('款项计划不存在或不属于当前项目');
+
+    expect(prisma.projectPayment.update).not.toHaveBeenCalled();
+    expect(prisma.projectPayment.updateMany).not.toHaveBeenCalled();
+    expect(prisma.projectPayment.create).not.toHaveBeenCalled();
   });
 
   it('rejects a stale revision before an ordinary project edit', async () => {

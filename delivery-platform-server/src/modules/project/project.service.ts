@@ -19,7 +19,10 @@ import { ReviewConfigurationService } from '../review/review-configuration.servi
 import { type PreparedReviewTask, ReviewTaskService } from '../review/review-task.service';
 import { SystemConfigService } from '../system-config/system-config.service';
 
-import { CreateProjectDto } from './dto/create-project.dto';
+import {
+  CreateProjectDto,
+  type ProjectPaymentPlanWriteDto,
+} from './dto/create-project.dto';
 import { ProjectStatusActionDto } from './dto/project-status-action.dto';
 import { QueryProjectDto } from './dto/query-project.dto';
 import { UpdateProjectProgressDto } from './dto/update-project-progress.dto';
@@ -40,6 +43,25 @@ import {
 
 type ProjectActor = Pick<JwtPayload, 'sub' | 'permissions' | 'roles'> | string;
 type ProjectStatusCommand = 'pause' | 'resume' | 'complete' | 'cancel' | 'archive' | 'restore';
+
+interface PreparedProjectPaymentPlan {
+  id?: string;
+  paymentName: string;
+  paymentType: string;
+  dueDate: Date | null;
+  receivedDate: Date | null;
+  status: string;
+  originalAmount: Prisma.Decimal;
+  originalCurrency: string;
+  exchangeRate: Prisma.Decimal;
+  convertedCurrency: string;
+  convertedAmount: Prisma.Decimal;
+  receivedOriginalAmount: Prisma.Decimal;
+  receivedConvertedAmount: Prisma.Decimal;
+  rateDate: Date;
+  rateSource: string;
+  remark?: string;
+}
 
 const idempotentProjectSelect = {
   id: true,
@@ -71,9 +93,9 @@ interface ProjectListItem {
   keywords: string[];
   contractCurrency?: string | null;
   baseCurrency?: string | null;
-  contractAmount?: number | null;
-  exchangeRate?: number | null;
-  convertedAmount?: number | null;
+  contractAmount?: string | null;
+  exchangeRate?: string | null;
+  convertedAmount?: string | null;
   exchangeRateDate?: Date | null;
   exchangeRateSource?: string | null;
   projectLanguage: string | null;
@@ -514,7 +536,13 @@ export class ProjectService {
     }
 
     this.assertSensitiveWriteAllowed(dto, actor);
+    this.assertProjectDateOrder(
+      dto.contractSignedAt,
+      dto.startDate,
+      dto.expectedAcceptanceAt,
+    );
     await this.projectConfiguration.validate(dto);
+    await this.validateLeadershipAssignments(dto);
     const customerCode = dto.customerName ? dto.customerName.substring(0, 2).toUpperCase() : 'XX';
 
     const projectCode = await this.generateProjectCode(dto.countryCode, customerCode);
@@ -526,6 +554,13 @@ export class ProjectService {
       contractAmount,
       dto.contractCurrency,
       dto.baseCurrency,
+    );
+    const preparedPayments = await this.preparePaymentPlans(
+      dto.paymentPlans,
+      contractAmount,
+      dto.contractCurrency,
+      dto.baseCurrency,
+      actor,
     );
     const deliveryStage = dto.deliveryStage ?? 'STARTUP';
     const riskLevel = dto.riskLevel ?? (await this.systemConfig.getDefaultProjectRiskLevel());
@@ -581,6 +616,7 @@ export class ProjectService {
           },
         });
         await this.syncLeadershipMembers(tx, created.id, dto);
+        await this.syncPaymentPlans(tx, created.id, preparedPayments, userId);
         const archiveSnapshot = await this.projectArchiveSnapshot.createProjectSnapshot(
           tx,
           created.id,
@@ -724,6 +760,18 @@ export class ProjectService {
       throw new NotFoundException('项目不存在');
     }
     this.assertProjectRevision(project.revision, dto.revision);
+    this.assertProjectDateOrder(
+      dto.contractSignedAt ?? project.contractSignedAt,
+      dto.startDate ?? project.startDate,
+      dto.expectedAcceptanceAt ?? project.expectedAcceptanceAt,
+    );
+    if (
+      dto.deliveryStage !== undefined ||
+      dto.progressPercent !== undefined ||
+      dto.expectedAcceptanceAt !== undefined
+    ) {
+      this.assertProgressPermission(actor);
+    }
     await this.projectConfiguration.validateUpdate(dto, {
       projectType: project.projectType ?? undefined,
       contractType: project.contractType ?? undefined,
@@ -732,6 +780,7 @@ export class ProjectService {
         ? project.keywords.filter((keyword): keyword is string => typeof keyword === 'string')
         : [],
     });
+    await this.validateLeadershipAssignments(dto);
 
     const updateData: Prisma.ProjectUpdateInput = {};
 
@@ -751,6 +800,16 @@ export class ProjectService {
         ? undefined
         : new Prisma.Decimal(dto.contractAmount).toDecimalPlaces(2);
     if (contractAmount !== undefined) updateData.contractAmount = contractAmount;
+    const effectiveContractAmount = contractAmount ?? project.contractAmount ?? undefined;
+    const effectiveContractCurrency = dto.contractCurrency ?? project.contractCurrency ?? undefined;
+    const effectiveBaseCurrency = dto.baseCurrency ?? project.baseCurrency ?? undefined;
+    const preparedPayments = await this.preparePaymentPlans(
+      dto.paymentPlans,
+      effectiveContractAmount,
+      effectiveContractCurrency,
+      effectiveBaseCurrency,
+      actor,
+    );
     if (dto.contractNo !== undefined) updateData.contractNo = dto.contractNo;
     if (dto.contractSignedAt !== undefined) {
       updateData.contractSignedAt = dto.contractSignedAt ? new Date(dto.contractSignedAt) : null;
@@ -780,6 +839,15 @@ export class ProjectService {
       updateData.startDate = dto.startDate ? new Date(dto.startDate) : null;
     if (dto.plannedEndDate !== undefined)
       updateData.plannedEndDate = dto.plannedEndDate ? new Date(dto.plannedEndDate) : null;
+    if (dto.deliveryStage !== undefined) updateData.currentStage = dto.deliveryStage;
+    if (dto.progressPercent !== undefined) {
+      updateData.progressPercent = new Prisma.Decimal(dto.progressPercent).toDecimalPlaces(2);
+    }
+    if (dto.expectedAcceptanceAt !== undefined) {
+      updateData.expectedAcceptanceAt = dto.expectedAcceptanceAt
+        ? new Date(dto.expectedAcceptanceAt)
+        : null;
+    }
     updateData.revision = { increment: 1 };
 
     await this.prisma.$transaction(async (tx) => {
@@ -794,6 +862,24 @@ export class ProjectService {
       });
       this.assertProjectCommandUpdated(updatedResult.count);
       await this.syncLeadershipMembers(tx, id, dto);
+      await this.syncPaymentPlans(tx, id, preparedPayments, userId);
+      if (
+        dto.deliveryStage !== undefined ||
+        dto.progressPercent !== undefined ||
+        dto.expectedAcceptanceAt !== undefined
+      ) {
+        await tx.projectProcessRecord.create({
+          data: {
+            projectId: id,
+            title: '项目进度更新',
+            recordType: 'Progress',
+            stageCode: dto.deliveryStage ?? project.currentStage,
+            recordDate: new Date(),
+            description: `进度更新为 ${dto.progressPercent ?? project.progressPercent?.toNumber() ?? 0}%`,
+            createdBy: userId,
+          },
+        });
+      }
       const updated = await tx.project.findUniqueOrThrow({ where: { id } });
       await tx.operationLog.create({
         data: {
@@ -1077,7 +1163,7 @@ export class ProjectService {
   }
 
   private async resolveAmountData(
-    amount?: number | Prisma.Decimal,
+    amount?: string | number | Prisma.Decimal,
     contractCurrency?: string,
     baseCurrency?: string,
   ): Promise<{
@@ -1119,6 +1205,131 @@ export class ProjectService {
       exchangeRateDate: rate.rateDate,
       exchangeRateSource: rate.source,
     };
+  }
+
+  private async preparePaymentPlans(
+    plans: ProjectPaymentPlanWriteDto[] | undefined,
+    contractAmount: Prisma.Decimal | undefined,
+    contractCurrency: string | undefined,
+    convertedCurrency: string | undefined,
+    actor: ProjectActor,
+  ): Promise<PreparedProjectPaymentPlan[] | undefined> {
+    if (plans === undefined) return undefined;
+    if (!this.hasPermission(actor, 'payment:operate')) {
+      throw new ForbiddenException('无权修改项目款项计划');
+    }
+    if (plans.length === 0) return [];
+    if (!contractAmount || !contractCurrency || !convertedCurrency) {
+      throw new BadRequestException('维护款项计划前必须填写合同金额、合同币种和折算币种');
+    }
+    const expectedTotal = contractAmount.toDecimalPlaces(2);
+    const actualTotal = plans.reduce(
+      (total, plan) => total.add(new Prisma.Decimal(plan.originalAmount)),
+      new Prisma.Decimal(0),
+    ).toDecimalPlaces(2);
+    if (!actualTotal.equals(expectedTotal)) {
+      throw new BadRequestException(
+        `款项计划金额合计必须等于合同金额（当前 ${actualTotal.toFixed(2)}，合同 ${expectedTotal.toFixed(2)}）`,
+      );
+    }
+
+    return Promise.all(
+      plans.map(async (plan) => {
+        if (plan.originalCurrency !== contractCurrency) {
+          throw new BadRequestException('款项计划原币必须与合同币种一致');
+        }
+        if (plan.convertedCurrency !== convertedCurrency) {
+          throw new BadRequestException('款项计划折算币种必须与合同折算币种一致');
+        }
+        const originalAmount = new Prisma.Decimal(plan.originalAmount).toDecimalPlaces(2);
+        if (originalAmount.lte(0)) {
+          throw new BadRequestException('款项计划付款金额必须大于0');
+        }
+        const receivedOriginalAmount = new Prisma.Decimal(
+          plan.receivedOriginalAmount ?? 0,
+        ).toDecimalPlaces(2);
+        if (receivedOriginalAmount.gt(originalAmount)) {
+          throw new BadRequestException('已回款金额不能大于应回款金额');
+        }
+        const amountData = await this.resolveAmountData(
+          originalAmount,
+          contractCurrency,
+          convertedCurrency,
+        );
+        const exchangeRate = amountData.exchangeRate ?? new Prisma.Decimal(1);
+        const dueDate = plan.dueDate ? new Date(plan.dueDate) : null;
+        const receivedDate = plan.receivedDate ? new Date(plan.receivedDate) : null;
+        const status = receivedOriginalAmount.gte(originalAmount) && originalAmount.gt(0)
+          ? 'Received'
+          : receivedOriginalAmount.gt(0)
+            ? 'PartiallyReceived'
+            : dueDate && dueDate.getTime() < Date.now()
+              ? 'Overdue'
+              : 'Planned';
+        return {
+          id: plan.id,
+          paymentName: plan.paymentName,
+          paymentType: plan.paymentType ?? 'Milestone',
+          dueDate,
+          receivedDate,
+          status,
+          originalAmount,
+          originalCurrency: contractCurrency,
+          exchangeRate,
+          convertedCurrency,
+          convertedAmount: amountData.convertedAmount ?? originalAmount,
+          receivedOriginalAmount,
+          receivedConvertedAmount: receivedOriginalAmount
+            .mul(exchangeRate)
+            .toDecimalPlaces(2),
+          rateDate: amountData.exchangeRateDate ?? new Date(),
+          rateSource: amountData.exchangeRateSource ?? 'identity',
+          remark: plan.remark,
+        };
+      }),
+    );
+  }
+
+  private async syncPaymentPlans(
+    tx: Prisma.TransactionClient,
+    projectId: string,
+    plans: PreparedProjectPaymentPlan[] | undefined,
+    userId: string,
+  ): Promise<void> {
+    if (plans === undefined) return;
+    const existing = await tx.projectPayment.findMany({
+      where: { projectId, deletedAt: null },
+      select: { id: true },
+    });
+    const existingIds = new Set(existing.map((item) => item.id));
+    const requestedIds = new Set(plans.flatMap((item) => (item.id ? [item.id] : [])));
+    for (const id of requestedIds) {
+      if (!existingIds.has(id)) {
+        throw new BadRequestException('款项计划不存在或不属于当前项目');
+      }
+    }
+    const removedIds = existing
+      .map((item) => item.id)
+      .filter((id) => !requestedIds.has(id));
+    if (removedIds.length > 0) {
+      await tx.projectPayment.updateMany({
+        where: { projectId, id: { in: removedIds }, deletedAt: null },
+        data: { deletedAt: new Date() },
+      });
+    }
+    for (const plan of plans) {
+      const { id, ...data } = plan;
+      if (id) {
+        await tx.projectPayment.update({
+          where: { id },
+          data: { ...data, deletedAt: null },
+        });
+      } else {
+        await tx.projectPayment.create({
+          data: { ...data, projectId, createdBy: userId },
+        });
+      }
+    }
   }
 
   async purge(id: string, actor?: ProjectActor): Promise<void> {
@@ -1218,6 +1429,16 @@ export class ProjectService {
       [dto.softwareOwnerId, 'SOFTWARE_LEADER'],
     ] as const;
     for (const [assignedUserId, projectRole] of assignments) {
+      if (assignedUserId === undefined) continue;
+      await client.projectMember.updateMany({
+        where: {
+          projectId,
+          projectRole,
+          deletedAt: null,
+          ...(assignedUserId ? { userId: { not: assignedUserId } } : {}),
+        },
+        data: { deletedAt: new Date() },
+      });
       if (!assignedUserId) continue;
       await client.projectMember.upsert({
         where: {
@@ -1230,6 +1451,45 @@ export class ProjectService {
         },
         update: { projectRole, deletedAt: null },
       });
+    }
+  }
+
+  private async validateLeadershipAssignments(
+    dto: Partial<CreateProjectDto & UpdateProjectDto>,
+  ): Promise<void> {
+    const assignments = [
+      [dto.salesOwnerId, '销售负责人', ['DELIVERY_MANAGER', 'COUNTRY_MANAGER']],
+      [dto.projectManagerId, '项目经理', ['PROJECT_MANAGER']],
+      [dto.electricalOwnerId, '电气工程师', null],
+      [dto.softwareOwnerId, '软件工程师', null],
+    ] as const;
+    for (const [userId, fieldName, allowedRoles] of assignments) {
+      if (!userId) continue;
+      const user = await this.prisma.user.findFirst({
+        where: {
+          id: userId,
+          deletedAt: null,
+          status: 'Active',
+          ...(allowedRoles
+            ? {
+                userRoles: {
+                  some: {
+                    role: {
+                      status: 'Active',
+                      roleCode: { in: [...allowedRoles] },
+                    },
+                  },
+                },
+              }
+            : {}),
+        },
+        select: { id: true },
+      });
+      if (!user) {
+        throw new BadRequestException(
+          allowedRoles ? `${fieldName}不符合岗位要求` : `${fieldName}必须选择有效的在职用户`,
+        );
+      }
     }
   }
 
@@ -1290,6 +1550,24 @@ export class ProjectService {
   private assertProgressPermission(actor: ProjectActor): void {
     if (!this.hasPermission(actor, 'project:progress:update')) {
       throw new ForbiddenException('无权修改项目进度');
+    }
+  }
+
+  private assertProjectDateOrder(
+    contractSignedAt?: string | Date | null,
+    startDate?: string | Date | null,
+    expectedAcceptanceAt?: string | Date | null,
+  ): void {
+    const signed = contractSignedAt ? new Date(contractSignedAt).getTime() : undefined;
+    const start = startDate ? new Date(startDate).getTime() : undefined;
+    const acceptance = expectedAcceptanceAt
+      ? new Date(expectedAcceptanceAt).getTime()
+      : undefined;
+    if (signed !== undefined && start !== undefined && start < signed) {
+      throw new BadRequestException('开始时间不能早于签约时间');
+    }
+    if (start !== undefined && acceptance !== undefined && acceptance < start) {
+      throw new BadRequestException('验收时间不能早于开始时间');
     }
   }
 
@@ -1531,9 +1809,9 @@ export class ProjectService {
       progressPercent: progressPercent?.toNumber() ?? null,
       contractCurrency: canViewFinancial ? contractCurrency : null,
       baseCurrency: canViewFinancial ? baseCurrency : null,
-      contractAmount: canViewFinancial ? (contractAmount?.toNumber() ?? null) : null,
-      exchangeRate: canViewFinancial ? (exchangeRate?.toNumber() ?? null) : null,
-      convertedAmount: canViewFinancial ? (convertedAmount?.toNumber() ?? null) : null,
+      contractAmount: canViewFinancial ? (contractAmount?.toFixed(2) ?? null) : null,
+      exchangeRate: canViewFinancial ? (exchangeRate?.toFixed(8) ?? null) : null,
+      convertedAmount: canViewFinancial ? (convertedAmount?.toFixed(2) ?? null) : null,
       exchangeRateDate: canViewFinancial ? exchangeRateDate : null,
       exchangeRateSource: canViewFinancial ? exchangeRateSource : null,
       contractNo: canViewContract ? contractNo : null,
@@ -1544,7 +1822,7 @@ export class ProjectService {
       name: project.projectName,
       cityName: project.city,
       currencyCode: canViewFinancial ? contractCurrency : null,
-      convertedCnyAmount: canViewFinancial ? (convertedAmount?.toNumber() ?? null) : null,
+      convertedCnyAmount: canViewFinancial ? (convertedAmount?.toFixed(2) ?? null) : null,
       salesOwner,
       projectManager,
       keywords: Array.isArray(keywords)

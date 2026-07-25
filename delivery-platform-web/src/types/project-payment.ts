@@ -6,13 +6,13 @@ export interface ProjectPayment {
   dueDate?: string | null
   receivedDate?: string | null
   status: string
-  originalAmount: number
+  originalAmount: string
   originalCurrency: string
-  exchangeRate: number
+  exchangeRate: string
   convertedCurrency: string
-  convertedAmount: number
-  receivedOriginalAmount: number
-  receivedConvertedAmount: number
+  convertedAmount: string
+  receivedOriginalAmount: string
+  receivedConvertedAmount: string
   rateDate: string
   rateSource: string
   remark?: string
@@ -23,10 +23,33 @@ export interface ProjectPaymentPayload {
   paymentName: string
   paymentType?: string
   dueDate?: string | null
-  originalAmount: number
+  originalAmount: string
   originalCurrency: string
   convertedCurrency: string
-  receivedOriginalAmount?: number
+  receivedOriginalAmount?: string
+  receivedDate?: string | null
+  remark?: string
+}
+
+export interface ProjectPaymentPlanItem {
+  id?: string
+  paymentName: string
+  dueDate: string
+  completed: boolean
+  receivedDate?: string | null
+  originalAmount: string
+  remark: string
+}
+
+export interface ProjectPaymentPlanWriteItem {
+  id?: string
+  paymentName: string
+  paymentType: string
+  dueDate?: string | null
+  originalAmount: string
+  originalCurrency: string
+  convertedCurrency: string
+  receivedOriginalAmount: string
   receivedDate?: string | null
   remark?: string
 }

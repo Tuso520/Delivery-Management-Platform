@@ -1,9 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform, Type } from 'class-transformer';
 import {
   IsString,
   IsNotEmpty,
   IsOptional,
   IsNumber,
+  IsDecimal,
   IsDateString,
   IsIn,
   IsArray,
@@ -12,12 +14,75 @@ import {
   Max,
   MaxLength,
   Min,
+  Matches,
+  ValidateNested,
 } from 'class-validator';
 
 import {
   PROJECT_DELIVERY_STAGES,
   type ProjectDeliveryStage,
 } from '../project.constants';
+
+const MONEY_PATTERN = /^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/;
+
+export class ProjectPaymentPlanWriteDto {
+  @ApiPropertyOptional({ description: '既有款项ID；新建款项不传' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(36)
+  id?: string;
+
+  @ApiProperty({ description: '付款项' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
+  paymentName!: string;
+
+  @ApiPropertyOptional({ description: '付款类型', default: 'Milestone' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  paymentType?: string;
+
+  @ApiPropertyOptional({ description: '付款日期' })
+  @IsOptional()
+  @IsDateString()
+  dueDate?: string | null;
+
+  @ApiProperty({ description: '原币付款金额' })
+  @Transform(({ value }) => (typeof value === 'number' ? String(value) : value))
+  @IsDecimal({ decimal_digits: '0,2', force_decimal: false })
+  @Matches(MONEY_PATTERN, { message: '付款金额必须为非负数，整数最多16位，小数最多2位' })
+  originalAmount!: string;
+
+  @ApiProperty({ description: '原币币种' })
+  @IsString()
+  @MaxLength(10)
+  originalCurrency!: string;
+
+  @ApiProperty({ description: '折算币种' })
+  @IsString()
+  @MaxLength(10)
+  convertedCurrency!: string;
+
+  @ApiPropertyOptional({ description: '已收原币金额' })
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'number' ? String(value) : value))
+  @IsDecimal({ decimal_digits: '0,2', force_decimal: false })
+  @Matches(MONEY_PATTERN, { message: '已收金额必须为非负数，整数最多16位，小数最多2位' })
+  receivedOriginalAmount?: string;
+
+  @ApiPropertyOptional({ description: '收款日期' })
+  @IsOptional()
+  @IsDateString()
+  receivedDate?: string | null;
+
+  @ApiPropertyOptional({ description: '付款条件' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  remark?: string;
+}
 
 export class CreateProjectDto {
   @ApiProperty({ description: '项目名称' })
@@ -30,7 +95,7 @@ export class CreateProjectDto {
   @IsOptional()
   @IsString()
   @MaxLength(100)
-  shortName?: string;
+  shortName?: string | null;
 
   @ApiProperty({ description: '国家代码', example: 'VN' })
   @IsString()
@@ -42,13 +107,13 @@ export class CreateProjectDto {
   @IsOptional()
   @IsString()
   @MaxLength(100)
-  city?: string;
+  city?: string | null;
 
   @ApiPropertyOptional({ description: '客户名称' })
   @IsOptional()
   @IsString()
   @MaxLength(200)
-  customerName?: string;
+  customerName?: string | null;
 
   @ApiPropertyOptional({ description: '项目类型（取自项目配置）' })
   @IsOptional()
@@ -90,20 +155,21 @@ export class CreateProjectDto {
 
   @ApiPropertyOptional({ description: '合同金额' })
   @IsOptional()
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  contractAmount?: number;
+  @Transform(({ value }) => (typeof value === 'number' ? String(value) : value))
+  @IsDecimal({ decimal_digits: '0,2', force_decimal: false })
+  @Matches(MONEY_PATTERN, { message: '合同金额必须为非负数，整数最多16位，小数最多2位' })
+  contractAmount?: string;
 
   @ApiPropertyOptional({ description: '合同编号' })
   @IsOptional()
   @IsString()
   @MaxLength(100)
-  contractNo?: string;
+  contractNo?: string | null;
 
   @ApiPropertyOptional({ description: '合同签署时间' })
   @IsOptional()
   @IsDateString()
-  contractSignedAt?: string;
+  contractSignedAt?: string | null;
 
   @ApiPropertyOptional({ description: '项目语言' })
   @IsOptional()
@@ -114,22 +180,22 @@ export class CreateProjectDto {
   @ApiPropertyOptional({ description: '销售负责人ID' })
   @IsOptional()
   @IsString()
-  salesOwnerId?: string;
+  salesOwnerId?: string | null;
 
   @ApiPropertyOptional({ description: '项目经理ID' })
   @IsOptional()
   @IsString()
-  projectManagerId?: string;
+  projectManagerId?: string | null;
 
   @ApiPropertyOptional({ description: '电气负责人ID' })
   @IsOptional()
   @IsString()
-  electricalOwnerId?: string;
+  electricalOwnerId?: string | null;
 
   @ApiPropertyOptional({ description: '软件负责人ID' })
   @IsOptional()
   @IsString()
-  softwareOwnerId?: string;
+  softwareOwnerId?: string | null;
 
   @ApiPropertyOptional({ description: '目标交付阶段', enum: PROJECT_DELIVERY_STAGES })
   @IsOptional()
@@ -157,18 +223,18 @@ export class CreateProjectDto {
 
   @ApiPropertyOptional({ description: '开始日期' })
   @IsOptional()
-  @IsString()
-  startDate?: string;
+  @IsDateString()
+  startDate?: string | null;
 
   @ApiPropertyOptional({ description: '计划结束日期' })
   @IsOptional()
-  @IsString()
-  plannedEndDate?: string;
+  @IsDateString()
+  plannedEndDate?: string | null;
 
   @ApiPropertyOptional({ description: '预计验收时间' })
   @IsOptional()
   @IsDateString()
-  expectedAcceptanceAt?: string;
+  expectedAcceptanceAt?: string | null;
 
   @ApiProperty({ description: '档案模板ID（创建时解析其当前已发布版本）' })
   @IsString()
@@ -191,4 +257,11 @@ export class CreateProjectDto {
   @IsOptional()
   @IsBoolean()
   saveAsDraft?: boolean;
+
+  @ApiPropertyOptional({ description: '随项目统一保存的款项计划', type: [ProjectPaymentPlanWriteDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ProjectPaymentPlanWriteDto)
+  paymentPlans?: ProjectPaymentPlanWriteDto[];
 }

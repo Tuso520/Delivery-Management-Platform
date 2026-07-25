@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { validate } from 'class-validator';
 
 import type { JwtPayload } from '../../auth/strategies/jwt.strategy';
-import { CreateProjectDto } from '../dto/create-project.dto';
+import { CreateProjectDto, ProjectPaymentPlanWriteDto } from '../dto/create-project.dto';
 import { ProjectStatusActionDto } from '../dto/project-status-action.dto';
 import { UpdateProjectProgressDto } from '../dto/update-project-progress.dto';
 import type { ProjectConfigurationService } from '../project-configuration.service';
@@ -78,6 +78,36 @@ describe('ProjectController project creation', () => {
 
     expect(errors).toEqual(
       expect.arrayContaining([expect.objectContaining({ property: 'archiveTemplateId' })]),
+    );
+  });
+
+  it('validates nested payment plans instead of accepting an untyped collection', async () => {
+    const invalidPayment = Object.assign(new ProjectPaymentPlanWriteDto(), {
+      paymentName: '',
+      originalAmount: -1,
+      originalCurrency: 'CNY',
+      convertedCurrency: 'CNY',
+    });
+    const invalidDto = Object.assign(new CreateProjectDto(), dto, {
+      paymentPlans: [invalidPayment],
+    });
+
+    const errors = await validate(invalidDto);
+
+    expect(errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ property: 'paymentPlans' })]),
+    );
+  });
+
+  it('rejects contract amounts beyond the database-safe 16 integer digits', async () => {
+    const invalidDto = Object.assign(new CreateProjectDto(), dto, {
+      contractAmount: '10000000000000000.00',
+    });
+
+    const errors = await validate(invalidDto);
+
+    expect(errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ property: 'contractAmount' })]),
     );
   });
 

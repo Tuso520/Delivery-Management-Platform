@@ -1,3 +1,5 @@
+import type { ProjectPaymentPlanWriteItem } from './project-payment'
+
 export const PROJECT_LIFECYCLE_STATUSES = [
   'DRAFT',
   'ACTIVE',
@@ -77,10 +79,10 @@ export interface Project {
   keywords: ProjectKeyword[]
   contractCurrency?: string | null
   baseCurrency?: string | null
-  contractAmount?: number | null
-  exchangeRate?: number | null
-  convertedAmount?: number | null
-  convertedCnyAmount?: number | null
+  contractAmount?: string | null
+  exchangeRate?: string | null
+  convertedAmount?: string | null
+  convertedCnyAmount?: string | null
   currencyCode?: string | null
   exchangeRateDate?: string | null
   exchangeRateSource?: string | null
@@ -180,28 +182,29 @@ export interface ProjectUserReferenceOption {
 
 interface ProjectCommonWriteFields {
   projectName?: string
-  shortName?: string
+  shortName?: string | null
   countryCode?: string
-  city?: string
-  customerName?: string
+  city?: string | null
+  customerName?: string | null
   projectType?: ProjectType
   contractType?: ContractType
   product?: ProductType
   keywords?: ProjectKeyword[]
   contractCurrency?: string
   baseCurrency?: string
-  contractAmount?: number
-  contractNo?: string
-  contractSignedAt?: string
+  contractAmount?: string
+  contractNo?: string | null
+  contractSignedAt?: string | null
   projectLanguage?: string
-  salesOwnerId?: string
-  projectManagerId?: string
-  electricalOwnerId?: string
-  softwareOwnerId?: string
+  salesOwnerId?: string | null
+  projectManagerId?: string | null
+  electricalOwnerId?: string | null
+  softwareOwnerId?: string | null
   riskLevel?: string
   riskDescription?: string
-  startDate?: string
-  plannedEndDate?: string
+  startDate?: string | null
+  plannedEndDate?: string | null
+  paymentPlans?: ProjectPaymentPlanWriteItem[]
 }
 
 export interface CreateProjectDto extends ProjectCommonWriteFields {
@@ -210,7 +213,7 @@ export interface CreateProjectDto extends ProjectCommonWriteFields {
   archiveTemplateId: string
   deliveryStage?: ProjectDeliveryStage
   progressPercent?: number
-  expectedAcceptanceAt?: string
+  expectedAcceptanceAt?: string | null
   archiveTemplateVersionId?: string
   approvalTemplateId?: string
   saveAsDraft?: boolean
@@ -221,6 +224,9 @@ export interface CreateProjectDto extends ProjectCommonWriteFields {
  */
 export interface UpdateProjectDto extends ProjectCommonWriteFields {
   revision: number
+  deliveryStage?: ProjectDeliveryStage
+  progressPercent?: number
+  expectedAcceptanceAt?: string | null
 }
 
 export interface QueryProjectDto {

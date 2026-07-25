@@ -86,7 +86,7 @@ export class ProjectPaymentService {
     await this.projectAccess.assertProjectAccess(dto.projectId, userId);
     const amount = await this.resolveAmount(
       dto.originalAmount,
-      dto.receivedOriginalAmount ?? 0,
+      dto.receivedOriginalAmount ?? '0',
       dto.originalCurrency,
       dto.convertedCurrency,
     );
@@ -99,7 +99,7 @@ export class ProjectPaymentService {
         receivedDate: dto.receivedDate ? new Date(dto.receivedDate) : undefined,
         status: this.resolveStatus(
           dto.originalAmount,
-          dto.receivedOriginalAmount ?? 0,
+          dto.receivedOriginalAmount ?? '0',
           dto.dueDate,
         ),
         ...amount,
@@ -119,9 +119,9 @@ export class ProjectPaymentService {
     if (dto.projectId && dto.projectId !== existing.projectId) {
       throw new BadRequestException('不能修改回款记录所属项目');
     }
-    const originalAmount = dto.originalAmount ?? existing.originalAmount.toNumber();
+    const originalAmount = dto.originalAmount ?? existing.originalAmount.toFixed(2);
     const receivedOriginalAmount =
-      dto.receivedOriginalAmount ?? existing.receivedOriginalAmount.toNumber();
+      dto.receivedOriginalAmount ?? existing.receivedOriginalAmount.toFixed(2);
     const originalCurrency = dto.originalCurrency ?? existing.originalCurrency;
     const convertedCurrency = dto.convertedCurrency ?? existing.convertedCurrency;
     const amount = await this.resolveAmount(
@@ -165,8 +165,8 @@ export class ProjectPaymentService {
   }
 
   private async resolveAmount(
-    originalAmountValue: number,
-    receivedAmountValue: number,
+    originalAmountValue: string,
+    receivedAmountValue: string,
     originalCurrency: string,
     convertedCurrency: string,
   ) {
@@ -215,12 +215,14 @@ export class ProjectPaymentService {
   }
 
   private resolveStatus(
-    originalAmount: number,
-    receivedAmount: number,
+    originalAmount: string,
+    receivedAmount: string,
     dueDate?: string | null,
   ): string {
-    if (receivedAmount >= originalAmount && originalAmount > 0) return 'Received';
-    if (receivedAmount > 0) return 'PartiallyReceived';
+    const original = new Prisma.Decimal(originalAmount);
+    const received = new Prisma.Decimal(receivedAmount);
+    if (received.gte(original) && original.gt(0)) return 'Received';
+    if (received.gt(0)) return 'PartiallyReceived';
     if (dueDate && new Date(dueDate).getTime() < Date.now()) return 'Overdue';
     return 'Planned';
   }
@@ -236,11 +238,11 @@ export class ProjectPaymentService {
   >(record: T) {
     return {
       ...record,
-      originalAmount: record.originalAmount.toNumber(),
-      exchangeRate: record.exchangeRate.toNumber(),
-      convertedAmount: record.convertedAmount.toNumber(),
-      receivedOriginalAmount: record.receivedOriginalAmount.toNumber(),
-      receivedConvertedAmount: record.receivedConvertedAmount.toNumber(),
+      originalAmount: record.originalAmount.toFixed(2),
+      exchangeRate: record.exchangeRate.toFixed(8),
+      convertedAmount: record.convertedAmount.toFixed(2),
+      receivedOriginalAmount: record.receivedOriginalAmount.toFixed(2),
+      receivedConvertedAmount: record.receivedConvertedAmount.toFixed(2),
     };
   }
 }

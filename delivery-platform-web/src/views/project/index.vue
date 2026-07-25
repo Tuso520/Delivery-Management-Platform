@@ -7,8 +7,6 @@ import { useMutation } from '@tanstack/vue-query'
 
 import { projectApi } from '@/api/project'
 import {
-  BusinessDrawer,
-  BusinessModal,
   BusinessTable,
   PageContainer,
   PageToolbar,
@@ -41,8 +39,7 @@ import toolbarPlusIcon from '@/assets/figma/project-overview/toolbar-plus.svg'
 import toolbarQueryAsset from '@/assets/figma/project-overview/toolbar-query.png'
 import toolbarRefreshAsset from '@/assets/figma/project-overview/toolbar-refresh.png'
 
-import ProjectDetail from './detail.vue'
-import ProjectDrawer from './ProjectDrawer.vue'
+import ProjectDetailDialog from './ProjectDetailDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -139,14 +136,8 @@ const drawerMode = computed<'create' | 'edit' | 'view' | null>(() => {
   return null
 })
 const drawerProjectId = computed(() => String(route.params.projectId || ''))
-const editorDrawerVisible = computed({
-  get: () => drawerMode.value === 'create' || drawerMode.value === 'edit',
-  set: (value) => {
-    if (!value) void closeOverlay()
-  },
-})
-const detailModalVisible = computed({
-  get: () => drawerMode.value === 'view',
+const projectDialogVisible = computed({
+  get: () => drawerMode.value !== null,
   set: (value) => {
     if (!value) void closeOverlay()
   },
@@ -196,9 +187,6 @@ function openProject(project: Project): void {
 }
 async function closeOverlay(): Promise<void> {
   await router.push({ path: '/projects', query: route.query })
-}
-async function openEditor(): Promise<void> {
-  await router.push({ path: `/projects/${drawerProjectId.value}/edit`, query: route.query })
 }
 async function saved(): Promise<void> {
   await closeOverlay()
@@ -594,37 +582,13 @@ function dictionaryStyle(
       </BusinessTable>
     </section>
 
-    <BusinessDrawer
-      v-model:visible="editorDrawerVisible"
-      :title="drawerMode === 'create' ? t('projects.create') : t('projects.edit')"
-      :width="944"
-      :footer="false"
-    >
-      <ProjectDrawer
-        v-if="drawerMode === 'create' || drawerMode === 'edit'"
-        :mode="drawerMode"
-        :project-id="drawerProjectId"
-        @saved="saved"
-        @cancel="closeOverlay"
-      />
-    </BusinessDrawer>
-
-    <BusinessModal
-      v-model:visible="detailModalVisible"
-      class="project-detail-modal"
-      :width="944"
-      :footer="false"
-      :closable="false"
-    >
-      <ProjectDetail
-        v-if="drawerMode === 'view'"
-        embedded
-        :project-id="drawerProjectId"
-        @edit="openEditor"
-        @close="closeOverlay"
-        @changed="refresh"
-      />
-    </BusinessModal>
+    <ProjectDetailDialog
+      v-if="drawerMode"
+      v-model:visible="projectDialogVisible"
+      :mode="drawerMode"
+      :project-id="drawerProjectId"
+      @saved="saved"
+    />
   </PageContainer>
 </template>
 
@@ -1049,17 +1013,4 @@ function dictionaryStyle(
   }
 }
 
-:global(.project-detail-modal .arco-modal) {
-  max-width: calc(100vw - 32px);
-  overflow: hidden;
-  border-radius: 2px;
-}
-
-:global(.project-detail-modal .arco-modal-header) {
-  display: none;
-}
-
-:global(.project-detail-modal .arco-modal-body) {
-  padding: 0;
-}
 </style>

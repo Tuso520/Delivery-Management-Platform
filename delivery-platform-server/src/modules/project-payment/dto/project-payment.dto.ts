@@ -1,15 +1,18 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import {
+  IsDecimal,
   IsDateString,
   IsIn,
-  IsNumber,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
-  Min,
 } from 'class-validator';
 
 import { PaginationDto } from '../../../common/dto/pagination.dto';
+
+const MONEY_PATTERN = /^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/;
 
 const paymentStatuses = [
   'Planned',
@@ -52,9 +55,10 @@ export class CreateProjectPaymentDto {
   dueDate?: string | null;
 
   @ApiProperty()
-  @IsNumber()
-  @Min(0)
-  originalAmount!: number;
+  @Transform(({ value }) => (typeof value === 'number' ? String(value) : value))
+  @IsDecimal({ decimal_digits: '0,2', force_decimal: false })
+  @Matches(MONEY_PATTERN, { message: '付款金额必须为非负数，整数最多16位，小数最多2位' })
+  originalAmount!: string;
 
   @ApiProperty()
   @IsString()
@@ -66,9 +70,10 @@ export class CreateProjectPaymentDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  receivedOriginalAmount?: number;
+  @Transform(({ value }) => (typeof value === 'number' ? String(value) : value))
+  @IsDecimal({ decimal_digits: '0,2', force_decimal: false })
+  @Matches(MONEY_PATTERN, { message: '已收金额必须为非负数，整数最多16位，小数最多2位' })
+  receivedOriginalAmount?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
