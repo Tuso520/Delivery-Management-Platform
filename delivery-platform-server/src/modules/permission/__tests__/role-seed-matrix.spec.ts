@@ -93,7 +93,6 @@ describe('role seed permission matrix', () => {
   it('gives system administrators only target settings permissions', () => {
     const permissions = roles.get('SYSTEM_ADMIN');
     expect(permissions?.has('settings:view')).toBe(true);
-    expect(permissions?.has('audit_log:view')).toBe(true);
     expect(permissions?.has('system_setting:manage')).toBe(true);
     expect(permissions?.has('approval_config:manage')).toBe(true);
     expect(permissions?.has('integration:manage')).toBe(true);

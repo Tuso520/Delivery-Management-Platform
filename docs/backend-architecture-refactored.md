@@ -102,7 +102,6 @@ src/modules/
 ├── approval-config/
 ├── settings/
 ├── integrations/
-├── audit-logs/
 └── shared/
     ├── database/
     ├── events/
@@ -282,7 +281,6 @@ notification_rule:view
 notification_rule:manage
 approval_config:view
 approval_config:manage
-audit_log:view
 system_setting:view
 system_setting:manage
 integration:view
@@ -1729,7 +1727,7 @@ POST /notification-rules/:id/toggle
 
 有历史发送记录的规则删除应转为软删除或停用。
 
-## 14.3 审批配置
+## 14.3 审批规则
 
 业务类型仅保留：
 
@@ -1753,14 +1751,9 @@ POST /approval-templates/:id/toggle
 
 配置只能引用系统支持且已注册业务适配器的业务类型。
 
-## 14.4 操作日志
+## 14.4 操作审计
 
-### 接口
-
-```http
-GET /audit-logs
-GET /audit-logs/:id
-```
+操作审计是后端内部安全能力，不提供系统设置菜单、列表页面或通用查询 API。
 
 字段：
 
@@ -1781,7 +1774,7 @@ Trace ID
 
 敏感字段统一脱敏。
 
-日志读取只检查 `audit_log:view`，不再额外限制角色。
+审计写入服务由需要记录敏感操作的业务模块复用；不得因移除查询入口而删除审计数据模型或写入链路。
 
 ## 14.5 系统配置
 
@@ -2318,7 +2311,6 @@ POST /files/drafts
 /currencies/sync-rates
 /notification-rules
 /approval-templates
-/audit-logs
 /system-settings
 /system-time
 /integrations

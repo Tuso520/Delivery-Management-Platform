@@ -3,7 +3,6 @@ import { resolve } from 'node:path';
 
 const PAGINATED_SERVICES = [
   'modules/user/user.service.ts',
-  'modules/operation-log/operation-log.service.ts',
   'modules/standard/standard.service.ts',
   'modules/project-payment/project-payment.service.ts',
   'modules/project/project.service.ts',
@@ -17,7 +16,6 @@ const PAGINATED_SERVICES = [
 
 const PAGINATED_CONTROLLERS = [
   'modules/user/user.controller.ts',
-  'modules/operation-log/operation-log.controller.ts',
   'modules/standard/standard.controller.ts',
   'modules/project-payment/project-payment.controller.ts',
   'modules/project/project.controller.ts',

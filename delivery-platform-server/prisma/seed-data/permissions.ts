@@ -473,12 +473,6 @@ const permissionDefs: PermissionSeed[] = [
     action: 'manage',
   },
   {
-    permissionCode: 'audit_log:view',
-    permissionName: '查看操作日志',
-    resource: 'audit_log',
-    action: 'view',
-  },
-  {
     permissionCode: 'system_setting:view',
     permissionName: '查看系统配置',
     resource: 'system_setting',

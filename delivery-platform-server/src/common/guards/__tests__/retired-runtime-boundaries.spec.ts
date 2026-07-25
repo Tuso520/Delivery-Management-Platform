@@ -90,7 +90,6 @@ describe('retired runtime boundaries', () => {
 
   it('uses only the target notification-rule route and internal notification creation', () => {
     const notificationApi = source(resolve(WEB_SRC, 'api/notification.ts'));
-    const systemTypes = source(resolve(WEB_SRC, 'types/system.ts'));
     const notificationController = source(
       resolve(SERVER_MODULES, 'notification/notification.controller.ts'),
     );
@@ -105,7 +104,6 @@ describe('retired runtime boundaries', () => {
     expect(notificationController).not.toMatch(/@Post\s*\(/u);
     expect(notificationController).not.toMatch(/['"]rules(?:\/|['"])/u);
     expect(notificationRuleController).toContain("@Controller('notification-rules')");
-    expect(systemTypes).not.toContain('interface NotificationRule');
   });
 
   it('keeps knowledge and review on their unified target contracts', () => {

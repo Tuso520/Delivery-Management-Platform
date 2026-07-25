@@ -35,7 +35,6 @@ const targetVueSources = [
   'src/views/currency/index.vue',
   'src/views/system/notification.vue',
   'src/views/system/approvals.vue',
-  'src/views/system/logs.vue',
   'src/views/system/config.vue',
   'src/views/system/integrations.vue',
   'src/components/FilePreviewRouter/index.vue',

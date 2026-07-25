@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest'
 const PAGINATION_CONSUMERS = [
   'src/views/system/user/index.vue',
   'src/views/organization/departments.vue',
-  'src/views/system/logs.vue',
   'src/views/system/integrations.vue',
   'src/views/system/approvals.vue',
   'src/views/archive/index.vue',

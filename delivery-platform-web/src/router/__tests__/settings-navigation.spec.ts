@@ -9,22 +9,24 @@ import { settingItems, shellRoutes } from '@/router'
 const routerSource = readFileSync(resolve(process.cwd(), 'src/router/index.ts'), 'utf8')
 
 describe('settings navigation contract', () => {
-  it('exposes settings center and the Figma field configuration page', () => {
+  it('exposes one page for each settings business directory', () => {
     expect(settingItems.map((item) => item.title)).toEqual([
+      'menu.userCenter',
       'menu.systemCurrency',
+      'menu.systemNotification',
       'menu.systemApproval',
       'menu.systemFields',
       'menu.systemIntegration',
       'menu.systemConfig',
-      'menu.userCenter',
     ])
     expect(settingItems.map((item) => item.path)).toEqual([
+      '/settings',
       '/settings/currency',
+      '/settings/notifications',
       '/settings/approvals',
       '/settings/fields',
       '/settings/integrations',
       '/settings/system',
-      '/settings',
     ])
   })
 
@@ -35,29 +37,24 @@ describe('settings navigation contract', () => {
     )
 
     expect(permissions).toMatchObject({
-      SettingsCenter: [
-        'settings:view', 'currency:view', 'notification_rule:view', 'approval_config:view',
-        'audit_log:view', 'system_setting:view', 'integration:view',
-      ],
+      UserCenter: ['user:view'],
       FieldSettings: ['field_setting:manage'],
       Currency: ['currency:view', 'currency:manage'],
       Notifications: ['notification_rule:view', 'notification_rule:manage'],
       Approvals: ['approval_config:view', 'approval_config:manage'],
-      Logs: ['audit_log:view'],
       SystemConfig: ['system_setting:view', 'system_setting:manage'],
       Integrations: ['integration:view', 'integration:manage'],
     })
   })
 
-  it('checks legacy setting route permissions before forwarding to center anchors', () => {
+  it('loads each settings route with its own page component', () => {
     const group = shellRoutes.find((route) => route.name === 'SettingsGroup')
-    const legacyRoutes = (group?.children ?? []).filter(
-      (route) => !['SettingsCenter', 'FieldSettings'].includes(String(route.name)),
-    )
+    const settingRoutes = group?.children ?? []
 
-    expect(legacyRoutes).toHaveLength(6)
-    expect(legacyRoutes.every((route) => route.redirect === undefined)).toBe(true)
-    expect(legacyRoutes.every((route) => route.beforeEnter !== undefined)).toBe(true)
+    expect(settingRoutes).toHaveLength(7)
+    expect(settingRoutes.every((route) => route.component !== undefined)).toBe(true)
+    expect(settingRoutes.every((route) => route.beforeEnter === undefined)).toBe(true)
+    expect(settingRoutes.map((route) => route.name)).not.toContain('Logs')
   })
 
   it('removes retired country, language and storage management entry points', () => {

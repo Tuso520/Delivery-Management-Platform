@@ -314,14 +314,14 @@ async function handleResetPassword(): Promise<void> {
 
 <template>
   <PageContainer class="user-page">
-    <PageToolbar title="用户管理" description="维护用户资料、状态及角色授权">
+    <PageToolbar title="用户中心" description="维护用户基本资料、账号状态及角色关联">
       <template #actions>
         <Can permission="user:create">
           <a-button type="primary" @click="openCreate">
             <template #icon>
               <IconPlus />
             </template>
-            创建用户
+            新增用户
           </a-button>
         </Can>
       </template>

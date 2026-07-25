@@ -115,9 +115,6 @@ export const queryKeys = {
       ['settings', 'integrations', provider, 'logs'] as const,
     integrationLogs: <T extends QueryParams>(provider: string, params: T) =>
       ['settings', 'integrations', provider, 'logs', snapshot(params)] as const,
-    auditLogs: <T extends QueryParams>(params: T) =>
-      ['settings', 'audit-logs', snapshot(params)] as const,
-    auditLog: (logId: string) => ['settings', 'audit-logs', 'detail', logId] as const,
     notificationRules: () => ['settings', 'notification-rules'] as const,
   },
 } as const

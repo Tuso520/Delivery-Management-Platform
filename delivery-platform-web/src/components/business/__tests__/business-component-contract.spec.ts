@@ -13,7 +13,6 @@ describe('business component adoption contract', () => {
       'src/views/archive/index.vue',
       'src/views/system/notification.vue',
       'src/views/system/config.vue',
-      'src/views/system/logs.vue',
       'src/views/system/integrations.vue',
       'src/views/system/approvals.vue',
     ]
@@ -23,7 +22,6 @@ describe('business component adoption contract', () => {
       'src/views/project/index.vue',
       'src/views/archive/index.vue',
       'src/views/system/notification.vue',
-      'src/views/system/logs.vue',
       'src/views/system/integrations.vue',
       'src/views/system/approvals.vue',
     ]

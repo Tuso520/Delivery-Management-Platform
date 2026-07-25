@@ -5,7 +5,6 @@ import BasicLayout from '@/layouts/BasicLayout.vue'
 import NotFound from '@/views/NotFound.vue'
 import type { MenuItem } from '@/store/permission'
 
-const loadSettingsCenter = () => import('@/views/system/settings-center.vue')
 import i18n from '@/locales'
 
 type NavigationSurface = 'main' | 'settings'
@@ -305,17 +304,50 @@ export const shellRoutes: RouteRecordRaw[] = [
     children: [
       {
         path: '/settings',
-        name: 'SettingsCenter',
-        component: loadSettingsCenter,
+        name: 'UserCenter',
+        component: () => import('@/views/system/user/index.vue'),
         meta: {
-          title: 'routes.settings',
-          icon: 'Setting',
-          permissions: [
-            'settings:view', 'currency:view', 'notification_rule:view', 'approval_config:view',
-            'audit_log:view', 'system_setting:view', 'integration:view',
-          ],
+          title: 'menu.userCenter',
+          icon: 'User',
+          permissions: ['user:view'],
           menu: true,
-          order: 60,
+          order: 10,
+        },
+      },
+      {
+        path: 'currency',
+        name: 'Currency',
+        component: () => import('@/views/currency/index.vue'),
+        meta: {
+          title: 'menu.systemCurrency',
+          icon: 'Coin',
+          permissions: ['currency:view', 'currency:manage'],
+          menu: true,
+          order: 20,
+        },
+      },
+      {
+        path: 'notifications',
+        name: 'Notifications',
+        component: () => import('@/views/system/notification.vue'),
+        meta: {
+          title: 'menu.systemNotification',
+          icon: 'Bell',
+          permissions: ['notification_rule:view', 'notification_rule:manage'],
+          menu: true,
+          order: 30,
+        },
+      },
+      {
+        path: 'approvals',
+        name: 'Approvals',
+        component: () => import('@/views/system/approvals.vue'),
+        meta: {
+          title: 'menu.systemApproval',
+          icon: 'Finished',
+          permissions: ['approval_config:view', 'approval_config:manage'],
+          menu: true,
+          order: 40,
         },
       },
       {
@@ -327,89 +359,31 @@ export const shellRoutes: RouteRecordRaw[] = [
           icon: 'List',
           permissions: ['field_setting:manage'],
           menu: true,
-          order: 30,
-        },
-      },
-      {
-        path: 'currency',
-        name: 'Currency',
-        component: loadSettingsCenter,
-        beforeEnter: () => ({ path: '/settings', hash: '#currency' }),
-        meta: {
-          title: 'menu.systemCurrency',
-          icon: 'Coin',
-          permissions: ['currency:view', 'currency:manage'],
-          menu: true,
-          hidden: true,
-          order: 10,
-        },
-      },
-      {
-        path: 'notifications',
-        name: 'Notifications',
-        component: loadSettingsCenter,
-        beforeEnter: () => ({ path: '/settings', hash: '#notifications' }),
-        meta: {
-          title: 'menu.systemNotification',
-          icon: 'Bell',
-          permissions: ['notification_rule:view', 'notification_rule:manage'],
-          hidden: true,
-          order: 20,
-        },
-      },
-      {
-        path: 'approvals',
-        name: 'Approvals',
-        component: loadSettingsCenter,
-        beforeEnter: () => ({ path: '/settings', hash: '#approvals' }),
-        meta: {
-          title: 'menu.systemApproval',
-          icon: 'Finished',
-          permissions: ['approval_config:view', 'approval_config:manage'],
-          menu: true,
-          hidden: true,
-          order: 20,
-        },
-      },
-      {
-        path: 'logs',
-        name: 'Logs',
-        component: loadSettingsCenter,
-        beforeEnter: () => ({ path: '/settings', hash: '#logs' }),
-        meta: {
-          title: 'menu.systemLogs',
-          icon: 'Tickets',
-          permissions: ['audit_log:view'],
-          hidden: true,
-          order: 40,
-        },
-      },
-      {
-        path: 'system',
-        name: 'SystemConfig',
-        component: loadSettingsCenter,
-        beforeEnter: () => ({ path: '/settings', hash: '#system' }),
-        meta: {
-          title: 'menu.systemConfig',
-          icon: 'Operation',
-          permissions: ['system_setting:view', 'system_setting:manage'],
-          menu: true,
-          hidden: true,
           order: 50,
         },
       },
       {
         path: 'integrations',
         name: 'Integrations',
-        component: loadSettingsCenter,
-        beforeEnter: () => ({ path: '/settings', hash: '#integrations' }),
+        component: () => import('@/views/system/integrations.vue'),
         meta: {
           title: 'menu.systemIntegration',
           icon: 'Link',
           permissions: ['integration:view', 'integration:manage'],
           menu: true,
-          hidden: true,
-          order: 40,
+          order: 60,
+        },
+      },
+      {
+        path: 'system',
+        name: 'SystemConfig',
+        component: () => import('@/views/system/config.vue'),
+        meta: {
+          title: 'menu.systemConfig',
+          icon: 'Operation',
+          permissions: ['system_setting:view', 'system_setting:manage'],
+          menu: true,
+          order: 70,
         },
       },
     ],
@@ -421,12 +395,6 @@ export const shellRoutes: RouteRecordRaw[] = [
     name: 'Departments',
     component: () => import('@/views/organization/departments.vue'),
     meta: { title: 'routes.departments', permissions: ['department:view'], hidden: true },
-  },
-  {
-    path: 'organization/users',
-    name: 'Users',
-    component: () => import('@/views/system/user/index.vue'),
-    meta: { title: 'routes.users', permissions: ['user:view'], hidden: true },
   },
   {
     path: 'organization/roles',
@@ -443,9 +411,7 @@ export const shellRoutes: RouteRecordRaw[] = [
 ]
 
 export const menuItems = buildNavigationFromRoutes(shellRoutes, 'main')
-export const settingItems = (
-  buildNavigationFromRoutes(shellRoutes, 'settings')[0]?.children ?? []
-).map((item) => (item.name === 'SettingsCenter' ? { ...item, title: 'menu.userCenter' } : item))
+export const settingItems = buildNavigationFromRoutes(shellRoutes, 'settings')[0]?.children ?? []
 
 export const routes: RouteRecordRaw[] = [
   {

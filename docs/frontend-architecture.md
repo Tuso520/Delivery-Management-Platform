@@ -99,7 +99,7 @@ flowchart TD
 | `/workspace`           | `WorkspaceGroup` | 重定向 `/dashboard`                     | 无独立页面                    |
 | `/delivery`            | `DeliveryGroup`  | 重定向 `/projects`                      | 无独立页面                    |
 | `/standards-knowledge` | `KnowledgeGroup` | 重定向 `/standards`                     | 无独立页面                    |
-| `/settings`            | `SettingsGroup`  | 重定向 `/settings/currency`             | 无独立页面                    |
+| `/settings`            | `UserCenter`     | 用户中心                                | `src/views/system/user/index.vue` |
 | `/:pathMatch(.*)*`     | `NotFound`       | 404                                     | `src/views/NotFound.vue`      |
 
 ### 4.3 左侧主导航：8 个页面
@@ -123,10 +123,11 @@ flowchart TD
 
 | 设置项/路由                        | Route Name      | 页面文件                            | 路由权限                                               | 修改权限                   |
 | ---------------------------------- | --------------- | ----------------------------------- | ------------------------------------------------------ | -------------------------- |
+| 用户中心 `/settings`               | `UserCenter`    | `src/views/system/user/index.vue`   | `user:view`                                            | 对应 `user:*` 动作权限     |
 | 币种与汇率 `/settings/currency`    | `Currency`      | `src/views/currency/index.vue`      | `currency:view` 或 `currency:manage`                   | `currency:manage`          |
 | 通知规则 `/settings/notifications` | `Notifications` | `src/views/system/notification.vue` | `notification_rule:view` 或 `notification_rule:manage` | `notification_rule:manage` |
-| 审批配置 `/settings/approvals`     | `Approvals`     | `src/views/system/approvals.vue`    | `approval_config:view` 或 `approval_config:manage`     | `approval_config:manage`   |
-| 操作日志 `/settings/logs`          | `Logs`          | `src/views/system/logs.vue`         | `audit_log:view`                                       | 只读                       |
+| 审批规则 `/settings/approvals`     | `Approvals`     | `src/views/system/approvals.vue`    | `approval_config:view` 或 `approval_config:manage`     | `approval_config:manage`   |
+| 字段配置 `/settings/fields`        | `FieldSettings` | `src/views/system/FieldSettings.vue`| `field_setting:manage`                                 | `field_setting:manage`     |
 | 系统配置 `/settings/system`        | `SystemConfig`  | `src/views/system/config.vue`       | `system_setting:view` 或 `system_setting:manage`       | `system_setting:manage`    |
 | 接口集成 `/settings/integrations`  | `Integrations`  | `src/views/system/integrations.vue` | `integration:view` 或 `integration:manage`             | `integration:manage`       |
 
@@ -142,10 +143,9 @@ flowchart TD
 | `/standards/:id`            | `StandardDetail` | `src/views/standard/index.vue`          | 自动打开标准详情抽屉                                | `standard:view`   |
 | `/knowledge/:id`            | `KnowledgeDetail` | `src/views/knowledge/index.vue`        | 自动打开知识详情抽屉                                | `knowledge:view`  |
 | `/organization/departments` | `Departments`   | `src/views/organization/departments.vue` | 仅深链                                              | `department:view` |
-| `/organization/users`       | `Users`         | `src/views/system/user/index.vue`        | 仅深链                                              | `user:view`       |
 | `/organization/roles`       | `Roles`         | `src/views/system/role/index.vue`        | 仅深链                                              | `role:view`       |
 
-组织、用户和角色页面不进入主导航或设置菜单。维护按钮分别按 `department:manage`、`user:*` 和 `role:*` 动作权限显示；后端仍执行最终权限与数据校验。
+组织和角色页面不进入主导航或设置菜单；用户页面归属设置中的“用户中心”。维护按钮分别按 `department:manage`、`user:*` 和 `role:*` 动作权限显示；后端仍执行最终权限与数据校验。
 
 ## 5. 页面文件与组件清单
 
@@ -246,8 +246,9 @@ flowchart TD
 | `knowledge`         | 列表、汇总、分类、详情                     |
 | `tools`             | 工具列表及是否包含停用项                   |
 | `currencies`        | 币种与汇率                                 |
-| `users` / `roles` / `permissions` / `departments` | 隐藏组织权限页           |
-| `settings`          | 系统设置、审批、集成、日志、审计、通知规则 |
+| `users`             | 用户中心                                         |
+| `roles` / `permissions` / `departments` | 隐藏组织权限页                  |
+| `settings`          | 系统配置、审批规则、集成、通知规则和字段配置     |
 
 分页和筛选对象会复制进 Query Key，mutation 成功后按列表根键、实体详情键或关联键精确失效。
 
@@ -284,11 +285,11 @@ flowchart TD
 | `tools.ts`                                   | 工具定义及启停                                  | `/tools`                                                   |
 | `currency.ts`                                | 币种、汇率同步与锁定                            | `/currencies`                                              |
 | `notification.ts`                            | 当前页面使用通知规则；通知列表方法保留在 API 层 | `/notification-rules`、`/notifications`                    |
-| `approval.ts`                                | 审批模版                                        | `/approval-templates`                                      |
+| `approval.ts`                                | 审批模板                                        | `/approval-templates`                                      |
 | `integration.ts`                             | 飞书配置、测试、同步、日志                      | `/integrations`                                            |
-| `system.ts`                                  | 系统设置、系统时间、审计、登录公开配置          | `/system-settings`、`/system-time`、`/audit-logs`          |
+| `system.ts`                                  | 系统设置、系统时间和登录公开配置                | `/system-settings`、`/system-time`                         |
 | `platform.ts` / `country.ts` / `language.ts` | 字典、部门、角色引用及项目/模版选项             | `/dictionaries`、`/references`、`/countries`、`/languages` |
-| `user.ts` / `role.ts` / `permission.ts`      | 隐藏组织权限页                                  | `/users`、`/roles`、`/permissions`                         |
+| `user.ts` / `role.ts` / `permission.ts`      | 用户中心与隐藏角色权限页                        | `/users`、`/roles`、`/permissions`                         |
 | `upload-idempotency.ts`                      | 档案、标准和知识文件上传幂等                    | 无独立端点                                                 |
 | `errors.ts`                                  | 统一业务请求错误类型                            | 无独立端点                                                 |
 

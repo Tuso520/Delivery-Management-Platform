@@ -59,8 +59,7 @@ export class OperationAuditInterceptor implements NestInterceptor {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     if (
       !mutationMethods.has(request.method) ||
-      !request.user?.sub ||
-      request.path.includes('/audit-logs')
+      !request.user?.sub
     ) {
       return next.handle();
     }

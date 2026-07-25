@@ -48,36 +48,6 @@ describe('OperationLogService sensitive data handling', () => {
     expect(JSON.stringify(result)).not.toContain('must-not-be-stored');
   });
 
-  it('redacts sensitive values from historical log reads', async () => {
-    const prisma = {
-      operationLog: {
-        findUnique: jest.fn().mockResolvedValue({
-          id: 'log-1',
-          userId: 'user-1',
-          module: 'integration',
-          action: 'legacy_update',
-          targetType: 'integration',
-          targetId: 'integration-1',
-          beforeData: { password: 'legacy-password' },
-          afterData: { nested: { apiKey: 'legacy-key' } },
-          ipAddress: null,
-          userAgent: null,
-          result: 'success',
-          traceId: 'trace-1',
-          errorReason: null,
-          createdAt: new Date('2026-07-11T00:00:00.000Z'),
-          user: { id: 'user-1', username: 'admin', realName: '管理员' },
-        }),
-      },
-    } as unknown as PrismaService;
-    const service = new OperationLogService(prisma);
-
-    const result = await service.findById('log-1');
-
-    expect(result.beforeData).toEqual({ password: '[REDACTED]' });
-    expect(result.afterData).toEqual({ nested: { apiKey: '[REDACTED]' } });
-  });
-
   it('uses the active request trace when callers do not provide one', async () => {
     const create = jest.fn().mockImplementation(({ data }: { data: Record<string, unknown> }) => ({
       id: 'log-2',

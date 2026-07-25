@@ -15,7 +15,7 @@ import { currencyApi } from '@/api/currency'
 import { fieldConfigurationApi, fieldOptionsApi } from '@/api/field-configuration'
 import { integrationApi } from '@/api/integration'
 import { notificationApi } from '@/api/notification'
-import { operationLogApi, systemSettingsApi } from '@/api/system'
+import { systemSettingsApi } from '@/api/system'
 
 describe('target settings API contracts', () => {
   beforeEach(() => {
@@ -79,22 +79,16 @@ describe('target settings API contracts', () => {
     expect(mocks.delete).toHaveBeenCalledWith('/approval-templates/template-1')
   })
 
-  it('uses structured system settings, server time and audit log endpoints', () => {
+  it('uses structured system settings and server time endpoints', () => {
     systemSettingsApi.get()
     systemSettingsApi.update({ security: { loginMaxAttempts: 6 } })
     systemSettingsApi.getSystemTime()
-    operationLogApi.getList({ page: 1, pageSize: 20, keyword: 'trace-1' })
-    operationLogApi.getById('log-1')
 
     expect(mocks.get).toHaveBeenNthCalledWith(1, '/system-settings')
     expect(mocks.patch).toHaveBeenCalledWith('/system-settings', {
       security: { loginMaxAttempts: 6 },
     })
     expect(mocks.get).toHaveBeenNthCalledWith(2, '/system-time')
-    expect(mocks.get).toHaveBeenNthCalledWith(3, '/audit-logs', {
-      params: { page: 1, pageSize: 20, keyword: 'trace-1' },
-    })
-    expect(mocks.get).toHaveBeenNthCalledWith(4, '/audit-logs/log-1')
   })
 
   it('limits target integration calls to provider-addressed resources', () => {

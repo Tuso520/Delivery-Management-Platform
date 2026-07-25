@@ -26,7 +26,7 @@ async function handleSubmit(): Promise<void> {
 <template>
   <BusinessDrawer
     v-model:visible="visible"
-    :title="isEdit ? '编辑用户' : '创建用户'"
+    :title="isEdit ? '编辑用户' : '新增用户'"
     size="sm"
     :mask-closable="false"
   >

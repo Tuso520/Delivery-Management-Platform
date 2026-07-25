@@ -804,19 +804,46 @@
 
 设置入口包含：
 
+- 用户中心
 - 币种与汇率
 - 通知规则
-- 审批配置
-- 操作日志
+- 审批规则
+- 字段配置
 - 系统配置
 - 接口集成
+
+菜单、页面、接口和数据模型的唯一归属如下：
+
+| 二级目录 | 页面 | 后端接口 | Prisma 模型 |
+| --- | --- | --- | --- |
+| 用户中心 | `src/views/system/user/index.vue` | `/users`、`/users/:id/roles`、`/users/:id/enable`、`/users/:id/disable`、`/users/:id/reset-password` | `User`、`UserRole`、`Role` |
+| 币种与汇率 | `src/views/currency/index.vue` | `/currencies`、`/currencies/sync-rates`、`/currencies/:code/lock`、`/currencies/:code/unlock` | `Currency` |
+| 通知规则 | `src/views/system/notification.vue` | `/notification-rules` | `NotificationRule` |
+| 审批规则 | `src/views/system/approvals.vue` | `/approval-templates` | `ApprovalTemplate`、`ApprovalStep` |
+| 字段配置 | `src/views/system/FieldSettings.vue` | `/field-config`、`/field-options` | `DictionaryCategory`、`DictionaryItem` |
+| 接口集成 | `src/views/system/integrations.vue` | `/integrations` | `IntegrationConfig`、`IntegrationSyncLog` |
+| 系统配置 | `src/views/system/config.vue` | `/system-settings`、`/system-time` | `SystemConfig` |
+
+每个路由直接加载对应页面，不使用跨领域聚合页。`OperationLog` 仅作为后端审计写入模型保留，不属于任何设置二级目录。
 
 删除：
 
 - 国家配置
 - 语言与翻译
 
-## 11.1 币种与汇率
+## 11.1 用户中心
+
+路由 `/settings`，仅承载用户业务：
+
+- 用户列表和查询
+- 用户基本资料
+- 账号状态
+- 用户角色关联
+- 新增、编辑、启用、停用、重置密码和删除
+
+用户中心不得承载权限矩阵、操作日志、系统参数或其他设置领域。
+
+## 11.2 币种与汇率
 
 仅具备管理员或对应权限的用户可操作。
 
@@ -839,7 +866,7 @@
 - 汇率锁定状态
 - 操作：编辑、禁用、锁定
 
-## 11.2 通知规则
+## 11.3 通知规则
 
 仅具备操作权限的用户可编辑。
 
@@ -857,13 +884,13 @@
 - 启用
 - 操作：编辑、删除
 
-## 11.3 审批配置
+## 11.4 审批规则
 
 仅具备操作权限的用户可编辑。
 
 筛选：流程名称。
 
-右侧：新增审批模版。
+右侧：新增审批模板。
 
 列表字段：
 
@@ -873,28 +900,11 @@
 - 启用
 - 操作：编辑、删除
 
-## 11.4 操作日志
+## 11.5 字段配置
 
-筛选：
+仅维护配置化业务字段的分类、字段值、状态、编码和排序，不承载币种、通知、审批或系统参数。
 
-- 关键词
-- 操作类型
-- 时间范围
-
-列表字段：
-
-- 操作时间
-- 操作用户
-- 操作模块
-- 操作类型
-- 操作对象
-- 操作结果
-- IP / 来源
-- 操作详情
-
-详情抽屉显示变更前后内容、Trace ID 和错误信息，敏感字段脱敏。
-
-## 11.5 系统配置
+## 11.6 系统配置
 
 改为自上而下的表单页面，长页面使用固定底部保存栏。
 
@@ -910,7 +920,7 @@
 
 其他现有配置项保留，并按现有源码逐项迁移。
 
-## 11.6 接口集成
+## 11.7 接口集成
 
 只保留：
 

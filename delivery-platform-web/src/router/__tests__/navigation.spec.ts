@@ -35,17 +35,18 @@ describe('application navigation', () => {
     ])
   })
 
-  it('keeps settings out of the sidebar and exposes settings plus field configuration', () => {
+  it('keeps settings out of the sidebar and exposes business-specific settings pages', () => {
     expect(menuItems.flatMap((group) => group.children ?? [])).not.toContainEqual(
       expect.objectContaining({ name: 'Currency' }),
     )
     expect(settingItems.map((item) => item.title)).toEqual([
+      'menu.userCenter',
       'menu.systemCurrency',
+      'menu.systemNotification',
       'menu.systemApproval',
       'menu.systemFields',
       'menu.systemIntegration',
       'menu.systemConfig',
-      'menu.userCenter',
     ])
   })
 

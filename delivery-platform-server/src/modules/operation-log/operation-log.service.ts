@@ -1,30 +1,14 @@
 import { randomUUID } from 'node:crypto';
 
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import type { PaginatedResult } from '../../common/dto/pagination.dto';
 import { getCurrentTraceId } from '../../common/utils/request-trace.util';
 import { PrismaService } from '../../database/prisma.service';
 
-import { QueryOperationLogDto, CreateOperationLogDto } from './dto/operation-log.dto';
+import { CreateOperationLogDto } from './dto/operation-log.dto';
 
 type OperationLogClient = Pick<Prisma.TransactionClient, 'operationLog'>;
-
-// Use Prisma's generated type for the query result with user include
-const operationLogWithUser = Prisma.validator<Prisma.OperationLogDefaultArgs>()({
-  include: {
-    user: {
-      select: {
-        id: true,
-        username: true,
-        realName: true,
-      },
-    },
-  },
-});
-
-export type OperationLogWithUser = Prisma.OperationLogGetPayload<typeof operationLogWithUser>;
 
 export interface OperationLogItem {
   id: string;
@@ -43,127 +27,9 @@ export interface OperationLogItem {
   createdAt: Date;
 }
 
-export interface OperationLogDetail extends OperationLogItem {
-  user: {
-    id: string;
-    username: string;
-    realName: string;
-  } | null;
-}
-
 @Injectable()
 export class OperationLogService {
   constructor(private readonly prisma: PrismaService) {}
-
-  async findAll(query: QueryOperationLogDto): Promise<PaginatedResult<OperationLogDetail>> {
-    const {
-      page = 1,
-      pageSize = 20,
-      userId,
-      module,
-      action,
-      targetType,
-      keyword,
-      startDate,
-      endDate,
-      result,
-      traceId,
-    } = query;
-
-    const where: Prisma.OperationLogWhereInput = {};
-
-    if (keyword) {
-      where.OR = [
-        { module: { contains: keyword } },
-        { action: { contains: keyword } },
-        { targetType: { contains: keyword } },
-        { targetId: { contains: keyword } },
-        { traceId: { contains: keyword } },
-      ];
-    }
-
-    if (userId) {
-      where.userId = userId;
-    }
-
-    if (module) {
-      where.module = module;
-    }
-
-    if (action) {
-      where.action = action;
-    }
-
-    if (targetType) {
-      where.targetType = targetType;
-    }
-
-    if (result) {
-      where.result = result;
-    }
-
-    if (traceId) {
-      where.traceId = traceId;
-    }
-
-    if (startDate || endDate) {
-      const createdAt: Prisma.DateTimeFilter = {};
-      if (startDate) {
-        createdAt.gte = new Date(startDate);
-      }
-      if (endDate) {
-        createdAt.lte = new Date(endDate);
-      }
-      where.createdAt = createdAt;
-    }
-
-    const [total, list] = await Promise.all([
-      this.prisma.operationLog.count({ where }),
-      this.prisma.operationLog.findMany({
-        where,
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          user: {
-            select: {
-              id: true,
-              username: true,
-              realName: true,
-            },
-          },
-        },
-      }),
-    ]);
-
-    return {
-      items: list.map((log) => this.toSafeLog(log)),
-      page,
-      pageSize,
-      total,
-    };
-  }
-
-  async findById(id: string): Promise<OperationLogDetail> {
-    const log = await this.prisma.operationLog.findUnique({
-      where: { id },
-      include: {
-        user: {
-          select: {
-            id: true,
-            username: true,
-            realName: true,
-          },
-        },
-      },
-    });
-
-    if (!log) {
-      throw new NotFoundException('审计日志不存在');
-    }
-
-    return this.toSafeLog(log);
-  }
 
   async log(
     dto: CreateOperationLogDto,
@@ -189,11 +55,7 @@ export class OperationLogService {
     return this.toSafeLog(log);
   }
 
-  private toSafeLog(log: OperationLogWithUser): OperationLogDetail;
-  private toSafeLog(log: OperationLogItem): OperationLogItem;
-  private toSafeLog(
-    log: OperationLogWithUser | OperationLogItem,
-  ): OperationLogDetail | OperationLogItem {
+  private toSafeLog(log: OperationLogItem): OperationLogItem {
     return {
       ...log,
       beforeData: this.redactJson(log.beforeData),

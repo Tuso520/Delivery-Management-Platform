@@ -9,7 +9,6 @@ import { ArchiveTemplateVersionController } from '../../../modules/archive-templ
 import { DashboardController } from '../../../modules/dashboard/dashboard.controller';
 import { FileController } from '../../../modules/file/file.controller';
 import { KnowledgeItemController } from '../../../modules/knowledge/knowledge-item.controller';
-import { AuditLogController } from '../../../modules/operation-log/operation-log.controller';
 import { ReviewTaskController } from '../../../modules/review/review-task.controller';
 import {
   SystemConfigController,
@@ -159,7 +158,6 @@ describe('controller backend permission boundaries', () => {
     expect(usesPermissionsGuard(DashboardController)).toBe(true);
     expect(usesPermissionsGuard(SystemConfigController)).toBe(true);
     expect(usesPermissionsGuard(SystemSettingsController)).toBe(true);
-    expect(usesPermissionsGuard(AuditLogController)).toBe(true);
   });
 
   it('does not combine permission checks with controller role allowlists', () => {

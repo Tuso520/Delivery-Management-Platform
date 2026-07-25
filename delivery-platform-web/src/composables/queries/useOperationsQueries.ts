@@ -5,8 +5,7 @@ import type { QueryApprovalTemplateParams } from '@/api/approval'
 import { approvalTemplateApi } from '@/api/approval'
 import { integrationApi } from '@/api/integration'
 import { notificationApi } from '@/api/notification'
-import type { QueryOperationLogParams } from '@/api/system'
-import { operationLogApi, systemSettingsApi } from '@/api/system'
+import { systemSettingsApi } from '@/api/system'
 import { toolApi } from '@/api/tools'
 import { queryKeys } from '@/query/keys'
 import type { IntegrationProvider, IntegrationSyncLog } from '@/types/settings'
@@ -58,21 +57,6 @@ export function useIntegrationLogsQuery(
     queryFn: () =>
       integrationApi.getSyncLogs(toValue(provider) as IntegrationProvider, { ...toValue(params) }),
     enabled: computed(() => Boolean(toValue(provider)) && toValue(enabled)),
-  })
-}
-
-export function useAuditLogsQuery(params: MaybeRefOrGetter<QueryOperationLogParams>) {
-  return useQuery({
-    queryKey: computed(() => queryKeys.settings.auditLogs(toValue(params))),
-    queryFn: () => operationLogApi.getList({ ...toValue(params) }),
-  })
-}
-
-export function useAuditLogQuery(logId: MaybeRefOrGetter<string>) {
-  return useQuery({
-    queryKey: computed(() => queryKeys.settings.auditLog(toValue(logId))),
-    queryFn: () => operationLogApi.getById(toValue(logId)),
-    enabled: computed(() => Boolean(toValue(logId))),
   })
 }
 

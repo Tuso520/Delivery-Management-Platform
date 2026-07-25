@@ -1,28 +1,5 @@
 import request from './request'
-import type { PaginatedData, PaginationParams } from '@/types/api'
-import type { OperationLog } from '@/types/system'
 import type { SystemSettings, SystemTime, UpdateSystemSettingsDto } from '@/types/settings'
-
-export interface QueryOperationLogParams extends PaginationParams {
-  keyword?: string
-  userId?: string
-  module?: string
-  action?: string
-  targetType?: string
-  startDate?: string
-  endDate?: string
-  result?: string
-}
-
-export const operationLogApi = {
-  getList(params: QueryOperationLogParams) {
-    return request.get<PaginatedData<OperationLog>>('/audit-logs', { params })
-  },
-
-  getById(id: string) {
-    return request.get<OperationLog>(`/audit-logs/${id}`)
-  },
-}
 
 export const systemSettingsApi = {
   get() {
