@@ -5,15 +5,11 @@ function boundedInteger(value: string | undefined, fallback: number, min: number
   return Number.isFinite(parsed) ? Math.max(min, Math.min(parsed, max)) : fallback;
 }
 
-export function resolveFileUploadHardLimitBytes(
-  value = process.env.FILE_UPLOAD_HARD_LIMIT_MB,
-): number {
-  const parsedMegabytes = Number.parseInt(value ?? '', 10);
-  const megabytes =
-    Number.isInteger(parsedMegabytes) && parsedMegabytes >= 1 && parsedMegabytes <= 1024
-      ? parsedMegabytes
-      : 1024;
-  return megabytes * 1024 * 1024;
+export const FILE_UPLOAD_MAX_MEGABYTES = 500;
+export const FILE_UPLOAD_MAX_BYTES = FILE_UPLOAD_MAX_MEGABYTES * 1024 * 1024;
+
+export function resolveFileUploadHardLimitBytes(): number {
+  return FILE_UPLOAD_MAX_BYTES;
 }
 
 export default registerAs('fileProcessing', () => ({

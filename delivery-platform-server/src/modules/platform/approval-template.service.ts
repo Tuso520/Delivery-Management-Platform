@@ -8,7 +8,6 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
 import { OperationLogService } from '../operation-log/operation-log.service';
-import { REGISTERED_REVIEW_SOURCE_TYPES } from '../review/review-business.service';
 
 import {
   CreateTargetApprovalTemplateDto,
@@ -18,6 +17,7 @@ import {
   TargetApprovalStepDto,
   UpdateTargetApprovalTemplateDto,
 } from './dto/approval-template.dto';
+import { REGISTERED_REVIEW_SOURCE_TYPES } from './workflow/review-source.contract';
 
 const TARGET_REVIEW_SOURCE_BY_APPROVAL_TYPE: Partial<Record<TargetApprovalBusinessType, string>> = {
   PROJECT_CREATE: 'PROJECT_CREATE',

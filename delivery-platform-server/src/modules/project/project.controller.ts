@@ -238,7 +238,7 @@ export class ProjectController {
   }
 
   @Post(':id/archive')
-  @RequirePermissions({ all: ['project:view'] })
+  @RequirePermissions({ all: ['project:archive'] })
   archive(
     @Param('id') id: string,
     @Body() dto: ProjectStatusActionDto,

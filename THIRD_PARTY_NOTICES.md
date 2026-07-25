@@ -13,13 +13,10 @@
 | Arco Design Vue | UI 组件库 | MIT |
 | Axios | HTTP 请求 | MIT |
 | Day.js | 日期时间处理 | MIT |
-| VueUse | 组合式工具函数 | MIT |
 | vue-i18n | 国际化 | MIT |
-| md-editor-v3 | Markdown 编辑与预览 | MIT |
 | PDF.js / pdfjs-dist | PDF 在线预览 | Apache-2.0 |
 | OpenSeadragon | 大图平移与缩放预览 | BSD-3-Clause |
 | Viewer.js | 图片缩放、旋转和查看器 | MIT |
-| PhotoSwipe | 图片全屏画廊预览 | MIT |
 
 ## 后端运行依赖
 

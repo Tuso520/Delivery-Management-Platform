@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/api/request', () => ({ default: mocks }))
 
-import { fileApi } from '@/api/file'
+import { fileApi } from '@/platform/file/file.api'
 
 describe('unified file preview contract', () => {
   beforeEach(() => mocks.get.mockReset())

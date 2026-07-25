@@ -7,13 +7,13 @@ const PAGINATION_CONSUMERS = [
   'src/views/organization/departments.vue',
   'src/views/system/integrations.vue',
   'src/views/system/approvals.vue',
-  'src/views/archive/index.vue',
-  'src/views/archive/template.vue',
-  'src/views/project/ProjectDetailDialog.vue',
-  'src/views/project/index.vue',
+  'src/domains/archive/pages/ArchiveWorkspacePage.vue',
+  'src/domains/archive/pages/ArchiveTemplatePage.vue',
+  'src/domains/project/components/ProjectDetailDialog.vue',
+  'src/domains/project/pages/ProjectOverviewPage.vue',
   'src/views/review/pending.vue',
   'src/views/standard/index.vue',
-  'src/views/knowledge/index.vue',
+  'src/domains/knowledge/pages/KnowledgePage.vue',
 ] as const
 
 function readSource(path: string): string {

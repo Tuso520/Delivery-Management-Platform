@@ -10,11 +10,9 @@
 - Arco Design Vue：用于统一业务组件和页面风格。
 - Axios：用于前后端接口通信。
 - Day.js：用于日期和时间格式化。
-- VueUse：提供常用组合式工具函数。
 - vue-i18n：用于多语言能力。
-- md-editor-v3：用于 Markdown 编辑和只读预览。
 - PDF.js / pdfjs-dist：用于 PDF 在线预览。
-- Viewer.js、PhotoSwipe 与 OpenSeadragon：用于普通图片、全屏画廊和大图分层预览。
+- Viewer.js 与 OpenSeadragon：用于普通图片查看和大图分层预览。
 
 ## 后端主要依赖
 

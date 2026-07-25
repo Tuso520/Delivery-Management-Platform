@@ -1,5 +1,7 @@
 import { h, ref } from 'vue'
-import { Input, Modal, Textarea } from '@arco-design/web-vue'
+import Input from '@arco-design/web-vue/es/input'
+import Modal from '@arco-design/web-vue/es/modal'
+import Textarea from '@arco-design/web-vue/es/textarea'
 
 type LegacyMessageType = 'success' | 'warning' | 'info' | 'error'
 

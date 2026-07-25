@@ -2,11 +2,11 @@
 import { computed, defineAsyncComponent } from 'vue'
 import zhCn from '@arco-design/web-vue/es/locale/lang/zh-cn'
 import enUs from '@arco-design/web-vue/es/locale/lang/en-us'
-import { useFilePreview } from '@/composables/useFilePreview'
+import { useFilePreview } from '@/platform/file-preview/useFilePreview'
 import { useLocaleStore } from '@/store/locale'
 
 const AttachmentPreviewModal = defineAsyncComponent(() =>
-  import('@/components/AttachmentPreviewModal/index.vue'),
+  import('@/platform/file-preview/AttachmentPreviewModal.vue'),
 )
 
 const localeStore = useLocaleStore()

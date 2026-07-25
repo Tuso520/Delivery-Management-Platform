@@ -601,13 +601,15 @@ describe('KnowledgeItemService', () => {
       data: { status: 'ARCHIVED', archivedAt: expect.any(Date) },
     });
     expect(transaction.operationLog.create).toHaveBeenCalledWith({
-      data: {
+      data: expect.objectContaining({
         userId: 'manager-1',
         module: 'knowledge',
         action: 'archive',
         targetType: 'knowledge_item',
         targetId: 'knowledge-1',
-      },
+        result: 'success',
+        traceId: expect.any(String),
+      }),
     });
     expect(result).toEqual({
       id: 'knowledge-1',

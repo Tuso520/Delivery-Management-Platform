@@ -69,11 +69,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\local-docker.ps1 up -Build
 - [文档总览](docs/README.md)
 - [产品说明](docs/product.md)
 - [技术架构](docs/architecture.md)
+- [基础架构模型 v0.1](docs/platform-foundation-architecture-v0.1.md)
 - [前端页面架构](docs/frontend-architecture.md)
 - [前端业务流程](docs/frontend-business-flows.md)
 - [前端实施规范](docs/frontend-architecture-refactored.md)
 - [后端实施规范](docs/backend-architecture-refactored.md)
-- [前端整体重构评审稿](docs/frontend-rebuild-review.md)
 - [开发规范](docs/development.md)
 - [部署运维](docs/deployment.md)
 - [测试验收](docs/testing.md)
@@ -81,7 +81,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\local-docker.ps1 up -Build
 - [开源依赖说明](docs/open-source.md)
 - [直接依赖许可证清单](docs/open-source-dependencies.md)
 - [开源准备清单](docs/open-source-readiness.md)
-- [版本记录](docs/release.md)
+- [版本记录](CHANGELOG.md)
 
 ## 开源与第三方组件
 

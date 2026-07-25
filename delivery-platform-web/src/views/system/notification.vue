@@ -1,21 +1,21 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Message } from '@arco-design/web-vue'
+import Message from '@arco-design/web-vue/es/message'
 import type { TableColumnData } from '@arco-design/web-vue'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import { useI18n } from 'vue-i18n'
 
-import { notificationApi } from '@/api/notification'
+import { notificationApi } from '@/platform/notification/notification.api'
 import {
   BusinessModal,
   BusinessTable,
-  Can,
   PageContainer,
   PageToolbar,
   SectionCard,
   StatusBadge,
-} from '@/components/business'
+} from '@/design-system'
+import { Can } from '@/platform/permission'
 import { useNotificationRulesQuery } from '@/composables/queries/useOperationsQueries'
 import { usePermission } from '@/composables/usePermission'
 import { queryKeys } from '@/query/keys'
@@ -24,7 +24,7 @@ import type {
   NotificationRecipientPolicyType,
   NotificationRule,
   SaveNotificationRuleDto,
-} from '@/types/settings'
+} from '@/platform/notification/notification.types'
 import { arcoConfirm } from '@/utils/arco-dialog'
 
 const { hasPermission } = usePermission()

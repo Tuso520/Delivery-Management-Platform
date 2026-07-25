@@ -6,6 +6,7 @@ export class ApiRequestError extends Error {
     readonly status?: number,
     readonly businessCode?: string,
     readonly retryable = false,
+    readonly traceId?: string,
   ) {
     super(message)
     this.name = 'ApiRequestError'

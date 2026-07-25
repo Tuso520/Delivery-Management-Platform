@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   post: vi.fn(),
+  refreshSessionRequest: vi.fn(),
 }))
 
 vi.mock('@/api/request', () => ({
@@ -9,6 +10,7 @@ vi.mock('@/api/request', () => ({
     post: mocks.post,
     get: vi.fn(),
   },
+  refreshSessionRequest: mocks.refreshSessionRequest,
 }))
 
 import { authApi } from '@/api/auth'
@@ -16,15 +18,13 @@ import { authApi } from '@/api/auth'
 describe('authApi', () => {
   beforeEach(() => {
     mocks.post.mockReset()
+    mocks.refreshSessionRequest.mockReset()
   })
 
   it('refreshes from the HttpOnly cookie without a request body', () => {
     authApi.refreshToken()
 
-    expect(mocks.post).toHaveBeenCalledWith('/auth/refresh', undefined, {
-      silent: true,
-      skipAuthRefresh: true,
-    })
+    expect(mocks.refreshSessionRequest).toHaveBeenCalledOnce()
   })
 
   it('does not try to refresh an invalid login request', () => {

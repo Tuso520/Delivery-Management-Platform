@@ -9,6 +9,7 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
 import type { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { writeOperationLog } from '../operation-log/operation-log.service';
 import { ReviewConfigurationService } from '../review/review-configuration.service';
 import { ReviewTaskService } from '../review/review-task.service';
 
@@ -686,14 +687,12 @@ export class StandardService {
         },
         data: { status: 'ARCHIVED', archivedAt },
       });
-      await tx.operationLog.create({
-        data: {
+      await writeOperationLog(tx, {
           userId: actor.sub,
           module: 'standard',
           action: 'archive',
           targetType: 'standard',
           targetId: id,
-        },
       });
     });
     return { id, status: 'ARCHIVED', archivedAt };

@@ -7,11 +7,11 @@ export function usePermission() {
     return permissionStore.hasPermission(permission)
   }
 
-  const hasAnyPermission = (permissions: string[]): boolean => {
+  const hasAnyPermission = (permissions: readonly string[]): boolean => {
     return permissionStore.hasAnyPermission(permissions)
   }
 
-  const hasAllPermissions = (permissions: string[]): boolean => {
+  const hasAllPermissions = (permissions: readonly string[]): boolean => {
     return permissionStore.hasAllPermissions(permissions)
   }
 

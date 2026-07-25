@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { runIdempotentUpload } from '@/api/upload-idempotency'
+import { runIdempotentUpload } from '@/platform/file/upload-idempotency'
 
 describe('upload idempotency key lifecycle', () => {
   it('reuses a key after failure and releases it only after success', async () => {

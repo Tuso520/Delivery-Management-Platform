@@ -7,7 +7,7 @@ const request = vi.hoisted(() => ({
 
 vi.mock('@/api/request', () => ({ default: request }))
 
-import { archiveApi } from '@/api/archive'
+import { archiveApi } from '@/domains/archive/api/archive.api'
 
 describe('project archive upload contract', () => {
   beforeEach(() => {

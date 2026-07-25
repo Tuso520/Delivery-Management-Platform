@@ -2,7 +2,7 @@ import { computed, ref, shallowRef } from 'vue'
 import { defineStore } from 'pinia'
 
 import { authApi } from '@/api/auth'
-import { useFilePreview } from '@/composables/useFilePreview'
+import { useFilePreview } from '@/platform/file-preview/useFilePreview'
 import { queryClient } from '@/query/client'
 import router from '@/router'
 import type { LoginForm, LoginResult, UserInfo, UserProfile } from '@/types/user'

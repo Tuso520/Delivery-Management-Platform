@@ -37,6 +37,28 @@ describe('UnifiedFileService', () => {
     jest.clearAllMocks();
   });
 
+  it('requires archive:replace in addition to archive:upload for replacement uploads', async () => {
+    const service = new UnifiedFileService(
+      {} as PrismaService,
+      { upload: jest.fn() } as unknown as FileStorageService,
+      projectAccess,
+      reviewConfiguration,
+      reviewTasks,
+      operationLog,
+    );
+
+    await expect(
+      service.uploadProjectArchiveFile(
+        'project-1',
+        'item-1',
+        pdfFile(),
+        { uploadMode: 'REPLACE', revisionLevel: 'MINOR' },
+        fileActor(['archive:upload']),
+      ),
+    ).rejects.toThrow(ForbiddenException);
+    expect(projectAccess.assertProjectAccess).not.toHaveBeenCalled();
+  });
+
   it('rejects extensions disabled in system settings before writing object storage', async () => {
     const storage = { upload: jest.fn() } as unknown as FileStorageService;
     const systemConfig = {

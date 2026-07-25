@@ -15,10 +15,14 @@ import { Prisma, type FileAsset } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 
 import { enqueueDomainEvent } from '../../common/events/outbox';
+import { getCurrentTraceId } from '../../common/utils/request-trace.util';
 import { resolveDocumentConfig } from '../../config/document.config';
 import { PrismaService } from '../../database/prisma.service';
 import type { JwtPayload } from '../auth/strategies/jwt.strategy';
-import { OperationLogService } from '../operation-log/operation-log.service';
+import {
+  OperationLogService,
+  writeOperationLog,
+} from '../operation-log/operation-log.service';
 import { ProjectAccessService } from '../project/project-access.service';
 import { ReviewConfigurationService } from '../review/review-configuration.service';
 import { ReviewTaskService } from '../review/review-task.service';
@@ -27,6 +31,7 @@ import { SystemConfigService } from '../system-config/system-config.service';
 import { UploadDraftFileDto } from './dto/upload-draft-file.dto';
 import { UploadProjectArchiveFileDto } from './dto/upload-project-archive-file.dto';
 import { FileStorageService } from './file-storage.service';
+import { isStreamedMulterFile } from './streamed-upload.types';
 import { withNormalizedUploadFileName } from './upload-file-name.util';
 
 interface UnifiedFileContent {
@@ -217,8 +222,7 @@ export class UnifiedFileService {
           where: { id: logicalFileId },
           data: { currentVersionId: fileVersionId },
         });
-        await tx.operationLog.create({
-          data: {
+        await writeOperationLog(tx, {
             userId,
             module: 'file',
             action: 'upload_draft',
@@ -229,7 +233,6 @@ export class UnifiedFileService {
               fileVersionId,
               originalName: file.originalname,
             },
-          },
         });
       });
     } catch (error) {
@@ -273,6 +276,9 @@ export class UnifiedFileService {
     rawIdempotencyKey?: string,
   ) {
     this.assertPermission(actor, 'archive:upload');
+    if (dto.uploadMode === 'REPLACE') {
+      this.assertPermission(actor, 'archive:replace');
+    }
     const userId = actor.sub;
     const idempotencyKey = this.validateIdempotencyKey(rawIdempotencyKey);
     await this.projectAccess.assertProjectAccess(projectId, userId);
@@ -447,8 +453,7 @@ export class UnifiedFileService {
         if (preparedReview) {
           reviewTaskId = await this.reviewTasks.createPreparedTask(tx, preparedReview);
         }
-        await tx.operationLog.create({
-          data: {
+        await writeOperationLog(tx, {
             userId,
             module: 'file',
             action: dto.uploadMode === 'REPLACE' ? 'replace' : 'new_version',
@@ -461,7 +466,6 @@ export class UnifiedFileService {
               archiveItemId,
               reviewTaskId,
             },
-          },
         });
         await enqueueDomainEvent(tx, {
           eventType: 'ArchiveFileUploaded',
@@ -708,14 +712,12 @@ export class UnifiedFileService {
           data: { archivedAt, status: 'ARCHIVED' },
         });
       }
-      await tx.operationLog.create({
-        data: {
+      await writeOperationLog(tx, {
           userId: actor.sub,
           module: 'file',
           action: 'archive',
           targetType: 'logical_file',
           targetId: logicalFileId,
-        },
       });
     });
     return { id: logicalFileId, archivedAt };
@@ -917,6 +919,7 @@ export class UnifiedFileService {
         type,
         status: 'PENDING',
         progress: 0,
+        traceId: getCurrentTraceId(),
       })),
     });
   }
@@ -1356,7 +1359,7 @@ export class UnifiedFileService {
   }
 
   private assertFileSignature(file: Express.Multer.File, extension: string): void {
-    const buffer = file.buffer;
+    const buffer = isStreamedMulterFile(file) ? file.headBuffer : file.buffer;
     if (!buffer || buffer.length === 0) {
       throw new BadRequestException('上传文件内容为空');
     }
@@ -1401,6 +1404,7 @@ export class UnifiedFileService {
   }
 
   private checksum(file: Express.Multer.File): string {
+    if (isStreamedMulterFile(file)) return file.checksum;
     if (!file.buffer) throw new BadRequestException('上传文件内容为空');
     return createHash('sha256').update(file.buffer).digest('hex');
   }

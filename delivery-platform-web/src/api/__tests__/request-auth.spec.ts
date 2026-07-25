@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { getApiTraceId } from '@/types/api'
+
 const mocks = vi.hoisted(() => {
   const requestUse = vi.fn()
   const responseUse = vi.fn()
@@ -26,7 +28,7 @@ const mocks = vi.hoisted(() => {
     setToken: vi.fn(),
     removeToken: vi.fn(),
     resetState: vi.fn(),
-    replace: vi.fn(() => Promise.resolve()),
+    replace: vi.fn((_path: string) => Promise.resolve()),
     messageError: vi.fn(),
     currentRoute: { value: { path: '/dashboard' } },
   }
@@ -36,8 +38,8 @@ vi.mock('axios', () => ({
   default: { create: mocks.create },
 }))
 
-vi.mock('@arco-design/web-vue', () => ({
-  Message: { error: mocks.messageError },
+vi.mock('@arco-design/web-vue/es/message', () => ({
+  default: { error: mocks.messageError },
 }))
 
 vi.mock('@/utils/auth', () => ({
@@ -58,6 +60,13 @@ vi.mock('@/store/user', () => ({
 }))
 
 await import('@/api/request')
+const { setSessionExpirationHandler } = await import('@/api/session-expiration')
+setSessionExpirationHandler(async () => {
+  mocks.resetState()
+  if (mocks.currentRoute.value.path !== '/login') {
+    await mocks.replace('/login')
+  }
+})
 
 type RequestHandler = (config: {
   headers: Record<string, string>
@@ -80,7 +89,14 @@ interface RequestError {
 
 type RejectionHandler = (error: RequestError) => Promise<unknown>
 
+type FulfillmentHandler = (response: {
+  config: { responseType?: string }
+  data: { code: number; message: string; data: unknown; traceId?: string }
+  headers: Record<string, string>
+}) => unknown
+
 const requestHandler = mocks.requestUse.mock.calls[0]?.[0] as RequestHandler
+const fulfillmentHandler = mocks.responseUse.mock.calls[0]?.[0] as FulfillmentHandler
 const rejectionHandler = mocks.responseUse.mock.calls[0]?.[1] as RejectionHandler
 
 function unauthorized(url: string): RequestError {
@@ -131,6 +147,25 @@ describe('request authentication', () => {
     const config = requestHandler({ headers: {} })
 
     expect(config.headers.Authorization).toBe('Bearer expired-token')
+  })
+
+  it('preserves the response trace on unwrapped data and business errors', async () => {
+    const data = { id: 'project-1' }
+    const result = fulfillmentHandler({
+      config: {},
+      data: { code: 0, message: 'success', data, traceId: 'trace-success' },
+      headers: {},
+    })
+    expect(result).toBe(data)
+    expect(getApiTraceId(result)).toBe('trace-success')
+
+    await expect(
+      fulfillmentHandler({
+        config: {},
+        data: { code: 4001, message: '业务失败', data: null, traceId: 'trace-failure' },
+        headers: {},
+      }),
+    ).rejects.toEqual(expect.objectContaining({ traceId: 'trace-failure' }))
   })
 
   it('uses one refresh request for concurrent 401 responses and retries both calls', async () => {

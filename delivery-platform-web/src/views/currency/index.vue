@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
-import { Message } from '@arco-design/web-vue'
+import Message from '@arco-design/web-vue/es/message'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import { useI18n } from 'vue-i18n'
 
@@ -8,11 +8,11 @@ import { currencyApi } from '@/api/currency'
 import {
   BusinessModal,
   BusinessTable,
-  Can,
   PageContainer,
   PageToolbar,
   StatusBadge,
-} from '@/components/business'
+} from '@/design-system'
+import { Can } from '@/platform/permission'
 import { useCurrenciesQuery } from '@/composables/queries/useAdministrationQueries'
 import { usePermission } from '@/composables/usePermission'
 import { queryKeys } from '@/query/keys'

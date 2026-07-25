@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 
-import PermissionDeniedState from '@/components/business/PermissionDeniedState.vue'
+import { PermissionDeniedState } from '@/platform/permission'
 
 const { t } = useI18n()
 </script>

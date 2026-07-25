@@ -8,7 +8,7 @@ import { ProjectModule } from '../project.module';
 import { ProjectService } from '../project.service';
 
 describe('Project creation review module graph', () => {
-  it('resolves the Project, ProjectArchive, and Review forward references', async () => {
+  it('resolves the acyclic Project, ProjectArchive, ProjectAccess, and Review graph', async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [PrismaModule, ProjectModule, ProjectArchiveModule, ReviewModule],
     })

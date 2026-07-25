@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
+import { AuthenticatedOnly } from '../../common/decorators/authenticated-only.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -75,12 +76,12 @@ export class FieldOptionsController {
   constructor(private readonly service: FieldConfigurationService) {}
 
   @Post('batch')
-  @RequirePermissions({ any: [] })
+  @AuthenticatedOnly()
   @ApiOperation({ summary: '批量读取多个分类的已启用字段选项' })
   findEnabledBatch(@Body() dto: BatchFieldOptionsDto) { return this.service.findEnabledBatch(dto.codes); }
 
   @Get(':code')
-  @RequirePermissions({ any: [] })
+  @AuthenticatedOnly()
   @ApiOperation({ summary: '供业务表单读取已启用字段选项' })
   findEnabled(@Param('code') code: string) { return this.service.findEnabled(code); }
 }

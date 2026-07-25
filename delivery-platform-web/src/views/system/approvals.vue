@@ -1,21 +1,24 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Message } from '@arco-design/web-vue'
+import Message from '@arco-design/web-vue/es/message'
 import type { TableColumnData } from '@arco-design/web-vue'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import { useI18n } from 'vue-i18n'
 
-import { approvalTemplateApi, type QueryApprovalTemplateParams } from '@/api/approval'
+import {
+  approvalTemplateApi,
+  type QueryApprovalTemplateParams,
+} from '@/platform/approval/approval.api'
 import {
   BusinessModal,
   BusinessTable,
-  Can,
   PageContainer,
   PageToolbar,
   SectionCard,
   StatusBadge,
-} from '@/components/business'
+} from '@/design-system'
+import { Can } from '@/platform/permission'
 import { usePermission } from '@/composables/usePermission'
 import { useApprovalTemplatesQuery } from '@/composables/queries/useOperationsQueries'
 import { queryKeys } from '@/query/keys'
@@ -26,7 +29,7 @@ import type {
   ApprovalTemplate,
   ApprovalTemplateStep,
   SaveApprovalTemplateDto,
-} from '@/types/settings'
+} from '@/platform/approval/approval.types'
 import { arcoConfirm } from '@/utils/arco-dialog'
 
 interface ApprovalEditorForm {

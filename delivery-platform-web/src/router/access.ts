@@ -1,28 +1,20 @@
-import { menuItems, settingItems } from './index'
-import { findFirstAccessibleMenuPath, type MenuItem } from '@/store/permission'
-
-function permissionedMenuTree(items: MenuItem[]): MenuItem[] {
-  return items.flatMap((item) => {
-    if (!item.children) return item.permissions?.length ? [item] : []
-
-    const children = permissionedMenuTree(item.children)
-    return children.length ? [{ ...item, children }] : []
-  })
-}
+import {
+  findFirstAccessibleMenuPath,
+  type MenuItem,
+} from '@/platform/permission/access-policy'
 
 export function getFirstAccessiblePath(
-  permissions: string[],
-  roles: string[] = [],
+  menuItems: readonly MenuItem[],
+  permissions: readonly string[],
+  roles: readonly string[] = [],
 ): string | null {
-  const explicitMainPath = findFirstAccessibleMenuPath(
-    permissionedMenuTree(menuItems),
-    permissions,
-    roles,
+  const protectedMenus = menuItems.flatMap((item): MenuItem[] => {
+    if (!item.children) return item.permissions?.length ? [item] : []
+    const children = item.children.filter((child) => child.permissions?.length)
+    return children.length > 0 ? [{ ...item, children }] : []
+  })
+  return (
+    findFirstAccessibleMenuPath(protectedMenus, permissions, roles) ??
+    findFirstAccessibleMenuPath(menuItems, permissions, roles)
   )
-  if (explicitMainPath) return explicitMainPath
-
-  const settingPath = findFirstAccessibleMenuPath(settingItems, permissions, roles)
-  if (settingPath) return settingPath
-
-  return findFirstAccessibleMenuPath(menuItems, permissions, roles)
 }

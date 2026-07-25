@@ -1,10 +1,22 @@
-import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
+import {
+  CallHandler,
+  ExecutionContext,
+  Injectable,
+  NestInterceptor,
+  Optional,
+} from '@nestjs/common';
 import type { Request } from 'express';
-import { catchError, from, mergeMap, Observable, of, throwError } from 'rxjs';
+import { catchError, from, map, mergeMap, Observable, throwError } from 'rxjs';
 
 import type { JwtPayload } from '../../modules/auth/strategies/jwt.strategy';
+import { AuditRecoveryService } from '../../modules/operation-log/audit-recovery.service';
+import type { CreateOperationLogDto } from '../../modules/operation-log/dto/operation-log.dto';
 import { OperationLogService } from '../../modules/operation-log/operation-log.service';
-import { resolveRequestTraceId } from '../utils/request-trace.util';
+import {
+  hasPersistedCurrentRequestAudit,
+  hasTransactionalCurrentRequestAudit,
+  resolveRequestTraceId,
+} from '../utils/request-trace.util';
 
 interface AuthenticatedRequest extends Request {
   user?: JwtPayload;
@@ -53,14 +65,14 @@ function resolveModule(path: string): string {
 
 @Injectable()
 export class OperationAuditInterceptor implements NestInterceptor {
-  constructor(private readonly operationLog: OperationLogService) {}
+  constructor(
+    private readonly operationLog: OperationLogService,
+    @Optional() private readonly auditRecovery?: AuditRecoveryService,
+  ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
-    if (
-      !mutationMethods.has(request.method) ||
-      !request.user?.sub
-    ) {
+    if (!mutationMethods.has(request.method) || !request.user?.sub) {
       return next.handle();
     }
 
@@ -79,7 +91,7 @@ export class OperationAuditInterceptor implements NestInterceptor {
     return next.handle().pipe(
       mergeMap((response: unknown) =>
         from(
-          this.operationLog.log({
+          this.ensureAudit({
             ...auditBase,
             afterData: {
               path: request.path,
@@ -87,14 +99,11 @@ export class OperationAuditInterceptor implements NestInterceptor {
             },
             result: 'success',
           }),
-        ).pipe(
-          catchError(() => of(null)),
-          mergeMap(() => of(response)),
-        ),
+        ).pipe(map(() => response)),
       ),
       catchError((error: unknown) =>
         from(
-          this.operationLog.log({
+          this.ensureAudit({
             ...auditBase,
             afterData: {
               path: request.path,
@@ -103,11 +112,23 @@ export class OperationAuditInterceptor implements NestInterceptor {
             result: 'failure',
             errorReason: error instanceof Error ? error.message : '未知业务操作失败',
           }),
-        ).pipe(
-          catchError(() => of(null)),
-          mergeMap(() => throwError(() => error)),
-        ),
+        ).pipe(mergeMap(() => throwError(() => error))),
       ),
     );
+  }
+
+  private async ensureAudit(dto: CreateOperationLogDto): Promise<void> {
+    if (hasPersistedCurrentRequestAudit()) return;
+    try {
+      if (
+        hasTransactionalCurrentRequestAudit() &&
+        (await this.operationLog.hasTrace(dto.traceId ?? ''))
+      ) {
+        return;
+      }
+      await this.operationLog.log(dto);
+    } catch (error) {
+      await this.auditRecovery?.capture(dto, error);
+    }
   }
 }

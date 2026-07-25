@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import type { FormInstance } from '@arco-design/web-vue'
-import { BusinessDrawer } from '@/components/business'
+import { BusinessDrawer } from '@/design-system'
 import type { DepartmentNode } from '@/types/platform'
 import { userFormRules, validateArcoForm, type UserFormModel } from './form-config'
 

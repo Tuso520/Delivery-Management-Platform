@@ -1,4 +1,4 @@
-import request from './request'
+import request, { refreshSessionRequest } from './request'
 import type { LoginForm, LoginResult, UserProfile } from '@/types/user'
 
 export const authApi = {
@@ -22,9 +22,6 @@ export const authApi = {
   },
 
   refreshToken() {
-    return request.post<LoginResult>('/auth/refresh', undefined, {
-      silent: true,
-      skipAuthRefresh: true,
-    })
+    return refreshSessionRequest()
   },
 }

@@ -26,24 +26,24 @@ const targetVueSources = [
   'src/views/dashboard/components/StatCards.vue',
   'src/views/review/pending.vue',
   'src/views/review/components/ReviewDialog.vue',
-  'src/views/project/index.vue',
-  'src/views/archive/index.vue',
-  'src/views/archive/template.vue',
+  'src/domains/project/pages/ProjectOverviewPage.vue',
+  'src/domains/archive/pages/ArchiveWorkspacePage.vue',
+  'src/domains/archive/pages/ArchiveTemplatePage.vue',
   'src/views/standard/index.vue',
-  'src/views/knowledge/index.vue',
+  'src/domains/knowledge/pages/KnowledgePage.vue',
   'src/views/tools/index.vue',
   'src/views/currency/index.vue',
   'src/views/system/notification.vue',
   'src/views/system/approvals.vue',
   'src/views/system/config.vue',
   'src/views/system/integrations.vue',
-  'src/components/FilePreviewRouter/index.vue',
-  'src/components/AttachmentPreviewModal/index.vue',
+  'src/platform/file-preview/FilePreviewRouter.vue',
+  'src/platform/file-preview/AttachmentPreviewModal.vue',
 ] as const
 
 const targetSupportSources = [
   'src/router/index.ts',
-  'src/types/project.ts',
+  'src/domains/project/types/project.ts',
   'src/views/review/review-presenter.ts',
   'src/views/system/integration-form.ts',
 ] as const
@@ -152,7 +152,7 @@ describe('fixed UI text internationalization contract', () => {
   })
 
   it('keeps project page validation, notifications and confirmations in locale files', () => {
-    for (const file of ['src/views/project/index.vue']) {
+    for (const file of ['src/domains/project/pages/ProjectOverviewPage.vue']) {
       expect(readSource(file), `${file} still contains fixed Chinese UI copy`).not.toMatch(
         /\p{Script=Han}/u,
       )

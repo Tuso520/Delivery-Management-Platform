@@ -3,13 +3,14 @@
 import { describe, expect, it } from 'vitest'
 
 import { getFirstAccessiblePath } from '@/router/access'
+import { accessItems } from '@/router'
 import { firstRouteParam, preservedRouteQuery } from '@/router/query-state'
 
 describe('authenticated route fallbacks', () => {
   it('prefers explicit main access, then settings, then public main pages', () => {
-    expect(getFirstAccessiblePath(['project:view'])).toBe('/projects')
-    expect(getFirstAccessiblePath(['currency:view'])).toBe('/settings/currency')
-    expect(getFirstAccessiblePath([])).toBe('/review')
+    expect(getFirstAccessiblePath(accessItems, ['project:view'])).toBe('/projects')
+    expect(getFirstAccessiblePath(accessItems, ['currency:view'])).toBe('/settings/currency')
+    expect(getFirstAccessiblePath(accessItems, [])).toBe('/review')
   })
 
   it('preserves list filters while removing transient drawer state', () => {

@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
-import { Message } from '@arco-design/web-vue'
+import Message from '@arco-design/web-vue/es/message'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import { useI18n } from 'vue-i18n'
 
-import { reviewApi } from '@/api/review'
+import { reviewApi } from '@/platform/approval/review.api'
 import { queryKeys } from '@/query/keys'
 
 const props = defineProps<{

@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
 import type { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { writeOperationLog } from '../operation-log/operation-log.service';
 import { ProjectAccessService } from '../project/project-access.service';
 
 import {
@@ -475,8 +476,7 @@ export class ProjectArchiveTargetService {
         }
       }
 
-      await tx.operationLog.create({
-        data: {
+      await writeOperationLog(tx, {
           userId: actor.sub,
           module: 'project-archive',
           action: 'template_sync_additions',
@@ -491,7 +491,6 @@ export class ProjectArchiveTargetService {
             addedItemKeys,
             syncMode: 'ADD_ONLY',
           },
-        },
       });
       return {
         targetTemplateVersionId: latest.id,
@@ -586,8 +585,7 @@ export class ProjectArchiveTargetService {
           suggestedForTemplate: dto.suggestedForTemplate ?? false,
         },
       });
-      await tx.operationLog.create({
-        data: {
+      await writeOperationLog(tx, {
           userId: actor.sub,
           module: 'project-archive',
           action: 'create_temporary_item',
@@ -604,7 +602,6 @@ export class ProjectArchiveTargetService {
             suggestedForTemplate: item.suggestedForTemplate,
             reason: item.temporaryReason,
           },
-        },
       });
       return item;
     });
@@ -654,8 +651,7 @@ export class ProjectArchiveTargetService {
         where: { id: item.id },
         data: { archivedAt },
       });
-      await tx.operationLog.create({
-        data: {
+      await writeOperationLog(tx, {
           userId: actor.sub,
           module: 'project-archive',
           action: archived ? 'archive_item' : 'restore_item',
@@ -667,7 +663,6 @@ export class ProjectArchiveTargetService {
             archivedAt: archivedAt?.toISOString() ?? null,
             reason: dto.reason?.trim() ?? null,
           },
-        },
       });
       return updated;
     });

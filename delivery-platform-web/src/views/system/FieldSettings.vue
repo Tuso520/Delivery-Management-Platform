@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { Message, Modal, type TableColumnData } from '@arco-design/web-vue'
+import type { TableColumnData } from '@arco-design/web-vue'
+import Message from '@arco-design/web-vue/es/message'
+import Modal from '@arco-design/web-vue/es/modal'
 
 import { fieldConfigurationApi } from '@/api/field-configuration'
-import { BusinessTable } from '@/components/business'
+import { BusinessTable } from '@/design-system'
 import type { FieldCategory, FieldValue, SaveFieldValueDto } from '@/types/field-configuration'
 
 const PAGE_SIZE = 10

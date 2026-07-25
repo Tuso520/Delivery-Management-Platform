@@ -1,5 +1,9 @@
+import { BadRequestException } from '@nestjs/common';
+import { validate } from 'class-validator';
+
 import type { PrismaService } from '../../../database/prisma.service';
 import type { ReviewerEligibilityService } from '../../review/reviewer-eligibility.service';
+import { QueryUserReferenceDto } from '../dto/reference.dto';
 import { ReferenceService } from '../reference.service';
 
 describe('ReferenceService selectable options', () => {
@@ -146,5 +150,40 @@ describe('ReferenceService selectable options', () => {
     ]);
     expect(reviewerEligibility.findEligibleReviewers).toHaveBeenCalledWith('project-1');
     expect(prisma.user.findMany).not.toHaveBeenCalled();
+  });
+
+  it('requires projectId when requesting project-scoped file reviewers', async () => {
+    const query = Object.assign(new QueryUserReferenceDto(), {
+      purpose: 'file-reviewer',
+    });
+
+    const errors = await validate(query);
+
+    expect(errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ property: 'projectId' })]),
+    );
+  });
+
+  it('rejects moving a department below one of its descendants', async () => {
+    const department = {
+      findUnique: jest
+        .fn()
+        .mockResolvedValueOnce({ id: 'department-root' })
+        .mockResolvedValueOnce({ id: 'department-child' })
+        .mockResolvedValueOnce({ parentId: 'department-root' }),
+      update: jest.fn(),
+    };
+    const service = new ReferenceService(
+      { department } as unknown as PrismaService,
+      {} as ReviewerEligibilityService,
+    );
+
+    await expect(
+      service.updateDepartment('department-root', {
+        departmentName: '根部门',
+        parentId: 'department-child',
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(department.update).not.toHaveBeenCalled();
   });
 });

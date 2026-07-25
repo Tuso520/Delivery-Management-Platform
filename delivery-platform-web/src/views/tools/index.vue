@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Message, Modal } from '@arco-design/web-vue'
+import Message from '@arco-design/web-vue/es/message'
+import Modal from '@arco-design/web-vue/es/modal'
 import {
   IconEdit,
   IconLaunch,
@@ -14,7 +15,7 @@ import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import { useI18n } from 'vue-i18n'
 
 import { toolApi } from '@/api/tools'
-import { PageContainer, StatCard } from '@/components/business'
+import { PageContainer, StatCard } from '@/design-system'
 import { usePermission } from '@/composables/usePermission'
 import { useToolsQuery } from '@/composables/queries/useOperationsQueries'
 import { queryKeys } from '@/query/keys'

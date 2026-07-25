@@ -1,10 +1,10 @@
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 
-import type { QueryApprovalTemplateParams } from '@/api/approval'
-import { approvalTemplateApi } from '@/api/approval'
+import type { QueryApprovalTemplateParams } from '@/platform/approval/approval.api'
+import { approvalTemplateApi } from '@/platform/approval/approval.api'
 import { integrationApi } from '@/api/integration'
-import { notificationApi } from '@/api/notification'
+import { notificationApi } from '@/platform/notification/notification.api'
 import { systemSettingsApi } from '@/api/system'
 import { toolApi } from '@/api/tools'
 import { queryKeys } from '@/query/keys'

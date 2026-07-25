@@ -7,6 +7,7 @@ export const REQUEST_TRACE_HEADER = 'x-request-id';
 
 interface RequestTraceStore {
   traceId: string;
+  auditState: 'none' | 'transactional' | 'persisted';
 }
 
 export interface TraceableRequest extends Request {
@@ -38,9 +39,26 @@ export function getCurrentTraceId(): string | undefined {
   return requestTraceStorage.getStore()?.traceId;
 }
 
+export function markCurrentRequestAudited(persisted = true): void {
+  const store = requestTraceStorage.getStore();
+  if (store) store.auditState = persisted ? 'persisted' : 'transactional';
+}
+
+export function hasCurrentRequestAudit(): boolean {
+  return requestTraceStorage.getStore()?.auditState !== 'none';
+}
+
+export function hasPersistedCurrentRequestAudit(): boolean {
+  return requestTraceStorage.getStore()?.auditState === 'persisted';
+}
+
+export function hasTransactionalCurrentRequestAudit(): boolean {
+  return requestTraceStorage.getStore()?.auditState === 'transactional';
+}
+
 export function runWithTraceId<T>(traceId: string, callback: () => T): T {
   const normalized = normalizeTraceId(traceId) ?? randomUUID();
-  return requestTraceStorage.run({ traceId: normalized }, callback);
+  return requestTraceStorage.run({ traceId: normalized, auditState: 'none' }, callback);
 }
 
 export function requestTraceMiddleware(

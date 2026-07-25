@@ -68,16 +68,15 @@ export default defineConfig({
         manualChunks(id) {
           if (id.includes('vite/preload-helper')) return 'runtime'
           if (!id.includes('node_modules')) return undefined
-          if (id.includes('@arco-design/web-vue')) return 'vendor-arco'
+          const normalizedId = id.replaceAll('\\', '/')
           if (
-            id.includes('vue') ||
-            id.includes('pinia') ||
-            id.includes('@vueuse')
+            normalizedId.includes('/node_modules/vue/') ||
+            normalizedId.includes('/node_modules/@vue/') ||
+            normalizedId.includes('/node_modules/pinia/')
           ) {
             return 'vendor-vue'
           }
           if (
-            id.includes('md-editor-v3') ||
             id.includes('codemirror') ||
             id.includes('highlight.js') ||
             id.includes('markdown-it') ||
@@ -90,7 +89,7 @@ export default defineConfig({
             return 'vendor-markdown'
           }
           if (id.includes('pdfjs-dist')) return 'vendor-pdf'
-          if (id.includes('photoswipe') || id.includes('viewerjs')) return 'vendor-preview'
+          if (id.includes('viewerjs')) return 'vendor-preview'
           if (id.includes('axios') || id.includes('dayjs')) return 'vendor-utils'
           return undefined
         },

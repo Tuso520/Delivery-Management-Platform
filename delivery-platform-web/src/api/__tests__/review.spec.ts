@@ -9,7 +9,7 @@ vi.mock('@/api/request', () => ({
   default: mocks,
 }))
 
-import { normalizeReviewSummary, reviewApi } from '@/api/review'
+import { normalizeReviewSummary, reviewApi } from '@/platform/approval/review.api'
 
 describe('reviewApi unified task contract', () => {
   beforeEach(() => {

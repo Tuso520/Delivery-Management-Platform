@@ -2,7 +2,7 @@
 import { computed, reactive, shallowRef, useTemplateRef } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Message } from '@arco-design/web-vue'
+import Message from '@arco-design/web-vue/es/message'
 import type { FormInstance } from '@arco-design/web-vue'
 import {
   IconEye,
@@ -15,6 +15,7 @@ import type { FormRules } from '@/types/arco'
 import { useAuth } from '@/composables/useAuth'
 import { usePublicSystemConfigQuery } from '@/composables/queries/useAdministrationQueries'
 import { getFirstAccessiblePath } from '@/router/access'
+import { accessItems } from '@/router'
 import { useLocaleStore } from '@/store/locale'
 import type { LocaleCode } from '@/store/locale'
 import type { LoginForm } from '@/types/user'
@@ -98,6 +99,7 @@ async function handleLogin(): Promise<void> {
     await login(loginForm)
     Message.success(copy.value.success)
     const fallbackPath = getFirstAccessiblePath(
+      accessItems,
       userInfo.value?.permissions ?? [],
       userInfo.value?.roles ?? [],
     ) ?? '/forbidden'

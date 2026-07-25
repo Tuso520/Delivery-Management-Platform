@@ -7,6 +7,9 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
+    "architecture:check": "node ../scripts/check-architecture-boundaries.mjs",
+    "access-control:check": "node ../scripts/sync-access-control-contract.mjs",
+    "prisma:runtime-boundaries": "node ../scripts/check-prisma-runtime-boundaries.mjs",
     "format": "prettier --write \"{src,test,prisma}/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",

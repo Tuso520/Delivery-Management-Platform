@@ -52,9 +52,6 @@ describe('startup configuration', () => {
   });
 
   it('keeps the deployment upload ceiling bounded in the config layer', () => {
-    expect(resolveFileUploadHardLimitBytes('128')).toBe(128 * 1024 * 1024);
-    expect(resolveFileUploadHardLimitBytes('0')).toBe(1024 * 1024 * 1024);
-    expect(resolveFileUploadHardLimitBytes('2048')).toBe(1024 * 1024 * 1024);
-    expect(resolveFileUploadHardLimitBytes('invalid')).toBe(1024 * 1024 * 1024);
+    expect(resolveFileUploadHardLimitBytes()).toBe(500 * 1024 * 1024);
   });
 });

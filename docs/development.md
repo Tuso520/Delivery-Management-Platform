@@ -64,7 +64,7 @@ pnpm --dir delivery-platform-web budget
 - 具体 UI 规范见 [UI/UX 与 Arco Design 规范](ui-ux.md)。
 - 改动菜单、路由、页面层级、Store、API 或公共组件前，先核对 [前端页面架构](frontend-architecture.md)。
 - 改动业务动作、状态、审批、文件版本或角色权限前，同步核对 [前端业务流程](frontend-business-flows.md)。
-- 正式约束见 [前端实施规范](frontend-architecture-refactored.md)；[前端整体重构评审稿](frontend-rebuild-review.md) 不作为当前事实来源。
+- 当前实现见 [前端页面架构](frontend-architecture.md)，正式约束见 [前端实施规范](frontend-architecture-refactored.md)，目标分层与迁移规则见 [基础架构模型 v0.1](platform-foundation-architecture-v0.1.md)。
 
 ## 后端开发
 

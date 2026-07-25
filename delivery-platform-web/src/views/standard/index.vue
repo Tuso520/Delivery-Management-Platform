@@ -2,19 +2,20 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Message, Modal } from '@arco-design/web-vue'
+import Message from '@arco-design/web-vue/es/message'
+import Modal from '@arco-design/web-vue/es/modal'
 import type { TableColumnData } from '@arco-design/web-vue'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 
 import { standardApi } from '@/api/standard'
-import { BusinessTable, PageContainer, PageToolbar, StatCard } from '@/components/business'
+import { BusinessTable, PageContainer, PageToolbar, StatCard } from '@/design-system'
 import {
   useStandardDetailQuery,
   useStandardListQuery,
   useStandardRelationsQuery,
   useStandardSummaryQuery,
 } from '@/composables/queries/useContentQueries'
-import { useFilePreview } from '@/composables/useFilePreview'
+import { useFilePreview } from '@/platform/file-preview/useFilePreview'
 import { queryKeys } from '@/query/keys'
 import { firstRouteParam, preservedRouteQuery } from '@/router/query-state'
 import { usePermissionStore } from '@/store/permission'

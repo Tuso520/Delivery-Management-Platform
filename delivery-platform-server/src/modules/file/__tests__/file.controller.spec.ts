@@ -1,14 +1,23 @@
 import { Readable } from 'stream';
 
+import type { FileStorageService } from '../file-storage.service';
 import { FileController, ProjectArchiveFileController } from '../file.controller';
 import type { UnifiedFileService } from '../unified-file.service';
 
 describe('file upload controllers', () => {
+  const storage = {
+    cleanupUnclaimedUpload: jest.fn().mockResolvedValue(undefined),
+  } as unknown as FileStorageService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('forwards Idempotency-Key to the controlled draft upload service', async () => {
     const unifiedFiles = {
       uploadDraftFile: jest.fn().mockResolvedValue({ fileVersionId: 'version-1' }),
     } as unknown as UnifiedFileService;
-    const controller = new FileController(unifiedFiles);
+    const controller = new FileController(unifiedFiles, storage);
     const file = pdfFile();
     const currentUser = actor(['standard:create']);
 
@@ -25,13 +34,14 @@ describe('file upload controllers', () => {
       currentUser,
       'draft-key-0001',
     );
+    expect(storage.cleanupUnclaimedUpload).toHaveBeenCalledWith(file);
   });
 
   it('forwards Idempotency-Key to the project archive upload service', async () => {
     const unifiedFiles = {
       uploadProjectArchiveFile: jest.fn().mockResolvedValue({ id: 'logical-file-1' }),
     } as unknown as UnifiedFileService;
-    const controller = new ProjectArchiveFileController(unifiedFiles);
+    const controller = new ProjectArchiveFileController(unifiedFiles, storage);
     const file = pdfFile();
     const currentUser = actor(['archive:upload']);
 
@@ -52,13 +62,14 @@ describe('file upload controllers', () => {
       currentUser,
       'archive-key-0001',
     );
+    expect(storage.cleanupUnclaimedUpload).toHaveBeenCalledWith(file);
   });
 
   it('forwards the complete actor context when archiving a file', async () => {
     const unifiedFiles = {
       archive: jest.fn().mockResolvedValue({ id: 'logical-file-1' }),
     } as unknown as UnifiedFileService;
-    const controller = new FileController(unifiedFiles);
+    const controller = new FileController(unifiedFiles, storage);
     const actor = {
       sub: 'manager-1',
       username: 'manager',

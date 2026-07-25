@@ -1,17 +1,17 @@
 <script setup lang="ts">
 import { computed, ref, toRaw, watch } from 'vue'
-import { Message } from '@arco-design/web-vue'
+import Message from '@arco-design/web-vue/es/message'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import { useI18n } from 'vue-i18n'
 
 import { systemSettingsApi } from '@/api/system'
 import {
-  Can,
   PageContainer,
   PageToolbar,
   SectionCard,
   StickyActionBar,
-} from '@/components/business'
+} from '@/design-system'
+import { Can } from '@/platform/permission'
 import {
   useSystemSettingsQuery,
   useSystemTimeQuery,
@@ -26,7 +26,7 @@ function createDefaults(): SystemSettings {
       defaultPageSize: 20,
       defaultRiskLevel: 'Low',
     },
-    attachment: { maxSizeMb: 100 },
+    attachment: { maxSizeMb: 500 },
     file: {
       allowedExtensions: [
         'pdf',
@@ -200,9 +200,9 @@ watch(
         >
           <div class="settings-grid">
             <a-form-item :label="t('systemConfig.maxAttachmentSize')">
-              <a-input-number v-model="settings.attachment.maxSizeMb" :min="1" :max="1024" />
+              <a-input-number v-model="settings.attachment.maxSizeMb" :min="1" :max="500" />
               <template #extra>
-                {{ t('systemConfig.range1to1024') }}
+                {{ t('systemConfig.range1to500') }}
               </template>
             </a-form-item>
             <a-form-item :label="t('systemConfig.extensions')" class="wide-field">

@@ -6,7 +6,7 @@ import type {
   ReviewStepStatus,
   ReviewTask,
   ReviewTaskStatus,
-} from '@/types/review'
+} from '@/platform/approval/review.types'
 
 export const REVIEW_SOURCE_LABELS: Record<ReviewSourceType, string> = {
   PROJECT_ARCHIVE: 'review.sources.PROJECT_ARCHIVE',

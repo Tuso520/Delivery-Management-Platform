@@ -1,12 +1,10 @@
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 
-import { knowledgeApi } from '@/api/knowledge'
-import { reviewApi } from '@/api/review'
+import { reviewApi } from '@/platform/approval/review.api'
 import { standardApi } from '@/api/standard'
 import { queryKeys } from '@/query/keys'
-import type { QueryKnowledgeItemDto } from '@/types/knowledge'
-import type { QueryReviewTaskParams } from '@/types/review'
+import type { QueryReviewTaskParams } from '@/platform/approval/review.types'
 import type { QueryStandardDto } from '@/types/standard'
 
 export function useReviewListQuery(params: MaybeRefOrGetter<QueryReviewTaskParams>) {
@@ -60,28 +58,5 @@ export function useStandardRelationsQuery(standardId: MaybeRefOrGetter<string>) 
     queryKey: computed(() => queryKeys.standards.relations(toValue(standardId))),
     queryFn: () => standardApi.getRelations(toValue(standardId)),
     enabled: computed(() => Boolean(toValue(standardId))),
-  })
-}
-
-export function useKnowledgeListQuery(params: MaybeRefOrGetter<QueryKnowledgeItemDto>) {
-  return useQuery({
-    queryKey: computed(() => queryKeys.knowledge.list(toValue(params))),
-    queryFn: () => knowledgeApi.getList({ ...toValue(params) }),
-  })
-}
-
-export function useKnowledgeSummaryQuery() {
-  return useQuery({ queryKey: queryKeys.knowledge.summary(), queryFn: knowledgeApi.getSummary })
-}
-
-export function useKnowledgeCategoriesQuery() {
-  return useQuery({ queryKey: queryKeys.knowledge.categories(), queryFn: knowledgeApi.getCategories })
-}
-
-export function useKnowledgeDetailQuery(itemId: MaybeRefOrGetter<string>) {
-  return useQuery({
-    queryKey: computed(() => queryKeys.knowledge.detail(toValue(itemId))),
-    queryFn: () => knowledgeApi.getById(toValue(itemId)),
-    enabled: computed(() => Boolean(toValue(itemId))),
   })
 }

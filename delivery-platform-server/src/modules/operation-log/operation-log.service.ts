@@ -1,9 +1,12 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { getCurrentTraceId } from '../../common/utils/request-trace.util';
+import {
+  getCurrentTraceId,
+  markCurrentRequestAudited,
+} from '../../common/utils/request-trace.util';
 import { PrismaService } from '../../database/prisma.service';
 
 import { CreateOperationLogDto } from './dto/operation-log.dto';
@@ -27,6 +30,13 @@ export interface OperationLogItem {
   createdAt: Date;
 }
 
+export function writeOperationLog(
+  client: OperationLogClient,
+  dto: CreateOperationLogDto,
+): Promise<OperationLogItem> {
+  return new OperationLogService(client as PrismaService).log(dto, client);
+}
+
 @Injectable()
 export class OperationLogService {
   constructor(private readonly prisma: PrismaService) {}
@@ -41,7 +51,7 @@ export class OperationLogService {
         module: dto.module,
         action: dto.action,
         targetType: dto.targetType,
-        targetId: dto.targetId,
+        targetId: this.normalizeTargetId(dto.targetId),
         beforeData: this.toSafeInputJson(dto.beforeData),
         afterData: this.toSafeInputJson(dto.afterData),
         ipAddress: dto.ipAddress ?? null,
@@ -51,11 +61,29 @@ export class OperationLogService {
         errorReason: this.redactErrorReason(dto.errorReason),
       },
     });
+    markCurrentRequestAudited(client === this.prisma);
 
     return this.toSafeLog(log);
   }
 
+  async hasTrace(traceId: string): Promise<boolean> {
+    const row = await this.prisma.operationLog.findFirst({
+      where: { traceId },
+      select: { id: true },
+    });
+    if (row) markCurrentRequestAudited();
+    return Boolean(row);
+  }
+
+  private normalizeTargetId(value: string): string {
+    if (value.length <= 36) return value;
+    return `sha256:${createHash('sha256').update(value).digest('hex').slice(0, 29)}`;
+  }
+
   private toSafeLog(log: OperationLogItem): OperationLogItem {
+    // Prisma always returns the created row. The guard keeps lightweight
+    // transaction-client test doubles from changing domain behavior.
+    if (!log) return log;
     return {
       ...log,
       beforeData: this.redactJson(log.beforeData),

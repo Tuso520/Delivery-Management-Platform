@@ -7,14 +7,17 @@ import * as ts from 'typescript';
 import { getAllPermissionCodes } from '../../../../prisma/seed-data/permissions';
 import { ArchiveTemplateVersionController } from '../../../modules/archive-template/archive-template-version.controller';
 import { DashboardController } from '../../../modules/dashboard/dashboard.controller';
+import { FieldOptionsController } from '../../../modules/field-configuration/field-configuration.controller';
 import { FileController } from '../../../modules/file/file.controller';
 import { KnowledgeItemController } from '../../../modules/knowledge/knowledge-item.controller';
+import { ProjectController } from '../../../modules/project/project.controller';
 import { ReviewTaskController } from '../../../modules/review/review-task.controller';
 import {
   SystemConfigController,
   SystemSettingsController,
 } from '../../../modules/system-config/system-config.controller';
 import { ToolController } from '../../../modules/tool/tool.controller';
+import { AUTHENTICATED_ONLY_KEY } from '../../decorators/authenticated-only.decorator';
 import {
   PERMISSIONS_KEY,
   type PermissionRequirement,
@@ -23,7 +26,7 @@ import { PermissionsGuard } from '../permissions.guard';
 
 const MODULES_ROOT = resolve(__dirname, '../../../modules');
 const HTTP_DECORATORS = new Set(['Get', 'Post', 'Put', 'Patch', 'Delete']);
-const PERMISSION_DECORATORS = new Set(['RequirePermissions']);
+const AUTHORIZATION_DECORATORS = new Set(['RequirePermissions', 'AuthenticatedOnly']);
 
 interface RoutePermissionBoundary {
   key: string;
@@ -69,7 +72,7 @@ function routePermissionBoundaries(): RoutePermissionBoundary[] {
         if (names.some((name) => HTTP_DECORATORS.has(name))) {
           boundaries.push({
             key: `${relativePath}#${node.name.getText(sourceFile)}`,
-            hasPermission: names.some((name) => PERMISSION_DECORATORS.has(name)),
+            hasPermission: names.some((name) => AUTHORIZATION_DECORATORS.has(name)),
             isPublic: names.includes('Public'),
           });
         }
@@ -116,9 +119,13 @@ function permissions(controller: object, methodName: string): string[] | undefin
   const method = controller[methodName as keyof typeof controller];
   const metadata = Reflect.getMetadata(PERMISSIONS_KEY, method as object) as
     | PermissionRequirement
-    | string[]
     | undefined;
-  return Array.isArray(metadata) ? metadata : (metadata?.any ?? metadata?.all);
+  return metadata?.any ?? metadata?.all;
+}
+
+function isAuthenticatedOnly(controller: object, methodName: string): boolean {
+  const method = controller[methodName as keyof typeof controller];
+  return Reflect.getMetadata(AUTHENTICATED_ONLY_KEY, method as object) === true;
 }
 
 function usesPermissionsGuard(controller: object): boolean {
@@ -135,6 +142,12 @@ describe('controller backend permission boundaries', () => {
     ]);
     expect(permissions(KnowledgeItemController.prototype, 'findAll')).toEqual(['knowledge:view']);
     expect(permissions(ToolController.prototype, 'findAllTools')).toEqual(['tools:view']);
+  });
+
+  it('uses the dedicated project archive permission and explicit auth-only field options', () => {
+    expect(permissions(ProjectController.prototype, 'archive')).toEqual(['project:archive']);
+    expect(isAuthenticatedOnly(FieldOptionsController.prototype, 'findEnabled')).toBe(true);
+    expect(isAuthenticatedOnly(FieldOptionsController.prototype, 'findEnabledBatch')).toBe(true);
   });
 
   it('allows every authenticated user to query only their service-filtered review data', () => {
@@ -175,7 +188,7 @@ describe('controller backend permission boundaries', () => {
   });
 
   it('references only active permission codes from the deployment seed', () => {
-    const activeCodes = new Set(getAllPermissionCodes());
+    const activeCodes = new Set<string>(getAllPermissionCodes());
     expect(controllerPermissionCodes().filter((code) => !activeCodes.has(code))).toEqual([]);
   });
 

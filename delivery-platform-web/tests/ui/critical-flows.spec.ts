@@ -239,7 +239,7 @@ test('administrator can create, edit, inspect, progress, archive and restore a p
         product: 'DEEPSIGHT',
         projectName: `端到端项目 ${marker}`,
         projectType: 'DATA_CENTER',
-        saveAsDraft: true,
+        saveAsDraft: false,
         shortName,
       },
       headers: { ...authorization, 'idempotency-key': `project-e2e-${marker}` },
@@ -255,7 +255,7 @@ test('administrator can create, edit, inspect, progress, archive and restore a p
     [200],
   )
   expect(detail.data).toMatchObject({
-    canArchive: true,
+    canArchive: false,
     canEdit: true,
     canUpdateProgress: true,
     contractType: 'EPC',
@@ -290,6 +290,14 @@ test('administrator can create, edit, inspect, progress, archive and restore a p
     }),
   )
   expect(progressed.data).toMatchObject({ currentStage: 'DEEPENING', progressPercent: 35 })
+  const completed = await expectProjectResponse(
+    await page.request.post(`/api/v1/projects/${progressed.data.id}/complete`, {
+      data: { reason: 'E2E 完成并归档验证', revision: progressed.data.revision },
+      headers: authorization,
+      timeout: 60_000,
+    }),
+  )
+  expect(completed.data).toMatchObject({ canArchive: true, status: 'COMPLETED' })
 
   await page.goto(`/#/projects?scope=all&keyword=${encodeURIComponent(`${shortName} 已编辑`)}`)
   await page.getByText(`${shortName} 已编辑`, { exact: true }).click()
@@ -323,8 +331,8 @@ test('administrator can create, edit, inspect, progress, archive and restore a p
   expect(returnedQuery.get('keyword')).toBe(`${shortName} 已编辑`)
 
   const archived = await expectProjectResponse(
-    await page.request.post(`/api/v1/projects/${progressed.data.id}/archive`, {
-      data: { reason: 'E2E 归档验证', revision: progressed.data.revision },
+    await page.request.post(`/api/v1/projects/${completed.data.id}/archive`, {
+      data: { reason: 'E2E 归档验证', revision: completed.data.revision },
       headers: authorization,
       timeout: 60_000,
     }),

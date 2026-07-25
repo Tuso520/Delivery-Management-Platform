@@ -100,8 +100,8 @@ describe('standard and knowledge target flows', () => {
   })
 
   it('supports all three knowledge content types with explicit versions', () => {
-    const source = readSource('src/views/knowledge/index.vue')
-    const api = readSource('src/api/knowledge.ts')
+    const source = readSource('src/domains/knowledge/pages/KnowledgePage.vue')
+    const api = readSource('src/domains/knowledge/api/knowledge.api.ts')
 
     expect(source).toContain("{ value: 'FILE', label: 'knowledge.contentTypes.FILE' }")
     expect(source).toContain("{ value: 'MARKDOWN', label: 'Markdown' }")
@@ -124,7 +124,7 @@ describe('standard and knowledge target flows', () => {
 
   it('drives standard and knowledge detail drawers from path params', () => {
     const standard = readSource('src/views/standard/index.vue')
-    const knowledge = readSource('src/views/knowledge/index.vue')
+    const knowledge = readSource('src/domains/knowledge/pages/KnowledgePage.vue')
 
     expect(standard).toContain('firstRouteParam(route.params.id)')
     expect(standard).toContain("name: 'StandardDetail'")
@@ -135,7 +135,10 @@ describe('standard and knowledge target flows', () => {
   })
 
   it('uses the project-overview page frame for both libraries', () => {
-    for (const file of ['src/views/standard/index.vue', 'src/views/knowledge/index.vue']) {
+    for (const file of [
+      'src/views/standard/index.vue',
+      'src/domains/knowledge/pages/KnowledgePage.vue',
+    ]) {
       const page = readSource(file)
 
       expect(page).toContain(
@@ -154,7 +157,7 @@ describe('standard and knowledge target flows', () => {
 
   it('uses controlled draft-file uploads and never asks users for internal file ids', () => {
     const standard = readSource('src/views/standard/index.vue')
-    const knowledge = readSource('src/views/knowledge/index.vue')
+    const knowledge = readSource('src/domains/knowledge/pages/KnowledgePage.vue')
 
     expect(standard).toContain('standardApi.uploadDraftFile(')
     expect(knowledge).toContain('knowledgeApi.uploadDraftFile(')

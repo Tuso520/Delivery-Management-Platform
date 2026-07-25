@@ -21,7 +21,7 @@ docker compose --env-file .env.local.example -f docker-compose.test.yml config -
 node scripts/verify-doc-facts.mjs
 ```
 
-开始开发前可执行 `node scripts/preflight.mjs` 检查 Node.js、pnpm、工作区依赖、真实验收环境文件和 Docker Compose 可用性；发布验收使用 `--require-docker` 将 Docker 缺失升级为失败。前端体积预算按未压缩产物执行：单个常规 JavaScript 分块不超过 850 KiB、CSS 不超过 450 KiB、Worker/ES module 不超过 1500 KiB，常规 JavaScript 总量不超过 2600 KiB。预算用于阻止意外整体引入大依赖，同时给现有 Arco 和 PDF 预览分块保留有限余量。
+开始开发前可执行 `node scripts/preflight.mjs` 检查 Node.js、pnpm、工作区依赖、真实验收环境文件和 Docker Compose 可用性；发布验收使用 `--require-docker` 将 Docker 缺失升级为失败。前端体积预算按未压缩产物执行：单个常规 JavaScript 分块不超过 500 KiB、CSS 不超过 450 KiB、Worker/ES module 不超过 1500 KiB，常规 JavaScript 总量不超过 2600 KiB。预算用于阻止意外整体引入大依赖，同时给现有 Arco 和 PDF 预览分块保留有限余量。
 
 Lint 命令会修正可自动修复的格式；执行后必须重新检查工作区差异。生产构建允许报告分块体积警告，但不允许类型、测试、Lint 或构建错误。
 
@@ -53,7 +53,7 @@ pnpm --dir delivery-platform-web test:smoke:api
 
 涉及登录、项目、档案、审核、标准、知识、文件预览或设置时，必须把前端连接到真实 NestJS API 后使用浏览器验证。`scripts/local-test-server.mjs` 只用于页面演示和前端局部开发，不能替代权限、数据范围、事务、MinIO 和审核并发验证。
 
-UI E2E 默认使用稳定版 Chrome。开发机可通过 `PLAYWRIGHT_BROWSER_CHANNEL` 显式选择 Playwright 支持的本地 Chromium 通道，例如 `msedge`；CI 不设置该变量，继续使用 Chrome。浏览器通道差异不能降低真实 API、权限、MinIO 或 Worker 的验收范围。
+UI E2E 默认使用 Playwright 锁定版本的 Chromium，CI 通过 `playwright install --with-deps chromium` 安装。开发机仅在需要复用系统浏览器时通过 `PLAYWRIGHT_BROWSER_CHANNEL` 显式选择受支持通道。浏览器通道差异不能降低真实 API、权限、MinIO 或 Worker 的验收范围。
 
 至少覆盖：
 
@@ -82,7 +82,7 @@ UI E2E 默认使用稳定版 Chrome。开发机可通过 `PLAYWRIGHT_BROWSER_CHA
 8. 标准历史结构化正文必须物化为经流式 checksum 校验的真实 MinIO 文件；每个有效 StandardVersion 都有唯一主文件。KnowledgeVersion 必须严格满足 FILE/MARKDOWN/LINK 三选一，支持文件归属和 published pointer 一致。
 9. UI 翻译退役只允许把 `translations` 原子归档为 `retired_ui_translations_20260713`，部署表计数报告必须证明行数未减少；运行时 Prisma、seed 和 API 不再读写该表。
 10. 迁移失败不得继续启动 API 或 Worker；回滚必须成对恢复数据库和 MinIO。
-11. `_prisma_migrations` 必须恰好包含源码中的 34 个有效迁移，每个迁移完成且 `migration.sql` SHA-256 与数据库记录一致；数据库中不得存在源码缺失的有效迁移。
+11. `_prisma_migrations` 必须恰好包含源码中的 35 个有效迁移，每个迁移完成且 `migration.sql` SHA-256 与数据库记录一致；数据库中不得存在源码缺失的有效迁移。
 12. 三组 migrator apply 完成后捕获全部业务表计数，第二次 seed 后逐表比较；任一表新增、减少或消失均阻断应用启动。
 13. 真实浏览器验收必须上传私有 PNG、通过鉴权下载并逐字节回读原文件，等待 File Worker 生成 WebP 缩略图，并确认 `ArchiveFileUploaded` 与 `FileProcessingCompleted` Outbox 事件进入终态。
 
@@ -98,31 +98,33 @@ UI E2E 默认使用稳定版 Chrome。开发机可通过 `PLAYWRIGHT_BROWSER_CHA
 - 文件审核动作只允许当前步骤指派人执行，多人会签并发只能产生一个终态。
 - 设置只读账号落到第一个可访问设置页；无任何可访问页时进入 `/forbidden`，不清除有效会话。
 
-## 2026-07-21 当前验收状态
+## 2026-07-26 当前验收状态
 
-当前仓库扫描范围以 Git 工作树为准。发布迁移验收脚本核对应用迁移与校验和、二次 seed 全库表计数以及 MinIO/File Worker/Outbox Worker 一致性；当前源码包含 34 个 Prisma migration。
+当前仓库扫描范围为 637 个受版本控制或待纳入版本控制的文件。源码静态事实为：前端 187 个 TypeScript/Vue 文件、24 个 `views/` Vue 文件、26 个运行时 API 文件和 42 个测试文件；后端 249 个 TypeScript 文件、28 个 Controller、42 个 Service、30 个 Module、167 个 HTTP 路由和 35 个 Prisma migration。
+
+发布迁移验收脚本核对应用迁移与校验和、二次 seed 全库表计数以及 MinIO/File Worker/Outbox Worker 一致性。
 
 本地自动化结果：
 
-- 前端 Vitest：41 个测试文件、183 个用例全部通过。
-- 前端 ESLint（只读模式）、TypeScript 类型检查和生产构建通过；构建保留分块体积和 user store 动静态导入提示。
+- 前端 Vitest：42 个测试文件、193 个用例全部通过。
+- 前端 ESLint（只读模式）、TypeScript 类型检查和生产构建通过；普通 JavaScript 单块 500 KiB、CSS 450 KiB、独立 Worker 1500 KiB 和总 JavaScript 2600 KiB 预算门禁通过。
 - 后端 Prisma Client：按当前 schema 生成成功。
-- 后端 Jest：71 个测试套件、507 个用例全部通过。
-- 前端 Vitest：41 个测试文件、190 个用例全部通过。
+- 后端 Jest：74 个测试套件、528 个用例全部通过。
 - 后端 ESLint（只读模式）、TypeScript 类型检查、生产构建和 Prisma schema 校验通过。
 - 代码规则扫描：前后端源码未发现新增无约束 `any`，未发现其他 UI 组件库导入；前端常规业务请求集中在 `src/api/`，统一文件预览组件按只读会话使用受控 `fetch` 获取预览内容。
 - 文档事实已按当前项目字段、统一进度命令、归档列表、迁移数量和测试数量校正。
 
-本地真实依赖验收使用 Ubuntu 24.04 WSL2、Docker Engine 29.6.1、containerd 2.2.6 和 Docker Compose 5.3.1；应用镜像固定 Node.js 20 与 pnpm 10.34.4，依赖由锁文件冷构建。MySQL 8、Redis 7、MinIO、NestJS、前端、File Worker 和 Outbox Worker 均在隔离 Compose 项目中运行。
+本地真实依赖验收使用 Ubuntu 24.04 WSL2、Docker Engine 29.6.1、Docker Compose 5.3.1、MySQL 8、Redis 7、MinIO、当前 NestJS/前端源码、File Worker 和 Outbox Worker。前后端及迁移镜像已从 Dockerfile 冷构建成功；构建容器固定使用 Node 20 和 pnpm 10.34.4。
 
 当前真实验收结果：
 
-- `_prisma_migrations` 精确包含源码中的 34 个 migration，全部完成且 SHA-256 校验和一致。
+- `_prisma_migrations` 精确包含源码中的 35 个 migration，全部完成且迁移运行器校验通过。
 - 三组数据 migrator 的 dry-run、apply 和只读 verify 全部通过；第二次 seed 前后的 86 张表计数逐表一致。
-- `/api/v1/ready` 的 database、redis、storage 全部为 `ok`；真实 API E2E 2 个用例、Playwright API 冒烟 2 个用例全部通过。
-- Chromium 浏览器关键流程 4 个场景全部通过，覆盖管理员导航、项目全生命周期、项目经理数据范围与敏感字段裁剪，以及私有 PNG 上传、逐字节下载和 WebP 缩略图读取。
+- `/api/v1/ready` 的 database、redis、storage 全部为 `ok`；真实 API E2E 3/3，覆盖标准、知识、审核、通知和受限角色权限矩阵；Playwright API 冒烟 2/2。
+- 干净数据库上的 Chromium 浏览器关键流程 12/12，覆盖管理员导航、项目全生命周期、项目经理数据范围与敏感字段裁剪、私有 PNG 上传、逐字节下载、WebP 缩略图、字段配置以及主要页面布局。
 - 运行时核验确认 LogicalFile、FileVersion、MinIO 对象、`THUMBNAIL` 输出资产、`ArchiveFileUploaded` 和 `FileProcessingCompleted` Outbox 事件一致。
 - 后端、前端、MySQL、Redis、MinIO、File Worker 和 Outbox Worker 的重启次数均为 0。
+- 本地前置门禁为 FAIL：宿主 Node.js 24.14.0、pnpm 11.9.0 与项目要求的 Node.js 20、pnpm 10.34.4 不一致；Docker Compose 5.3.1 已可识别，CI 和容器版本仍按项目固定版本执行。
 
 这些结果证明当前工作区在隔离真实依赖环境中的发布事务和关键业务链路可运行。测试服务器或生产环境是否发布成功，仍只由同一目标提交的 GitHub `integration`、`deploy`、服务器 release id 和就绪检查共同判定。
 

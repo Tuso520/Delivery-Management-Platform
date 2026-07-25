@@ -30,11 +30,11 @@ export class ProjectSystemSettingsDto {
 }
 
 export class AttachmentSystemSettingsDto {
-  @ApiPropertyOptional({ minimum: 1, maximum: 1024 })
+  @ApiPropertyOptional({ minimum: 1, maximum: 500 })
   @IsOptional()
   @IsInt()
   @Min(1)
-  @Max(1024)
+  @Max(500)
   maxSizeMb?: number;
 }
 

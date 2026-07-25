@@ -2,14 +2,9 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 import { PaginationDto } from '../../../common/dto/pagination.dto';
+import { REGISTERED_REVIEW_SOURCE_TYPES } from '../../platform/workflow/review-source.contract';
 
-export const REVIEW_SOURCE_TYPES = [
-  'PROJECT_ARCHIVE',
-  'STANDARD',
-  'KNOWLEDGE',
-  'ARCHIVE_TEMPLATE',
-  'PROJECT_CREATE',
-] as const;
+export const REVIEW_SOURCE_TYPES = REGISTERED_REVIEW_SOURCE_TYPES;
 
 export const REVIEW_TASK_STATUSES = [
   'PENDING',

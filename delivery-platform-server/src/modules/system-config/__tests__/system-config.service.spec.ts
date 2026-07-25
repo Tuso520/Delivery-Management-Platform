@@ -19,7 +19,7 @@ describe('SystemConfigService target settings', () => {
         defaultPageSize: 50,
         defaultRiskLevel: 'Low',
       },
-      attachment: { maxSizeMb: 100 },
+      attachment: { maxSizeMb: 500 },
       file: { allowedExtensions: ['pdf', 'docx'] },
       approval: { timeoutDays: 3 },
       knowledge: { defaultPageSize: 20 },

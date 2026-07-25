@@ -6,7 +6,7 @@ const source = (file: string) => readFileSync(resolve(process.cwd(), file), 'utf
 
 describe('project overview and overlay contract', () => {
   it('renders scoped search, the Figma five-metric band and a normal list without actions', () => {
-    const overview = source('src/views/project/index.vue')
+    const overview = source('src/domains/project/pages/ProjectOverviewPage.vue')
     expect(overview).toContain("t('projects.scope.mine')")
     expect(overview).toContain("t('projects.scope.all')")
     expect(overview).toContain("id: 'amount'")
@@ -22,8 +22,8 @@ describe('project overview and overlay contract', () => {
   })
 
   it('keeps the project table adaptive, single-line and uses the confirmed larger row size', () => {
-    const overview = source('src/views/project/index.vue')
-    const table = source('src/components/business/BusinessTable.vue')
+    const overview = source('src/domains/project/pages/ProjectOverviewPage.vue')
+    const table = source('src/design-system/BusinessTable.vue')
     expect(overview).toContain(':scroll="{ x: \'max-content\' }"')
     expect(overview).toContain('size="large"')
     expect(overview).toMatch(/:width="120"\s+fixed="left"/u)
@@ -55,9 +55,9 @@ describe('project overview and overlay contract', () => {
   })
 
   it('uses one Figma-aligned project detail dialog for create, edit and view', () => {
-    const overview = source('src/views/project/index.vue')
-    const dialog = source('src/views/project/ProjectDetailDialog.vue')
-    expect(overview).toContain("import ProjectDetailDialog from './ProjectDetailDialog.vue'")
+    const overview = source('src/domains/project/pages/ProjectOverviewPage.vue')
+    const dialog = source('src/domains/project/components/ProjectDetailDialog.vue')
+    expect(overview).toContain("import ProjectDetailDialog from '../components/ProjectDetailDialog.vue'")
     expect(overview).toContain(':mode="drawerMode"')
     expect(overview).toContain('v-model:visible="projectDialogVisible"')
     expect(dialog).toContain('class="project-detail-dialog"')
@@ -73,9 +73,9 @@ describe('project overview and overlay contract', () => {
   })
 
   it('keeps progress and payment data in the unified save payload', () => {
-    const overview = source('src/views/project/index.vue')
-    const dialog = source('src/views/project/ProjectDetailDialog.vue')
-    const api = source('src/api/project.ts')
+    const overview = source('src/domains/project/pages/ProjectOverviewPage.vue')
+    const dialog = source('src/domains/project/components/ProjectDetailDialog.vue')
+    const api = source('src/domains/project/api/project.api.ts')
     expect(overview).toContain('v-model:visible="projectDialogVisible"')
     expect(dialog).toContain('deliveryStage: formData.deliveryStage')
     expect(dialog).toContain('progressPercent: formData.progressPercent')
@@ -88,8 +88,8 @@ describe('project overview and overlay contract', () => {
   })
 
   it('keeps permanent deletion in the archive list with two confirmations', () => {
-    const overview = source('src/views/project/index.vue')
-    const api = source('src/api/project.ts')
+    const overview = source('src/domains/project/pages/ProjectOverviewPage.vue')
+    const api = source('src/domains/project/api/project.api.ts')
     expect(overview).toContain('row.canPermanentDelete')
     expect(overview.match(/await arcoConfirm/gu)?.length).toBeGreaterThanOrEqual(3)
     expect(api).toContain('/projects/${id}/permanent')

@@ -1,8 +1,8 @@
-import { forwardRef, Module } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 
 import { DataScopeModule } from '../identity/data-scope/data-scope.module';
 import { OperationLogModule } from '../operation-log/operation-log.module';
-import { ProjectModule } from '../project/project.module';
+import { ProjectAccessModule } from '../project/project-access.module';
 import { SystemConfigModule } from '../system-config/system-config.module';
 
 import { ReviewBusinessService } from './review-business.service';
@@ -13,7 +13,7 @@ import { ReviewerEligibilityService } from './reviewer-eligibility.service';
 
 @Module({
   imports: [
-    forwardRef(() => ProjectModule),
+    ProjectAccessModule,
     DataScopeModule,
     OperationLogModule,
     SystemConfigModule,

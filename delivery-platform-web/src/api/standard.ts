@@ -1,5 +1,5 @@
 import request from './request'
-import { runIdempotentUpload } from './upload-idempotency'
+import { fileApi } from '@/platform/file/file.api'
 import type {
   CreateStandardDto,
   CreateStandardVersionDto,
@@ -17,22 +17,10 @@ import type {
 
 export const standardApi = {
   uploadDraftFile(file: File, changeDescription?: string) {
-    const data = new FormData()
-    data.append('file', file)
-    data.append('ownerType', 'STANDARD')
-    if (changeDescription?.trim()) data.append('changeDescription', changeDescription.trim())
-    const operation = JSON.stringify({
-      ownerType: 'STANDARD',
-      changeDescription: changeDescription?.trim(),
-    })
-    return runIdempotentUpload(file, operation, (idempotencyKey) =>
-      request.post<StandardDraftFileUploadResult>('/files/drafts', data, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-          'Idempotency-Key': idempotencyKey,
-        },
-        timeout: 120000,
-      }),
+    return fileApi.uploadDraftFile<StandardDraftFileUploadResult>(
+      'STANDARD',
+      file,
+      changeDescription,
     )
   },
 
@@ -91,9 +79,6 @@ export const standardApi = {
   },
 
   downloadFile(logicalFileId: string) {
-    return request.get<Blob>(`/files/${logicalFileId}/download`, {
-      responseType: 'blob',
-      timeout: 120000,
-    })
+    return fileApi.download(logicalFileId)
   },
 }

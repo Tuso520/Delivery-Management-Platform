@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
-import { Message } from '@arco-design/web-vue'
+import Message from '@arco-design/web-vue/es/message'
 import type { FormInstance } from '@arco-design/web-vue'
 import { IconPlus } from '@arco-design/web-vue/es/icon'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
@@ -9,11 +9,11 @@ import { userApi } from '@/api/user'
 import {
   BusinessModal,
   BusinessTable,
-  Can,
   PageContainer,
   PageToolbar,
   StatusBadge,
-} from '@/components/business'
+} from '@/design-system'
+import { Can } from '@/platform/permission'
 import {
   useDepartmentsQuery,
   useRolesQuery,

@@ -1,7 +1,9 @@
-import router from './index'
+import router, { accessItems } from './index'
 import { getFirstAccessiblePath } from './access'
 import { useUserStore } from '@/store/user'
-import { Message } from '@arco-design/web-vue'
+import { canAccess } from '@/platform/permission/access-policy'
+import type { PermissionCode } from '@/platform/permission/access-control.generated'
+import Message from '@arco-design/web-vue/es/message'
 
 router.beforeEach(async (to, from, next) => {
   const userStore = useUserStore()
@@ -10,6 +12,7 @@ router.beforeEach(async (to, from, next) => {
   if (to.path === '/login') {
     if (hasSession) {
       const landingPath = getFirstAccessiblePath(
+        accessItems,
         userStore.userInfo?.permissions ?? [],
         userStore.userInfo?.roles ?? [],
       )
@@ -27,13 +30,18 @@ router.beforeEach(async (to, from, next) => {
 
   // Route-level permission check
   if (to.meta?.permissions) {
-    const requiredPerms = to.meta.permissions as string[]
-    const isSuperAdmin = userStore.userInfo?.roles.includes('SUPER_ADMIN') ?? false
-    const hasPerm = isSuperAdmin ||
-      requiredPerms.some(p => userStore.userInfo?.permissions?.includes(p))
+    const requiredPerms = to.meta.permissions as PermissionCode[]
+    const hasPerm = canAccess(
+      {
+        permissions: userStore.userInfo?.permissions ?? [],
+        roles: userStore.userInfo?.roles ?? [],
+      },
+      { any: requiredPerms },
+    )
     if (!hasPerm) {
       if (from.path !== '/login') Message.error('没有权限访问此页面')
       const fallbackPath = getFirstAccessiblePath(
+        accessItems,
         userStore.userInfo?.permissions ?? [],
         userStore.userInfo?.roles ?? [],
       )

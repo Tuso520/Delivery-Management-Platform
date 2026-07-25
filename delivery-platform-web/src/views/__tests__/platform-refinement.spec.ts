@@ -31,8 +31,8 @@ describe('platform refinement regression', () => {
 
   it('uses the target two-level project archive snapshot', () => {
     const router = readSource('src/router/index.ts')
-    const archive = readSource('src/views/archive/index.vue')
-    const archiveApi = readSource('src/api/archive.ts')
+    const archive = readSource('src/domains/archive/pages/ArchiveWorkspacePage.vue')
+    const archiveApi = readSource('src/domains/archive/api/archive.api.ts')
     expect(router).not.toContain("path: 'process-records'")
     expect(archive).toContain('ProjectArchiveTargetFolder')
     expect(archiveApi).toContain('archive-template-sync')

@@ -2,7 +2,7 @@
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 
-import { BusinessTable } from '@/components/business'
+import { BusinessTable } from '@/design-system'
 import type { DashboardHighRiskProject } from '@/types/dashboard'
 import { localizeProjectRisk, localizeProjectStatus } from '@/utils/project-localization'
 import { useLocaleStore } from '@/store/locale'

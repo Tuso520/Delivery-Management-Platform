@@ -11,7 +11,7 @@ vi.mock('@/api/request', () => ({
   default: mocks,
 }))
 
-import { projectApi } from '@/api/project'
+import { projectApi } from '@/domains/project/api/project.api'
 
 describe('projectApi refactored contract', () => {
   beforeEach(() => {

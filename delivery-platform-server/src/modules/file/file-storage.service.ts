@@ -1,6 +1,7 @@
+import { createHash } from 'crypto';
 import { createReadStream } from 'fs';
 import { basename, extname } from 'path';
-import type { Readable } from 'stream';
+import { Transform, type Readable } from 'stream';
 
 import {
   BadRequestException,
@@ -12,6 +13,10 @@ import { ConfigService } from '@nestjs/config';
 import { Client } from 'minio';
 import { v4 as uuidv4 } from 'uuid';
 
+import {
+  isStreamedMulterFile,
+  type StreamedUploadMetadata,
+} from './streamed-upload.types';
 import { withNormalizedUploadFileName } from './upload-file-name.util';
 
 interface StorageConfig {
@@ -52,6 +57,10 @@ export class FileStorageService {
 
   async upload(file: Express.Multer.File, subPath: string): Promise<string> {
     const uploadFile = withNormalizedUploadFileName(file);
+    if (isStreamedMulterFile(uploadFile)) {
+      uploadFile.streamedUploadClaimed = true;
+      return uploadFile.storageKey;
+    }
     await this.ensureBucket();
     const extension = extname(uploadFile.originalname).toLowerCase();
     const safeName = basename(uploadFile.originalname, extension)
@@ -76,6 +85,89 @@ export class FileStorageService {
     } catch (error) {
       this.logger.error(`MinIO upload failed for ${objectName}`, error);
       throw new ServiceUnavailableException('文件存储服务暂不可用');
+    }
+  }
+
+  async uploadIncoming(
+    input: Readable,
+    originalName: string,
+    mimeType: string,
+    maxBytes: number,
+  ): Promise<StreamedUploadMetadata & { size: number }> {
+    await this.ensureBucket();
+    const normalizedName = withNormalizedUploadFileName({
+      originalname: originalName,
+    } as Express.Multer.File).originalname;
+    const extension = extname(normalizedName).toLowerCase();
+    const safeName = basename(normalizedName, extension)
+      .replace(/[^\p{L}\p{N}._-]+/gu, '-')
+      .slice(0, 80);
+    const objectName = [
+      'incoming',
+      new Date().toISOString().slice(0, 10),
+      `${uuidv4()}-${safeName || 'file'}${extension}`,
+    ].join('/');
+    const checksum = createHash('sha256');
+    const headChunks: Buffer[] = [];
+    let headBytes = 0;
+    let size = 0;
+    const meter = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        size += chunk.length;
+        if (size > maxBytes) {
+          callback(new BadRequestException('文件大小超过 500 MB 上限'));
+          return;
+        }
+        checksum.update(chunk);
+        if (headBytes < 16) {
+          const head = chunk.subarray(0, Math.min(chunk.length, 16 - headBytes));
+          headChunks.push(head);
+          headBytes += head.length;
+        }
+        callback(null, chunk);
+      },
+    });
+    input.pipe(meter);
+
+    try {
+      await this.client.putObject(this.bucket, objectName, meter, undefined, {
+        'Content-Type': mimeType,
+        'X-Amz-Meta-Original-Name': encodeURIComponent(normalizedName),
+      });
+      if (size === 0) {
+        await this.client.removeObject(this.bucket, objectName);
+        throw new BadRequestException('上传文件内容为空');
+      }
+      this.logger.log(`Object streamed: ${this.bucket}/${objectName}`);
+      return {
+        streamedToObjectStorage: true,
+        storageBucket: this.bucket,
+        storageKey: objectName,
+        checksum: checksum.digest('hex'),
+        headBuffer: Buffer.concat(headChunks),
+        size,
+      };
+    } catch (error) {
+      try {
+        await this.client.removeObject(this.bucket, objectName);
+      } catch {
+        // MinIO may not have committed an object for the failed stream.
+      }
+      if (error instanceof BadRequestException) throw error;
+      this.logger.error(`MinIO streaming upload failed for ${objectName}`, error);
+      throw new ServiceUnavailableException('文件存储服务暂不可用');
+    }
+  }
+
+  async cleanupUnclaimedUpload(file: Express.Multer.File): Promise<void> {
+    if (!isStreamedMulterFile(file) || file.streamedUploadClaimed) return;
+    try {
+      await this.deleteFrom(file.storageBucket, file.storageKey);
+    } catch (error) {
+      this.logger.error(
+        `Failed to clean up unclaimed upload ${file.storageBucket}/${file.storageKey}`,
+        error,
+      );
     }
   }
 

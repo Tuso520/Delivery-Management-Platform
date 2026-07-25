@@ -89,7 +89,9 @@ describe('retired runtime boundaries', () => {
   });
 
   it('uses only the target notification-rule route and internal notification creation', () => {
-    const notificationApi = source(resolve(WEB_SRC, 'api/notification.ts'));
+    const notificationApi = source(
+      resolve(WEB_SRC, 'platform/notification/notification.api.ts'),
+    );
     const notificationController = source(
       resolve(SERVER_MODULES, 'notification/notification.controller.ts'),
     );
@@ -107,8 +109,8 @@ describe('retired runtime boundaries', () => {
   });
 
   it('keeps knowledge and review on their unified target contracts', () => {
-    const knowledgeApi = source(resolve(WEB_SRC, 'api/knowledge.ts'));
-    const reviewApi = source(resolve(WEB_SRC, 'api/review.ts'));
+    const knowledgeApi = source(resolve(WEB_SRC, 'domains/knowledge/api/knowledge.api.ts'));
+    const reviewApi = source(resolve(WEB_SRC, 'platform/approval/review.api.ts'));
 
     expect(knowledgeApi).not.toMatch(
       /knowledge-(?:articles?|files?)|\b(?:getArticles|getFiles|createArticle|createFile)\b/u,

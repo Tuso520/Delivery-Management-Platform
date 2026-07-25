@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/api/request', () => ({ default: mocks }))
 
-import { knowledgeApi } from '@/api/knowledge'
+import { knowledgeApi } from '@/domains/knowledge/api/knowledge.api'
 import { standardApi } from '@/api/standard'
 
 describe('standard target API contract', () => {

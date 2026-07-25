@@ -4,10 +4,11 @@ import type {
   AxiosRequestConfig,
   InternalAxiosRequestConfig,
 } from 'axios'
-import { Message } from '@arco-design/web-vue'
+import Message from '@arco-design/web-vue/es/message'
 
 import { ApiRequestError } from '@/api/errors'
-import router from '@/router'
+import { notifySessionExpired } from '@/api/session-expiration'
+import { attachApiTraceId } from '@/types/api'
 import type { LoginResult } from '@/types/user'
 import { getToken, removeToken, setToken } from '@/utils/auth'
 
@@ -56,8 +57,7 @@ function skipsAuthRefresh(config?: AxiosRequestConfig): boolean {
 
 async function resetUnauthorizedSession(): Promise<void> {
   removeToken()
-  const { useUserStore } = await import('@/store/user')
-  useUserStore().resetState()
+  await notifySessionExpired()
 }
 
 async function expireSession(): Promise<void> {
@@ -65,9 +65,6 @@ async function expireSession(): Promise<void> {
     sessionExpirationPromise = (async () => {
       await resetUnauthorizedSession()
       Message.error('登录已过期，请重新登录')
-      if (router.currentRoute.value.path !== '/login') {
-        await router.replace('/login')
-      }
     })().finally(() => {
       sessionExpirationPromise = null
     })
@@ -76,13 +73,16 @@ async function expireSession(): Promise<void> {
   await sessionExpirationPromise
 }
 
+export function refreshSessionRequest(): Promise<LoginResult> {
+  return axiosInstance.post<unknown, LoginResult>('/auth/refresh', undefined, {
+    silent: true,
+    skipAuthRefresh: true,
+  } as RequestOptions)
+}
+
 function refreshAccessToken(): Promise<string> {
   if (!refreshPromise) {
-    refreshPromise = axiosInstance
-      .post<unknown, LoginResult>('/auth/refresh', undefined, {
-        silent: true,
-        skipAuthRefresh: true,
-      } as RequestOptions)
+    refreshPromise = refreshSessionRequest()
       .then((result) => {
         if (!result?.accessToken) {
           throw new Error('刷新会话未返回访问令牌')
@@ -118,18 +118,26 @@ axiosInstance.interceptors.response.use(
     if (response.config.responseType === 'blob') {
       return response.data
     }
-    const { code, message, data } = response.data
+    const { code, message, data, traceId } = response.data
+    const responseTraceId =
+      traceId ?? response.headers['x-request-id'] ?? response.headers['x-trace-id']
 
     if (code !== 0 && code !== undefined) {
       if (!isSilent(response.config)) {
         Message.error(message || '请求失败')
       }
       return Promise.reject(
-        new ApiRequestError(message || '请求失败', undefined, String(code), false),
+        new ApiRequestError(
+          message || '请求失败',
+          undefined,
+          String(code),
+          false,
+          responseTraceId,
+        ),
       )
     }
 
-    return data
+    return attachApiTraceId(data, responseTraceId)
   },
   async (error) => {
     const status = error.response?.status as number | undefined

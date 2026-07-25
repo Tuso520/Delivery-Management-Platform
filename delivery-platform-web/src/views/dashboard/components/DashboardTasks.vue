@@ -3,7 +3,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useLocaleStore } from '@/store/locale'
 
-import { BusinessTable } from '@/components/business'
+import { BusinessTable } from '@/design-system'
 import type { DashboardTask, DashboardTaskType } from '@/types/dashboard'
 
 defineProps<{

@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 
+import { AuditRecoveryService } from '../modules/operation-log/audit-recovery.service';
 import { OutboxDispatcherService } from '../modules/outbox/outbox-dispatcher.service';
 
 import { OutboxWorkerModule } from './outbox-worker.module';
@@ -22,12 +23,16 @@ async function main(): Promise<void> {
     logger: ['error', 'warn', 'log'],
   });
   const dispatcher = app.get(OutboxDispatcherService);
+  const auditRecovery = app.get(AuditRecoveryService);
 
   try {
     while (!stopping) {
       try {
         const processed = await dispatcher.processBatch(20, () => stopping);
-        if (processed === 0) await delay(idleDelayMs, shutdownController.signal);
+        const recoveredAudits = await auditRecovery.processBatch(20);
+        if (processed === 0 && recoveredAudits === 0) {
+          await delay(idleDelayMs, shutdownController.signal);
+        }
       } catch {
         process.stderr.write('[outbox-dispatch-worker] batch failed\n');
         await delay(errorDelayMs, shutdownController.signal);

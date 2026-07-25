@@ -1,4 +1,8 @@
-import { normalizeUploadFileName } from './upload-file-name.util';
+import type { StreamedMulterFile } from './streamed-upload.types';
+import {
+  normalizeUploadFileName,
+  withNormalizedUploadFileName,
+} from './upload-file-name.util';
 
 describe('normalizeUploadFileName', () => {
   it('restores UTF-8 Chinese names decoded as latin1', () => {
@@ -15,6 +19,29 @@ describe('normalizeUploadFileName', () => {
     expect(normalizeUploadFileName(mojibake)).toBe(
       'DeepLogic交付使用手册（一章 ~ 八章）.docx',
     );
+  });
+
+  it('normalizes in place so streamed-upload ownership remains on the Multer object', () => {
+    const file = {
+      originalname: String.fromCharCode(
+        0xe9,
+        0xa1,
+        0xb9,
+        0xe7,
+        0x9b,
+        0xae,
+        0x2e,
+        0x70,
+        0x64,
+        0x66,
+      ),
+      streamedToObjectStorage: true,
+      streamedUploadClaimed: true,
+    } as unknown as StreamedMulterFile;
+
+    expect(withNormalizedUploadFileName(file)).toBe(file);
+    expect(file.originalname).toBe('项目.pdf');
+    expect(file.streamedUploadClaimed).toBe(true);
   });
 
   it('keeps normal file names unchanged', () => {

@@ -388,7 +388,7 @@
     "range10to100": "允许范围 10 至 100。",
     "defaultRisk": "项目默认风险等级",
     "maxAttachmentSize": "单个附件大小上限（MB）",
-    "range1to1024": "允许范围 1 至 1024 MB。",
+    "range1to500": "允许范围 1 至 500 MB。",
     "extensions": "允许上传的文件扩展名",
     "extensionsPlaceholder": "输入扩展名后回车，例如 pdf",
     "extensionsHint": "不含点号，仅允许字母和数字；最多 50 项。",

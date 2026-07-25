@@ -1,6 +1,7 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { runWithTraceId } from '../../common/utils/request-trace.util';
 import { PrismaService } from '../../database/prisma.service';
 import type { NotificationChannel } from '../notification/dto/notification.dto';
 import { NotificationService } from '../notification/notification.service';
@@ -52,6 +53,7 @@ interface ClaimedOutboxEvent {
   aggregateId: string;
   payload: Prisma.JsonValue;
   attempts: number;
+  traceId: string | null;
 }
 
 interface NotificationEnvelope {
@@ -103,6 +105,7 @@ export class OutboxDispatcherService {
         aggregateId: true,
         payload: true,
         attempts: true,
+        traceId: true,
       },
       orderBy: [{ availableAt: 'asc' }, { createdAt: 'asc' }],
       take: batchSize,
@@ -135,23 +138,25 @@ export class OutboxDispatcherService {
         ...candidate,
         attempts: claimedAttempts,
       };
-      try {
-        const outcome = await this.dispatch(event);
-        await this.prisma.outboxEvent.updateMany({
-          where: {
-            id: event.id,
-            status: 'PROCESSING',
-            attempts: event.attempts,
-          },
-          data: {
-            status: outcome.status,
-            processedAt: new Date(),
-            lastError: outcome.auditCode ?? null,
-          },
-        });
-      } catch (error) {
-        await this.recordFailure(event, error);
-      }
+      await runWithTraceId(event.traceId ?? `outbox:${event.id}`, async () => {
+        try {
+          const outcome = await this.dispatch(event);
+          await this.prisma.outboxEvent.updateMany({
+            where: {
+              id: event.id,
+              status: 'PROCESSING',
+              attempts: event.attempts,
+            },
+            data: {
+              status: outcome.status,
+              processedAt: new Date(),
+              lastError: outcome.auditCode ?? null,
+            },
+          });
+        } catch (error) {
+          await this.recordFailure(event, error);
+        }
+      });
     }
     return claimedCount;
   }

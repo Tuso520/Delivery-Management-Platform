@@ -1,7 +1,6 @@
 import request from './request'
 import type { PaginatedData } from '@/types/api'
 import type { UserListItem, CreateUserDto, UpdateUserDto, QueryUserParams, AssignRolesDto, ResetPasswordDto } from '@/types/user'
-import type { Role } from '@/types/role'
 
 export const userApi = {
   getList(params: QueryUserParams) {
@@ -38,9 +37,5 @@ export const userApi = {
 
   resetPassword(id: string, data: ResetPasswordDto) {
     return request.post<{ message: string }>(`/users/${id}/reset-password`, data)
-  },
-
-  getAllRoles() {
-    return request.get<Role[]>('/roles')
   },
 }

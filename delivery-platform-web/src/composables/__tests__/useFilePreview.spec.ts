@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { useFilePreview } from '@/composables/useFilePreview'
+import { useFilePreview } from '@/platform/file-preview/useFilePreview'
 
 describe('useFilePreview', () => {
   it('opens unified file targets in the shared modal state', () => {

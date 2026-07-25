@@ -240,6 +240,7 @@ export class ReferenceService {
     }
     if (dto.parentId) {
       await this.assertDepartment(dto.parentId);
+      await this.assertDepartmentHierarchyAcyclic(id, dto.parentId);
     }
     return this.prisma.department.update({ where: { id }, data: dto });
   }
@@ -265,6 +266,29 @@ export class ReferenceService {
     });
     if (!department) {
       throw new NotFoundException('部门不存在');
+    }
+  }
+
+  private async assertDepartmentHierarchyAcyclic(
+    departmentId: string,
+    parentId: string,
+  ): Promise<void> {
+    const visited = new Set<string>();
+    let currentId: string | null = parentId;
+    while (currentId) {
+      if (currentId === departmentId) {
+        throw new BadRequestException('上级部门不能是当前部门的下级部门');
+      }
+      if (visited.has(currentId)) {
+        throw new BadRequestException('部门层级数据存在循环，请先修复组织结构');
+      }
+      visited.add(currentId);
+      const current: { parentId: string | null } | null =
+        await this.prisma.department.findUnique({
+          where: { id: currentId },
+          select: { parentId: true },
+        });
+      currentId = current?.parentId ?? null;
     }
   }
 }

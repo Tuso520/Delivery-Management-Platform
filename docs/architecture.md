@@ -27,14 +27,14 @@ API、File Worker 和 Outbox Worker 使用同一构建产物，但以独立进�
 
 - 位置：`delivery-platform-web/`。
 - 框架：Vue 3 + TypeScript + Vite，`strict`、`strictTemplates`、`noUnusedLocals`、`noUnusedParameters` 已开启。
-- UI：只使用 Arco Design Vue；`components/business/` 统一页面容器、表格、抽屉、状态、表单和空/错/无权限态，不存在旧 UI 兼容层。
+- UI：只使用 Arco Design Vue；当前由 `components/business/` 与 `styles/variables.scss` 承载平台组件和设计令牌，目标边界为 `design-system/`，不存在旧 UI 兼容层。
 - 路由：Vue Router hash 模式。`shellRoutes` 是路由、主菜单、设置菜单、标题、图标和页面权限的单一来源。
 - 状态：Pinia 只保存会话、权限、主题/侧栏和语言；所有在用页面的服务端数据由 TanStack Query 管理。
 - 请求：`src/api/` 的 Axios 客户端统一解包响应；Access Token 仅在内存，Refresh Token 使用 HttpOnly Cookie；并发 401 共享一次刷新。
 - 文件预览：根节点挂载单一 `AttachmentPreviewModal`，业务页面通过 `useFilePreview` 打开，`FilePreviewRouter` 根据后端只读会话选择 Viewer。
 - 国际化：中文与英文 key 集合同构；核心业务与设置页面使用 i18n，业务数据不自动翻译。
 
-完整路由、页面、Query Key、组件和运行边界见 [前端页面架构](frontend-architecture.md)，端到端状态流见 [前端业务流程](frontend-business-flows.md)，正式设计约束见 [前端实施规范](frontend-architecture-refactored.md)。
+平台定位、目标分层和迁移边界见 [基础架构模型 v0.1](platform-foundation-architecture-v0.1.md)；完整路由、页面、Query Key、组件和运行边界见 [前端页面架构](frontend-architecture.md)，端到端状态流见 [前端业务流程](frontend-business-flows.md)，正式设计约束见 [前端实施规范](frontend-architecture-refactored.md)。
 
 ## 后端
 

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const assets = join(root, 'delivery-platform-web/dist/assets');
 const limits = {
-  '.js': 850 * 1024,
+  '.js': 500 * 1024,
   '.css': 450 * 1024,
   '.mjs': 1500 * 1024,
 };

@@ -2,8 +2,6 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
-  forwardRef,
-  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -14,6 +12,7 @@ import type { PaginatedResult } from '../../common/dto/pagination.dto';
 import { enqueueDomainEvent } from '../../common/events/outbox';
 import { PrismaService } from '../../database/prisma.service';
 import type { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { writeOperationLog } from '../operation-log/operation-log.service';
 import { ProjectArchiveSnapshotService } from '../project-archive/project-archive-snapshot.service';
 import { ReviewConfigurationService } from '../review/review-configuration.service';
 import { type PreparedReviewTask, ReviewTaskService } from '../review/review-task.service';
@@ -136,9 +135,7 @@ export class ProjectService {
     private readonly prisma: PrismaService,
     private readonly projectAccess: ProjectAccessService,
     private readonly projectArchiveSnapshot: ProjectArchiveSnapshotService,
-    @Inject(forwardRef(() => ReviewConfigurationService))
     private readonly reviewConfiguration: ReviewConfigurationService,
-    @Inject(forwardRef(() => ReviewTaskService))
     private readonly reviewTasks: ReviewTaskService,
     private readonly systemConfig: SystemConfigService,
     private readonly projectConfiguration: ProjectConfigurationService,
@@ -631,8 +628,7 @@ export class ProjectService {
         const reviewTaskId = preparedReview
           ? await this.reviewTasks.createPreparedTask(tx, preparedReview)
           : null;
-        await tx.operationLog.create({
-          data: {
+        await writeOperationLog(tx, {
             userId,
             module: 'project',
             action: 'create',
@@ -650,7 +646,6 @@ export class ProjectService {
               archiveItemCount: archiveSnapshot.itemCount,
               reviewTaskId,
             },
-          },
         });
         await enqueueDomainEvent(tx, {
           eventType: 'ProjectCreated',
@@ -881,8 +876,7 @@ export class ProjectService {
         });
       }
       const updated = await tx.project.findUniqueOrThrow({ where: { id } });
-      await tx.operationLog.create({
-        data: {
+      await writeOperationLog(tx, {
           userId,
           module: 'project',
           action: 'update',
@@ -891,7 +885,6 @@ export class ProjectService {
           result: 'success',
           beforeData: this.projectUpdateAuditSnapshot(project),
           afterData: this.projectUpdateAuditSnapshot(updated),
-        },
       });
     });
     return this.findById(id, actor);
@@ -954,8 +947,7 @@ export class ProjectService {
           createdBy: userId,
         },
       });
-      await tx.operationLog.create({
-        data: {
+      await writeOperationLog(tx, {
           userId,
           module: 'project',
           action: 'progress_update',
@@ -977,7 +969,6 @@ export class ProjectService {
             reason: dto.reason?.trim() ?? null,
             revision: dto.revision + 1,
           },
-        },
       });
       await enqueueDomainEvent(tx, {
         eventType: 'ProjectStageChanged',
@@ -1039,8 +1030,11 @@ export class ProjectService {
     let targetStatus = currentStatus;
 
     if (command === 'archive') {
-      if (!this.canArchiveProject(project, actor)) {
-        throw new ForbiddenException('仅管理员或该项目的创建者项目经理可归档项目');
+      if (!this.hasPermission(actor, 'project:archive')) {
+        throw new ForbiddenException('无权归档项目');
+      }
+      if (!['COMPLETED', 'CANCELLED'].includes(currentStatus)) {
+        throw new BadRequestException('仅已完成或已取消的项目可以归档');
       }
       if (project.archivedAt) {
         throw new BadRequestException('项目已归档');
@@ -1074,8 +1068,7 @@ export class ProjectService {
         data: updateData,
       });
       this.assertProjectCommandUpdated(updateResult.count);
-      await tx.operationLog.create({
-        data: {
+      await writeOperationLog(tx, {
           userId,
           module: 'project',
           action: command,
@@ -1098,7 +1091,6 @@ export class ProjectService {
             revision: dto.revision + 1,
             reason: dto.reason?.trim() ?? null,
           },
-        },
       });
       if (command === 'archive') {
         await enqueueDomainEvent(tx, {
@@ -1376,17 +1368,14 @@ export class ProjectService {
         }
 
         await transaction.project.delete({ where: { id } });
-        await transaction.operationLog.create({
-          data: {
+        await writeOperationLog(transaction, {
             userId: actor.sub,
             module: 'project',
             action: 'purge',
             targetType: 'project',
             targetId: id,
             beforeData: project,
-            afterData: Prisma.JsonNull,
             result: 'success',
-          },
         });
         return { project, blockers: null };
       },
@@ -1400,8 +1389,7 @@ export class ProjectService {
         `财务 ${result.blockers.financialRecords} 条`,
         `审计 ${result.blockers.audits} 条`,
       ].join('、');
-      await this.prisma.operationLog.create({
-        data: {
+      await writeOperationLog(this.prisma, {
           userId: actor.sub,
           module: 'project',
           action: 'purge',
@@ -1411,7 +1399,6 @@ export class ProjectService {
           afterData: result.blockers,
           result: 'failure',
           errorReason: `物理删除被依赖记录阻止：${reason}`,
-        },
       });
       throw new ConflictException(`项目存在关联记录，禁止物理删除：${reason}`);
     }
@@ -1533,13 +1520,12 @@ export class ProjectService {
   }
 
   private canArchiveProject(
-    project: { createdBy: string | null; projectManagerId: string | null },
+    project: { status: string | null },
     actor?: ProjectActor,
   ): boolean {
-    if (!actor || typeof actor === 'string') return false;
-    return (
-      this.isSuperAdmin(actor) ||
-      (project.createdBy === actor.sub && project.projectManagerId === actor.sub)
+    return Boolean(
+      this.hasPermission(actor, 'project:archive') &&
+        ['COMPLETED', 'CANCELLED'].includes(project.status ?? ''),
     );
   }
 
@@ -1724,8 +1710,7 @@ export class ProjectService {
     ) {
       return;
     }
-    await this.prisma.operationLog.create({
-      data: {
+    await writeOperationLog(this.prisma, {
         userId: actor.sub,
         module: 'project',
         action,
@@ -1735,7 +1720,6 @@ export class ProjectService {
         userAgent: context.userAgent?.slice(0, 500),
         result: 'success',
         afterData,
-      },
     });
   }
 

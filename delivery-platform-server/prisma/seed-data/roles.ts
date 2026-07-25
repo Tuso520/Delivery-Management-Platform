@@ -1,15 +1,15 @@
 import { DataScopeType, PrismaClient } from '@prisma/client';
 
-import { getAllPermissionCodes } from './permissions';
+import { getAllPermissionCodes, type PermissionCode } from './permissions';
 
 interface RoleSeed {
   roleCode: string;
   roleName: string;
   description: string;
   defaultDataScope: DataScopeType;
-  permissionCodes: string[];
+  permissionCodes: PermissionCode[];
 }
-const roleCatalog: RoleSeed[] = [
+export const roleCatalog = [
   {
     roleCode: 'SUPER_ADMIN',
     roleName: '超级管理员',
@@ -360,7 +360,9 @@ const roleCatalog: RoleSeed[] = [
       'project:view_acceptance',
     ],
   },
-];
+] satisfies readonly RoleSeed[];
+
+export type RoleCode = (typeof roleCatalog)[number]['roleCode'];
 export const roleDefs: RoleSeed[] = roleCatalog;
 export async function seedRoles(prisma: PrismaClient): Promise<void> {
   for (const role of roleDefs) {

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import type { ReviewTask } from '@/types/review'
+import type { ReviewTask } from '@/platform/approval/review.types'
 import { canActOnReviewTask } from '../review-presenter'
 
 function source(file: string): string {
@@ -89,7 +89,7 @@ describe('unified file review page contract', () => {
 
   it('previews the pending FileVersion and contains no legacy review routes', () => {
     const page = source('src/views/review/pending.vue')
-    const api = source('src/api/review.ts')
+    const api = source('src/platform/approval/review.api.ts')
     const dialog = source('src/views/review/components/ReviewDialog.vue')
     const combined = `${page}\n${api}\n${dialog}`
 

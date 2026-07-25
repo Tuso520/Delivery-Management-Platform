@@ -1,6 +1,14 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+  Optional,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
+import { AuditRecoveryService } from '../../modules/operation-log/audit-recovery.service';
+import { OperationLogService } from '../../modules/operation-log/operation-log.service';
 import {
   PERMISSIONS_KEY,
   type PermissionRequirement,
@@ -8,48 +16,56 @@ import {
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
+  constructor(
+    private readonly reflector: Reflector,
+    private readonly operationLog: OperationLogService,
+    @Optional() private readonly auditRecovery?: AuditRecoveryService,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
-    const metadata = this.reflector.getAllAndOverride<
-      PermissionRequirement | string[]
-    >(PERMISSIONS_KEY, [context.getHandler(), context.getClass()]);
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const metadata = this.reflector.getAllAndOverride<PermissionRequirement>(
+      PERMISSIONS_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    if (!metadata) return true;
 
-    if (!metadata) {
-      return true;
-    }
-
-    const requirement: PermissionRequirement = Array.isArray(metadata)
-      ? { any: metadata }
-      : metadata;
-    const all = requirement.all ?? [];
-    const any = requirement.any ?? [];
+    const all = metadata.all ?? [];
+    const any = metadata.any ?? [];
     if (all.length === 0 && any.length === 0) return true;
 
-    const { user } = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest();
+    const { user } = request;
+    if (!user) throw new ForbiddenException('未登录');
 
-    if (!user) {
-      throw new ForbiddenException('未登录');
-    }
+    const userPermissions: string[] = user.permissions ?? [];
+    const userRoles: string[] = user.roles ?? [];
+    if (userRoles.includes('SUPER_ADMIN')) return true;
 
-    const userPermissions: string[] = user.permissions || [];
-    const userRoles: string[] = user.roles || [];
-
-    if (userRoles.includes('SUPER_ADMIN')) {
-      return true;
-    }
-
-    const hasAll = all.every((permission) =>
-      userPermissions.includes(permission),
-    );
+    const hasAll = all.every((permission) => userPermissions.includes(permission));
     const hasAny =
       any.length === 0 ||
       any.some((permission) => userPermissions.includes(permission));
+    if (hasAll && hasAny) return true;
 
-    if (!hasAll || !hasAny) {
-      throw new ForbiddenException('没有足够的操作权限');
+    const audit = {
+      userId: user.sub,
+      module: 'permission',
+      action: 'deny',
+      targetType: 'http_route',
+      targetId: `${request.method ?? 'UNKNOWN'} ${request.path ?? 'unknown'}`,
+      result: 'failure',
+      afterData: {
+        requiredAll: all,
+        requiredAny: any,
+        path: request.path ?? 'unknown',
+      },
+      errorReason: '权限校验未通过',
+    };
+    try {
+      await this.operationLog.log(audit);
+    } catch (error) {
+      await this.auditRecovery?.capture(audit, error);
     }
-
-    return true;
+    throw new ForbiddenException('没有足够的操作权限');
   }
 }

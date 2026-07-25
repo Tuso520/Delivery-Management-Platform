@@ -16,8 +16,8 @@ WORKDIR /app
 RUN npm install --global pnpm@10.34.4 --registry=${NPM_REGISTRY}
 
 RUN sed -i \
-    -e "s#http://deb.debian.org/debian-security#${DEBIAN_SECURITY_MIRROR}#g" \
-    -e "s#http://deb.debian.org/debian#${DEBIAN_MIRROR}#g" \
+    -e "s#https\?://deb.debian.org/debian-security#${DEBIAN_SECURITY_MIRROR}#g" \
+    -e "s#https\?://deb.debian.org/debian#${DEBIAN_MIRROR}#g" \
     /etc/apt/sources.list.d/debian.sources \
   && apt-get update \
   && apt-get install -y --no-install-recommends python3 make g++ openssl ca-certificates \
@@ -51,8 +51,8 @@ LABEL org.opencontainers.image.title="delivery-platform-backend" \
       org.opencontainers.image.version="${RELEASE_ID}"
 
 RUN sed -i \
-    -e "s#http://deb.debian.org/debian-security#${DEBIAN_SECURITY_MIRROR}#g" \
-    -e "s#http://deb.debian.org/debian#${DEBIAN_MIRROR}#g" \
+    -e "s#https\?://deb.debian.org/debian-security#${DEBIAN_SECURITY_MIRROR}#g" \
+    -e "s#https\?://deb.debian.org/debian#${DEBIAN_MIRROR}#g" \
     /etc/apt/sources.list.d/debian.sources \
   && apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates curl default-mysql-client \

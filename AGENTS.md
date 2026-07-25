@@ -45,9 +45,21 @@ delivery-platform-server/src/
   modules/
 
 delivery-platform-web/src/
+  app/
   api/
-  components/
-  composables/
+  domains/
+    knowledge/
+    archive/
+    project/
+  platform/
+    permission/
+    notification/
+    approval/
+    file/
+    file-preview/
+    workflow/
+  design-system/
+  shared/
   layouts/
   locales/
   router/
@@ -118,19 +130,22 @@ docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.p
 1. `AGENTS.md`
 2. `docs/frontend-architecture-refactored.md`
 3. `docs/backend-architecture-refactored.md`
-4. `README.md`
-5. `docs/product.md`
-6. `docs/architecture.md`
-7. `docs/development.md`
-8. `docs/deployment.md`
-9. `docs/testing.md`
-10. `docs/security.md`
-11. `docs/frontend-architecture.md`
-12. `docs/frontend-business-flows.md`
-13. `docs/ui-ux.md`
-14. `docs/open-source.md`
-15. 用户当前消息
+4. `docs/platform-foundation-architecture-v0.1.md`
+5. `docs/final-architecture.md`
+6. `docs/prisma-governance-plan.md`
+7. `docs/architecture-analysis.md`
+8. `docs/cleanup-report.md`
+9. `README.md`
+10. `docs/product.md`
+11. `docs/architecture.md`
+12. `docs/development.md`
+13. `docs/deployment.md`
+14. `docs/testing.md`
+15. `docs/security.md`
+16. `docs/frontend-architecture.md`
+17. `docs/frontend-business-flows.md`
+18. `docs/ui-ux.md`
+19. `docs/open-source.md`
+20. 用户当前消息
 
 如果代码与文档不一致，先按代码核实实际行为，再同步修正文档。
-
-`docs/frontend-rebuild-review.md` 是非规范性讨论稿，不参与上述事实与工程规则优先级；其中条目只有在形成正式决策并同步到对应规范或源码后才有约束力。

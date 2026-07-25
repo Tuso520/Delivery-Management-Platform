@@ -6,6 +6,7 @@ import { createConnection } from 'node:net';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const strictDocker = process.argv.includes('--require-docker');
+const skipLocalEnv = process.argv.includes('--skip-local-env');
 const failures = [];
 const warnings = [];
 
@@ -28,6 +29,13 @@ function portIsOpen(port) {
 
 function commandVersion(command, args = ['--version']) {
   try {
+    if (process.platform === 'win32') {
+      const commandLine = [command, ...args].join(' ');
+      return execFileSync(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', commandLine], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+    }
     return execFileSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   } catch {
     return undefined;
@@ -64,7 +72,9 @@ const docker = commandVersion('docker', ['compose', 'version']);
 if (!docker) (strictDocker ? failures : warnings).push('Docker Compose is unavailable; real dependency acceptance cannot run');
 
 const localEnv = join(root, '.env.local');
-if (!existsSync(localEnv)) {
+if (skipLocalEnv) {
+  warnings.push('local environment value validation skipped by request');
+} else if (!existsSync(localEnv)) {
   warnings.push('.env.local is missing; copy .env.local.example before real dependency acceptance');
 } else {
   const env = readFileSync(localEnv, 'utf8');

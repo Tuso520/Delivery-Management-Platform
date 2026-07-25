@@ -4,7 +4,7 @@
 
 本文是交付管理平台前端的当前实现基线，记录当前工作树中已经存在的页面、路由、状态、请求、权限和文件预览实现，作为开发、评审和验收的统一依据。
 
-- 基线日期：2026-07-16。
+- 基线日期：2026-07-25。
 - 源码范围：`delivery-platform-web/src/`。
 - 技术栈：Vue 3、TypeScript、Vite、Pinia、Vue Router、TanStack Query、Arco Design Vue。
 - 业务流程与状态流转见 [前端业务流程](frontend-business-flows.md)。
@@ -208,7 +208,7 @@ flowchart TD
 | `utils/`               | 对话框、下载、本地化、安全 Markdown、格式化等纯工具 |
 | `views/`               | 页面协调、页面内 mutation 和局部组件                |
 
-当前没有额外 `features/` 目录；跨域展示与权限能力已沉淀到 `components/business/`，领域查询位于 `composables/queries/`，复杂业务编排仍由对应页面负责。
+当前尚未建立 `app/`、`design-system/`、`modules/`、`shared/`、`services/` 五层目标目录；跨域展示与权限能力已沉淀到 `components/business/`，领域查询位于 `composables/queries/`，复杂业务编排仍由对应页面负责。目标职责、依赖方向和渐进迁移顺序见 [基础架构模型 v0.1](platform-foundation-architecture-v0.1.md)。
 
 ## 8. 状态管理与 TanStack Query
 

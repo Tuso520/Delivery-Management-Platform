@@ -1251,6 +1251,38 @@ describe('ProjectService', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
+  it('requires project:archive and a terminal lifecycle status before archiving', async () => {
+    prisma.project.findFirst.mockResolvedValue({
+      id: 'project-1',
+      status: 'COMPLETED',
+      archivedAt: null,
+      revision: 1,
+    });
+
+    await expect(
+      service.changeStatus('project-1', 'archive', { revision: 1 }, sensitiveActor),
+    ).rejects.toThrow(ForbiddenException);
+
+    prisma.project.findFirst.mockResolvedValue({
+      id: 'project-1',
+      status: 'ACTIVE',
+      archivedAt: null,
+      revision: 1,
+    });
+    await expect(
+      service.changeStatus(
+        'project-1',
+        'archive',
+        { revision: 1 },
+        {
+          ...sensitiveActor,
+          permissions: [...sensitiveActor.permissions, 'project:archive'],
+        },
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it('records actual acceptance through the unified progress command', async () => {
     prisma.project.findFirst
       .mockResolvedValueOnce({

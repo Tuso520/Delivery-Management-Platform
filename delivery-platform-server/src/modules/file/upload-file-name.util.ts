@@ -18,7 +18,8 @@ export function withNormalizedUploadFileName(
   file: Express.Multer.File,
 ): Express.Multer.File {
   const normalizedName = normalizeUploadFileName(file.originalname);
-  return normalizedName === file.originalname
-    ? file
-    : { ...file, originalname: normalizedName };
+  if (normalizedName !== file.originalname) {
+    file.originalname = normalizedName;
+  }
+  return file;
 }

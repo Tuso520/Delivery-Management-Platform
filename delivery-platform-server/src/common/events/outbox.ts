@@ -1,5 +1,7 @@
 import { Prisma } from '@prisma/client';
 
+import { getCurrentTraceId } from '../utils/request-trace.util';
+
 export interface DomainEventInput {
   eventType: string;
   aggregateType: string;
@@ -7,6 +9,7 @@ export interface DomainEventInput {
   payload: Prisma.InputJsonValue;
   deduplicationKey?: string;
   availableAt?: Date;
+  traceId?: string;
 }
 
 export async function enqueueDomainEvent(
@@ -21,6 +24,7 @@ export async function enqueueDomainEvent(
       payload: event.payload,
       deduplicationKey: event.deduplicationKey,
       availableAt: event.availableAt,
+      traceId: event.traceId ?? getCurrentTraceId(),
     },
   });
 }

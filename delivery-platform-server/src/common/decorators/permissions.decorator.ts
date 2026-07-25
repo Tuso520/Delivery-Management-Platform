@@ -1,10 +1,12 @@
 import { SetMetadata } from '@nestjs/common';
 
+import type { PermissionCode } from '../../modules/permission/access-control.generated';
+
 export const PERMISSIONS_KEY = 'permissions';
 
 export interface PermissionRequirement {
-  all?: string[];
-  any?: string[];
+  all?: PermissionCode[];
+  any?: PermissionCode[];
 }
 
 export const RequirePermissions = (requirement: PermissionRequirement) =>

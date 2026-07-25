@@ -1,9 +1,9 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import type { RouteLocationNormalizedLoaded, RouteRecordRaw } from 'vue-router'
 
-import BasicLayout from '@/layouts/BasicLayout.vue'
 import NotFound from '@/views/NotFound.vue'
-import type { MenuItem } from '@/store/permission'
+import type { PermissionCode } from '@/platform/permission/access-control.generated'
+import type { MenuItem } from '@/platform/permission/access-policy'
 
 import i18n from '@/locales'
 
@@ -12,7 +12,7 @@ type NavigationSurface = 'main' | 'settings'
 interface ShellRouteMeta {
   title: string
   icon?: string
-  permissions?: string[]
+  permissions?: PermissionCode[]
   navigationGroup?: NavigationSurface
   menu?: boolean
   order?: number
@@ -82,11 +82,12 @@ export function resolveRouteTitle(
   return typeof message === 'string' ? message : key
 }
 
-const ProjectOverviewView = () => import('@/views/project/index.vue')
+const ProjectOverviewView = () => import('@/domains/project/pages/ProjectOverviewPage.vue')
 const ReviewView = () => import('@/views/review/pending.vue')
-const ArchiveTemplateView = () => import('@/views/archive/template.vue')
+const ArchiveTemplateView = () =>
+  import('@/domains/archive/pages/ArchiveTemplatePage.vue')
 const StandardView = () => import('@/views/standard/index.vue')
-const KnowledgeView = () => import('@/views/knowledge/index.vue')
+const KnowledgeView = () => import('@/domains/knowledge/pages/KnowledgePage.vue')
 
 export const shellRoutes: RouteRecordRaw[] = [
   {
@@ -190,7 +191,7 @@ export const shellRoutes: RouteRecordRaw[] = [
       {
         path: '/archive',
         name: 'Archive',
-        component: () => import('@/views/archive/index.vue'),
+        component: () => import('@/domains/archive/pages/ArchiveWorkspacePage.vue'),
         meta: {
           title: 'menu.archive',
           icon: 'Files',
@@ -412,6 +413,7 @@ export const shellRoutes: RouteRecordRaw[] = [
 
 export const menuItems = buildNavigationFromRoutes(shellRoutes, 'main')
 export const settingItems = buildNavigationFromRoutes(shellRoutes, 'settings')[0]?.children ?? []
+export const accessItems = [...menuItems, ...settingItems]
 
 export const routes: RouteRecordRaw[] = [
   {
@@ -422,7 +424,7 @@ export const routes: RouteRecordRaw[] = [
   },
   {
     path: '/',
-    component: BasicLayout,
+    component: () => import('@/layouts/BasicLayout.vue'),
     redirect: '/dashboard',
     children: shellRoutes,
   },

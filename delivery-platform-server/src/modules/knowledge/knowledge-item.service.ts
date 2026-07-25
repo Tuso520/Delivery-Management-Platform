@@ -10,6 +10,7 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
 import type { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { writeOperationLog } from '../operation-log/operation-log.service';
 import { ReviewConfigurationService } from '../review/review-configuration.service';
 import { ReviewTaskService } from '../review/review-task.service';
 import { SystemConfigService } from '../system-config/system-config.service';
@@ -804,14 +805,12 @@ export class KnowledgeItemService {
           throw new ConflictException('知识版本状态已变更，请刷新后重试');
         }
       }
-      await tx.operationLog.create({
-        data: {
+      await writeOperationLog(tx, {
           userId: actor.sub,
           module: 'knowledge',
           action: 'archive',
           targetType: 'knowledge_item',
           targetId: id,
-        },
       });
       return claimedAt;
     });

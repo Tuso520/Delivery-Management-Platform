@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsNotEmpty, IsString, ValidateIf } from 'class-validator';
 
 export const USER_REFERENCE_PURPOSES = [
   'project-member',
@@ -22,8 +22,9 @@ export class QueryUserReferenceDto {
   @ApiPropertyOptional({
     description: '文件审核人选项按项目数据范围过滤时传入项目ID',
   })
-  @IsOptional()
+  @ValidateIf((dto: QueryUserReferenceDto) => dto.purpose === 'file-reviewer')
   @IsString()
+  @IsNotEmpty()
   projectId?: string;
 }
 

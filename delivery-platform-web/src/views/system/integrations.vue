@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Message } from '@arco-design/web-vue'
+import Message from '@arco-design/web-vue/es/message'
 import type { TableColumnData } from '@arco-design/web-vue'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import { useI18n } from 'vue-i18n'
@@ -10,11 +10,11 @@ import {
   BusinessDrawer,
   BusinessModal,
   BusinessTable,
-  Can,
   PageContainer,
   PageToolbar,
   StatusBadge,
-} from '@/components/business'
+} from '@/design-system'
+import { Can } from '@/platform/permission'
 import {
   useIntegrationLogsQuery,
   useIntegrationsQuery,

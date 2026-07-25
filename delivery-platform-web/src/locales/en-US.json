@@ -388,7 +388,7 @@
     "range10to100": "Allowed range: 10 to 100.",
     "defaultRisk": "Default Project Risk Level",
     "maxAttachmentSize": "Maximum Attachment Size (MB)",
-    "range1to1024": "Allowed range: 1 to 1024 MB.",
+    "range1to500": "Allowed range: 1 to 500 MB.",
     "extensions": "Allowed File Extensions",
     "extensionsPlaceholder": "Enter an extension and press Enter, for example pdf",
     "extensionsHint": "Do not include a dot. Letters and numbers only; up to 50 entries.",

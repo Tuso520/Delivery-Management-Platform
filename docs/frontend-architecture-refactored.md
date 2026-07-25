@@ -5,11 +5,12 @@
 本文记录交付管理平台前端当前的**正式信息架构、页面结构、组件体系、权限规则、文件能力和工程边界**。实现细节与完整路由表以 `frontend-architecture.md` 为准。
 
 - 实现清单：`frontend-architecture.md`
-- 实现基线：2026-07-16
+- 实现基线：2026-07-25
 - 适用范围：`delivery-platform-web/`
 - 技术基线：Vue 3、TypeScript、Vite、Pinia、Vue Router、Arco Design Vue
 - 视觉与工程模式：采用 Arco Design Vue 工作台式布局和业务组件体系
 - 本文性质：当前架构规范；后续改动必须同步更新源码、本文和实现清单
+- 目标分层：见 [基础架构模型 v0.1](platform-foundation-architecture-v0.1.md)
 
 ---
 
@@ -154,7 +155,7 @@
 
 ## 3.4 面包屑
 
-所有页面均不显示面包屑。
+App Shell 在内容区统一显示由路由元数据推导的紧凑面包屑；业务页面不得自行维护第二套面包屑。
 
 ## 3.5 路由参数
 
@@ -195,7 +196,7 @@
 
 ### 业务组件
 
-按业务域放入 `features/` 或对应业务目录，例如：
+业务特有组件当前放在对应页面目录；迁移后放入 `modules/<domain>/components/`，例如：
 
 - `ProjectDrawer`
 - `ProjectOverviewCards`
@@ -204,6 +205,8 @@
 - `ArchiveTemplateEditor`
 - `StandardDrawer`
 - `KnowledgeDrawer`
+
+跨业务域但不属于视觉体系的能力进入 `services/`，纯技术共享代码进入 `shared/`。完整依赖规则见 [基础架构模型 v0.1](platform-foundation-architecture-v0.1.md)。
 
 ## 4.3 BusinessTable
 
@@ -1035,7 +1038,7 @@ Playwright `test:smoke:api` 验证真实 NestJS 的 `/health` 和 `/ready`；它
 - 中英文切换
 - 夜间模式
 
-当前前端自动化基线为 41 个 Vitest 文件、186 个用例。登录、项目数据范围、敏感金额裁剪、审核深链、档案目录、真实文件上传、PDF Canvas、标准、知识和设置页面必须在同一目标提交连接 NestJS、MySQL、Redis 与 MinIO 做浏览器验收；详细门禁见 `docs/testing.md`。
+当前前端自动化基线为 42 个 Vitest 文件、192 个用例。登录、项目数据范围、敏感金额裁剪、审核深链、档案目录、真实文件上传、PDF Canvas、标准、知识和设置页面必须在同一目标提交连接 NestJS、MySQL、Redis 与 MinIO 做浏览器验收；详细门禁见 `docs/testing.md`。
 
 ---
 

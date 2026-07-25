@@ -1,22 +1,26 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { Message } from '@arco-design/web-vue'
+import Message from '@arco-design/web-vue/es/message'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 
-import { BusinessTable } from '@/components/business'
+import { BusinessTable } from '@/design-system'
 import {
   useReviewDetailQuery,
   useReviewHistoryQuery,
   useReviewListQuery,
   useReviewSummaryQuery,
 } from '@/composables/queries/useContentQueries'
-import { useFilePreview } from '@/composables/useFilePreview'
+import { useFilePreview } from '@/platform/file-preview/useFilePreview'
 import { firstRouteParam } from '@/router/query-state'
 import { useUserStore } from '@/store/user'
 import { useLocaleStore } from '@/store/locale'
-import type { QueryReviewTaskParams, ReviewTask, ReviewTaskStatus } from '@/types/review'
-import { REVIEW_TASK_STATUSES } from '@/types/review'
+import type {
+  QueryReviewTaskParams,
+  ReviewTask,
+  ReviewTaskStatus,
+} from '@/platform/approval/review.types'
+import { REVIEW_TASK_STATUSES } from '@/platform/approval/review.types'
 
 import ReviewDialog from './components/ReviewDialog.vue'
 import {

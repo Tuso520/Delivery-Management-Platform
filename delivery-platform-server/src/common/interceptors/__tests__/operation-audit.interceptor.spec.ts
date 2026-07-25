@@ -2,6 +2,10 @@ import type { CallHandler, ExecutionContext } from '@nestjs/common';
 import { firstValueFrom, of, throwError } from 'rxjs';
 
 import type { OperationLogService } from '../../../modules/operation-log/operation-log.service';
+import {
+  markCurrentRequestAudited,
+  runWithTraceId,
+} from '../../utils/request-trace.util';
 import { OperationAuditInterceptor } from '../operation-audit.interceptor';
 
 describe('OperationAuditInterceptor', () => {
@@ -107,9 +111,13 @@ describe('OperationAuditInterceptor', () => {
     );
   });
 
-  it('does not let an audit storage outage change a successful response', async () => {
+  it('preserves a successful mutation and records compensation when audit persistence fails', async () => {
     const log = jest.fn().mockRejectedValue(new Error('audit database unavailable'));
-    const interceptor = new OperationAuditInterceptor({ log } as unknown as OperationLogService);
+    const capture = jest.fn().mockResolvedValue(undefined);
+    const interceptor = new OperationAuditInterceptor(
+      { log } as unknown as OperationLogService,
+      { capture } as never,
+    );
     const request = {
       method: 'POST',
       path: '/api/v1/projects',
@@ -127,6 +135,77 @@ describe('OperationAuditInterceptor', () => {
     await expect(firstValueFrom(interceptor.intercept(context, next))).resolves.toEqual({
       id: 'project-1',
     });
+    expect(capture).toHaveBeenCalledWith(
+      expect.objectContaining({ result: 'success', traceId: expect.any(String) }),
+      expect.objectContaining({ message: 'audit database unavailable' }),
+    );
+  });
+
+  it('does not write a second global record after a domain audit was persisted', async () => {
+    const log = jest.fn().mockResolvedValue({ id: 'global-log' });
+    const interceptor = new OperationAuditInterceptor({ log } as unknown as OperationLogService);
+    const request = {
+      method: 'PATCH',
+      path: '/api/v1/projects/project-1',
+      params: { id: 'project-1' },
+      body: { projectName: '项目 A' },
+      user: { sub: 'user-1' },
+      ip: '127.0.0.1',
+      get: jest.fn().mockReturnValue('jest'),
+    };
+    const context = {
+      switchToHttp: () => ({ getRequest: () => request }),
+    } as unknown as ExecutionContext;
+    const next = {
+      handle: jest.fn().mockImplementation(() => {
+        markCurrentRequestAudited();
+        return of({ id: 'project-1' });
+      }),
+    } as CallHandler;
+
+    await expect(
+      runWithTraceId('domain-audit-trace', () =>
+        firstValueFrom(interceptor.intercept(context, next)),
+      ),
+    ).resolves.toEqual({ id: 'project-1' });
+    expect(log).not.toHaveBeenCalled();
+  });
+
+  it('verifies a transactional audit and writes the fallback after a transaction rollback', async () => {
+    const log = jest.fn().mockResolvedValue({ id: 'global-log' });
+    const hasTrace = jest.fn().mockResolvedValue(false);
+    const interceptor = new OperationAuditInterceptor({
+      log,
+      hasTrace,
+    } as unknown as OperationLogService);
+    const request = {
+      method: 'PATCH',
+      path: '/api/v1/projects/project-1',
+      params: { id: 'project-1' },
+      body: {},
+      user: { sub: 'user-1' },
+      traceId: 'rolled-back-audit',
+      ip: '127.0.0.1',
+      get: jest.fn().mockReturnValue('jest'),
+    };
+    const context = {
+      switchToHttp: () => ({ getRequest: () => request }),
+    } as unknown as ExecutionContext;
+    const next = {
+      handle: jest.fn().mockImplementation(() => {
+        markCurrentRequestAudited(false);
+        return of({ id: 'project-1' });
+      }),
+    } as CallHandler;
+
+    await runWithTraceId('rolled-back-audit', () =>
+      firstValueFrom(interceptor.intercept(context, next)),
+    );
+
+    expect(hasTrace).toHaveBeenCalledWith('rolled-back-audit');
+    expect(log).toHaveBeenCalledWith(
+      expect.objectContaining({ traceId: 'rolled-back-audit', result: 'success' }),
+    );
   });
 
   it('skips mutation auditing when authentication has not established an actor', async () => {

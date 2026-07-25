@@ -34,7 +34,7 @@ function repositoryFiles() {
     })
       .trim()
       .split(/\r?\n/)
-      .filter(Boolean);
+      .filter((path) => path && existsSync(join(root, path)));
   } catch {
     return walk(root)
       .map((path) => relative(root, path).replaceAll('\\', '/'))
@@ -53,10 +53,10 @@ const facts = {
   views: webFiles.filter((path) => normalized(path).includes('/src/views/') && path.endsWith('.vue')).length,
   webApi: webFiles.filter(
     (path) =>
-      normalized(path).includes('/src/api/') &&
       path.endsWith('.ts') &&
       !normalized(path).includes('/__tests__/') &&
-      !/\.(spec|test)\.ts$/.test(path),
+      !/\.(spec|test)\.ts$/.test(path) &&
+      (normalized(path).includes('/src/api/') || normalized(path).endsWith('.api.ts')),
   ).length,
   webTests: webFiles.filter((path) => /\.(spec|test)\.ts$/.test(path)).length,
   server: serverFiles.length,

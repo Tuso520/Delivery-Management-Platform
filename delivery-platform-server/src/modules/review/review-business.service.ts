@@ -6,28 +6,15 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-export const REGISTERED_REVIEW_SOURCE_TYPES = [
-  'PROJECT_CREATE',
-  'PROJECT_ARCHIVE',
-  'ARCHIVE_TEMPLATE',
-  'STANDARD',
-  'KNOWLEDGE',
-] as const;
-
-export type RegisteredReviewSourceType = (typeof REGISTERED_REVIEW_SOURCE_TYPES)[number];
+import {
+  REGISTERED_REVIEW_SOURCE_TYPES,
+  type RegisteredReviewSourceType,
+  type ReviewBusinessDecisionInput,
+} from '../platform/workflow/review-source.contract';
 
 const registeredSources = new Set<string>(REGISTERED_REVIEW_SOURCE_TYPES);
 const claimableFileVersionStatuses = ['DRAFT', 'UPLOADED', 'REJECTED'] as const;
 const claimableFileVersionStatusSet = new Set<string>(claimableFileVersionStatuses);
-
-interface ReviewBusinessDecisionInput {
-  sourceType: string;
-  sourceId: string;
-  fileVersionId: string | null;
-  decision: 'APPROVED' | 'REJECTED';
-  actorUserId: string;
-  decidedAt: Date;
-}
 
 interface BusinessFileVersionState {
   id: string;

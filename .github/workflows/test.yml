@@ -22,6 +22,12 @@ jobs:
         run: node scripts/preflight.mjs
       - name: 文档事实检查
         run: node scripts/verify-doc-facts.mjs
+      - name: Architecture boundary check
+        run: node scripts/check-architecture-boundaries.mjs
+      - name: Access control contract check
+        run: node scripts/sync-access-control-contract.mjs
+      - name: Prisma runtime boundary check
+        run: node scripts/check-prisma-runtime-boundaries.mjs
       - name: 安装后端依赖
         working-directory: delivery-platform-server
         run: pnpm install --frozen-lockfile

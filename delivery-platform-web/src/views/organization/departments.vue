@@ -1,17 +1,17 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Message } from '@arco-design/web-vue'
+import Message from '@arco-design/web-vue/es/message'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 
 import { departmentApi } from '@/api/platform'
 import {
   BusinessModal,
   BusinessTable,
-  Can,
   PageContainer,
   PageToolbar,
   StatusBadge,
-} from '@/components/business'
+} from '@/design-system'
+import { Can } from '@/platform/permission'
 import { useDepartmentsQuery, useUsersQuery } from '@/composables/queries/useAdministrationQueries'
 import { queryKeys } from '@/query/keys'
 import type { DepartmentNode } from '@/types/platform'

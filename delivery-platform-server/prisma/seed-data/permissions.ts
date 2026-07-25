@@ -5,7 +5,7 @@ export interface PermissionSeed {
   resource: string;
   action: string;
 }
-const permissionDefs: PermissionSeed[] = [
+export const permissionDefs = [
   // auth
   { permissionCode: 'auth:login', permissionName: '登录系统', resource: 'auth', action: 'login' },
   { permissionCode: 'auth:logout', permissionName: '退出系统', resource: 'auth', action: 'logout' },
@@ -490,7 +490,7 @@ const permissionDefs: PermissionSeed[] = [
     resource: 'integration',
     action: 'view',
   },
-];
+] as const satisfies readonly PermissionSeed[];
 export async function seedPermissions(prisma: PrismaClient): Promise<void> {
   for (const perm of permissionDefs) {
     await prisma.permission.upsert({
@@ -511,6 +511,8 @@ export async function seedPermissions(prisma: PrismaClient): Promise<void> {
   }
   console.log(`Seeded ${permissionDefs.length} active permissions.`);
 }
-export function getAllPermissionCodes(): string[] {
+export type PermissionCode = (typeof permissionDefs)[number]['permissionCode'];
+
+export function getAllPermissionCodes(): PermissionCode[] {
   return permissionDefs.map((permission) => permission.permissionCode);
 }

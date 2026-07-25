@@ -8,7 +8,7 @@
 - 当前业务流程基线：`frontend-business-flows.md`
 - 适用范围：`delivery-platform-server/`
 - 后端技术基线：NestJS、TypeScript、Prisma、MySQL
-- 实现基线：2026-07-16
+- 实现基线：2026-07-25
 - 本文性质：当前架构规范；运行事实以 Prisma schema、Controller/Service 和迁移脚本为准
 
 本文的核心原则是：
@@ -1207,7 +1207,7 @@ POST /files/:id/archive
 
 上传规则：
 
-- 系统设置和档案项同时限制扩展名、大小、文件头与命名规则；部署级 `FILE_UPLOAD_HARD_LIMIT_MB` 只提供不可被运行时配置放大的安全上限。
+- 系统设置和档案项同时限制扩展名、大小、文件头与命名规则；Multipart 正文流式写入 MinIO，全平台固定硬上限为 500 MiB，当前不提供分片或断点续传。
 - 档案命名规则可使用 `{version}`，匹配 `V1.0`、`1.0` 等版本片段；规则不写扩展名时同时匹配文件 basename，例如 `项目立项资料-{version}` 接受 `项目立项资料-V1.0.pdf`。
 - `allowMultipleFiles=false` 允许创建第一个 LogicalFile，只阻止第二个独立 LogicalFile；后续版本必须复用已有逻辑文件。
 - `Idempotency-Key` 与上传人、业务归属、文件名、大小、checksum 绑定；同请求重放返回同一版本，复用到不同内容返回 409。
@@ -2187,7 +2187,7 @@ API 可达性
 9. 操作日志与敏感字段脱敏。
 10. 会话刷新和多端退出。
 
-当前自动化基线为 Prisma Client 按 schema 生成成功，71 个 Jest 套件、507 个用例全部通过。真实环境验收必须在同一目标提交上连续应用 32 个 migration，执行两次 seed、三组 migrator、真实 API、File Worker、Outbox Worker 和浏览器关键流程；证据与发布判定统一记录在 `docs/testing.md`。
+当前自动化基线为 Prisma Client 按 schema 生成成功，74 个 Jest 套件、528 个用例。真实环境验收必须在同一目标提交上连续应用 35 个 migration，执行两次 seed、三组 migrator、真实 API、File Worker、Outbox Worker 和浏览器关键流程；证据与发布判定统一记录在 `docs/testing.md`。
 
 ---
 

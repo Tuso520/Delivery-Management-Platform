@@ -11,6 +11,7 @@ import type sharpFactory from 'sharp';
 import { v4 as uuidv4 } from 'uuid';
 
 import { enqueueDomainEvent } from '../../common/events/outbox';
+import { runWithTraceId } from '../../common/utils/request-trace.util';
 import { PrismaService } from '../../database/prisma.service';
 
 import {
@@ -44,6 +45,7 @@ interface ClaimedJob {
   id: string;
   attempts: number;
   leaseOwner: string;
+  traceId: string | null;
 }
 
 type ProcessingJob = Prisma.FileProcessingJobGetPayload<{
@@ -85,7 +87,7 @@ export class FileProcessingService {
         availableAt: { lte: now },
         attempts: { lt: configuration.maxAttempts },
       },
-      select: { id: true, attempts: true },
+      select: { id: true, attempts: true, traceId: true },
       orderBy: [{ availableAt: 'asc' }, { createdAt: 'asc' }],
       take: batchSize,
     });
@@ -116,9 +118,18 @@ export class FileProcessingService {
       if (claimed.count !== 1) continue;
 
       claimedCount += 1;
-      await this.processClaim(
-        { id: candidate.id, attempts: candidate.attempts + 1, leaseOwner: this.workerId },
-        configuration,
+      await runWithTraceId(
+        candidate.traceId ?? `file-job:${candidate.id}`,
+        () =>
+          this.processClaim(
+            {
+              id: candidate.id,
+              attempts: candidate.attempts + 1,
+              leaseOwner: this.workerId,
+              traceId: candidate.traceId,
+            },
+            configuration,
+          ),
       );
     }
     return claimedCount;

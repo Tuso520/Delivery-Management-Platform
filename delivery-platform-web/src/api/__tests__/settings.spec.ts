@@ -10,11 +10,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/api/request', () => ({ default: mocks }))
 
-import { approvalTemplateApi } from '@/api/approval'
+import { approvalTemplateApi } from '@/platform/approval/approval.api'
 import { currencyApi } from '@/api/currency'
 import { fieldConfigurationApi, fieldOptionsApi } from '@/api/field-configuration'
 import { integrationApi } from '@/api/integration'
-import { notificationApi } from '@/api/notification'
+import { notificationApi } from '@/platform/notification/notification.api'
 import { systemSettingsApi } from '@/api/system'
 
 describe('target settings API contracts', () => {

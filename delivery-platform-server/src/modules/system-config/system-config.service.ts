@@ -64,7 +64,10 @@ export class SystemConfigService {
         defaultRiskLevel: this.parseRiskLevel(values['project.default_risk_level']),
       },
       attachment: {
-        maxSizeMb: this.parseInteger(values['attachment.max_size_mb'], 100),
+        maxSizeMb: Math.min(
+          this.parseInteger(values['attachment.max_size_mb'], 500),
+          500,
+        ),
       },
       file: {
         allowedExtensions: this.parseExtensions(values['file.allowed_extensions']),
