@@ -5,10 +5,7 @@ import {
   resolveActiveMenuGroupPath,
   type MenuItem,
 } from '@/store/permission'
-import menuDashboardIcon from '@/assets/figma/project-overview/menu-dashboard.svg'
-import menuProjectIcon from '@/assets/figma/project-overview/menu-project.svg'
-import menuKnowledgeIcon from '@/assets/figma/project-overview/menu-knowledge.svg'
-import menuSettingsIcon from '@/assets/figma/project-overview/menu-settings.svg'
+import { resolveSidebarMenuIcon } from '@/layouts/sidebar-navigation'
 import menuChevronIcon from '@/assets/figma/project-overview/menu-chevron.svg'
 import menuChevronActiveIcon from '@/assets/figma/project-overview/menu-chevron-active.svg'
 import menuFoldIcon from '@/assets/figma/project-overview/menu-fold.svg'
@@ -35,18 +32,6 @@ watch(
 function resolveMenuTitle(menu: MenuItem): string {
   return t(menu.title)
 }
-function figmaMenuIcon(menu: MenuItem): string {
-  if (menu.name === 'DeliveryGroup' || menu.path.includes('project')) return menuProjectIcon
-  if (menu.path.includes('standard') || menu.path.includes('knowledge')) return menuKnowledgeIcon
-  if (menu.path.includes('system') || menu.path.includes('setting')) return menuSettingsIcon
-  return menuDashboardIcon
-}
-function figmaMenuIconName(menu: MenuItem): 'dashboard' | 'project' | 'knowledge' | 'settings' {
-  if (menu.name === 'DeliveryGroup' || menu.path.includes('project')) return 'project'
-  if (menu.path.includes('standard') || menu.path.includes('knowledge')) return 'knowledge'
-  if (menu.path.includes('system') || menu.path.includes('setting')) return 'settings'
-  return 'dashboard'
-}
 function isActiveGroup(menu: MenuItem): boolean {
   return Boolean(menu.children?.some((child) => child.path === props.activeMenu))
 }
@@ -65,13 +50,22 @@ function isActiveGroup(menu: MenuItem): boolean {
       @menu-item-click="emit('select', $event)"
     >
       <template v-for="menu in menus" :key="menu.name">
-        <a-sub-menu v-if="menu.children?.length" :key="menu.path">
+        <a-sub-menu
+          v-if="menu.children?.length"
+          :key="menu.path"
+          :class="{ 'is-active-group': isActiveGroup(menu) }"
+        >
           <template #icon>
             <span class="menu-icon-box">
-              <img
-                :class="['figma-menu-icon', `figma-menu-icon--${figmaMenuIconName(menu)}`]"
-                :src="figmaMenuIcon(menu)"
-                alt=""
+              <span
+                :class="[
+                  'figma-menu-icon',
+                  `figma-menu-icon--${resolveSidebarMenuIcon(menu).name}`,
+                ]"
+                :style="{
+                  '--menu-icon-url': `url(${resolveSidebarMenuIcon(menu).source})`,
+                }"
+                aria-hidden="true"
               />
             </span>
           </template>
@@ -89,13 +83,22 @@ function isActiveGroup(menu: MenuItem): boolean {
             {{ resolveMenuTitle(child) }}
           </a-menu-item>
         </a-sub-menu>
-        <a-menu-item v-else :key="menu.path">
+        <a-menu-item
+          v-else
+          :key="menu.path"
+          :class="{ 'is-active-menu': menu.path === activeMenu }"
+        >
           <template #icon>
             <span class="menu-icon-box">
-              <img
-                :class="['figma-menu-icon', `figma-menu-icon--${figmaMenuIconName(menu)}`]"
-                :src="figmaMenuIcon(menu)"
-                alt=""
+              <span
+                :class="[
+                  'figma-menu-icon',
+                  `figma-menu-icon--${resolveSidebarMenuIcon(menu).name}`,
+                ]"
+                :style="{
+                  '--menu-icon-url': `url(${resolveSidebarMenuIcon(menu).source})`,
+                }"
+                aria-hidden="true"
               />
             </span>
           </template>
@@ -153,6 +156,10 @@ function isActiveGroup(menu: MenuItem): boolean {
 .sidebar-menu :deep(.arco-menu-inline-header) {
   gap: 16px;
   padding: 0 12px;
+  color: #4e5969;
+}
+.sidebar-menu :deep(.is-active-group > .arco-menu-inline-header) {
+  color: #165dff;
 }
 .sidebar-menu :deep(.arco-menu-inline-content > .arco-menu-item) {
   padding: 0 8px 0 42px;
@@ -186,6 +193,15 @@ function isActiveGroup(menu: MenuItem): boolean {
 }
 .figma-menu-icon {
   display: block;
+  background-color: currentColor;
+  mask-image: var(--menu-icon-url);
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: contain;
+  -webkit-mask-image: var(--menu-icon-url);
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  -webkit-mask-size: contain;
 }
 .figma-menu-icon--dashboard {
   width: 14.861px;

@@ -69,7 +69,8 @@ flowchart TD
 
 - 菜单数据不是第二份静态配置，而是由 `shellRoutes` 中的 `navigationGroup`、`menu`、`order`、`permissions` 生成。
 - 组内使用 Arco `a-sub-menu`，只保留至少有一个可访问叶子的分组。
-- 激活项采用最长路径前缀匹配，因此项目详情深链仍高亮 `/projects`。
+- 一级组图标按路由语义图标显式映射，SVG 只提供形状，颜色由当前激活组统一控制；标题、图标、展开组和选中叶子使用同一 `activeMenu` 结果。
+- 普通路由采用最长路径前缀匹配；路径不共享前缀的隐藏详情路由通过 `meta.activeMenu` 显式关联可见二级菜单。
 - 移动端选择菜单后自动收起侧栏。
 
 ### 3.3 `AppHeader`
@@ -88,7 +89,7 @@ flowchart TD
 - `shellRoutes` 同时提供路由注册、菜单分组、标题、图标、顺序和路由权限。
 - `buildNavigationFromRoutes()` 生成 `menuItems` 和 `settingItems`。
 - `meta.permissions` 是“任一权限满足即可”；`SUPER_ADMIN` 绕过前端菜单和路由权限判断。
-- 隐藏路由不进入菜单，但与可见路由一样经过登录和权限守卫。
+- 隐藏路由不进入菜单，但与可见路由一样经过登录和权限守卫；需要保持导航上下文时必须声明 `meta.activeMenu`。
 
 ### 4.2 公共路由与重定向
 

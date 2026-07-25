@@ -17,6 +17,7 @@ interface ShellRouteMeta {
   menu?: boolean
   order?: number
   hidden?: boolean
+  activeMenu?: string
 }
 
 function shellMeta(route: RouteRecordRaw): ShellRouteMeta {
@@ -131,6 +132,7 @@ export const shellRoutes: RouteRecordRaw[] = [
         meta: {
           title: 'menu.review',
           hidden: true,
+          activeMenu: '/review',
         },
       },
     ],
@@ -166,6 +168,7 @@ export const shellRoutes: RouteRecordRaw[] = [
           title: 'routes.projectCreate',
           permissions: ['project:create'],
           hidden: true,
+          activeMenu: '/projects',
         },
       },
       {
@@ -176,6 +179,7 @@ export const shellRoutes: RouteRecordRaw[] = [
           title: 'routes.projectEdit',
           permissions: ['project:update'],
           hidden: true,
+          activeMenu: '/projects',
         },
       },
       {
@@ -186,6 +190,7 @@ export const shellRoutes: RouteRecordRaw[] = [
           title: 'routes.projectDetail',
           permissions: ['project:view'],
           hidden: true,
+          activeMenu: '/projects',
         },
       },
       {
@@ -220,6 +225,7 @@ export const shellRoutes: RouteRecordRaw[] = [
           title: 'menu.archiveTemplate',
           permissions: ['archive_template:view'],
           hidden: true,
+          activeMenu: '/archive-template',
         },
       },
     ],
@@ -255,6 +261,7 @@ export const shellRoutes: RouteRecordRaw[] = [
           title: 'menu.standard',
           permissions: ['standard:view'],
           hidden: true,
+          activeMenu: '/standards',
         },
       },
       {
@@ -277,6 +284,7 @@ export const shellRoutes: RouteRecordRaw[] = [
           title: 'menu.knowledge',
           permissions: ['knowledge:view'],
           hidden: true,
+          activeMenu: '/knowledge',
         },
       },
       {

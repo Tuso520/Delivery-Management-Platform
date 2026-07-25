@@ -100,19 +100,20 @@ UI E2E 默认使用 Playwright 锁定版本的 Chromium，CI 通过 `playwright 
 
 ## 2026-07-26 当前验收状态
 
-当前仓库扫描范围为 637 个受版本控制或待纳入版本控制的文件。源码静态事实为：前端 187 个 TypeScript/Vue 文件、24 个 `views/` Vue 文件、26 个运行时 API 文件和 42 个测试文件；后端 249 个 TypeScript 文件、28 个 Controller、42 个 Service、30 个 Module、167 个 HTTP 路由和 35 个 Prisma migration。
+当前仓库扫描范围为 639 个受版本控制或待纳入版本控制的文件。源码静态事实为：前端 189 个 TypeScript/Vue 文件、24 个 `views/` Vue 文件、26 个运行时 API 文件和 43 个测试文件；后端 249 个 TypeScript 文件、28 个 Controller、42 个 Service、30 个 Module、167 个 HTTP 路由和 35 个 Prisma migration。
 
 发布迁移验收脚本核对应用迁移与校验和、二次 seed 全库表计数以及 MinIO/File Worker/Outbox Worker 一致性。
 
 本地自动化结果：
 
-- 前端 Vitest：42 个测试文件、193 个用例全部通过。
+- 前端 Vitest：43 个测试文件、215 个用例全部通过。
 - 前端 ESLint（只读模式）、TypeScript 类型检查和生产构建通过；普通 JavaScript 单块 500 KiB、CSS 450 KiB、独立 Worker 1500 KiB 和总 JavaScript 2600 KiB 预算门禁通过。
 - 后端 Prisma Client：按当前 schema 生成成功。
 - 后端 Jest：74 个测试套件、528 个用例全部通过。
 - 后端 ESLint（只读模式）、TypeScript 类型检查、生产构建和 Prisma schema 校验通过。
 - 代码规则扫描：前后端源码未发现新增无约束 `any`，未发现其他 UI 组件库导入；前端常规业务请求集中在 `src/api/`，统一文件预览组件按只读会话使用受控 `fetch` 获取预览内容。
 - 文档事实已按当前项目字段、统一进度命令、归档列表、迁移数量和测试数量校正。
+- 侧栏导航已在同一目标源码构建的前端容器中连接真实 NestJS、MySQL、Redis 和 MinIO 验收：15 个可见二级入口与 7 个创建/详情深链的一级图标、标题、展开组和二级选中项全部对应，浏览器控制台无错误。
 
 本地真实依赖验收使用 Ubuntu 24.04 WSL2、Docker Engine 29.6.1、Docker Compose 5.3.1、MySQL 8、Redis 7、MinIO、当前 NestJS/前端源码、File Worker 和 Outbox Worker。前后端及迁移镜像已从 Dockerfile 冷构建成功；构建容器固定使用 Node 20 和 pnpm 10.34.4。
 

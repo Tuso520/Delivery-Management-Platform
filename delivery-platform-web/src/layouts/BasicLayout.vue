@@ -17,6 +17,7 @@ import type { MenuItem } from '@/store/permission'
 import AppHeader from './components/AppHeader.vue'
 import AppSidebar from './components/AppSidebar.vue'
 import AppBreadcrumb from './components/AppBreadcrumb.vue'
+import { buildSettingsMenuGroup } from './sidebar-navigation'
 
 const router = useRouter()
 const route = useRoute()
@@ -37,18 +38,14 @@ const filteredSettings = computed(() =>
 )
 const filteredMenus = computed<MenuItem[]>(() => [
   ...permissionStore.filteredMenus,
-  ...(filteredSettings.value.length
-    ? [
-        {
-          path: '/settings-group',
-          name: 'SettingsGroup',
-          title: 'menu.system',
-          children: filteredSettings.value,
-        },
-      ]
-    : []),
+  ...(filteredSettings.value.length ? [buildSettingsMenuGroup(filteredSettings.value)] : []),
 ])
-const activeMenu = computed(() => resolveActiveMenuPath(filteredMenus.value, route.path))
+const activeMenu = computed(() =>
+  resolveActiveMenuPath(
+    filteredMenus.value,
+    typeof route.meta.activeMenu === 'string' ? route.meta.activeMenu : route.path,
+  ),
+)
 const activeGroup = computed(() =>
   filteredMenus.value.find((menu) =>
     menu.children?.some((child) => child.path === activeMenu.value),

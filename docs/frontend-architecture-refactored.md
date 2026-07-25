@@ -1038,7 +1038,7 @@ Playwright `test:smoke:api` 验证真实 NestJS 的 `/health` 和 `/ready`；它
 - 中英文切换
 - 夜间模式
 
-当前前端自动化基线为 42 个 Vitest 文件、192 个用例。登录、项目数据范围、敏感金额裁剪、审核深链、档案目录、真实文件上传、PDF Canvas、标准、知识和设置页面必须在同一目标提交连接 NestJS、MySQL、Redis 与 MinIO 做浏览器验收；详细门禁见 `docs/testing.md`。
+当前前端自动化基线为 43 个 Vitest 文件、215 个用例。登录、项目数据范围、敏感金额裁剪、审核深链、档案目录、真实文件上传、PDF Canvas、标准、知识和设置页面必须在同一目标提交连接 NestJS、MySQL、Redis 与 MinIO 做浏览器验收；详细门禁见 `docs/testing.md`。
 
 ---
 

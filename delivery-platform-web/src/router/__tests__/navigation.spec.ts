@@ -96,6 +96,16 @@ describe('application navigation', () => {
     expect(router.resolve('/standards/create').name).toBe('NotFound')
   })
 
+  it('links hidden entity routes to their visible secondary menu', () => {
+    expect(router.resolve('/review/review-1').meta.activeMenu).toBe('/review')
+    expect(router.resolve('/projects/create').meta.activeMenu).toBe('/projects')
+    expect(router.resolve('/projects/project-1/edit').meta.activeMenu).toBe('/projects')
+    expect(router.resolve('/projects/project-1').meta.activeMenu).toBe('/projects')
+    expect(router.resolve('/archive-templates/template-1').meta.activeMenu).toBe('/archive-template')
+    expect(router.resolve('/standards/standard-1').meta.activeMenu).toBe('/standards')
+    expect(router.resolve('/knowledge/knowledge-1').meta.activeMenu).toBe('/knowledge')
+  })
+
   it('does not register retired domains or compatibility aliases', () => {
     const records = flattenRoutes(shellRoutes)
     const registeredPaths = records.map((record) => record.path)
