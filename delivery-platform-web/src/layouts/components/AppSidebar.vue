@@ -57,14 +57,14 @@ function isActiveGroup(menu: MenuItem): boolean {
         >
           <template #icon>
             <span class="menu-icon-box">
-              <span
+              <img
                 :class="[
                   'figma-menu-icon',
                   `figma-menu-icon--${resolveSidebarMenuIcon(menu).name}`,
+                  { 'is-active': isActiveGroup(menu) },
                 ]"
-                :style="{
-                  '--menu-icon-url': `url(${resolveSidebarMenuIcon(menu).source})`,
-                }"
+                :src="resolveSidebarMenuIcon(menu).source"
+                alt=""
                 aria-hidden="true"
               />
             </span>
@@ -90,14 +90,14 @@ function isActiveGroup(menu: MenuItem): boolean {
         >
           <template #icon>
             <span class="menu-icon-box">
-              <span
+              <img
                 :class="[
                   'figma-menu-icon',
                   `figma-menu-icon--${resolveSidebarMenuIcon(menu).name}`,
+                  { 'is-active': menu.path === activeMenu },
                 ]"
-                :style="{
-                  '--menu-icon-url': `url(${resolveSidebarMenuIcon(menu).source})`,
-                }"
+                :src="resolveSidebarMenuIcon(menu).source"
+                alt=""
                 aria-hidden="true"
               />
             </span>
@@ -193,15 +193,13 @@ function isActiveGroup(menu: MenuItem): boolean {
 }
 .figma-menu-icon {
   display: block;
-  background-color: currentColor;
-  mask-image: var(--menu-icon-url);
-  mask-repeat: no-repeat;
-  mask-position: center;
-  mask-size: contain;
-  -webkit-mask-image: var(--menu-icon-url);
-  -webkit-mask-repeat: no-repeat;
-  -webkit-mask-position: center;
-  -webkit-mask-size: contain;
+  object-fit: contain;
+  filter: brightness(0) saturate(100%) invert(33%) sepia(11%) saturate(836%)
+    hue-rotate(175deg) brightness(95%) contrast(88%);
+}
+.figma-menu-icon.is-active {
+  filter: brightness(0) saturate(100%) invert(34%) sepia(98%) saturate(4697%)
+    hue-rotate(220deg) brightness(103%) contrast(101%);
 }
 .figma-menu-icon--dashboard {
   width: 14.861px;
