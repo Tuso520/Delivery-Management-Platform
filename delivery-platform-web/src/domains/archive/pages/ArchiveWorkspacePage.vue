@@ -988,15 +988,19 @@ watch(
   white-space: nowrap;
 }
 
-.archive-file-table {
+.archive-files :deep(.business-table) {
   height: 515px;
   min-height: 515px;
-  flex: 1 1 515px;
+  flex: 0 0 515px;
   overflow: hidden;
   border-top: 1px solid var(--archive-border);
 }
 
-.archive-file-table :deep(.business-table__viewport) {
+.archive-files :deep(.archive-file-table) {
+  height: 100%;
+}
+
+.archive-files :deep(.business-table__viewport) {
   height: 100%;
   max-height: none;
   overflow: auto;
@@ -1004,17 +1008,17 @@ watch(
   scrollbar-width: thin;
 }
 
-.archive-file-table :deep(.business-table__viewport::-webkit-scrollbar) {
+.archive-files :deep(.business-table__viewport::-webkit-scrollbar) {
   width: 4px;
   height: 4px;
 }
 
-.archive-file-table :deep(.business-table__viewport::-webkit-scrollbar-thumb) {
+.archive-files :deep(.business-table__viewport::-webkit-scrollbar-thumb) {
   border-radius: 2px;
   background: #c7c7c7;
 }
 
-.archive-file-table :deep(.arco-table-th) {
+.archive-files :deep(.archive-file-table .arco-table-th) {
   height: 44px;
   padding: 0 12px;
   border-color: var(--archive-border);
@@ -1024,7 +1028,7 @@ watch(
   font-weight: 500;
 }
 
-.archive-file-table :deep(.arco-table-td) {
+.archive-files :deep(.archive-file-table .arco-table-td) {
   height: 44px;
   padding: 0 12px;
   border-color: var(--archive-border);
@@ -1033,11 +1037,11 @@ watch(
   font-weight: 400;
 }
 
-.archive-file-table :deep(.arco-table-tr:nth-child(even) .arco-table-td) {
+.archive-files :deep(.archive-file-table .arco-table-tr:nth-child(even) .arco-table-td) {
   background: #f7f8fa;
 }
 
-.archive-file-table :deep(.arco-table-cell) {
+.archive-files :deep(.archive-file-table .arco-table-cell) {
   width: 100%;
   overflow: hidden;
   padding: 0;
