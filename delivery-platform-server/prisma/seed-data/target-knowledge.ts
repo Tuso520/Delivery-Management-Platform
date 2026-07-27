@@ -101,23 +101,64 @@ export async function seedTargetKnowledge(prisma: PrismaClient): Promise<void> {
 
   await prisma.$transaction(
     async (tx) => {
+      const field = await tx.dictionaryCategory.findUnique({
+        where: { categoryCode: 'KNOWLEDGE_CATEGORY' },
+        select: { id: true },
+      });
+      if (!field) {
+        throw new Error('目标知识种子依赖 KNOWLEDGE_CATEGORY 字段配置');
+      }
       for (const [moduleIndex, module] of catalog.modules.entries()) {
         const existingCategory = await tx.knowledgeCategory.findFirst({
           where: { name: module.name, parentId: null },
-          select: { id: true },
+          select: { id: true, fieldOptionId: true },
         });
         const categoryId =
           existingCategory?.id ?? uuidv5(`knowledge-category:${module.id}`, TARGET_SEED_NAMESPACE);
+        const existingFieldOption = existingCategory?.fieldOptionId
+          ? await tx.dictionaryItem.findUnique({
+              where: { id: existingCategory.fieldOptionId },
+              select: { id: true },
+            })
+          : await tx.dictionaryItem.findFirst({
+              where: {
+                categoryId: field.id,
+                itemLabel: module.name,
+                deletedAt: null,
+              },
+              select: { id: true },
+            });
+        const fieldOptionId =
+          existingFieldOption?.id ??
+          uuidv5(`knowledge-category-option:${module.id}`, TARGET_SEED_NAMESPACE);
+        await tx.dictionaryItem.upsert({
+          where: { id: fieldOptionId },
+          create: {
+            id: fieldOptionId,
+            categoryId: field.id,
+            itemValue: `LEGACY_${module.id.toUpperCase().replaceAll('-', '_')}`,
+            itemLabel: module.name,
+            itemCode: `LEGACY_${module.id.toUpperCase().replaceAll('-', '_')}`,
+            description: module.description,
+            sortOrder: 1000 + (moduleIndex + 1) * 10,
+            status: 'Inactive',
+            isSystemDefault: false,
+          },
+          update: {},
+        });
         await tx.knowledgeCategory.upsert({
           where: { id: categoryId },
           create: {
             id: categoryId,
             name: module.name,
             description: module.description,
+            fieldOptionId,
             sortOrder: (moduleIndex + 1) * 10,
             status: 'Active',
           },
-          update: {},
+          update: {
+            fieldOptionId,
+          },
         });
 
         for (const content of module.contents) {

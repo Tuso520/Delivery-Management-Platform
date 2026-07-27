@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { FieldConfigurationModule } from '../field-configuration/field-configuration.module';
 import { OperationLogModule } from '../operation-log/operation-log.module';
 import { ReviewModule } from '../review/review.module';
 
@@ -9,7 +10,7 @@ import { ArchiveTemplateController } from './archive-template.controller';
 import { ArchiveTemplateService } from './archive-template.service';
 
 @Module({
-  imports: [OperationLogModule, ReviewModule],
+  imports: [FieldConfigurationModule, OperationLogModule, ReviewModule],
   controllers: [ArchiveTemplateController, ArchiveTemplateVersionController],
   providers: [ArchiveTemplateService, ArchiveTemplateVersionService],
   exports: [ArchiveTemplateService, ArchiveTemplateVersionService],

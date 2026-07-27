@@ -3,15 +3,12 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 
 const PROJECT_DICTIONARIES = {
-  projectTypes: ['PROJECT_TYPE', 'project_type'],
-  contractTypes: ['CONTRACT_TYPE', 'contract_type'],
-  productTypes: ['PRODUCT_TYPE', 'product_type'],
-  projectKeywords: ['PROJECT_KEYWORD', 'project_keyword'],
+  customerTypes: ['CUSTOMER_TYPE'],
+  projectTypes: ['PROJECT_TYPE'],
+  contractTypes: ['CONTRACT_TYPE'],
+  productTypes: ['PRODUCT_TYPE'],
+  projectKeywords: ['PROJECT_KEYWORD'],
 } as const;
-
-// Existing projects and integrations may still submit these pre-field-center
-// values. They remain write-compatible without becoming selectable defaults.
-const LEGACY_PROJECT_TYPE_VALUES = new Set(['DATA_CENTER', 'LIGHTWEIGHT']);
 
 type ProjectDictionaryKey = keyof typeof PROJECT_DICTIONARIES;
 
@@ -25,6 +22,7 @@ export interface ProjectConfigurationOption {
 export type ProjectConfiguration = Record<ProjectDictionaryKey, ProjectConfigurationOption[]>;
 
 interface ConfigurableProjectFields {
+  customerType?: string;
   projectType?: string;
   contractType?: string;
   product?: string;
@@ -68,6 +66,7 @@ export class ProjectConfigurationService {
   async validate(fields: ConfigurableProjectFields): Promise<void> {
     if (
       fields.projectType === undefined &&
+      fields.customerType === undefined &&
       fields.contractType === undefined &&
       fields.product === undefined &&
       fields.keywords === undefined
@@ -75,12 +74,8 @@ export class ProjectConfigurationService {
       return;
     }
     const configuration = await this.getConfiguration();
-    this.assertValue(
-      '项目类型',
-      fields.projectType,
-      configuration.projectTypes,
-      LEGACY_PROJECT_TYPE_VALUES,
-    );
+    this.assertValue('客户类型', fields.customerType, configuration.customerTypes);
+    this.assertValue('项目类型', fields.projectType, configuration.projectTypes);
     this.assertValue('合同类型', fields.contractType, configuration.contractTypes);
     this.assertValue('产品类型', fields.product, configuration.productTypes);
     for (const keyword of fields.keywords ?? []) {
@@ -93,10 +88,12 @@ export class ProjectConfigurationService {
     current: ConfigurableProjectFields,
   ): Promise<void> {
     const configuration = await this.getConfiguration();
-    this.assertValue('项目类型', fields.projectType, configuration.projectTypes, new Set([
-      ...LEGACY_PROJECT_TYPE_VALUES,
-      ...(current.projectType ? [current.projectType] : []),
-    ]));
+    this.assertValue('客户类型', fields.customerType, configuration.customerTypes, new Set(
+      current.customerType ? [current.customerType] : [],
+    ));
+    this.assertValue('项目类型', fields.projectType, configuration.projectTypes, new Set(
+      current.projectType ? [current.projectType] : [],
+    ));
     this.assertValue('合同类型', fields.contractType, configuration.contractTypes, new Set(
       current.contractType ? [current.contractType] : [],
     ));

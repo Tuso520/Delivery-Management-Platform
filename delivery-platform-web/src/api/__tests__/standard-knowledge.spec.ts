@@ -105,6 +105,28 @@ describe('knowledge target API contract', () => {
     expect(mocks.get).toHaveBeenNthCalledWith(3, '/knowledge/knowledge-1')
   })
 
+  it('omits empty optional filters before validating the list request', () => {
+    knowledgeApi.getList({
+      page: 1,
+      pageSize: 20,
+      keyword: '   ',
+      categoryId: '',
+      contentType: undefined,
+      status: undefined,
+    })
+
+    expect(mocks.get).toHaveBeenCalledWith('/knowledge', {
+      params: {
+        page: 1,
+        pageSize: 20,
+        keyword: undefined,
+        categoryId: undefined,
+        contentType: undefined,
+        status: undefined,
+      },
+    })
+  })
+
   it('creates FILE, MARKDOWN or LINK content through an explicit version', () => {
     const payload = {
       version: 'V2.0',

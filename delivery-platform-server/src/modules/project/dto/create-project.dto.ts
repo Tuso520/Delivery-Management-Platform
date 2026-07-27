@@ -7,7 +7,6 @@ import {
   IsNumber,
   IsDecimal,
   IsDateString,
-  IsIn,
   IsArray,
   ArrayUnique,
   IsBoolean,
@@ -18,10 +17,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 
-import {
-  PROJECT_DELIVERY_STAGES,
-  type ProjectDeliveryStage,
-} from '../project.constants';
+import type { ProjectDeliveryStage } from '../project.constants';
 
 const MONEY_PATTERN = /^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/;
 
@@ -115,6 +111,12 @@ export class CreateProjectDto {
   @MaxLength(200)
   customerName?: string | null;
 
+  @ApiPropertyOptional({ description: '客户类型（取自字段配置）' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  customerType?: string;
+
   @ApiPropertyOptional({ description: '项目类型（取自项目配置）' })
   @IsOptional()
   @IsString()
@@ -197,9 +199,10 @@ export class CreateProjectDto {
   @IsString()
   softwareOwnerId?: string | null;
 
-  @ApiPropertyOptional({ description: '目标交付阶段', enum: PROJECT_DELIVERY_STAGES })
+  @ApiPropertyOptional({ description: '目标交付阶段，取值来自 PROJECT_STAGE 字段配置' })
   @IsOptional()
-  @IsIn(PROJECT_DELIVERY_STAGES)
+  @IsString()
+  @Matches(/^[A-Z][A-Z0-9_-]{0,99}$/u)
   deliveryStage?: ProjectDeliveryStage;
 
   @ApiPropertyOptional({ description: '项目进度百分比' })

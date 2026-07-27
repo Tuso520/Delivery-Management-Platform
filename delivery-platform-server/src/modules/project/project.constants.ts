@@ -8,19 +8,7 @@ export const PROJECT_LIFECYCLE_STATUSES = [
 
 export type ProjectLifecycleStatus = (typeof PROJECT_LIFECYCLE_STATUSES)[number];
 
-export const PROJECT_DELIVERY_STAGES = [
-  'STARTUP',
-  'DEEPENING',
-  'PROCUREMENT',
-  'CONSTRUCTION',
-  'COMMISSIONING',
-  'TESTING',
-  'INTERNAL_ACCEPTANCE',
-  'EXTERNAL_ACCEPTANCE',
-  'WARRANTY',
-] as const;
-
-export type ProjectDeliveryStage = (typeof PROJECT_DELIVERY_STAGES)[number];
+export type ProjectDeliveryStage = string;
 
 export const PROJECT_SUMMARY_FILTERS = [
   'ALL',

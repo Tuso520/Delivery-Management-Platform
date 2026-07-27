@@ -1,6 +1,5 @@
 import request from './request'
 import type {
-  CreateCurrencyDto,
   Currency,
   CurrencyRateSyncResult,
   UpdateCurrencyDto,
@@ -9,10 +8,6 @@ import type {
 export const currencyApi = {
   getList() {
     return request.get<Currency[]>('/currencies')
-  },
-
-  create(data: CreateCurrencyDto) {
-    return request.post<Currency>('/currencies', data)
   },
 
   updateByCode(code: string, data: UpdateCurrencyDto) {
@@ -29,9 +24,5 @@ export const currencyApi = {
 
   unlockRate(code: string) {
     return request.post<Currency>(`/currencies/${code}/unlock`)
-  },
-
-  disable(code: string) {
-    return request.post<Currency>(`/currencies/${code}/disable`)
   },
 }

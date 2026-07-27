@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { FieldConfigurationModule } from '../field-configuration/field-configuration.module';
 import { ProjectArchiveModule } from '../project-archive/project-archive.module';
 import { ReviewModule } from '../review/review.module';
 import { SystemConfigModule } from '../system-config/system-config.module';
@@ -15,6 +16,7 @@ import { ProjectService } from './project.service';
     ProjectArchiveModule,
     ReviewModule,
     SystemConfigModule,
+    FieldConfigurationModule,
   ],
   controllers: [ProjectController],
   providers: [ProjectService, ProjectConfigurationService],

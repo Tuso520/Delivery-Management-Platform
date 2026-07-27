@@ -320,7 +320,7 @@ export const shellRoutes: RouteRecordRaw[] = [
           icon: 'User',
           permissions: ['user:view'],
           menu: true,
-          order: 10,
+          order: 50,
         },
       },
       {
@@ -332,7 +332,7 @@ export const shellRoutes: RouteRecordRaw[] = [
           icon: 'Coin',
           permissions: ['currency:view', 'currency:manage'],
           menu: true,
-          order: 20,
+          order: 10,
         },
       },
       {
@@ -343,8 +343,8 @@ export const shellRoutes: RouteRecordRaw[] = [
           title: 'menu.systemNotification',
           icon: 'Bell',
           permissions: ['notification_rule:view', 'notification_rule:manage'],
-          menu: true,
-          order: 30,
+          menu: false,
+          order: 60,
         },
       },
       {
@@ -356,7 +356,7 @@ export const shellRoutes: RouteRecordRaw[] = [
           icon: 'Finished',
           permissions: ['approval_config:view', 'approval_config:manage'],
           menu: true,
-          order: 40,
+          order: 20,
         },
       },
       {
@@ -366,9 +366,9 @@ export const shellRoutes: RouteRecordRaw[] = [
         meta: {
           title: 'menu.systemFields',
           icon: 'List',
-          permissions: ['field_setting:manage'],
+          permissions: ['field_setting:view'],
           menu: true,
-          order: 50,
+          order: 30,
         },
       },
       {
@@ -379,8 +379,8 @@ export const shellRoutes: RouteRecordRaw[] = [
           title: 'menu.systemIntegration',
           icon: 'Link',
           permissions: ['integration:view', 'integration:manage'],
-          menu: true,
-          order: 60,
+          menu: false,
+          order: 70,
         },
       },
       {
@@ -392,7 +392,7 @@ export const shellRoutes: RouteRecordRaw[] = [
           icon: 'Operation',
           permissions: ['system_setting:view', 'system_setting:manage'],
           menu: true,
-          order: 70,
+          order: 40,
         },
       },
     ],

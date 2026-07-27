@@ -74,7 +74,8 @@ describe('business component adoption contract', () => {
   it('keeps archive template columns stable at their declared total width', () => {
     const archiveTemplate = source('src/domains/archive/pages/ArchiveTemplatePage.vue')
     expect(archiveTemplate).toContain('preserve-column-widths')
-    expect(archiveTemplate).toContain(':scroll="{ x: 1250 }"')
+    expect(archiveTemplate).toContain(':scroll="{ x: 1080 }"')
+    expect(archiveTemplate).toContain('grid-template-columns: minmax(0, 1fr)')
   })
 
   it('removes the global page and Arco compatibility layer', () => {

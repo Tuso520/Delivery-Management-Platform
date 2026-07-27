@@ -1,7 +1,6 @@
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 import { useQueries, useQuery } from '@tanstack/vue-query'
 
-import { countryApi } from '@/api/country'
 import { currencyApi } from '@/api/currency'
 import { languageApi } from '@/api/language'
 import { archiveTemplateApi } from '@/domains/archive/api/archive-template.api'
@@ -24,25 +23,11 @@ export function useProjectSummaryQuery(scope: MaybeRefOrGetter<ProjectScope> = '
   })
 }
 
-export function useArchivedProjectListQuery(params: MaybeRefOrGetter<QueryProjectDto>) {
-  return useQuery({
-    queryKey: computed(() => [...queryKeys.projects.lists(), 'archived', toValue(params)]),
-    queryFn: () => projectApi.getArchived({ ...toValue(params) }),
-  })
-}
-
 export function useProjectDetailQuery(projectId: MaybeRefOrGetter<string>) {
   return useQuery({
     queryKey: computed(() => queryKeys.projects.detail(toValue(projectId))),
     queryFn: () => projectApi.getById(toValue(projectId)),
     enabled: computed(() => Boolean(toValue(projectId))),
-  })
-}
-
-export function useProjectConfigurationQuery() {
-  return useQuery({
-    queryKey: queryKeys.projects.formOptions(),
-    queryFn: () => projectApi.getConfiguration(),
   })
 }
 
@@ -75,14 +60,9 @@ export function useProjectUserOptionsQuery(
 
 export function useProjectFormOptionsQueries(
   includeArchiveTemplates: MaybeRefOrGetter<boolean> = true,
-  includeInactiveConfiguration: MaybeRefOrGetter<boolean> = false,
 ) {
   return useQueries({
     queries: [
-      {
-        queryKey: [...queryKeys.projects.formOptions(), 'countries'] as const,
-        queryFn: () => countryApi.getList({ pageSize: 100, status: 'Active' }),
-      },
       {
         queryKey: [...queryKeys.projects.formOptions(), 'currencies'] as const,
         queryFn: currencyApi.getList,
@@ -90,10 +70,6 @@ export function useProjectFormOptionsQueries(
       {
         queryKey: [...queryKeys.projects.formOptions(), 'languages'] as const,
         queryFn: languageApi.getList,
-      },
-      {
-        queryKey: computed(() => [...queryKeys.projects.formOptions(), { includeInactive: toValue(includeInactiveConfiguration) }]),
-        queryFn: () => projectApi.getConfiguration(toValue(includeInactiveConfiguration)),
       },
       {
         queryKey: queryKeys.projects.userOptions('sales-owner'),

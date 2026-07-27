@@ -10,19 +10,7 @@ export const PROJECT_LIFECYCLE_STATUSES = [
 
 export type ProjectLifecycleStatus = (typeof PROJECT_LIFECYCLE_STATUSES)[number]
 
-export const PROJECT_DELIVERY_STAGES = [
-  'STARTUP',
-  'DEEPENING',
-  'PROCUREMENT',
-  'CONSTRUCTION',
-  'COMMISSIONING',
-  'TESTING',
-  'INTERNAL_ACCEPTANCE',
-  'EXTERNAL_ACCEPTANCE',
-  'WARRANTY',
-] as const
-
-export type ProjectDeliveryStage = (typeof PROJECT_DELIVERY_STAGES)[number]
+export type ProjectDeliveryStage = string
 
 export const PROJECT_SUMMARY_FILTERS = [
   'ALL',
@@ -42,24 +30,11 @@ export type ProjectSort =
 
 export type AcceptanceTimeType = 'ACTUAL' | 'EXPECTED' | 'NONE'
 export type ProjectScope = 'mine' | 'all'
+export type CustomerType = string
 export type ProjectType = string
 export type ContractType = string
 export type ProductType = string
 export type ProjectKeyword = string
-
-export interface ProjectConfigurationOption {
-  value: string
-  label: string
-  extraData: unknown
-  status: 'Active' | 'Inactive'
-}
-
-export interface ProjectConfiguration {
-  projectTypes: ProjectConfigurationOption[]
-  contractTypes: ProjectConfigurationOption[]
-  productTypes: ProjectConfigurationOption[]
-  projectKeywords: ProjectConfigurationOption[]
-}
 
 export interface Project {
   id: string
@@ -73,6 +48,7 @@ export interface Project {
   city?: string | null
   cityName?: string | null
   customerName?: string | null
+  customerType?: CustomerType | null
   projectType?: ProjectType | null
   contractType?: ContractType | null
   product?: ProductType | null
@@ -186,6 +162,7 @@ interface ProjectCommonWriteFields {
   countryCode?: string
   city?: string | null
   customerName?: string | null
+  customerType?: CustomerType
   projectType?: ProjectType
   contractType?: ContractType
   product?: ProductType
@@ -234,6 +211,7 @@ export interface QueryProjectDto {
   pageSize: number
   keyword?: string
   scope?: ProjectScope
+  customerType?: CustomerType
   summaryFilter?: ProjectSummaryFilter
   sort?: ProjectSort
 }
@@ -260,37 +238,11 @@ export type ProjectStatusCommand =
   | 'archive'
   | 'restore'
 
-export const PROJECT_STATUS_OPTIONS: ReadonlyArray<{
-  value: ProjectLifecycleStatus
-  label: string
-}> = [
-  { value: 'DRAFT', label: 'status.DRAFT' },
-  { value: 'ACTIVE', label: 'status.ACTIVE' },
-  { value: 'PAUSED', label: 'status.PAUSED' },
-  { value: 'COMPLETED', label: 'status.COMPLETED' },
-  { value: 'CANCELLED', label: 'status.CANCELLED' },
-]
-
 export const RISK_LEVEL_OPTIONS = [
   { value: 'Low', label: 'risk.Low' },
   { value: 'Medium', label: 'risk.Medium' },
   { value: 'High', label: 'risk.High' },
   { value: 'Critical', label: 'risk.Critical' },
-]
-
-export const STAGE_OPTIONS: ReadonlyArray<{
-  value: ProjectDeliveryStage
-  label: string
-}> = [
-  { value: 'STARTUP', label: 'stage.STARTUP' },
-  { value: 'DEEPENING', label: 'stage.DEEPENING' },
-  { value: 'PROCUREMENT', label: 'stage.PROCUREMENT' },
-  { value: 'CONSTRUCTION', label: 'stage.CONSTRUCTION' },
-  { value: 'COMMISSIONING', label: 'stage.COMMISSIONING' },
-  { value: 'TESTING', label: 'stage.TESTING' },
-  { value: 'INTERNAL_ACCEPTANCE', label: 'stage.INTERNAL_ACCEPTANCE' },
-  { value: 'EXTERNAL_ACCEPTANCE', label: 'stage.EXTERNAL_ACCEPTANCE' },
-  { value: 'WARRANTY', label: 'stage.WARRANTY' },
 ]
 
 export const PROJECT_ROLE_OPTIONS = [

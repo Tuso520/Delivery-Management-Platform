@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { FieldConfigurationModule } from '../field-configuration/field-configuration.module';
 import { OperationLogModule } from '../operation-log/operation-log.module';
 import { ReviewModule } from '../review/review.module';
 
@@ -16,7 +17,7 @@ import {
 import { ReferenceService } from './reference.service';
 
 @Module({
-  imports: [OperationLogModule, ReviewModule, IntegrationModule],
+  imports: [FieldConfigurationModule, OperationLogModule, ReviewModule, IntegrationModule],
   controllers: [
     DictionaryController,
     ReferenceController,

@@ -285,12 +285,6 @@ export const permissionDefs = [
     action: 'version_view',
   },
   {
-    permissionCode: 'archive:item:create_temporary',
-    permissionName: '创建临时档案项',
-    resource: 'archive',
-    action: 'item_create_temporary',
-  },
-  {
     permissionCode: 'archive:item:archive',
     permissionName: '归档档案项',
     resource: 'archive',
@@ -437,10 +431,28 @@ export const permissionDefs = [
     action: 'view',
   },
   {
-    permissionCode: 'field_setting:manage',
-    permissionName: '管理字段设置',
+    permissionCode: 'field_setting:view',
+    permissionName: '查看字段配置',
     resource: 'field_setting',
-    action: 'manage',
+    action: 'view',
+  },
+  {
+    permissionCode: 'field_setting:edit',
+    permissionName: '编辑字段配置',
+    resource: 'field_setting',
+    action: 'edit',
+  },
+  {
+    permissionCode: 'field_setting:option_create',
+    permissionName: '新增字段枚举',
+    resource: 'field_setting',
+    action: 'option_create',
+  },
+  {
+    permissionCode: 'field_setting:option_toggle',
+    permissionName: '启停字段枚举',
+    resource: 'field_setting',
+    action: 'option_toggle',
   },
   {
     permissionCode: 'currency:manage',

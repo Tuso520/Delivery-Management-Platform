@@ -212,7 +212,6 @@ archive:view
 archive:upload
 archive:replace
 archive:version:view
-archive:item:create_temporary
 archive:item:archive
 archive:template:sync
 ```
@@ -954,28 +953,7 @@ changeDescription
 - `MAJOR` 递增主版本。
 - 审核失败版本不成为当前正式版本。
 
-## 7.5 临时档案项
-
-```http
-POST /projects/:projectId/archive-folders/:folderId/items
-```
-
-要求：
-
-```text
-archive:item:create_temporary
-```
-
-必须记录：
-
-- 创建原因
-- 创建人
-- 负责人
-- 是否必填
-- 是否需要审核
-- 是否建议加入档案模版
-
-## 7.6 档案项归档
+## 7.5 档案项归档
 
 ```http
 POST /projects/:projectId/archive-items/:itemId/archive
@@ -984,7 +962,7 @@ POST /projects/:projectId/archive-items/:itemId/restore
 
 不能直接删除有文件历史的档案项。
 
-## 7.7 模版差异同步
+## 7.6 模版差异同步
 
 ```http
 GET  /projects/:projectId/archive-template-diff
@@ -1638,7 +1616,7 @@ POST /tools/:id/disable
 
 # 14. 设置模块
 
-设置齿轮对所有用户可见，但每个配置页和动作单独鉴权。
+系统设置位于左侧第四个导航分组，每个配置页和动作独立鉴权；后端不依赖前端菜单可见性授权。
 
 ## 14.1 币种与汇率
 
@@ -2108,7 +2086,7 @@ Prisma 迁移已新增目标档案、文件、审核、标准、知识、Outbox�
 | ---- | -------- |
 | 认证权限 | JWT + RefreshSession、权限码、项目数据范围、字段裁剪、受控引用、动态登录限制 |
 | 项目 | 扁平分页与统计、事务创建、必选发布档案模版、幂等创建、revision、专用阶段/状态/验收命令、归档/恢复、受限物理删除 |
-| 档案模版与项目档案 | 两级版本模版、发布快照、项目专属快照、临时项、ADD_ONLY 差异同步、成员软删除 |
+| 档案模版与项目档案 | 两级版本模版、发布快照、项目专属快照、ADD_ONLY 差异同步、成员软删除；临时项创建已退役 |
 | 文件 | LogicalFile/FileAsset/FileVersion、MinIO、上传策略与签名校验、幂等、当前版本指针、只读预览会话 |
 | 文件处理 | 独立 File Worker，租约、过期回收、指数退避、稳定错误码；CAD/Visio/视频/大图/缩略图/XMind 处理按配置执行 |
 | 审核 | ReviewTask/Step/Assignee/ActionEvent，SINGLE/ALL_SIGN/ANY_N/SERIAL/PARALLEL，活动键唯一约束与并发终态保护 |
@@ -2187,7 +2165,7 @@ API 可达性
 9. 操作日志与敏感字段脱敏。
 10. 会话刷新和多端退出。
 
-当前自动化基线为 Prisma Client 按 schema 生成成功，74 个 Jest 套件、528 个用例。真实环境验收必须在同一目标提交上连续应用 35 个 migration，执行两次 seed、三组 migrator、真实 API、File Worker、Outbox Worker 和浏览器关键流程；证据与发布判定统一记录在 `docs/testing.md`。
+当前自动化基线以 `docs/testing.md` 的最新执行结果为准。真实环境验收必须在同一目标提交上连续应用 41 个 migration，执行两次 seed、三组 migrator、真实 API、File Worker、Outbox Worker 和浏览器关键流程；证据与发布判定统一记录在 `docs/testing.md`。
 
 ---
 
@@ -2307,6 +2285,21 @@ POST /files/drafts
 ## 设置
 
 ```text
+/field-config
+/field-config/module/:moduleCode
+/field-config/version
+/field-config/code-availability
+/field-config/:id
+/field-config/:id/status
+/field-config/sort
+/field-config/categories
+/field-config/categories/:categoryId/values
+/field-config/values/:id
+/field-config/values/:id/status
+/field-config/values/:id/reference-status
+/field-options/module/:moduleCode
+/field-options/batch
+/field-options/:code
 /currencies
 /currencies/sync-rates
 /notification-rules
@@ -2353,3 +2346,4 @@ POST /files/drafts
 8. 设置入口所有人可见，写操作按权限控制。
 9. 飞书只承担通讯录同步和通知。
 10. 旧流程、旧页面和重复 API 已退出运行时；历史表只读保留，不继续双轨读写。
+11. `DictionaryCategory/DictionaryItem` 是国家、币种、项目/客户/合同/产品类型、关键词、阶段、状态及标准/知识分类的唯一枚举源；业务 Service 使用同源配置做最终写入校验。

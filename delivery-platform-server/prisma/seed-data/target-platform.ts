@@ -9,11 +9,33 @@ interface DictionarySeed {
   items: ReadonlyArray<{ value: string; label: string }>;
 }
 
+interface FieldConfigurationSeed {
+  fieldType: 'SINGLE_SELECT' | 'MULTI_SELECT';
+  required: boolean;
+  defaultValue?: string;
+  visibleScopes: readonly string[];
+}
+
 const fieldConfigurationCodes = new Set([
   'COUNTRY', 'CUSTOMER_TYPE', 'CONTRACT_TYPE', 'PRODUCT_TYPE', 'PROJECT_KEYWORD',
   'CURRENCY', 'PROJECT_STAGE', 'PROJECT_STATUS', 'STANDARD_CATEGORY',
   'KNOWLEDGE_CATEGORY', 'JOB_POSITION', 'PROJECT_TYPE',
 ]);
+
+const fieldConfigurationMeta: Readonly<Record<string, FieldConfigurationSeed>> = {
+  COUNTRY: { fieldType: 'SINGLE_SELECT', required: true, defaultValue: 'CN', visibleScopes: ['project', 'archive-template', 'approval'] },
+  CUSTOMER_TYPE: { fieldType: 'SINGLE_SELECT', required: true, visibleScopes: ['project', 'archive-template', 'checklist-template', 'document-template'] },
+  CONTRACT_TYPE: { fieldType: 'SINGLE_SELECT', required: true, visibleScopes: ['project'] },
+  PRODUCT_TYPE: { fieldType: 'SINGLE_SELECT', required: false, visibleScopes: ['project'] },
+  PROJECT_KEYWORD: { fieldType: 'MULTI_SELECT', required: false, visibleScopes: ['project'] },
+  CURRENCY: { fieldType: 'SINGLE_SELECT', required: false, defaultValue: 'CNY', visibleScopes: ['project', 'currency', 'payment'] },
+  PROJECT_STAGE: { fieldType: 'SINGLE_SELECT', required: false, defaultValue: 'STARTUP', visibleScopes: ['project', 'dashboard', 'checklist-template', 'document-template'] },
+  PROJECT_STATUS: { fieldType: 'SINGLE_SELECT', required: false, defaultValue: 'ACTIVE', visibleScopes: ['project', 'dashboard'] },
+  STANDARD_CATEGORY: { fieldType: 'SINGLE_SELECT', required: true, visibleScopes: ['standard'] },
+  KNOWLEDGE_CATEGORY: { fieldType: 'SINGLE_SELECT', required: true, visibleScopes: ['knowledge'] },
+  JOB_POSITION: { fieldType: 'SINGLE_SELECT', required: false, visibleScopes: ['identity', 'project'] },
+  PROJECT_TYPE: { fieldType: 'SINGLE_SELECT', required: false, visibleScopes: ['project', 'archive-template'] },
+};
 
 const legacyTargetDictionaries: readonly DictionarySeed[] = [
   {
@@ -140,14 +162,14 @@ const legacyTargetDictionaries: readonly DictionarySeed[] = [
 ] as const;
 
 const fieldConfigurationDictionaries: readonly DictionarySeed[] = [
-  { code: 'COUNTRY', name: '国家', items: [['CN', '中国'], ['VN', '越南'], ['TH', '泰国'], ['ID', '印尼'], ['MY', '马来西亚'], ['OM', '阿曼'], ['SG', '新加坡']].map(([value, label]) => ({ value, label })) },
+  { code: 'COUNTRY', name: '国家', items: [['CN', '中国'], ['VN', '越南'], ['TH', '泰国'], ['ID', '印尼'], ['MY', '马来西亚'], ['OM', '阿曼'], ['SG', '新加坡'], ['AE', '阿联酋']].map(([value, label]) => ({ value, label })) },
   { code: 'CUSTOMER_TYPE', name: '客户类型', items: [['FACTORY', '工厂'], ['IDC', 'IDC'], ['AIDC', 'AIDC'], ['COMMERCIAL', '商业'], ['MEDICAL', '医疗'], ['RAIL_TRANSIT', '轨道交通'], ['STANDARD_PRODUCT', '标品']].map(([value, label]) => ({ value, label })) },
   { code: 'CONTRACT_TYPE', name: '合同类型', items: ['EPC', 'EMC', 'POC'].map((value) => ({ value, label: value })) },
   { code: 'PRODUCT_TYPE', name: '产品类型', items: [{ value: 'DEEPSIGHT', label: 'DeepSight' }, { value: 'DEEPBOT', label: 'DeepBot' }] },
   { code: 'PROJECT_KEYWORD', name: '项目关键词', items: [['NEW_BUILD', '新建项目'], ['RENOVATION', '改造项目'], ['MAIN_MATERIAL', '主材'], ['CONSTRUCTION', '施工'], ['SOFTWARE_COMMISSIONING', '软件调试'], ['HARDWARE_COMMISSIONING', '硬件调试'], ['CHILLER_ENERGY_SAVING', '冷站节能'], ['HVAC_ENERGY_SAVING', '空调节能'], ['AIR_COMPRESSOR_ENERGY_SAVING', '空压节能'], ['FMCS', 'FMCS'], ['ENERGY_MANAGEMENT', '能管'], ['SOFTWARE', '软件'], ['CHILLER_GROUP_CONTROL', '冷站群控'], ['HIGH_EFFICIENCY_PLANT_ROOM', '高效机房'], ['PLATFORM_CUSTOMIZATION', '平台定开'], ['RESEARCH', '课题研究']].map(([value, label]) => ({ value, label })) },
-  { code: 'CURRENCY', name: '合同币种', items: [['CNY', '人民币'], ['VND', '越南盾'], ['THB', '泰铢'], ['IDR', '印尼盾'], ['MYR', '马来西亚林吉特'], ['OMR', '阿曼里亚尔'], ['SGD', '新加坡元']].map(([value, label]) => ({ value, label })) },
+  { code: 'CURRENCY', name: '合同币种', items: [['CNY', '人民币'], ['USD', '美元'], ['VND', '越南盾'], ['THB', '泰铢'], ['IDR', '印尼盾'], ['MYR', '马来西亚林吉特'], ['OMR', '阿曼里亚尔'], ['SGD', '新加坡元']].map(([value, label]) => ({ value, label })) },
   { code: 'PROJECT_STAGE', name: '项目阶段', items: [['STARTUP', '启动'], ['DEEPENING', '深化'], ['PROCUREMENT', '采购'], ['CONSTRUCTION', '施工'], ['COMMISSIONING', '调试'], ['TESTING', '测试'], ['INTERNAL_ACCEPTANCE', '内验'], ['EXTERNAL_ACCEPTANCE', '外验'], ['WARRANTY', '维保']].map(([value, label]) => ({ value, label })) },
-  { code: 'PROJECT_STATUS', name: '项目状态', items: [{ value: 'ACTIVE', label: '进行中' }, { value: 'COMPLETED', label: '已验收' }] },
+  { code: 'PROJECT_STATUS', name: '项目状态', items: [['DRAFT', '草稿'], ['ACTIVE', '进行中'], ['PAUSED', '已暂停'], ['COMPLETED', '已验收'], ['CANCELLED', '已取消']].map(([value, label]) => ({ value, label })) },
   { code: 'STANDARD_CATEGORY', name: '标准分类', items: [['MANAGEMENT_POLICY', '管理制度'], ['ROLES_RESPONSIBILITIES', '岗位与职责'], ['PROCESS_SOP', '流程与SOP'], ['TECH_PRODUCT_STANDARD', '技术与产品标准'], ['WORK_SPECIFICATION', '作业规范'], ['INSPECTION_ACCEPTANCE', '检查与验收'], ['TEMPLATE_FORM', '模板与表单']].map(([value, label]) => ({ value, label })) },
   { code: 'KNOWLEDGE_CATEGORY', name: '知识分类', items: [['PROJECT_CASE_REVIEW', '项目案例与复盘'], ['BEST_PRACTICE', '最佳实践与经验'], ['FAQ_TROUBLESHOOTING', '常见问题与故障'], ['TRAINING_TUTORIAL', '培训与教程'], ['EXTERNAL_STANDARD', '外部标准与资料'], ['RESOURCE_TOOL', '资源与工具']].map(([value, label]) => ({ value, label })) },
   { code: 'JOB_POSITION', name: '岗位', items: [['PROJECT_MANAGER', '项目经理'], ['ELECTRICAL_ENGINEER', '电气工程师'], ['SOFTWARE_ENGINEER', '软件工程师'], ['OPERATIONS_ENGINEER', '运维工程师'], ['SALES', '销售'], ['PRESALES', '售前']].map(([value, label]) => ({ value, label })) },
@@ -204,6 +226,7 @@ export async function seedTargetPlatform(prisma: PrismaClient): Promise<void> {
 
 export async function seedTargetDictionaries(prisma: PrismaClient, actorId?: string): Promise<void> {
   for (const [categoryIndex, definition] of targetDictionaries.entries()) {
+    const fieldMeta = fieldConfigurationMeta[definition.code];
     const category = await prisma.dictionaryCategory.upsert({
       where: { categoryCode: definition.code },
       create: {
@@ -211,6 +234,14 @@ export async function seedTargetDictionaries(prisma: PrismaClient, actorId?: str
         categoryName: definition.name,
         sortOrder: (categoryIndex + 1) * 10,
         isSystem: fieldConfigurationCodes.has(definition.code),
+        fieldType: fieldMeta?.fieldType ?? 'SINGLE_SELECT',
+        required: fieldMeta?.required ?? false,
+        defaultValue: fieldMeta?.defaultValue,
+        visibleScopes: [...(fieldMeta?.visibleScopes ?? [])],
+        permissions: {
+          view: [],
+          edit: ['field_setting:edit'],
+        },
         createdBy: actorId,
         updatedBy: actorId,
       },
@@ -219,7 +250,7 @@ export async function seedTargetDictionaries(prisma: PrismaClient, actorId?: str
     });
 
     for (const [itemIndex, item] of definition.items.entries()) {
-      await prisma.dictionaryItem.upsert({
+      const fieldOption = await prisma.dictionaryItem.upsert({
         where: {
           categoryId_itemValue: {
             categoryId: category.id,
@@ -237,7 +268,24 @@ export async function seedTargetDictionaries(prisma: PrismaClient, actorId?: str
           updatedBy: actorId,
         },
         update: {},
+        select: { id: true },
       });
+      if (definition.code === 'KNOWLEDGE_CATEGORY') {
+        await prisma.knowledgeCategory.upsert({
+          where: { id: fieldOption.id },
+          create: {
+            id: fieldOption.id,
+            name: item.label,
+            description: null,
+            fieldOptionId: fieldOption.id,
+            sortOrder: (itemIndex + 1) * 10,
+            status: 'Active',
+          },
+          update: {
+            fieldOptionId: fieldOption.id,
+          },
+        });
+      }
     }
   }
 }

@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma, RiskLevel, type Project } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
@@ -12,6 +13,7 @@ import type { PaginatedResult } from '../../common/dto/pagination.dto';
 import { enqueueDomainEvent } from '../../common/events/outbox';
 import { PrismaService } from '../../database/prisma.service';
 import type { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { FieldConfigurationService } from '../field-configuration/field-configuration.service';
 import { writeOperationLog } from '../operation-log/operation-log.service';
 import { ProjectArchiveSnapshotService } from '../project-archive/project-archive-snapshot.service';
 import { ReviewConfigurationService } from '../review/review-configuration.service';
@@ -33,7 +35,6 @@ import {
   validateProjectCreateIdempotencyKey,
 } from './project-create-idempotency';
 import {
-  PROJECT_DELIVERY_STAGES,
   type ProjectDeliveryStage,
   type ProjectLifecycleStatus,
   type ProjectSummaryFilter,
@@ -86,6 +87,7 @@ interface ProjectListItem {
   countryName: string | null;
   city: string | null;
   customerName: string | null;
+  customerType: string | null;
   projectType: string | null;
   contractType: string | null;
   product: string | null;
@@ -139,6 +141,7 @@ export class ProjectService {
     private readonly reviewTasks: ReviewTaskService,
     private readonly systemConfig: SystemConfigService,
     private readonly projectConfiguration: ProjectConfigurationService,
+    @Optional() private readonly fieldConfiguration?: FieldConfigurationService,
   ) {}
 
   async findAll(
@@ -154,6 +157,7 @@ export class ProjectService {
       scope: requestedScope = 'mine',
       lifecycleStatus,
       countryCode,
+      customerType,
       projectType,
       summaryFilter,
       sort,
@@ -189,6 +193,10 @@ export class ProjectService {
       filters.push({ projectType });
     }
 
+    if (customerType) {
+      filters.push({ customerType });
+    }
+
     if (summaryFilter && summaryFilter !== 'ALL') {
       filters.push(this.buildSummaryFilterWhere(summaryFilter));
     }
@@ -209,6 +217,7 @@ export class ProjectService {
           countryCode: true,
           city: true,
           customerName: true,
+          customerType: true,
           projectType: true,
           contractType: true,
           product: true,
@@ -282,6 +291,7 @@ export class ProjectService {
         scope: requestedScope,
         lifecycleStatus: lifecycleStatus ?? null,
         countryCode: countryCode ?? null,
+        customerType: customerType ?? null,
         projectType: projectType ?? null,
         summaryFilter: summaryFilter ?? null,
         resultCount: projectList.length,
@@ -539,6 +549,13 @@ export class ProjectService {
       dto.expectedAcceptanceAt,
     );
     await this.projectConfiguration.validate(dto);
+    const deliveryStage = await this.resolveDeliveryStage(dto.deliveryStage);
+    await Promise.all([
+      this.fieldConfiguration?.assertConfiguredValue('COUNTRY', dto.countryCode),
+      this.fieldConfiguration?.assertConfiguredValue('CURRENCY', dto.contractCurrency),
+      this.fieldConfiguration?.assertConfiguredValue('CURRENCY', dto.baseCurrency),
+      this.fieldConfiguration?.assertConfiguredValue('PROJECT_STAGE', deliveryStage),
+    ]);
     await this.validateLeadershipAssignments(dto);
     const customerCode = dto.customerName ? dto.customerName.substring(0, 2).toUpperCase() : 'XX';
 
@@ -559,7 +576,6 @@ export class ProjectService {
       dto.baseCurrency,
       actor,
     );
-    const deliveryStage = dto.deliveryStage ?? 'STARTUP';
     const riskLevel = dto.riskLevel ?? (await this.systemConfig.getDefaultProjectRiskLevel());
     const projectId = uuidv4();
     const preparedReview = dto.saveAsDraft
@@ -578,6 +594,7 @@ export class ProjectService {
             countryCode: dto.countryCode,
             city: dto.city,
             customerName: dto.customerName,
+            customerType: dto.customerType,
             projectType: dto.projectType,
             contractType: dto.contractType,
             product: dto.product,
@@ -768,6 +785,7 @@ export class ProjectService {
       this.assertProgressPermission(actor);
     }
     await this.projectConfiguration.validateUpdate(dto, {
+      customerType: project.customerType ?? undefined,
       projectType: project.projectType ?? undefined,
       contractType: project.contractType ?? undefined,
       product: project.product ?? undefined,
@@ -775,6 +793,28 @@ export class ProjectService {
         ? project.keywords.filter((keyword): keyword is string => typeof keyword === 'string')
         : [],
     });
+    await Promise.all([
+      this.fieldConfiguration?.assertConfiguredValue(
+        'COUNTRY',
+        dto.countryCode,
+        project.countryCode,
+      ),
+      this.fieldConfiguration?.assertConfiguredValue(
+        'CURRENCY',
+        dto.contractCurrency,
+        project.contractCurrency,
+      ),
+      this.fieldConfiguration?.assertConfiguredValue(
+        'CURRENCY',
+        dto.baseCurrency,
+        project.baseCurrency,
+      ),
+      this.fieldConfiguration?.assertConfiguredValue(
+        'PROJECT_STAGE',
+        dto.deliveryStage,
+        project.currentStage,
+      ),
+    ]);
     await this.validateLeadershipAssignments(dto);
 
     const updateData: Prisma.ProjectUpdateInput = {};
@@ -784,6 +824,7 @@ export class ProjectService {
     if (dto.countryCode !== undefined) updateData.countryCode = dto.countryCode;
     if (dto.city !== undefined) updateData.city = dto.city;
     if (dto.customerName !== undefined) updateData.customerName = dto.customerName;
+    if (dto.customerType !== undefined) updateData.customerType = dto.customerType;
     if (dto.projectType !== undefined) updateData.projectType = dto.projectType;
     if (dto.contractType !== undefined) updateData.contractType = dto.contractType;
     if (dto.product !== undefined) updateData.product = dto.product;
@@ -908,10 +949,22 @@ export class ProjectService {
     });
     if (!project) throw new NotFoundException('项目不存在或已归档');
     this.assertProjectRevision(project.revision, dto.revision);
+    await this.fieldConfiguration?.assertConfiguredValue(
+      'PROJECT_STAGE',
+      dto.targetStage,
+      project.currentStage,
+    );
 
+    const configuredStages = (await this.getProjectStageConfiguration()).values;
     const currentStage = this.requireDeliveryStage(project.currentStage, project.id);
-    const currentIndex = PROJECT_DELIVERY_STAGES.indexOf(currentStage);
-    const targetIndex = PROJECT_DELIVERY_STAGES.indexOf(dto.targetStage);
+    const currentIndex = configuredStages.findIndex((stage) => stage.value === currentStage);
+    const targetIndex = configuredStages.findIndex((stage) => stage.value === dto.targetStage);
+    if (currentIndex < 0) {
+      throw new BadRequestException(`项目 ${project.id} 当前阶段未完成字段配置迁移`);
+    }
+    if (targetIndex < 0 || !configuredStages[targetIndex].enabled) {
+      throw new BadRequestException('目标阶段不是当前启用的字段配置项');
+    }
     if (targetIndex < currentIndex && !dto.reason?.trim()) {
       throw new BadRequestException('项目阶段回退必须填写变更说明');
     }
@@ -1129,6 +1182,7 @@ export class ProjectService {
       countryCode: project.countryCode,
       city: project.city,
       customerName: project.customerName,
+      customerType: project.customerType,
       projectType: project.projectType,
       contractType: project.contractType,
       product: project.product,
@@ -1600,18 +1654,48 @@ export class ProjectService {
   private async getCountryNames(countryCodes: string[]): Promise<Map<string, string>> {
     const uniqueCodes = [...new Set(countryCodes.filter(Boolean))];
     if (uniqueCodes.length === 0) return new Map();
-    const countries = await this.prisma.country.findMany({
-      where: { countryCode: { in: uniqueCodes }, status: 'Active' },
-      select: { countryCode: true, nameZh: true },
+    const countryField = await this.prisma.dictionaryCategory.findUnique({
+      where: { categoryCode: 'COUNTRY' },
+      select: {
+        items: {
+          where: { itemValue: { in: uniqueCodes }, deletedAt: null },
+          select: { itemValue: true, itemLabel: true },
+        },
+      },
     });
-    return new Map(countries.map((country) => [country.countryCode, country.nameZh]));
+    return new Map(
+      (countryField?.items ?? []).map((country) => [country.itemValue, country.itemLabel]),
+    );
   }
 
   private requireDeliveryStage(value: string | null, projectId: string): ProjectDeliveryStage {
-    if ((PROJECT_DELIVERY_STAGES as readonly string[]).includes(value ?? '')) {
-      return value as ProjectDeliveryStage;
-    }
+    if (value?.trim()) return value;
     throw new BadRequestException(`项目 ${projectId} 尚未完成目标阶段迁移`);
+  }
+
+  private async getProjectStageConfiguration() {
+    if (!this.fieldConfiguration) {
+      throw new BadRequestException('项目阶段字段配置服务不可用');
+    }
+    const configuration = await this.fieldConfiguration.findEnabled('PROJECT_STAGE');
+    if (!configuration.enabled) {
+      throw new BadRequestException('项目阶段字段配置已停用');
+    }
+    return configuration;
+  }
+
+  private async resolveDeliveryStage(value?: string): Promise<ProjectDeliveryStage> {
+    if (value) return value;
+    const configuration = await this.getProjectStageConfiguration();
+    const defaultValue =
+      typeof configuration.defaultValue === 'string' ? configuration.defaultValue : '';
+    if (
+      defaultValue &&
+      configuration.values.some((option) => option.value === defaultValue && option.enabled)
+    ) {
+      return defaultValue;
+    }
+    throw new BadRequestException('项目阶段字段配置缺少有效默认值');
   }
 
   private requireLifecycleStatus(value: string | null, projectId: string): ProjectLifecycleStatus {

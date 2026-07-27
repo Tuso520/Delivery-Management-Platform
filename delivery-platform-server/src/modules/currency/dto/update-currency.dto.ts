@@ -10,12 +10,6 @@ import {
 } from 'class-validator';
 
 export class UpdateCurrencyDto {
-  @ApiPropertyOptional({ description: '币种名称', example: '美元' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(50)
-  currencyName?: string;
-
   @ApiPropertyOptional({ description: '币种符号', example: '$' })
   @IsOptional()
   @IsString()

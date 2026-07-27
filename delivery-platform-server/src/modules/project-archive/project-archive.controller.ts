@@ -18,7 +18,6 @@ import type { JwtPayload } from '../auth/strategies/jwt.strategy';
 
 import {
   ArchiveProjectItemDto,
-  CreateTemporaryArchiveItemDto,
   SyncProjectArchiveTemplateDto,
 } from './dto/project-archive.dto';
 import { ProjectArchiveTargetService } from './project-archive-target.service';
@@ -54,18 +53,6 @@ export class ProjectArchiveTargetController {
     @CurrentUser() actor: JwtPayload,
   ) {
     return this.projectArchive.syncTemplateAdditions(projectId, dto, actor);
-  }
-
-  @Post('archive-folders/:folderId/items')
-  @RequirePermissions({ all: ['archive:item:create_temporary'] })
-  @ApiOperation({ summary: '创建项目临时档案项' })
-  createTemporaryItem(
-    @Param('projectId') projectId: string,
-    @Param('folderId') folderId: string,
-    @Body() dto: CreateTemporaryArchiveItemDto,
-    @CurrentUser() actor: JwtPayload,
-  ) {
-    return this.projectArchive.createTemporaryItem(projectId, folderId, dto, actor);
   }
 
   @Post('archive-items/:itemId/archive')

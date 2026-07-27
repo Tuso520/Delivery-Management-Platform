@@ -3,12 +3,14 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
 import type { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { FieldConfigurationService } from '../field-configuration/field-configuration.service';
 import { writeOperationLog } from '../operation-log/operation-log.service';
 import { ReviewConfigurationService } from '../review/review-configuration.service';
 import { ReviewTaskService } from '../review/review-task.service';
@@ -210,6 +212,7 @@ export class StandardService {
     private readonly prisma: PrismaService,
     private readonly reviewConfiguration: ReviewConfigurationService,
     private readonly reviewTasks: ReviewTaskService,
+    @Optional() private readonly fieldConfiguration?: FieldConfigurationService,
   ) {}
 
   async getSummary(actor: StandardActor) {
@@ -287,6 +290,7 @@ export class StandardService {
 
   async create(dto: CreateStandardDto, actor: StandardActor) {
     await this.assertCodeAvailable(dto.code);
+    await this.fieldConfiguration?.assertConfiguredValue('STANDARD_CATEGORY', dto.category);
     const fileVersionId = this.requireFileVersionId(dto.fileVersionId);
     await this.assertFileVersionsAccessible([fileVersionId], actor);
     const standardId = await this.prisma.$transaction(async (tx) => {
@@ -351,6 +355,11 @@ export class StandardService {
 
   async update(id: string, dto: UpdateStandardDto, actor: StandardActor) {
     const standard = await this.findEditableMaster(id, actor);
+    await this.fieldConfiguration?.assertConfiguredValue(
+      'STANDARD_CATEGORY',
+      dto.category,
+      standard.category,
+    );
     if (dto.code && dto.code !== standard.code) {
       await this.assertCodeAvailable(dto.code, id);
     }
@@ -724,6 +733,7 @@ export class StandardService {
         id: true,
         code: true,
         status: true,
+        category: true,
         createdBy: true,
         currentPublishedVersionId: true,
       },

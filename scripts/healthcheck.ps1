@@ -14,7 +14,7 @@ function Test-Endpoint {
   if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 300) {
     throw "$Name returned HTTP $($response.StatusCode): $Url"
   }
-  Write-Host "[healthcheck] $Name: ok"
+  Write-Host "[healthcheck] ${Name}: ok"
 }
 
 Test-Endpoint 'frontend' "$BaseUrl/health"

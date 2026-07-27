@@ -32,6 +32,11 @@ export class QueryProjectDto extends PaginationDto {
   @IsString()
   countryCode?: string;
 
+  @ApiPropertyOptional({ description: '客户类型' })
+  @IsOptional()
+  @IsString()
+  customerType?: string;
+
   @ApiPropertyOptional({ description: '项目类型' })
   @IsOptional()
   @IsString()

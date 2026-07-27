@@ -3,10 +3,12 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
+import { FieldConfigurationService } from '../field-configuration/field-configuration.service';
 import { OperationLogService } from '../operation-log/operation-log.service';
 
 import {
@@ -40,6 +42,7 @@ export class ApprovalTemplateService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly operationLog: OperationLogService,
+    @Optional() private readonly fieldConfiguration?: FieldConfigurationService,
   ) {}
 
   async findAll(query: QueryTargetApprovalTemplateDto) {
@@ -71,6 +74,7 @@ export class ApprovalTemplateService {
   }
 
   async create(dto: CreateTargetApprovalTemplateDto, userId: string) {
+    await this.fieldConfiguration?.assertConfiguredValue('COUNTRY', dto.countryCode);
     this.assertRegisteredAdapter(dto.businessType);
     this.assertValidSteps(dto.steps);
     const duplicate = await this.prisma.approvalTemplate.findUnique({
@@ -104,6 +108,11 @@ export class ApprovalTemplateService {
 
   async update(id: string, dto: UpdateTargetApprovalTemplateDto, userId: string) {
     const current = await this.findActive(id);
+    await this.fieldConfiguration?.assertConfiguredValue(
+      'COUNTRY',
+      dto.countryCode,
+      current.countryCode,
+    );
     const businessType = dto.businessType ?? (current.businessType as TargetApprovalBusinessType);
     this.assertRegisteredAdapter(businessType);
     if (dto.steps) this.assertValidSteps(dto.steps);

@@ -27,13 +27,11 @@ describe('target settings API contracts', () => {
     currencyApi.syncRates()
     currencyApi.lockRate('USD')
     currencyApi.unlockRate('USD')
-    currencyApi.disable('USD')
 
     expect(mocks.patch).toHaveBeenCalledWith('/currencies/USD', { cnyRate: 7.2 })
     expect(mocks.post).toHaveBeenNthCalledWith(1, '/currencies/sync-rates')
     expect(mocks.post).toHaveBeenNthCalledWith(2, '/currencies/USD/lock')
     expect(mocks.post).toHaveBeenNthCalledWith(3, '/currencies/USD/unlock')
-    expect(mocks.post).toHaveBeenNthCalledWith(4, '/currencies/USD/disable')
   })
 
   it('uses the standalone notification rule resource with PATCH and toggle', () => {

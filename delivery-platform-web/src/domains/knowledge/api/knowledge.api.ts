@@ -1,7 +1,6 @@
 import request from '@/api/request'
 import { fileApi } from '@/platform/file/file.api'
 import type {
-  KnowledgeCategory,
   CreateKnowledgeItemDto as BaseCreateKnowledgeItemDto,
   CreateKnowledgeVersionDto as BaseCreateKnowledgeVersionDto,
   KnowledgeContentType,
@@ -89,7 +88,14 @@ export const knowledgeApi = {
   },
 
   getList(params: QueryKnowledgeItemDto) {
-    return request.get<KnowledgeItemPage>('/knowledge', { params })
+    const normalizedParams: QueryKnowledgeItemDto = {
+      ...params,
+      keyword: params.keyword?.trim() || undefined,
+      categoryId: params.categoryId || undefined,
+      contentType: params.contentType || undefined,
+      status: params.status || undefined,
+    }
+    return request.get<KnowledgeItemPage>('/knowledge', { params: normalizedParams })
   },
 
   getById(id: string) {
@@ -129,10 +135,5 @@ export const knowledgeApi = {
 
   downloadFile(logicalFileId: string) {
     return fileApi.download(logicalFileId)
-  },
-
-  // Categories
-  getCategories() {
-    return request.get<KnowledgeCategory[]>('/knowledge/categories')
   },
 }

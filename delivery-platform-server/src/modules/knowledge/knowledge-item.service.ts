@@ -53,18 +53,6 @@ interface LockedKnowledgeReviewTaskRow {
   status: string;
 }
 
-interface KnowledgeCategoryNode {
-  id: string;
-  name: string;
-  description: string | null;
-  parentId: string | null;
-  sortOrder: number;
-  status: string;
-  createdAt: Date;
-  updatedAt: Date;
-  children: KnowledgeCategoryNode[];
-}
-
 const editableVersionStatuses = new Set(['DRAFT', 'REJECTED']);
 const managerPermissions = new Set(['knowledge:publish', 'knowledge:archive']);
 
@@ -130,7 +118,13 @@ const publicKnowledgeItemSelect = {
   archivedAt: true,
   createdAt: true,
   updatedAt: true,
-  category: { select: { id: true, name: true } },
+  category: {
+    select: {
+      id: true,
+      name: true,
+      fieldOption: { select: { itemLabel: true } },
+    },
+  },
   creator: { select: { id: true, realName: true } },
   updater: { select: { id: true, realName: true } },
   currentPublishedVersion: {
@@ -144,27 +138,12 @@ const publicKnowledgeItemSelect = {
   },
 } satisfies Prisma.KnowledgeItemSelect;
 
-const publicKnowledgeCategorySelect = {
-  id: true,
-  name: true,
-  description: true,
-  parentId: true,
-  sortOrder: true,
-  status: true,
-  createdAt: true,
-  updatedAt: true,
-} satisfies Prisma.KnowledgeCategorySelect;
-
 type PublicKnowledgeItemRecord = Prisma.KnowledgeItemGetPayload<{
   select: typeof publicKnowledgeItemSelect;
 }>;
 type PublicKnowledgeVersionRecord = Prisma.KnowledgeVersionGetPayload<{
   select: typeof publicKnowledgeVersionSelect;
 }>;
-type PublicKnowledgeCategoryRecord = Prisma.KnowledgeCategoryGetPayload<{
-  select: typeof publicKnowledgeCategorySelect;
-}>;
-
 function mapPublicKnowledgeFileVersion(
   record: NonNullable<PublicKnowledgeVersionRecord['fileVersion']>,
 ) {
@@ -238,27 +217,16 @@ function mapPublicKnowledgeItem(
     effectiveAt: record.effectiveAt,
     createdBy: record.createdBy,
     updatedBy: record.updatedBy,
-    category: { id: record.category.id, name: record.category.name },
+    category: {
+      id: record.category.id,
+      name: record.category.fieldOption?.itemLabel ?? record.category.name,
+    },
     creator: record.creator ? { id: record.creator.id, realName: record.creator.realName } : null,
     updater: record.updater ? { id: record.updater.id, realName: record.updater.realName } : null,
     archivedAt: record.archivedAt,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
     ...(versions === undefined ? {} : { versions: versions.map(mapPublicKnowledgeVersion) }),
-  };
-}
-
-function mapPublicKnowledgeCategory(record: PublicKnowledgeCategoryRecord): KnowledgeCategoryNode {
-  return {
-    id: record.id,
-    name: record.name,
-    description: record.description,
-    parentId: record.parentId,
-    sortOrder: record.sortOrder,
-    status: record.status,
-    createdAt: record.createdAt,
-    updatedAt: record.updatedAt,
-    children: [],
   };
 }
 
@@ -367,28 +335,7 @@ export class KnowledgeItemService {
     };
   }
 
-  async findCategories(): Promise<KnowledgeCategoryNode[]> {
-    const categories = await this.prisma.knowledgeCategory.findMany({
-      where: { status: 'Active' },
-      select: publicKnowledgeCategorySelect,
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-    });
-    const nodes = new Map<string, KnowledgeCategoryNode>(
-      categories.map((category) => [category.id, mapPublicKnowledgeCategory(category)]),
-    );
-    const roots: KnowledgeCategoryNode[] = [];
-    for (const category of categories) {
-      const node = nodes.get(category.id);
-      if (!node) continue;
-      const parent = category.parentId ? nodes.get(category.parentId) : undefined;
-      if (parent) parent.children.push(node);
-      else roots.push(node);
-    }
-    return roots;
-  }
-
   async create(dto: CreateKnowledgeItemDto, actor: KnowledgeActor) {
-    await this.assertCategory(dto.categoryId);
     const content = this.normalizeContent({
       contentType: dto.contentType,
       fileVersionId: dto.fileVersionId ?? null,
@@ -397,6 +344,7 @@ export class KnowledgeItemService {
     });
     const supportingIds = this.normalizeSupportingFileIds(dto.supportingFileVersionIds, false);
     this.assertSupportingFiles(content.fileVersionId, supportingIds);
+    await this.assertCategory(dto.categoryId);
     await this.assertFileVersionsAccessible(
       [content.fileVersionId, ...supportingIds].filter((id): id is string => Boolean(id)),
       actor,
@@ -480,9 +428,9 @@ export class KnowledgeItemService {
   }
 
   async update(id: string, dto: UpdateKnowledgeItemDto, actor: KnowledgeActor) {
-    await this.findEditableMaster(id, actor);
+    const current = await this.findEditableMaster(id, actor);
     if (dto.categoryId) {
-      await this.assertCategory(dto.categoryId);
+      await this.assertCategory(dto.categoryId, current.categoryId);
     }
     await this.prisma.knowledgeItem.update({
       where: { id },
@@ -895,6 +843,7 @@ export class KnowledgeItemService {
       select: {
         id: true,
         status: true,
+        categoryId: true,
         createdBy: true,
         currentPublishedVersionId: true,
       },
@@ -941,14 +890,42 @@ export class KnowledgeItemService {
     return tasks.flatMap((task) => (task.sourceVersionId ? [task.sourceVersionId] : []));
   }
 
-  private async assertCategory(categoryId: string): Promise<void> {
-    const category = await this.prisma.knowledgeCategory.findFirst({
-      where: { id: categoryId, status: 'Active' },
-      select: { id: true },
+  private async assertCategory(categoryId: string, currentCategoryId?: string): Promise<void> {
+    if (categoryId === currentCategoryId) return;
+    const option = await this.prisma.dictionaryItem.findFirst({
+      where: {
+        id: categoryId,
+        status: 'Active',
+        deletedAt: null,
+        category: {
+          categoryCode: 'KNOWLEDGE_CATEGORY',
+          status: 'Active',
+        },
+      },
+      select: {
+        id: true,
+        itemLabel: true,
+        description: true,
+        sortOrder: true,
+      },
     });
-    if (!category) {
+    if (!option) {
       throw new UnprocessableEntityException('知识分类不存在或已停用');
     }
+    await this.prisma.knowledgeCategory.upsert({
+      where: { id: option.id },
+      create: {
+        id: option.id,
+        name: option.itemLabel,
+        description: option.description,
+        fieldOptionId: option.id,
+        sortOrder: option.sortOrder,
+        status: 'Active',
+      },
+      update: {
+        fieldOptionId: option.id,
+      },
+    });
   }
 
   private normalizeContent(content: KnowledgeContent): KnowledgeContent {

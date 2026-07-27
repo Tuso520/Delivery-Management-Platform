@@ -1,13 +1,18 @@
 import { randomUUID } from 'node:crypto';
 
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
 
 import type {
+  CreateFieldConfigurationDto,
   CreateFieldValueDto,
+  FieldConfigurationSortItemDto,
   FieldValueSortItemDto,
+  QueryFieldConfigurationsDto,
   QueryFieldValuesDto,
+  UpdateFieldConfigurationDto,
   UpdateFieldValueDto,
 } from './dto/field-configuration.dto';
 
@@ -25,10 +30,161 @@ interface ReferenceStatus { referenced: boolean; total: number; sources: Referen
 export class FieldConfigurationService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async findConfigurations(query: QueryFieldConfigurationsDto = {}) {
+    const fields = await this.prisma.dictionaryCategory.findMany({
+      where: query.includeDisabled ? undefined : { status: 'Active' },
+      include: {
+        items: {
+          where: { deletedAt: null },
+          orderBy: [{ sortOrder: 'asc' }, { itemLabel: 'asc' }],
+        },
+      },
+      orderBy: [{ sortOrder: 'asc' }, { categoryName: 'asc' }],
+    });
+    return fields
+      .filter((field) => !query.moduleCode || this.toStringArray(field.visibleScopes).includes(query.moduleCode))
+      .map((field) => this.toFieldConfiguration(field));
+  }
+
+  async findConfigurationsByModule(moduleCode: string, includeDisabled = false) {
+    return this.findConfigurations({ moduleCode, includeDisabled });
+  }
+
+  async findBusinessConfigurationsByModule(moduleCode: string) {
+    return this.findConfigurations({ moduleCode, includeDisabled: true });
+  }
+
+  async assertConfiguredValue(
+    fieldCode: string,
+    value?: string | null,
+    currentValue?: string | null,
+  ): Promise<void> {
+    if (value === undefined || value === null || value === '' || value === currentValue) return;
+    const configured = await this.prisma.dictionaryItem.findFirst({
+      where: {
+        itemValue: value,
+        status: 'Active',
+        deletedAt: null,
+        category: {
+          categoryCode: fieldCode.toUpperCase(),
+          status: 'Active',
+        },
+      },
+      select: { id: true },
+    });
+    if (!configured) throw new BadRequestException('提交值不是当前启用的字段配置项');
+  }
+
+  async getConfigurationVersion() {
+    const [categoryVersion, itemVersion] = await Promise.all([
+      this.prisma.dictionaryCategory.aggregate({
+        _max: { updatedAt: true, revision: true },
+        _sum: { revision: true },
+      }),
+      this.prisma.dictionaryItem.aggregate({
+        where: { deletedAt: null },
+        _max: { updatedAt: true },
+      }),
+    ]);
+    const updatedAt = [categoryVersion._max.updatedAt, itemVersion._max.updatedAt]
+      .filter((value): value is Date => value instanceof Date)
+      .sort((left, right) => right.getTime() - left.getTime())[0] ?? null;
+    return {
+      version: `${categoryVersion._sum.revision ?? 0}-${updatedAt?.getTime() ?? 0}`,
+      revision: categoryVersion._max.revision ?? 0,
+      updatedAt,
+    };
+  }
+
+  async isFieldCodeAvailable(fieldCode: string, excludeId?: string) {
+    const normalizedCode = fieldCode.toUpperCase();
+    const existing = await this.prisma.dictionaryCategory.findFirst({
+      where: {
+        categoryCode: normalizedCode,
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+      select: { id: true },
+    });
+    return { fieldCode: normalizedCode, available: !existing };
+  }
+
+  async createField(dto: CreateFieldConfigurationDto, actorId: string) {
+    const normalizedCode = dto.fieldCode.toUpperCase();
+    const availability = await this.isFieldCodeAvailable(normalizedCode);
+    if (!availability.available) throw new ConflictException('字段编码已存在');
+    const field = await this.prisma.dictionaryCategory.create({
+      data: {
+        categoryCode: normalizedCode,
+        categoryName: dto.fieldName,
+        fieldType: dto.fieldType,
+        required: dto.required ?? false,
+        defaultValue: this.toJsonValue(dto.defaultValue),
+        visibleScopes: dto.visibleScopes ?? [],
+        permissions: this.toPermissions(dto.permissions),
+        description: dto.description || null,
+        status: dto.enabled === false ? 'Inactive' : 'Active',
+        sortOrder: dto.sort ?? 0,
+        createdBy: actorId,
+        updatedBy: actorId,
+      },
+      include: { items: true },
+    });
+    return this.toFieldConfiguration(field);
+  }
+
+  async updateField(id: string, dto: UpdateFieldConfigurationDto, actorId: string) {
+    const current = await this.assertField(id);
+    if (dto.fieldCode && dto.fieldCode.toUpperCase() !== current.categoryCode) {
+      throw new ConflictException('字段编码是稳定标识，不允许修改');
+    }
+    const field = await this.prisma.dictionaryCategory.update({
+      where: { id },
+      data: {
+        ...(dto.fieldName !== undefined ? { categoryName: dto.fieldName } : {}),
+        ...(dto.fieldType !== undefined ? { fieldType: dto.fieldType } : {}),
+        ...(dto.required !== undefined ? { required: dto.required } : {}),
+        ...(dto.defaultValue !== undefined ? { defaultValue: this.toJsonValue(dto.defaultValue) } : {}),
+        ...(dto.visibleScopes !== undefined ? { visibleScopes: dto.visibleScopes } : {}),
+        ...(dto.permissions !== undefined ? { permissions: this.toPermissions(dto.permissions) } : {}),
+        ...(dto.description !== undefined ? { description: dto.description || null } : {}),
+        ...(dto.enabled !== undefined ? { status: dto.enabled ? 'Active' : 'Inactive' } : {}),
+        ...(dto.sort !== undefined ? { sortOrder: dto.sort } : {}),
+        revision: { increment: 1 },
+        updatedBy: actorId,
+      },
+      include: {
+        items: {
+          where: { deletedAt: null },
+          orderBy: [{ sortOrder: 'asc' }, { itemLabel: 'asc' }],
+        },
+      },
+    });
+    return this.toFieldConfiguration(field);
+  }
+
+  async changeFieldStatus(id: string, enabled: boolean, actorId: string) {
+    return this.updateField(id, { enabled }, actorId);
+  }
+
+  async sortFields(items: FieldConfigurationSortItemDto[], actorId: string) {
+    if (new Set(items.map((item) => item.id)).size !== items.length) {
+      throw new BadRequestException('字段排序中存在重复记录');
+    }
+    const count = await this.prisma.dictionaryCategory.count({
+      where: { id: { in: items.map((item) => item.id) } },
+    });
+    if (count !== items.length) throw new BadRequestException('字段排序包含不存在的字段');
+    await this.prisma.$transaction(items.map((item) => this.prisma.dictionaryCategory.update({
+      where: { id: item.id },
+      data: { sortOrder: item.sort, revision: { increment: 1 }, updatedBy: actorId },
+    })));
+    return this.findConfigurations({ includeDisabled: true });
+  }
+
   async findCategories() {
     return this.prisma.dictionaryCategory.findMany({
       where: { categoryCode: { in: [...FIELD_CATEGORY_CODES] } },
-      select: { id: true, categoryCode: true, categoryName: true, description: true, sortOrder: true, isSystem: true, status: true, createdBy: true, updatedBy: true, createdAt: true, updatedAt: true, _count: { select: { items: { where: { deletedAt: null } } } } },
+      select: { id: true, categoryCode: true, categoryName: true, fieldType: true, required: true, defaultValue: true, visibleScopes: true, permissions: true, revision: true, description: true, sortOrder: true, isSystem: true, status: true, createdBy: true, updatedBy: true, createdAt: true, updatedAt: true, _count: { select: { items: { where: { deletedAt: null } } } } },
       orderBy: [{ sortOrder: 'asc' }, { categoryName: 'asc' }],
     });
   }
@@ -75,22 +231,45 @@ export class FieldConfigurationService {
 
   async findEnabled(code: string) {
     const category = await this.prisma.dictionaryCategory.findFirst({
-      where: { categoryCode: code.toUpperCase(), status: 'Active' },
+      where: { categoryCode: code.toUpperCase() },
       select: {
         categoryCode: true,
         categoryName: true,
+        fieldType: true,
+        required: true,
+        defaultValue: true,
+        visibleScopes: true,
+        permissions: true,
+        revision: true,
+        status: true,
+        updatedAt: true,
         items: {
-          where: { status: 'Active', deletedAt: null },
-          select: { id: true, itemValue: true, itemLabel: true, itemCode: true, sortOrder: true },
+          where: { deletedAt: null },
+          select: { id: true, itemValue: true, itemLabel: true, itemCode: true, sortOrder: true, status: true },
           orderBy: [{ sortOrder: 'asc' }, { itemLabel: 'asc' }],
         },
       },
     });
-    if (!category) throw new NotFoundException('字段分类不存在或已停用');
+    if (!category) throw new NotFoundException('字段分类不存在');
     return {
       code: category.categoryCode,
       name: category.categoryName,
-      values: category.items.map((item) => ({ id: item.id, value: item.itemValue, name: item.itemLabel, code: item.itemCode, sortOrder: item.sortOrder })),
+      fieldType: category.fieldType,
+      required: category.required,
+      enabled: category.status === 'Active',
+      defaultValue: category.defaultValue,
+      visibleScopes: this.toStringArray(category.visibleScopes),
+      permissions: category.permissions,
+      revision: category.revision,
+      updatedAt: category.updatedAt,
+      values: category.items.map((item) => ({
+        id: item.id,
+        value: item.itemValue,
+        name: item.itemLabel,
+        code: item.itemCode,
+        sortOrder: item.sortOrder,
+        enabled: item.status === 'Active',
+      })),
     };
   }
 
@@ -132,6 +311,7 @@ export class FieldConfigurationService {
           updatedBy: actorId,
         },
       });
+      await this.bumpCategoryRevision(categoryId, actorId);
       return this.toValue(restored);
     }
     const item = await this.prisma.dictionaryItem.create({
@@ -147,6 +327,7 @@ export class FieldConfigurationService {
         updatedBy: actorId,
       },
     });
+    await this.bumpCategoryRevision(categoryId, actorId);
     return this.toValue(item);
   }
 
@@ -159,7 +340,6 @@ export class FieldConfigurationService {
       throw new ConflictException('系统初始化字段的稳定编码不可修改');
     }
     if (codeChanged) await this.assertNotReferenced(current, '修改编码');
-    if (dto.status === 'Inactive' && current.status !== 'Inactive') await this.referenceStatus(current);
     const item = await this.prisma.dictionaryItem.update({
       where: { id },
       data: {
@@ -168,10 +348,10 @@ export class FieldConfigurationService {
         description: dto.description === undefined ? current.description : dto.description || null,
         itemValue: dto.code ?? current.itemValue,
         sortOrder: dto.sortOrder ?? current.sortOrder,
-        status: dto.status ?? current.status,
         updatedBy: actorId,
       },
     });
+    await this.bumpCategoryRevision(current.categoryId, actorId);
     return this.toValue(item);
   }
 
@@ -179,6 +359,7 @@ export class FieldConfigurationService {
     const current = await this.assertItem(id);
     if (status === 'Inactive' && current.status !== 'Inactive') await this.referenceStatus(current);
     const item = await this.prisma.dictionaryItem.update({ where: { id }, data: { status, updatedBy: actorId } });
+    await this.bumpCategoryRevision(current.categoryId, actorId);
     return this.toValue(item);
   }
 
@@ -192,6 +373,7 @@ export class FieldConfigurationService {
       where: { categoryId, deletedAt: null },
       orderBy: [{ sortOrder: 'asc' }, { itemLabel: 'asc' }],
     });
+    await this.bumpCategoryRevision(categoryId, actorId);
     return sorted.map((item) => this.toValue(item));
   }
 
@@ -207,19 +389,28 @@ export class FieldConfigurationService {
       where: { id },
       data: { deletedAt: new Date(), status: 'Inactive', updatedBy: actorId },
     });
+    await this.bumpCategoryRevision(current.categoryId, actorId);
     return null;
   }
 
   async findEnabledBatch(codes: string[]) {
     const normalizedCodes = [...new Set(codes.map((code) => code.toUpperCase()))];
     const categories = await this.prisma.dictionaryCategory.findMany({
-      where: { categoryCode: { in: normalizedCodes }, status: 'Active' },
+      where: { categoryCode: { in: normalizedCodes } },
       select: {
         categoryCode: true,
         categoryName: true,
+        fieldType: true,
+        required: true,
+        defaultValue: true,
+        visibleScopes: true,
+        permissions: true,
+        revision: true,
+        status: true,
+        updatedAt: true,
         items: {
-          where: { status: 'Active', deletedAt: null },
-          select: { id: true, itemValue: true, itemLabel: true, itemCode: true, sortOrder: true },
+          where: { deletedAt: null },
+          select: { id: true, itemValue: true, itemLabel: true, itemCode: true, sortOrder: true, status: true },
           orderBy: [{ sortOrder: 'asc' }, { itemLabel: 'asc' }],
         },
       },
@@ -227,20 +418,51 @@ export class FieldConfigurationService {
     const byCode = new Map(categories.map((category) => [category.categoryCode, {
       code: category.categoryCode,
       name: category.categoryName,
-      values: category.items.map((item) => ({ id: item.id, value: item.itemValue, name: item.itemLabel, code: item.itemCode, sortOrder: item.sortOrder })),
+      fieldType: category.fieldType,
+      required: category.required,
+      enabled: category.status === 'Active',
+      defaultValue: category.defaultValue,
+      visibleScopes: this.toStringArray(category.visibleScopes),
+      permissions: category.permissions,
+      revision: category.revision,
+      updatedAt: category.updatedAt,
+      values: category.items.map((item) => ({
+        id: item.id,
+        value: item.itemValue,
+        name: item.itemLabel,
+        code: item.itemCode,
+        sortOrder: item.sortOrder,
+        enabled: item.status === 'Active',
+      })),
     }]));
     return normalizedCodes.flatMap((code) => byCode.get(code) ?? []);
   }
 
   private async assertCategory(id: string) {
-    const category = await this.prisma.dictionaryCategory.findFirst({ where: { id, categoryCode: { in: [...FIELD_CATEGORY_CODES] } } });
+    const category = await this.prisma.dictionaryCategory.findFirst({ where: { id } });
     if (!category) throw new NotFoundException('字段分类不存在');
     return category;
   }
 
+  private async assertField(id: string) {
+    const field = await this.prisma.dictionaryCategory.findUnique({
+      where: { id },
+      include: { items: { where: { deletedAt: null } } },
+    });
+    if (!field) throw new NotFoundException('字段配置不存在');
+    return field;
+  }
+
+  private async bumpCategoryRevision(categoryId: string, actorId: string): Promise<void> {
+    await this.prisma.dictionaryCategory.update({
+      where: { id: categoryId },
+      data: { revision: { increment: 1 }, updatedBy: actorId },
+    });
+  }
+
   private async assertItem(id: string) {
     const item = await this.prisma.dictionaryItem.findUnique({ where: { id }, include: { category: true } });
-    if (!item || item.deletedAt || !FIELD_CATEGORY_CODES.includes(item.category.categoryCode as typeof FIELD_CATEGORY_CODES[number])) throw new NotFoundException('字段值不存在');
+    if (!item || item.deletedAt) throw new NotFoundException('字段值不存在');
     return item;
   }
 
@@ -277,10 +499,7 @@ export class FieldConfigurationService {
       add('项目台账', this.prisma.project.count({ where: { OR: [{ contractCurrency: value }, { baseCurrency: value }], deletedAt: null } }));
       add('项目收付款', this.prisma.projectPayment.count({ where: { OR: [{ originalCurrency: value }, { convertedCurrency: value }] } }));
     } else if (code === 'CUSTOMER_TYPE') {
-      add('项目台账', this.prisma.project.count({ where: { projectType: value, deletedAt: null } }));
-      add('档案模板', this.prisma.archiveTemplate.count({ where: { projectType: value } }));
-      add('检查模板', this.prisma.checklistTemplate.count({ where: { projectType: value } }));
-      add('文档模板', this.prisma.documentTemplate.count({ where: { projectType: value } }));
+      add('项目台账', this.prisma.project.count({ where: { customerType: value, deletedAt: null } }));
     } else if (code === 'CONTRACT_TYPE') {
       add('项目台账', this.prisma.project.count({ where: { contractType: value, deletedAt: null } }));
     } else if (code === 'PRODUCT_TYPE') {
@@ -289,12 +508,22 @@ export class FieldConfigurationService {
       add('项目台账', this.prisma.project.count({ where: { keywords: { array_contains: value }, deletedAt: null } }));
     } else if (code === 'PROJECT_STAGE') {
       add('项目台账', this.prisma.project.count({ where: { currentStage: value, deletedAt: null } }));
+      add('项目进度记录', this.prisma.projectProcessRecord.count({ where: { stageCode: value } }));
       add('检查模板', this.prisma.checklistTemplate.count({ where: { stageCode: value } }));
       add('文档模板', this.prisma.documentTemplate.count({ where: { stageCode: value } }));
     } else if (code === 'PROJECT_STATUS') {
       add('项目台账', this.prisma.project.count({ where: { status: value, deletedAt: null } }));
+    } else if (code === 'PROJECT_TYPE') {
+      add('项目台账', this.prisma.project.count({ where: { projectType: value, deletedAt: null } }));
+      add('档案模板', this.prisma.archiveTemplate.count({ where: { projectType: value } }));
+      add('检查模板', this.prisma.checklistTemplate.count({ where: { projectType: value } }));
+      add('文档模板', this.prisma.documentTemplate.count({ where: { projectType: value } }));
     } else if (code === 'STANDARD_CATEGORY') {
       add('标准库', this.prisma.standard.count({ where: { category: value } }));
+    } else if (code === 'KNOWLEDGE_CATEGORY') {
+      add('知识库', this.prisma.knowledgeItem.count({
+        where: { category: { fieldOptionId: item.id } },
+      }));
     }
     const sources = (await Promise.all(checks)).filter((source) => source.count > 0);
     const total = sources.reduce((sum, source) => sum + source.count, 0);
@@ -303,5 +532,76 @@ export class FieldConfigurationService {
 
   private toValue(item: { id: string; categoryId: string; itemValue: string; itemLabel: string; itemCode: string | null; description: string | null; extraData: unknown; sortOrder: number; status: string; isSystemDefault: boolean; createdBy: string | null; updatedBy: string | null; createdAt: Date; updatedAt: Date }) {
     return { id: item.id, categoryId: item.categoryId, value: item.itemValue, name: item.itemLabel, code: item.itemCode, description: item.description, metadata: item.extraData, sortOrder: item.sortOrder, status: item.status, isSystemDefault: item.isSystemDefault, createdBy: item.createdBy, updatedBy: item.updatedBy, createdAt: item.createdAt, updatedAt: item.updatedAt };
+  }
+
+  private toFieldConfiguration(field: {
+    id: string;
+    categoryCode: string;
+    categoryName: string;
+    fieldType: string;
+    required: boolean;
+    defaultValue: unknown;
+    visibleScopes: unknown;
+    permissions: unknown;
+    description: string | null;
+    status: string;
+    sortOrder: number;
+    revision: number;
+    createdBy: string | null;
+    updatedBy: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    items: Array<{
+      id: string;
+      itemValue: string;
+      itemLabel: string;
+      itemCode: string | null;
+      sortOrder: number;
+      status: string;
+    }>;
+  }) {
+    return {
+      id: field.id,
+      fieldCode: field.categoryCode,
+      fieldName: field.categoryName,
+      fieldType: field.fieldType,
+      required: field.required,
+      enabled: field.status === 'Active',
+      defaultValue: field.defaultValue,
+      sort: field.sortOrder,
+      options: field.items.map((item) => ({
+        id: item.id,
+        label: item.itemLabel,
+        value: item.itemValue,
+        code: item.itemCode,
+        sort: item.sortOrder,
+        enabled: item.status === 'Active',
+      })),
+      visibleScopes: this.toStringArray(field.visibleScopes),
+      permissions: field.permissions,
+      description: field.description,
+      revision: field.revision,
+      createdBy: field.createdBy,
+      updatedBy: field.updatedBy,
+      createdAt: field.createdAt,
+      updatedAt: field.updatedAt,
+    };
+  }
+
+  private toStringArray(value: unknown): string[] {
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+  }
+
+  private toJsonValue(value: unknown): Prisma.InputJsonValue | Prisma.NullTypes.JsonNull | undefined {
+    if (value === undefined) return undefined;
+    if (value === null) return Prisma.JsonNull;
+    return value as Prisma.InputJsonValue;
+  }
+
+  private toPermissions(value?: { view?: string[]; edit?: string[] }): Prisma.InputJsonObject {
+    return {
+      view: value?.view ?? [],
+      edit: value?.edit ?? [],
+    };
   }
 }

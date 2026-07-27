@@ -8,7 +8,6 @@ import { ProjectAccessService } from '../project/project-access.service';
 
 import {
   ArchiveProjectItemDto,
-  CreateTemporaryArchiveItemDto,
   SyncProjectArchiveTemplateDto,
 } from './dto/project-archive.dto';
 
@@ -97,6 +96,8 @@ export class ProjectArchiveTargetService {
                             status: true,
                             uploadedAt: true,
                             uploadedBy: true,
+                            asset: { select: { size: true } },
+                            uploader: { select: { id: true, realName: true, username: true } },
                             reviewTasks: {
                               where: { archivedAt: null },
                               select: {
@@ -128,6 +129,8 @@ export class ProjectArchiveTargetService {
                             status: true,
                             uploadedAt: true,
                             uploadedBy: true,
+                            asset: { select: { size: true } },
+                            uploader: { select: { id: true, realName: true, username: true } },
                             reviewTasks: {
                               where: { archivedAt: null },
                               select: {
@@ -247,6 +250,8 @@ export class ProjectArchiveTargetService {
                   ? workflowCandidate.version.id
                   : presentedFile?.logicalFile.id,
                 displayName: presentedFile?.logicalFile.displayName,
+                fileSize: presentedVersion.asset?.size?.toString() ?? '0',
+                uploader: presentedVersion.uploader,
                 pendingReview: Boolean(pendingCandidate),
                 canPreview: canPreviewWorkflowVersion,
               }
@@ -505,106 +510,6 @@ export class ProjectArchiveTargetService {
       syncMode: 'ADD_ONLY',
       diff: await this.getTemplateDiff(projectId, actor),
     };
-  }
-
-  async createTemporaryItem(
-    projectId: string,
-    folderId: string,
-    dto: CreateTemporaryArchiveItemDto,
-    actor: ArchiveActor,
-  ) {
-    const scope = await this.projectAccess.buildProjectWhere(actor.sub);
-    return this.prisma.$transaction(async (tx) => {
-      const project = await tx.project.findFirst({
-        where: { AND: [scope, { id: projectId }] },
-        select: { id: true },
-      });
-      if (!project) throw new NotFoundException('项目不存在');
-      const folder = await tx.projectArchiveFolder.findFirst({
-        where: { id: folderId, projectId, archivedAt: null },
-        select: { id: true },
-      });
-      if (!folder) throw new NotFoundException('档案文件夹不存在');
-      const owner = await tx.projectMember.findFirst({
-        where: {
-          projectId,
-          userId: dto.ownerUserId,
-          deletedAt: null,
-          user: { status: 'Active', deletedAt: null },
-        },
-        select: { userId: true },
-      });
-      if (!owner) {
-        throw new BadRequestException('临时档案项负责人必须是当前项目的有效成员');
-      }
-      const reviewRequired = dto.reviewRequired ?? false;
-      if (reviewRequired && !dto.approvalTemplateId) {
-        throw new BadRequestException('需要审核的临时档案项必须选择审批模板');
-      }
-      if (!reviewRequired && dto.approvalTemplateId) {
-        throw new BadRequestException('无需审核的临时档案项不能配置审批模板');
-      }
-      if (reviewRequired) {
-        const approvalTemplate = await tx.approvalTemplate.findFirst({
-          where: {
-            id: dto.approvalTemplateId,
-            businessType: 'PROJECT_ARCHIVE_FILE',
-            isEnabled: true,
-            deletedAt: null,
-            steps: { some: {} },
-          },
-          select: { id: true },
-        });
-        if (!approvalTemplate) {
-          throw new BadRequestException('审批模板不存在、已停用或不适用于项目档案');
-        }
-      }
-      const maxSort = await tx.projectArchiveEntry.aggregate({
-        where: { folderId },
-        _max: { sortOrder: true },
-      });
-      const item = await tx.projectArchiveEntry.create({
-        data: {
-          projectId,
-          folderId,
-          name: dto.name.trim(),
-          description: dto.description?.trim(),
-          required: dto.required ?? false,
-          reviewRequired,
-          approvalTemplateId: reviewRequired ? dto.approvalTemplateId : null,
-          ownerUserId: dto.ownerUserId,
-          allowMultipleFiles: dto.allowMultipleFiles ?? false,
-          allowedExtensions: dto.allowedExtensions
-            ? dto.allowedExtensions.map((extension) =>
-                extension.trim().replace(/^\./, '').toLowerCase(),
-              )
-            : Prisma.JsonNull,
-          sortOrder: (maxSort._max.sortOrder ?? 0) + 10,
-          isTemporary: true,
-          temporaryReason: dto.reason.trim(),
-          suggestedForTemplate: dto.suggestedForTemplate ?? false,
-        },
-      });
-      await writeOperationLog(tx, {
-          userId: actor.sub,
-          module: 'project-archive',
-          action: 'create_temporary_item',
-          targetType: 'project_archive_item',
-          targetId: item.id,
-          result: 'success',
-          afterData: {
-            projectId,
-            folderId,
-            ownerUserId: dto.ownerUserId,
-            required: item.required,
-            reviewRequired: item.reviewRequired,
-            approvalTemplateId: item.approvalTemplateId,
-            suggestedForTemplate: item.suggestedForTemplate,
-            reason: item.temporaryReason,
-          },
-      });
-      return item;
-    });
   }
 
   async archiveItem(

@@ -9,7 +9,6 @@ import { Prisma } from '@prisma/client';
 import { enqueueDomainEvent } from '../../common/events/outbox';
 import { PrismaService } from '../../database/prisma.service';
 
-import { CreateCurrencyDto } from './dto/create-currency.dto';
 import { UpdateCurrencyDto } from './dto/update-currency.dto';
 import { ExchangeRateProvider } from './exchange-rate.provider';
 
@@ -19,43 +18,66 @@ export class CurrencyService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  // ========== Currency CRUD ==========
-
   async findAll() {
-    return this.prisma.currency.findMany({
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  async findByCode(code: string) {
-    const normalizedCode = code.trim().toUpperCase();
-    const currency = await this.prisma.currency.findUnique({
-      where: { currencyCode: normalizedCode },
-    });
-
-    if (!currency) {
-      throw new NotFoundException('币种不存在');
-    }
-
-    return currency;
-  }
-
-  async create(dto: CreateCurrencyDto) {
-    const existing = await this.prisma.currency.findUnique({
-      where: { currencyCode: dto.currencyCode },
-    });
-
-    if (existing) {
-      throw new ConflictException('币种代码已存在');
-    }
-
-    return this.prisma.currency.create({
-      data: {
-        currencyCode: dto.currencyCode,
-        currencyName: dto.currencyName,
-        currencySymbol: dto.currencySymbol,
-        decimalPlaces: dto.decimalPlaces ?? 2,
+    const options = await this.prisma.dictionaryItem.findMany({
+      where: {
+        deletedAt: null,
+        category: {
+          categoryCode: 'CURRENCY',
+          status: 'Active',
+        },
       },
+      orderBy: [{ sortOrder: 'asc' }, { itemLabel: 'asc' }],
+    });
+    const metadata = await this.prisma.currency.findMany({
+      where: { currencyCode: { in: options.map((option) => option.itemValue) } },
+    });
+    const metadataByCode = new Map(metadata.map((currency) => [currency.currencyCode, currency]));
+    return options.map((option) => {
+      const currency = metadataByCode.get(option.itemValue);
+      return {
+        id: option.id,
+        currencyCode: option.itemValue,
+        currencyName: option.itemLabel,
+        currencySymbol: currency?.currencySymbol ?? null,
+        decimalPlaces: currency?.decimalPlaces ?? 2,
+        status: option.status,
+        cnyRate: currency?.cnyRate ?? null,
+        rateDate: currency?.rateDate ?? null,
+        rateLocked: currency?.rateLocked ?? false,
+        lockedBy: currency?.lockedBy ?? null,
+        lockedAt: currency?.lockedAt ?? null,
+        rateSource: currency?.rateSource ?? null,
+        createdAt: option.createdAt,
+        updatedAt: currency?.updatedAt ?? option.updatedAt,
+      };
+    });
+  }
+
+  private async findByCode(code: string) {
+    const normalizedCode = code.trim().toUpperCase();
+    const option = await this.prisma.dictionaryItem.findFirst({
+      where: {
+        itemValue: normalizedCode,
+        status: 'Active',
+        deletedAt: null,
+        category: {
+          categoryCode: 'CURRENCY',
+          status: 'Active',
+        },
+      },
+      select: { itemValue: true, itemLabel: true },
+    });
+    if (!option) {
+      throw new NotFoundException('币种字段配置不存在或已停用');
+    }
+    return this.prisma.currency.upsert({
+      where: { currencyCode: option.itemValue },
+      create: {
+        currencyCode: option.itemValue,
+        currencyName: option.itemLabel,
+      },
+      update: {},
     });
   }
 
@@ -63,7 +85,6 @@ export class CurrencyService {
     return this.prisma.currency.update({
       where: { id },
       data: {
-        currencyName: dto.currencyName,
         currencySymbol: dto.currencySymbol,
         decimalPlaces: dto.decimalPlaces,
         ...(dto.cnyRate !== undefined && {
@@ -99,21 +120,32 @@ export class CurrencyService {
     });
   }
 
-  async disableByCode(code: string) {
-    const currency = await this.findByCode(code);
-    return this.prisma.currency.update({
-      where: { id: currency.id },
-      data: { status: 'Inactive' },
-    });
-  }
-
   async syncOnlineRates(baseCurrency = 'CNY') {
-    const currencies = await this.prisma.currency.findMany({
-      where: { status: 'Active' },
-      select: { currencyCode: true },
-      orderBy: { currencyCode: 'asc' },
+    const options = await this.prisma.dictionaryItem.findMany({
+      where: {
+        status: 'Active',
+        deletedAt: null,
+        category: {
+          categoryCode: 'CURRENCY',
+          status: 'Active',
+        },
+      },
+      select: { itemValue: true, itemLabel: true },
+      orderBy: { itemValue: 'asc' },
     });
-    const targetCurrencies = currencies.map((item) => item.currencyCode);
+    await Promise.all(
+      options.map((option) =>
+        this.prisma.currency.upsert({
+          where: { currencyCode: option.itemValue },
+          create: {
+            currencyCode: option.itemValue,
+            currencyName: option.itemLabel,
+          },
+          update: {},
+        }),
+      ),
+    );
+    const targetCurrencies = options.map((option) => option.itemValue);
 
     let onlineRates;
     try {

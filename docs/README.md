@@ -6,6 +6,10 @@
 
 - [产品说明](product.md)
 - [技术架构](architecture.md)
+- [平台目标架构](platform-architecture.md)
+- [Figma 页面清单](figma-page-inventory.md)
+- [字段配置说明](field-configuration.md)
+- [删除与迁移报告](deletion-report.md)
 - [基础架构模型 v0.1](platform-foundation-architecture-v0.1.md)
 - [前端页面架构](frontend-architecture.md)
 - [前端业务流程](frontend-business-flows.md)
@@ -26,6 +30,7 @@
 - 产品规则、业务流程和用户角色变化：更新 `product.md`。
 - 平台定位、前端目标分层或长期扩展边界变化：更新 `platform-foundation-architecture-v0.1.md`。
 - 前端、后端、数据模型或权限变化：更新 `architecture.md` 和 `development.md`。
+- Figma 节点、页面映射或字段配置唯一来源变化：更新 `figma-page-inventory.md`、`field-configuration.md`、`platform-architecture.md` 和 `deletion-report.md`。
 - 前端菜单、路由、页面、状态、API、权限或公共组件变化：同步更新 `frontend-architecture.md`。
 - 前端端到端流程、状态机、角色可达性或异常分支变化：同步更新 `frontend-business-flows.md`。
 - 前后端边界、状态模型、统一文件/审核或迁移规则变化：更新 `frontend-architecture-refactored.md`、`backend-architecture-refactored.md`。

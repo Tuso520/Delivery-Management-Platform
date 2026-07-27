@@ -241,7 +241,7 @@ Vue Route
 | 后端 TypeScript / Nest Build | PASS / PASS |
 | 后端 Jest | PASS，74 套件 / 528 用例 |
 | 权限、架构、Prisma、文档事实门禁 | PASS；86 权限、16 角色、前端循环 0、27 个历史 Model 生产调用 0 |
-| Compose 配置 | 基础与测试配置均 PASS，迁移计数 35 |
+| Compose 配置 | 基础与测试配置均 PASS，迁移计数 41 |
 | Docker 冷构建 | PASS，Node 20 + pnpm 10.34.4 下前端、后端和迁移镜像全部构建成功 |
 | 真实 API | PASS，`/ready` 的 MySQL、Redis、MinIO 全部 `ok`；Nest E2E 3/3 |
 | Playwright API / Chromium UI | PASS，2/2；干净数据库 12/12 |

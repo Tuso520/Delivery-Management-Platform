@@ -6,8 +6,14 @@ import { CurrencyService } from '../currency.service';
 describe('CurrencyService target rate workflow', () => {
   it('does not lock a currency before a CNY rate exists', async () => {
     const prisma = {
+      dictionaryItem: {
+        findFirst: jest.fn().mockResolvedValue({
+          itemValue: 'USD',
+          itemLabel: '美元',
+        }),
+      },
       currency: {
-        findUnique: jest.fn().mockResolvedValue({
+        upsert: jest.fn().mockResolvedValue({
           id: 'usd',
           currencyCode: 'USD',
           cnyRate: null,
@@ -31,8 +37,14 @@ describe('CurrencyService target rate workflow', () => {
       outboxEvent: { create: jest.fn().mockResolvedValue({ id: 'event-1' }) },
     };
     const prisma = {
+      dictionaryItem: {
+        findMany: jest.fn().mockResolvedValue([
+          { itemValue: 'CNY', itemLabel: '人民币' },
+          { itemValue: 'USD', itemLabel: '美元' },
+        ]),
+      },
       currency: {
-        findMany: jest.fn().mockResolvedValue([{ currencyCode: 'CNY' }, { currencyCode: 'USD' }]),
+        upsert: jest.fn().mockResolvedValue({ id: 'currency-1' }),
       },
       $transaction: jest
         .fn()

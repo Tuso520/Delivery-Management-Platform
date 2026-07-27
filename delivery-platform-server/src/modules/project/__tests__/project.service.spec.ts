@@ -8,6 +8,7 @@ import { Prisma } from '@prisma/client';
 
 import type { PrismaService } from '../../../database/prisma.service';
 import type { JwtPayload } from '../../auth/strategies/jwt.strategy';
+import type { FieldConfigurationService } from '../../field-configuration/field-configuration.service';
 import type { ProjectArchiveSnapshotService } from '../../project-archive/project-archive-snapshot.service';
 import type { ReviewConfigurationService } from '../../review/review-configuration.service';
 import type { ReviewTaskService } from '../../review/review-task.service';
@@ -94,6 +95,7 @@ describe('ProjectService', () => {
     projectPayment: Record<string, jest.Mock>;
     exchangeRate: Record<string, jest.Mock>;
     country: Record<string, jest.Mock>;
+    dictionaryCategory: Record<string, jest.Mock>;
     operationLog: Record<string, jest.Mock>;
     projectProcessRecord: Record<string, jest.Mock>;
     outboxEvent: Record<string, jest.Mock>;
@@ -119,6 +121,10 @@ describe('ProjectService', () => {
     getDefaultProjectPageSize: jest.Mock;
   };
   let projectConfiguration: { validate: jest.Mock; validateUpdate: jest.Mock };
+  let fieldConfiguration: {
+    assertConfiguredValue: jest.Mock;
+    findEnabled: jest.Mock;
+  };
 
   beforeEach(() => {
     prisma = {
@@ -149,6 +155,11 @@ describe('ProjectService', () => {
       exchangeRate: { findFirst: jest.fn() },
       country: {
         findMany: jest.fn().mockResolvedValue([{ countryCode: 'VN', nameZh: '越南' }]),
+      },
+      dictionaryCategory: {
+        findUnique: jest.fn().mockResolvedValue({
+          items: [{ itemValue: 'VN', itemLabel: '越南' }],
+        }),
       },
       operationLog: { create: jest.fn(), count: jest.fn().mockResolvedValue(0) },
       projectProcessRecord: { create: jest.fn() },
@@ -189,6 +200,25 @@ describe('ProjectService', () => {
       validate: jest.fn().mockResolvedValue(undefined),
       validateUpdate: jest.fn().mockResolvedValue(undefined),
     };
+    fieldConfiguration = {
+      assertConfiguredValue: jest.fn().mockResolvedValue(undefined),
+      findEnabled: jest.fn().mockResolvedValue({
+        enabled: true,
+        defaultValue: 'STARTUP',
+        values: [
+          'STARTUP',
+          'DEEPENING',
+          'PROCUREMENT',
+          'CONSTRUCTION',
+          'COMMISSIONING',
+          'TESTING',
+          'CUSTOM_VERIFICATION',
+          'INTERNAL_ACCEPTANCE',
+          'EXTERNAL_ACCEPTANCE',
+          'WARRANTY',
+        ].map((value) => ({ value, enabled: true })),
+      }),
+    };
     service = new ProjectService(
       prisma as unknown as PrismaService,
       projectAccess as unknown as ProjectAccessService,
@@ -197,6 +227,7 @@ describe('ProjectService', () => {
       reviewTasks as unknown as ReviewTaskService,
       systemConfig as unknown as SystemConfigService,
       projectConfiguration as unknown as ProjectConfigurationService,
+      fieldConfiguration as unknown as FieldConfigurationService,
     );
   });
 
@@ -1137,7 +1168,12 @@ describe('ProjectService', () => {
 
     await service.updateProgress(
       'project-1',
-      { revision: 1, targetStage: 'TESTING', progressPercent: 70, reason: '现场已进入测试' },
+      {
+        revision: 1,
+        targetStage: 'CUSTOM_VERIFICATION',
+        progressPercent: 70,
+        reason: '现场已进入自定义验证阶段',
+      },
       sensitiveActor,
     );
 
@@ -1148,7 +1184,7 @@ describe('ProjectService', () => {
         archivedAt: null,
       },
       data: {
-        currentStage: 'TESTING',
+        currentStage: 'CUSTOM_VERIFICATION',
         progressPercent: new Prisma.Decimal(70),
         expectedAcceptanceAt: null,
         actualAcceptanceAt: null,
@@ -1160,10 +1196,10 @@ describe('ProjectService', () => {
         action: 'progress_update',
         beforeData: expect.objectContaining({ stage: 'CONSTRUCTION', progressPercent: '40' }),
         afterData: expect.objectContaining({
-          stage: 'TESTING',
+          stage: 'CUSTOM_VERIFICATION',
           progressPercent: 70,
           revision: 2,
-          reason: '现场已进入测试',
+          reason: '现场已进入自定义验证阶段',
         }),
       }),
     });

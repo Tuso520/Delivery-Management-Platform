@@ -13,21 +13,20 @@ import {
   useProjectPaymentsQuery,
 } from '@/domains/project/queries/useProjectQueries'
 import { usePermission } from '@/composables/usePermission'
+import { useFieldConfig } from '@/platform/field-configuration'
 import { queryKeys } from '@/query/keys'
 import type { ArchiveTemplate } from '@/domains/archive/types/archive'
-import type { Country } from '@/types/country'
 import type { Currency } from '@/types/currency'
 import type {
   ContractType,
   CreateProjectDto,
+  CustomerType,
   ProductType,
   ProjectDeliveryStage,
   ProjectKeyword,
-  ProjectType,
   ProjectUserReferenceOption,
   UpdateProjectDto,
 } from '@/domains/project/types/project'
-import { STAGE_OPTIONS } from '@/domains/project/types/project'
 import type {
   ProjectPayment,
   ProjectPaymentPlanItem,
@@ -44,7 +43,6 @@ import {
   projectDictionaryColor,
   type ProjectDictionaryKind,
 } from '@/domains/project/adapters/project-dictionaries'
-import { localizeProjectStage } from '@/utils/project-localization'
 import ProjectPaymentPlan from './ProjectPaymentPlan.vue'
 
 export type ProjectDetailDialogMode = 'create' | 'edit' | 'view'
@@ -72,7 +70,8 @@ const projectQuery = useProjectDetailQuery(projectId)
 const paymentQuery = useProjectPaymentsQuery(projectId, computed(() =>
   props.visible && !isCreate.value && canViewPayments.value,
 ))
-const optionQueries = useProjectFormOptionsQueries(true, computed(() => !isCreate.value))
+const optionQueries = useProjectFormOptionsQueries(true)
+const fieldConfig = useFieldConfig('project')
 const project = computed(() => projectQuery.data.value)
 const readonly = computed(() => isView.value || (props.mode === 'edit' && project.value?.canEdit === false))
 const canEditFinancial = computed(() => !readonly.value && hasAnyPermission(['project:view_financial']))
@@ -95,13 +94,13 @@ const formData = reactive({
   shortName: '',
   projectCode: '',
   customerName: '',
-  countryCode: 'CN',
+  countryCode: '',
   city: '',
-  projectType: undefined as ProjectType | undefined,
+  customerType: undefined as CustomerType | undefined,
   contractType: undefined as ContractType | undefined,
   product: undefined as ProductType | undefined,
   keywords: [] as ProjectKeyword[],
-  contractCurrency: 'CNY',
+  contractCurrency: '',
   contractAmount: '',
   convertedAmount: '',
   archiveTemplateId: '',
@@ -113,78 +112,92 @@ const formData = reactive({
   projectManagerId: '',
   electricalOwnerId: '',
   softwareOwnerId: '',
-  deliveryStage: 'STARTUP' as ProjectDeliveryStage,
+  deliveryStage: '' as ProjectDeliveryStage,
   progressPercent: 0,
 })
-const rules = {
+const rules = computed(() => ({
   projectName: [{ required: true, message: '请输入合同名称' }],
-  countryCode: [{ required: true, message: '请选择国家' }],
-  projectType: [{ required: true, message: '请选择客户类型' }],
-  contractType: [{ required: true, message: '请选择合同类型' }],
-  product: [{ required: true, message: '请选择产品类型' }],
+  countryCode: [{ required: fieldConfig.isFieldRequired('COUNTRY'), message: '请选择国家' }],
+  customerType: [{ required: fieldConfig.isFieldRequired('CUSTOMER_TYPE'), message: '请选择客户类型' }],
+  contractType: [{ required: fieldConfig.isFieldRequired('CONTRACT_TYPE'), message: '请选择合同类型' }],
+  product: [{ required: fieldConfig.isFieldRequired('PRODUCT_TYPE'), message: '请选择产品类型' }],
   archiveTemplateId: [{ required: true, message: '请选择档案模版' }],
-}
+}))
 const idempotencyKey = ref('')
 
 function configuredOptions<T extends string>(
-  key: 'projectTypes' | 'contractTypes' | 'productTypes' | 'projectKeywords',
+  fieldCode: string,
   kind: ProjectDictionaryKind,
   currentValues: Array<string | undefined>,
 ) {
   const historicalValues = new Set(currentValues.filter((value): value is string => Boolean(value)))
-  return (optionQueries.value[3].data?.[key] ?? [])
-    .filter((item) => item.status === 'Active' || historicalValues.has(item.value))
+  return fieldConfig.getFieldOptions(fieldCode, true)
+    .filter((item) => item.enabled || historicalValues.has(item.value))
     .map((item) => ({
-      ...item,
+      label: item.label,
       value: item.value as T,
       color: projectDictionaryColor(kind, item.value),
-      disabled: item.status !== 'Active',
+      disabled: !item.enabled,
     }))
 }
 const countryOptions = computed(() =>
-  (optionQueries.value[0].data?.items ?? []).map((item: Country) => ({
-    value: item.countryCode,
-    label: `${item.nameZh} (${item.countryCode})`,
+  fieldConfig.getFieldOptions('COUNTRY').map((item) => ({
+    value: item.value,
+    label: `${item.label} (${item.value})`,
   })),
 )
-const currencies = computed<Currency[]>(() => optionQueries.value[1].data ?? [])
+const currencies = computed<Currency[]>(() => optionQueries.value[0].data ?? [])
 const currencyOptions = computed(() =>
-  currencies.value.map((item) => ({
-    value: item.currencyCode,
-    label: `${item.currencyName} (${item.currencyCode})`,
+  fieldConfig.getFieldOptions('CURRENCY').map((item) => ({
+    value: item.value,
+    label: `${item.label} (${item.value})`,
   })),
 )
-const projectTypeOptions = computed(() =>
-  configuredOptions<ProjectType>('projectTypes', 'projectType', [formData.projectType]),
+const customerTypeOptions = computed(() =>
+  configuredOptions<CustomerType>('CUSTOMER_TYPE', 'customerType', [formData.customerType]),
 )
 const contractTypeOptions = computed(() =>
-  configuredOptions<ContractType>('contractTypes', 'contractType', [formData.contractType]),
+  configuredOptions<ContractType>('CONTRACT_TYPE', 'contractType', [formData.contractType]),
 )
 const productTypeOptions = computed(() =>
-  configuredOptions<ProductType>('productTypes', 'productType', [formData.product]),
+  configuredOptions<ProductType>('PRODUCT_TYPE', 'productType', [formData.product]),
 )
 const keywordOptions = computed(() =>
-  configuredOptions<ProjectKeyword>('projectKeywords', 'projectKeyword', formData.keywords),
+  configuredOptions<ProjectKeyword>('PROJECT_KEYWORD', 'projectKeyword', formData.keywords),
 )
-const salesOptions = computed<ProjectUserReferenceOption[]>(() => optionQueries.value[4].data ?? [])
-const managerOptions = computed<ProjectUserReferenceOption[]>(() => optionQueries.value[5].data ?? [])
-const memberOptions = computed<ProjectUserReferenceOption[]>(() => optionQueries.value[6].data ?? [])
+const stageOptions = computed(() =>
+  configuredOptions<ProjectDeliveryStage>(
+    'PROJECT_STAGE',
+    'projectType',
+    [formData.deliveryStage],
+  ),
+)
+const salesOptions = computed<ProjectUserReferenceOption[]>(() => optionQueries.value[2].data ?? [])
+const managerOptions = computed<ProjectUserReferenceOption[]>(() => optionQueries.value[3].data ?? [])
+const memberOptions = computed<ProjectUserReferenceOption[]>(() => optionQueries.value[4].data ?? [])
 const archiveOptions = computed(() =>
-  ((optionQueries.value[7].data ?? []) as ArchiveTemplate[])
+  ((optionQueries.value[5].data ?? []) as ArchiveTemplate[])
     .filter((item) => item.status === 'PUBLISHED' || item.id === formData.archiveTemplateId)
     .map((item) => ({ value: item.id, label: `${item.templateName} (${item.templateCode})` })),
 )
 const loading = computed(() =>
+  fieldConfig.loading.value ||
   optionQueries.value.some((query) => query.isFetching) ||
   (!isCreate.value && projectQuery.isFetching.value) ||
   (!isCreate.value && canViewPayments.value && paymentQuery.isFetching.value),
+)
+const baseCurrencyCode = computed(() =>
+  String(fieldConfig.getField('CURRENCY')?.defaultValue ?? ''),
+)
+const baseCurrencyLabel = computed(
+  () => fieldConfig.getFieldLabel('CURRENCY', baseCurrencyCode.value) || '折算币种',
 )
 const convertedAmount = computed(() => {
   if ((isView.value || !canEditFinancial.value) && formData.convertedAmount) {
     return formData.convertedAmount
   }
   if (!formData.contractAmount) return undefined
-  if (formData.contractCurrency === 'CNY') return formData.contractAmount
+  if (formData.contractCurrency === baseCurrencyCode.value) return formData.contractAmount
   const currency = currencies.value.find((item) => item.currencyCode === formData.contractCurrency)
   return multiplyMoneyByRate(formData.contractAmount, currency?.cnyRate)
 })
@@ -200,19 +213,33 @@ const paymentRatioValid = computed(() => {
   return total === moneyToMinor(formData.contractAmount)
 })
 
+function applyFieldDefaults(): void {
+  if (!formData.countryCode) {
+    formData.countryCode = String(fieldConfig.getField('COUNTRY')?.defaultValue ?? '')
+  }
+  if (!formData.contractCurrency) {
+    formData.contractCurrency = baseCurrencyCode.value
+  }
+  if (!formData.deliveryStage) {
+    formData.deliveryStage = String(
+      fieldConfig.getField('PROJECT_STAGE')?.defaultValue ?? '',
+    ) as ProjectDeliveryStage
+  }
+}
+
 function blankForm(): void {
   Object.assign(formData, {
     projectName: '',
     shortName: '',
     projectCode: '',
     customerName: '',
-    countryCode: 'CN',
+    countryCode: String(fieldConfig.getField('COUNTRY')?.defaultValue ?? ''),
     city: '',
-    projectType: undefined,
+    customerType: undefined,
     contractType: undefined,
     product: undefined,
     keywords: [],
-    contractCurrency: 'CNY',
+    contractCurrency: baseCurrencyCode.value,
     contractAmount: '',
     convertedAmount: '',
     archiveTemplateId: '',
@@ -224,9 +251,12 @@ function blankForm(): void {
     projectManagerId: '',
     electricalOwnerId: '',
     softwareOwnerId: '',
-    deliveryStage: 'STARTUP',
+    deliveryStage: String(
+      fieldConfig.getField('PROJECT_STAGE')?.defaultValue ?? '',
+    ) as ProjectDeliveryStage,
     progressPercent: 0,
   })
+  applyFieldDefaults()
   payments.value = []
   idempotencyKey.value = globalThis.crypto?.randomUUID?.() ?? `project-${Date.now()}`
   formRef.value?.clearValidate()
@@ -244,11 +274,13 @@ function assignProject(): void {
     customerName: value.customerName || '',
     countryCode: value.countryCode,
     city: value.city || '',
-    projectType: value.projectType || undefined,
+    customerType: value.customerType || undefined,
     contractType: value.contractType || undefined,
     product: value.product || undefined,
     keywords: value.keywords || [],
-    contractCurrency: value.contractCurrency || 'CNY',
+    contractCurrency:
+      value.contractCurrency ||
+      baseCurrencyCode.value,
     contractAmount: value.contractAmount ?? '',
     convertedAmount: value.convertedAmount ?? '',
     archiveTemplateId: value.archiveTemplateId || '',
@@ -295,6 +327,12 @@ watch(
   },
   { immediate: true },
 )
+watch(
+  () => fieldConfig.fields.value,
+  () => {
+    if (props.visible && isCreate.value) applyFieldDefaults()
+  },
+)
 watch(project, () => {
   if (!props.visible || isCreate.value || !project.value) return
   assignProject()
@@ -325,7 +363,7 @@ function paymentPayload(): ProjectPaymentPlanWriteItem[] | undefined {
     dueDate: item.dueDate || null,
     originalAmount: item.originalAmount,
     originalCurrency: formData.contractCurrency,
-    convertedCurrency: 'CNY',
+    convertedCurrency: baseCurrencyCode.value,
     receivedOriginalAmount: item.completed ? item.originalAmount : '0',
     receivedDate: item.completed ? item.receivedDate || new Date().toISOString() : null,
     remark: item.remark || undefined,
@@ -343,7 +381,7 @@ function commonPayload(): Omit<UpdateProjectDto, 'revision'> {
     countryCode: formData.countryCode,
     city: optionalText(formData.city),
     customerName: optionalText(formData.customerName),
-    projectType: formData.projectType,
+    customerType: formData.customerType,
     contractType: formData.contractType,
     product: formData.product,
     keywords: formData.keywords,
@@ -356,7 +394,7 @@ function commonPayload(): Omit<UpdateProjectDto, 'revision'> {
   }
   if (canEditFinancial.value) {
     payload.contractCurrency = formData.contractCurrency
-    payload.baseCurrency = 'CNY'
+    payload.baseCurrency = baseCurrencyCode.value
     payload.contractAmount = formData.contractAmount || undefined
   }
   if (canEditContract.value) {
@@ -418,7 +456,7 @@ async function save(): Promise<void> {
           projectName: formData.projectName.trim(),
           countryCode: formData.countryCode,
           archiveTemplateId: formData.archiveTemplateId,
-          deliveryStage: formData.deliveryStage,
+          deliveryStage: formData.deliveryStage || undefined,
           progressPercent: formData.progressPercent,
           expectedAcceptanceAt: canEditAcceptance.value
             ? formData.expectedAcceptanceAt || undefined
@@ -586,9 +624,9 @@ function beforeCancel(): boolean {
               </div>
 
               <div class="form-row">
-                <a-form-item label="客户类型" field="projectType">
-                  <a-select v-model="formData.projectType">
-                    <a-option v-for="item in projectTypeOptions" :key="item.value" v-bind="item" />
+                <a-form-item label="客户类型" field="customerType">
+                  <a-select v-model="formData.customerType">
+                    <a-option v-for="item in customerTypeOptions" :key="item.value" v-bind="item" />
                   </a-select>
                 </a-form-item>
                 <a-form-item label="合同类型" field="contractType">
@@ -627,7 +665,7 @@ function beforeCancel(): boolean {
                     @input="updateContractAmount"
                   />
                 </a-form-item>
-                <a-form-item label="折算人民币金额">
+                <a-form-item :label="`折算${baseCurrencyLabel}金额`">
                   <a-input :model-value="convertedAmount" placeholder="自动计算" disabled />
                 </a-form-item>
                 <a-form-item label="档案模版" field="archiveTemplateId">
@@ -707,6 +745,8 @@ function beforeCancel(): boolean {
               :loading="paymentQuery.isFetching.value"
               :contract-amount="formData.contractAmount"
               :contract-currency="formData.contractCurrency"
+              :base-currency="baseCurrencyCode"
+              :base-currency-label="baseCurrencyLabel"
               :converted-amount="convertedAmount"
               :operate-allowed="canOperatePayments"
             >
@@ -714,10 +754,10 @@ function beforeCancel(): boolean {
                 <a-form-item class="progress-field" label="当前阶段">
                   <a-select v-model="formData.deliveryStage" :disabled="!canUpdateProgress">
                     <a-option
-                      v-for="item in STAGE_OPTIONS"
+                      v-for="item in stageOptions"
                       :key="item.value"
                       :value="item.value"
-                      :label="localizeProjectStage(item.value, 'zh-CN')"
+                      :label="item.label"
                     />
                   </a-select>
                 </a-form-item>

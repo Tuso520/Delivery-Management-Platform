@@ -51,13 +51,6 @@ export class KnowledgeItemController {
     return this.knowledgeItems.findAll(query, actor);
   }
 
-  @Get('knowledge/categories')
-  @RequirePermissions({ all: ['knowledge:view'] })
-  @ApiOperation({ summary: '查询可用知识分类树' })
-  findCategories() {
-    return this.knowledgeItems.findCategories();
-  }
-
   @Post('knowledge')
   @RequirePermissions({ all: ['knowledge:create'] })
   @ApiOperation({ summary: '创建知识条目及首个草稿版本' })

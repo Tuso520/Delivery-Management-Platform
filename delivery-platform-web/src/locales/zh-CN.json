@@ -27,7 +27,7 @@
     "systemFields": "字段配置",
     "systemApproval": "审批规则",
     "systemIntegration": "接口集成",
-    "systemConfig": "系统配置",
+    "systemConfig": "参数配置",
     "systemNotification": "通知规则",
     "userCenter": "用户中心"
   },
@@ -718,6 +718,7 @@
       "acceptanceAt": "验收时间",
       "contractAmount": "合同金额",
       "convertedCny": "折算人民币",
+      "convertedCurrency": "折算{currency}",
       "sales": "销售",
       "manager": "项目经理"
     },
@@ -995,6 +996,7 @@
       "currentVersion": "当前版本",
       "scale": "目录规模",
       "projects": "使用项目数",
+      "updatedBy": "更新人",
       "updatedByAt": "更新人 / 时间"
     },
     "fields": {
@@ -1034,7 +1036,6 @@
   "archive": {
     "title": "项目档案",
     "subtitle": "档案目录来自项目创建时的模板快照，后续同步只新增，不覆盖既有资料。",
-    "temporaryCreate": "临时新增档案项",
     "syncTemplate": "同步模板",
     "selectProject": "选择项目",
     "projectSearchPlaceholder": "按项目名称或编码搜索",
@@ -1045,11 +1046,6 @@
     "emptySnapshot": "当前项目尚未生成档案快照",
     "emptyFolder": "当前目录暂无档案项",
     "required": "必填",
-    "temporary": "临时",
-    "reviewTaskCount": "{count} 个审核任务",
-    "fileCount": "（{count} 个文件）",
-    "unassigned": "未指定",
-    "uploadNewVersion": "上传新版本",
     "restore": "恢复",
     "selectAccessibleProject": "请选择一个可访问的项目",
     "uploadTitle": "上传档案文件",
@@ -1066,16 +1062,6 @@
     "changeDescription": "变更说明",
     "changePlaceholder": "说明本次文件变更内容",
     "confirmUpload": "确认上传",
-    "temporaryHint": "临时项只属于当前项目；勾选“建议加入模板”只记录建议，不会修改已发布模板。",
-    "folder": "所属文件夹",
-    "createReason": "创建原因",
-    "allowedExtensions": "允许扩展名",
-    "extensionsPlaceholder": "例如 pdf, docx, xlsx；留空表示使用平台安全白名单",
-    "reviewRequired": "需要审核",
-    "approvalTemplate": "审批模板",
-    "approvalTemplatePlaceholder": "选择项目档案审批模板",
-    "allowMultipleFiles": "允许多个文件",
-    "suggestTemplate": "建议加入模板",
     "syncTitle": "同步档案模板新增项",
     "migrationRequired": "当前快照需先完成迁移",
     "alreadyLatest": "当前项目档案已是最新版本",
@@ -1088,6 +1074,10 @@
     "changedNotOverwritten": "模板已变更但不覆盖",
     "projectOnly": "项目独有内容",
     "confirmAddOnlySync": "确认仅新增同步",
+    "completedFolders": "完成文件夹",
+    "directoryAria": "档案目录",
+    "selectedFileCount": "共 {count} 个文件",
+    "updateFile": "更新",
     "summary": {
       "completion": "整体完成度",
       "items": "档案项",
@@ -1099,6 +1089,11 @@
     },
     "columns": {
       "itemName": "文件项名称",
+      "fileName": "文件名称",
+      "version": "版本",
+      "fileSize": "文件大小",
+      "uploader": "上传人",
+      "uploadedAt": "上传时间",
       "fileStatus": "文件状态",
       "currentVersion": "当前版本",
       "owner": "负责人",
@@ -1117,17 +1112,13 @@
       "ARCHIVED": "已归档"
     },
     "validation": {
-      "uploadFileRequired": "请选择需要上传的文件",
-      "temporaryRequired": "请填写文件项名称、创建原因并选择负责人",
-      "approvalTemplateRequired": "需要审核时必须选择项目档案审批模板"
+      "uploadFileRequired": "请选择需要上传的文件"
     },
     "messages": {
       "previewRestricted": "文件正在审核中，仅上传人、当前审核人或获授权人员可预览内容",
       "noPreviewFile": "当前档案项暂无可预览文件",
       "uploadedForReview": "上传成功，文件已进入审核",
       "uploaded": "上传成功",
-      "noAvailableFolder": "当前项目没有可用档案文件夹",
-      "temporaryCreated": "临时档案项已创建，仅影响当前项目",
       "templateSynced": "模板新增项已同步，现有档案内容未被修改",
       "archived": "档案项已归档",
       "restored": "档案项已恢复"
@@ -1146,6 +1137,7 @@
     "createTitle": "新增知识资料",
     "keyword": "关键词",
     "searchPlaceholder": "搜索标题、文件名或简介",
+    "allCategories": "全部分类",
     "query": "查询",
     "retry": "重试",
     "loadFailed": "知识资料加载失败，请重试。",
@@ -1259,6 +1251,8 @@
     "create": "新增标准",
     "keyword": "关键词",
     "searchPlaceholder": "搜索标准名称、编号或文件名",
+    "allCategories": "全部分类",
+    "categoryPlaceholder": "请选择标准分类",
     "query": "查询",
     "retry": "重试",
     "loadFailed": "标准列表加载失败，请重试。",

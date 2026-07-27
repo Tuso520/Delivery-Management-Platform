@@ -203,6 +203,7 @@ model Project {
   countryCode              String    @map("country_code") @db.VarChar(10)
   city                     String?   @db.VarChar(100)
   customerName             String?   @map("customer_name") @db.VarChar(200)
+  customerType             String?   @map("customer_type") @db.VarChar(50)
   projectType              String?   @map("project_type") @db.VarChar(50)
   contractType             String?   @map("contract_type") @db.VarChar(20)
   product                  String?   @db.VarChar(50)
@@ -267,6 +268,7 @@ model Project {
   @@index([archiveTemplateId])
   @@index([archiveTemplateVersionId])
   @@index([countryCode])
+  @@index([customerType])
   @@index([deletedAt])
   @@index([createdBy])
   @@map("projects")
@@ -1225,17 +1227,19 @@ model DocumentTemplateVersion {
 // ============================================================
 
 model KnowledgeCategory {
-  id          String   @id @default(uuid())
-  name        String   @db.VarChar(100)
-  description String?  @db.Text
-  parentId    String?  @map("parent_id") @db.VarChar(36)
-  sortOrder   Int      @default(0) @map("sort_order")
-  status      String   @default("Active") @db.VarChar(20)
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id            String   @id @default(uuid())
+  name          String   @db.VarChar(100)
+  description   String?  @db.Text
+  parentId      String?  @map("parent_id") @db.VarChar(36)
+  fieldOptionId String?  @unique @map("field_option_id") @db.VarChar(36)
+  sortOrder     Int      @default(0) @map("sort_order")
+  status        String   @default("Active") @db.VarChar(20)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   parent         KnowledgeCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
   children       KnowledgeCategory[] @relation("CategoryHierarchy")
+  fieldOption    DictionaryItem?     @relation(fields: [fieldOptionId], references: [id], onDelete: SetNull)
   articles       KnowledgeArticle[]
   knowledgeItems KnowledgeItem[]
 
@@ -1935,10 +1939,16 @@ model DictionaryCategory {
   id           String   @id @default(uuid())
   categoryCode String   @unique @map("category_code") @db.VarChar(50)
   categoryName String   @map("category_name") @db.VarChar(100)
+  fieldType    String   @default("SINGLE_SELECT") @map("field_type") @db.VarChar(30)
+  required     Boolean  @default(false)
+  defaultValue Json?    @map("default_value")
+  visibleScopes Json    @default("[]") @map("visible_scopes")
+  permissions  Json     @default("{}")
   description  String?  @db.VarChar(300)
   isSystem     Boolean  @default(false) @map("is_system")
   status       String   @default("Active") @db.VarChar(20)
   sortOrder    Int      @default(0) @map("sort_order")
+  revision     Int      @default(1)
   createdBy    String?  @map("created_by") @db.VarChar(36)
   updatedBy    String?  @map("updated_by") @db.VarChar(36)
   createdAt    DateTime @default(now()) @map("created_at")
@@ -1966,7 +1976,8 @@ model DictionaryItem {
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
-  category DictionaryCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  category          DictionaryCategory  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  knowledgeCategory KnowledgeCategory?
 
   @@unique([categoryId, itemValue])
   @@unique([categoryId, itemLabel], map: "dictionary_items_category_label_uq")

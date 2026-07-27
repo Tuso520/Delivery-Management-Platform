@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { IsDateString, IsInt, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
 
-import { PROJECT_DELIVERY_STAGES, type ProjectDeliveryStage } from '../project.constants';
+import type { ProjectDeliveryStage } from '../project.constants';
 
 export class UpdateProjectProgressDto {
   @ApiProperty({ description: '当前项目版本号', minimum: 1 })
@@ -9,8 +9,9 @@ export class UpdateProjectProgressDto {
   @Min(1)
   revision!: number;
 
-  @ApiProperty({ enum: PROJECT_DELIVERY_STAGES })
-  @IsIn(PROJECT_DELIVERY_STAGES)
+  @ApiProperty({ description: '目标交付阶段，取值来自 PROJECT_STAGE 字段配置' })
+  @IsString()
+  @Matches(/^[A-Z][A-Z0-9_-]{0,99}$/u)
   targetStage!: ProjectDeliveryStage;
 
   @ApiProperty({ minimum: 0, maximum: 100 })

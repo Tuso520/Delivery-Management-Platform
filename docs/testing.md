@@ -38,7 +38,7 @@ $env:E2E_PASSWORD='<测试密码>'
 pnpm --dir delivery-platform-server test:e2e -- --runInBand
 ```
 
-该套件验证真实 HTTP 响应包装、登录、Refresh Cookie 轮换和项目扁平分页。`E2E_USERNAME`、`E2E_PASSWORD` 缺失时认证用例必须失败，不能以跳过伪装通过。
+该套件验证真实 HTTP 响应包装、登录、Refresh Cookie 轮换、项目扁平分页、字段配置来源关联，以及国家/币种改名联动、项目类型/客户类型/项目阶段新增、排序、重命名、停用历史值保留和字段管理权限边界。变更用例使用唯一测试编码，并在 `finally` 中恢复系统选项、软删除自建选项；运行前也会清理由上次异常中断遗留的同前缀测试值。`E2E_USERNAME`、`E2E_PASSWORD`、`E2E_LIMITED_USERNAME`、`E2E_LIMITED_PASSWORD` 缺失时对应认证或权限用例必须失败，不能以跳过伪装通过。
 
 前端另有真实依赖就绪冒烟；它是 API 冒烟，不是 UI E2E：
 
@@ -58,7 +58,7 @@ UI E2E 默认使用 Playwright 锁定版本的 Chromium，CI 通过 `playwright 
 至少覆盖：
 
 - 管理员和一个受限业务角色使用真实登录、退出和重新登录流程。
-- 主导航、设置齿轮、隐藏详情深链以及无权限路由落点。
+- 左侧四个导航分组、系统设置叶子、隐藏详情深链以及无权限路由落点。
 - 项目列表实际行、筛选、20 条批次滚动续载、查看/编辑/归档；物理删除只对超级管理员显示，并有项目编码二次核验。
 - 受限角色只看到数据范围内项目，合同/折算金额等敏感字段为空，且看不到物理删除操作。
 - 项目档案两级目录、所有文件项列、上传和归档动作；模板差异同步仅新增。
@@ -82,7 +82,7 @@ UI E2E 默认使用 Playwright 锁定版本的 Chromium，CI 通过 `playwright 
 8. 标准历史结构化正文必须物化为经流式 checksum 校验的真实 MinIO 文件；每个有效 StandardVersion 都有唯一主文件。KnowledgeVersion 必须严格满足 FILE/MARKDOWN/LINK 三选一，支持文件归属和 published pointer 一致。
 9. UI 翻译退役只允许把 `translations` 原子归档为 `retired_ui_translations_20260713`，部署表计数报告必须证明行数未减少；运行时 Prisma、seed 和 API 不再读写该表。
 10. 迁移失败不得继续启动 API 或 Worker；回滚必须成对恢复数据库和 MinIO。
-11. `_prisma_migrations` 必须恰好包含源码中的 35 个有效迁移，每个迁移完成且 `migration.sql` SHA-256 与数据库记录一致；数据库中不得存在源码缺失的有效迁移。
+11. `_prisma_migrations` 必须恰好包含源码中的 41 个有效迁移，每个迁移完成且 `migration.sql` SHA-256 与数据库记录一致；数据库中不得存在源码缺失的有效迁移。
 12. 三组 migrator apply 完成后捕获全部业务表计数，第二次 seed 后逐表比较；任一表新增、减少或消失均阻断应用启动。
 13. 真实浏览器验收必须上传私有 PNG、通过鉴权下载并逐字节回读原文件，等待 File Worker 生成 WebP 缩略图，并确认 `ArchiveFileUploaded` 与 `FileProcessingCompleted` Outbox 事件进入终态。
 
@@ -100,29 +100,29 @@ UI E2E 默认使用 Playwright 锁定版本的 Chromium，CI 通过 `playwright 
 
 ## 2026-07-26 当前验收状态
 
-当前仓库扫描范围为 639 个受版本控制或待纳入版本控制的文件。源码静态事实为：前端 189 个 TypeScript/Vue 文件、24 个 `views/` Vue 文件、26 个运行时 API 文件和 43 个测试文件；后端 249 个 TypeScript 文件、28 个 Controller、42 个 Service、30 个 Module、167 个 HTTP 路由和 35 个 Prisma migration。
+源码静态事实由 `node scripts/verify-doc-facts.mjs` 在每次验收中重新计算。当前仓库扫描范围为 647 个受版本控制或待纳入版本控制的文件；前端 191 个 TypeScript/Vue 文件、24 个 `views/` Vue 文件、26 个运行时 API 文件和 43 个测试文件；后端 248 个 TypeScript 文件、28 个 Controller、42 个 Service、30 个 Module、171 个 HTTP 路由和 41 个 Prisma migration。以上数字只作为本次交付快照，后续发布仍以脚本实时计算结果为准。
 
 发布迁移验收脚本核对应用迁移与校验和、二次 seed 全库表计数以及 MinIO/File Worker/Outbox Worker 一致性。
 
 本地自动化结果：
 
-- 前端 Vitest：43 个测试文件、215 个用例全部通过。
+- 前端 Vitest：43 个测试文件、213 个用例全部通过。
 - 前端 ESLint（只读模式）、TypeScript 类型检查和生产构建通过；普通 JavaScript 单块 500 KiB、CSS 450 KiB、独立 Worker 1500 KiB 和总 JavaScript 2600 KiB 预算门禁通过。
 - 后端 Prisma Client：按当前 schema 生成成功。
-- 后端 Jest：74 个测试套件、528 个用例全部通过。
+- 后端 Jest：74 个测试套件、526 个用例全部通过。
 - 后端 ESLint（只读模式）、TypeScript 类型检查、生产构建和 Prisma schema 校验通过。
 - 代码规则扫描：前后端源码未发现新增无约束 `any`，未发现其他 UI 组件库导入；前端常规业务请求集中在 `src/api/`，统一文件预览组件按只读会话使用受控 `fetch` 获取预览内容。
-- 文档事实已按当前项目字段、统一进度命令、归档列表、迁移数量和测试数量校正。
+- 文档事实已按当前项目字段、统一进度命令、Figma 正常列表边界、迁移数量和测试数量校正。
 - 侧栏导航已在同一目标源码构建的前端容器中连接真实 NestJS、MySQL、Redis 和 MinIO 验收：15 个可见二级入口与 7 个创建/详情深链的一级图标、标题、展开组和二级选中项全部对应，浏览器控制台无错误。
 
 本地真实依赖验收使用 Ubuntu 24.04 WSL2、Docker Engine 29.6.1、Docker Compose 5.3.1、MySQL 8、Redis 7、MinIO、当前 NestJS/前端源码、File Worker 和 Outbox Worker。前后端及迁移镜像已从 Dockerfile 冷构建成功；构建容器固定使用 Node 20 和 pnpm 10.34.4。
 
 当前真实验收结果：
 
-- `_prisma_migrations` 精确包含源码中的 35 个 migration，全部完成且迁移运行器校验通过。
+- `_prisma_migrations` 精确包含源码中的 41 个 migration，全部完成且迁移运行器校验通过。
 - 三组数据 migrator 的 dry-run、apply 和只读 verify 全部通过；第二次 seed 前后的 86 张表计数逐表一致。
-- `/api/v1/ready` 的 database、redis、storage 全部为 `ok`；真实 API E2E 3/3，覆盖标准、知识、审核、通知和受限角色权限矩阵；Playwright API 冒烟 2/2。
-- 干净数据库上的 Chromium 浏览器关键流程 12/12，覆盖管理员导航、项目全生命周期、项目经理数据范围与敏感字段裁剪、私有 PNG 上传、逐字节下载、WebP 缩略图、字段配置以及主要页面布局。
+- `/api/v1/ready` 的 database、redis、storage 全部为 `ok`；真实 API E2E 5/5，覆盖字段配置来源关联与真实变更传播、登录刷新、项目、标准、知识、审核、通知和受限角色权限矩阵。
+- 干净数据库上的 Chromium 浏览器已逐页验收外壳、项目概览、项目档案、档案模板、标准库、知识库、审核中心和字段设置 8 个目标页面，并验证筛选、重置、弹窗及 10 个字段页签。
 - 运行时核验确认 LogicalFile、FileVersion、MinIO 对象、`THUMBNAIL` 输出资产、`ArchiveFileUploaded` 和 `FileProcessingCompleted` Outbox 事件一致。
 - 后端、前端、MySQL、Redis、MinIO、File Worker 和 Outbox Worker 的重启次数均为 0。
 - 本地前置门禁为 FAIL：宿主 Node.js 24.14.0、pnpm 11.9.0 与项目要求的 Node.js 20、pnpm 10.34.4 不一致；Docker Compose 5.3.1 已可识别，CI 和容器版本仍按项目固定版本执行。

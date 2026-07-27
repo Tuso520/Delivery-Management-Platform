@@ -16,10 +16,6 @@ export function useKnowledgeSummaryQuery() {
   return useQuery({ queryKey: queryKeys.knowledge.summary(), queryFn: knowledgeApi.getSummary })
 }
 
-export function useKnowledgeCategoriesQuery() {
-  return useQuery({ queryKey: queryKeys.knowledge.categories(), queryFn: knowledgeApi.getCategories })
-}
-
 export function useKnowledgeDetailQuery(itemId: MaybeRefOrGetter<string>) {
   return useQuery({
     queryKey: computed(() => queryKeys.knowledge.detail(toValue(itemId))),

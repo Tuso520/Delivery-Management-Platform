@@ -3,7 +3,6 @@ import { useQueries, useQuery } from '@tanstack/vue-query'
 
 import { archiveApi } from '@/domains/archive/api/archive.api'
 import { archiveTemplateApi } from '@/domains/archive/api/archive-template.api'
-import { countryApi } from '@/api/country'
 import { languageApi } from '@/api/language'
 import { projectApi } from '@/domains/project/api/project.api'
 import { queryKeys } from '@/query/keys'
@@ -85,16 +84,8 @@ export function useArchiveTemplateFormOptionsQueries() {
   return useQueries({
     queries: [
       {
-        queryKey: [...queryKeys.archiveTemplates.formOptions(), 'countries'] as const,
-        queryFn: () => countryApi.getList({ page: 1, pageSize: 100 }),
-      },
-      {
         queryKey: [...queryKeys.archiveTemplates.formOptions(), 'languages'] as const,
         queryFn: languageApi.getList,
-      },
-      {
-        queryKey: queryKeys.projects.formOptions(),
-        queryFn: () => projectApi.getConfiguration(),
       },
     ],
   })

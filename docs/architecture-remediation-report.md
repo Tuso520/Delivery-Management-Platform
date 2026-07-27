@@ -1,5 +1,7 @@
 # 架构基础整改报告
 
+> 历史整改快照：本文记录领域重构前的基础整改阶段。现行目录、页面和运行时边界以 [平台目标架构](platform-architecture.md) 及源码为准。
+
 ## 1. 范围与约束
 
 本轮基于 `docs/architecture-analysis.md` 的审计结论实施基础整改，保持 Vue 3、TypeScript、Vite、Pinia、Vue Router、Arco Design Vue、NestJS、Prisma 和 MySQL 技术栈。

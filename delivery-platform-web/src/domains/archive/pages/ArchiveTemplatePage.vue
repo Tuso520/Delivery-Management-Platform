@@ -18,6 +18,7 @@ import {
   useArchiveTemplateVersionsQuery,
 } from '@/domains/archive/queries/useArchiveQueries'
 import { queryKeys } from '@/query/keys'
+import { useFieldConfig } from '@/platform/field-configuration'
 import { firstRouteParam, preservedRouteQuery } from '@/router/query-state'
 import { usePermissionStore } from '@/store/permission'
 import type {
@@ -26,9 +27,7 @@ import type {
   ArchiveTemplateVersionFolder,
   ArchiveTemplateVersionItem,
 } from '@/domains/archive/types/archive'
-import type { Country } from '@/types/country'
 import type { Language } from '@/types/language'
-import type { ProjectConfigurationOption } from '@/domains/project/types/project'
 import { arcoConfirm } from '@/utils/arco-dialog'
 
 interface EditableVersionItem extends Omit<
@@ -94,8 +93,7 @@ const route = useRoute()
 const router = useRouter()
 const { t, locale } = useI18n()
 const queryClient = useQueryClient()
-const keyword = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
-const appliedKeyword = ref(keyword.value)
+const fieldConfig = useFieldConfig('archive-template')
 
 const createVisible = ref(false)
 const createForm = reactive({
@@ -115,10 +113,6 @@ const selectedVersionId = ref('')
 const editableFolders = ref<EditableVersionFolder[]>([])
 const creatingVersionFor = ref('')
 
-const listParams = computed(() => ({
-  keyword: appliedKeyword.value.trim() || undefined,
-}))
-
 function queryString(value: unknown): string {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
   return typeof value === 'string' ? value : ''
@@ -128,7 +122,7 @@ function listRouteQuery() {
   return preservedRouteQuery(route.query, ['versionId'])
 }
 
-const templateListQuery = useArchiveTemplateListQuery(listParams)
+const templateListQuery = useArchiveTemplateListQuery({})
 const templateDetailQuery = useArchiveTemplateDetailQuery(selectedTemplateId, drawerVisible)
 const templateVersionsQuery = useArchiveTemplateVersionsQuery(
   selectedTemplateId,
@@ -146,9 +140,9 @@ const selectedTemplate = computed<ArchiveTemplate | null>(() => {
 })
 const versions = computed(() => templateVersionsQuery.data.value ?? [])
 const selectedVersion = computed(() => templateVersionQuery.data.value ?? null)
-const countries = computed<Country[]>(() => formOptionQueries.value[0].data?.items ?? [])
-const languages = computed<Language[]>(() => formOptionQueries.value[1].data ?? [])
-const projectTypes = computed<ProjectConfigurationOption[]>(() => formOptionQueries.value[2].data?.projectTypes ?? [])
+const countries = computed(() => fieldConfig.getFieldOptions('COUNTRY'))
+const languages = computed<Language[]>(() => formOptionQueries.value[0].data ?? [])
+const projectTypes = computed(() => fieldConfig.getFieldOptions('PROJECT_TYPE'))
 const loading = computed(() => templateListQuery.isFetching.value)
 const detailLoading = computed(
   () =>
@@ -205,15 +199,8 @@ async function fetchRecords(): Promise<void> {
   await templateListQuery.refetch()
 }
 
-async function applyFilters(): Promise<void> {
-  appliedKeyword.value = keyword.value
-  await router.replace({
-    path: route.path,
-    query: {
-      ...route.query,
-      keyword: appliedKeyword.value.trim() || undefined,
-    },
-  })
+function projectTypeLabel(value?: string | null): string {
+  return fieldConfig.getFieldLabel('PROJECT_TYPE', value) || t('archiveTemplate.general')
 }
 
 const createTemplateMutation = useMutation({
@@ -292,7 +279,7 @@ function resetCreateForm(): void {
     templateCode: '',
     templateName: '',
     projectType: '',
-    countryCode: '',
+    countryCode: String(fieldConfig.getField('COUNTRY')?.defaultValue ?? ''),
     languageCode: '',
     version: 'V1.0',
     description: '',
@@ -606,10 +593,6 @@ watch(
 <template>
   <section class="template-page">
     <header class="page-header">
-      <div>
-        <h1>{{ t('archiveTemplate.title') }}</h1>
-        <p>{{ t('archiveTemplate.subtitle') }}</p>
-      </div>
       <a-space>
         <a-button @click="fetchRecords">
           {{ t('archiveTemplate.refresh') }}
@@ -624,50 +607,34 @@ watch(
       </a-space>
     </header>
 
-    <a-card :bordered="false" class="filter-card">
-      <a-space fill>
-        <a-input
-          v-model="keyword"
-          allow-clear
-          :placeholder="t('archiveTemplate.searchPlaceholder')"
-          @press-enter="applyFilters"
-          @clear="applyFilters"
-        />
-        <a-button type="primary" @click="applyFilters">
-          {{ t('common.search') }}
-        </a-button>
-      </a-space>
-    </a-card>
-
     <a-card :bordered="false" class="table-card">
       <BusinessTable
         :data="records"
         :loading="loading"
         row-key="id"
-        :scroll="{ x: 1250 }"
+        :scroll="{ x: 1080 }"
         preserve-column-widths
       >
-        <a-table-column :title="t('archiveTemplate.columns.name')" :width="250">
+        <a-table-column :title="t('archiveTemplate.columns.name')" :width="220">
           <template #cell="{ record }">
             <button class="template-link" type="button" @click="openDetail(record)">
               <strong>{{ record.templateName }}</strong>
-              <span>{{ record.templateCode }}</span>
             </button>
           </template>
         </a-table-column>
-        <a-table-column :title="t('archiveTemplate.columns.projectType')" :width="150">
+        <a-table-column :title="t('archiveTemplate.columns.projectType')" :width="130">
           <template #cell="{ record }">
             {{
-              record.projectType || t('archiveTemplate.general')
+              projectTypeLabel(record.projectType)
             }}
           </template>
         </a-table-column>
-        <a-table-column :title="t('archiveTemplate.columns.currentVersion')" :width="120">
+        <a-table-column :title="t('archiveTemplate.columns.currentVersion')" :width="100">
           <template #cell="{ record }">
             {{ record.currentPublishedVersion?.versionNo || t('archiveTemplate.notPublished') }}
           </template>
         </a-table-column>
-        <a-table-column :title="t('archiveTemplate.columns.scale')" :width="130">
+        <a-table-column :title="t('archiveTemplate.columns.scale')" :width="110">
           <template #cell="{ record }">
             <span v-if="record.currentPublishedVersion?._count">
               {{
@@ -680,7 +647,7 @@ watch(
             <span v-else>—</span>
           </template>
         </a-table-column>
-        <a-table-column :title="t('archiveTemplate.columns.projects')" :width="110">
+        <a-table-column :title="t('archiveTemplate.columns.projects')" :width="90">
           <template #cell="{ record }">
             {{ record._count?.projectSnapshots || 0 }}
           </template>
@@ -692,15 +659,17 @@ watch(
             </a-tag>
           </template>
         </a-table-column>
-        <a-table-column :title="t('archiveTemplate.columns.updatedByAt')" :width="180">
+        <a-table-column :title="t('archiveTemplate.columns.updatedBy')" :width="90">
           <template #cell="{ record }">
-            <div class="update-cell">
-              <span>{{ record.updater?.realName || t('archiveTemplate.system') }}</span>
-              <small>{{ formatDate(record.updatedAt) }}</small>
-            </div>
+            {{ record.updater?.realName || t('archiveTemplate.system') }}
           </template>
         </a-table-column>
-        <a-table-column :title="t('common.action')" :width="210" fixed="right">
+        <a-table-column :title="t('common.updatedAt')" :width="110">
+          <template #cell="{ record }">
+            {{ formatDate(record.updatedAt) }}
+          </template>
+        </a-table-column>
+        <a-table-column :title="t('common.action')" :width="160" fixed="right">
           <template #cell="{ record }">
             <a-space size="mini">
               <a-button type="text" size="mini" @click="openDetail(record)">
@@ -778,10 +747,10 @@ watch(
               <a-select v-model="createForm.countryCode" allow-search allow-clear>
                 <a-option
                   v-for="item in countries"
-                  :key="item.countryCode"
-                  :value="item.countryCode"
+                  :key="item.value"
+                  :value="item.value"
                 >
-                  {{ locale === 'en-US' ? item.nameEn : item.nameZh }}
+                  {{ item.label }}
                 </a-option>
               </a-select>
             </a-form-item>
@@ -1023,7 +992,13 @@ watch(
 <style scoped lang="scss">
 .template-page {
   display: grid;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  height: 100%;
+  min-width: 0;
+  padding: 13px;
+  background: #fff;
 }
 
 .page-header,
@@ -1038,23 +1013,13 @@ watch(
   gap: 16px;
 }
 
-.page-header h1 {
-  margin: 0;
-  color: var(--color-text-1);
-  font-size: 22px;
+.page-header {
+  min-width: 0;
+  justify-content: flex-end;
 }
 
-.page-header p {
-  margin: 6px 0 0;
-  color: var(--color-text-3);
-}
-
-.filter-card :deep(.arco-card-body) {
-  padding: 14px 16px;
-}
-
-.filter-card :deep(.arco-input-wrapper) {
-  max-width: 520px;
+.table-card {
+  min-width: 0;
 }
 
 .table-card :deep(.arco-card-body) {
@@ -1073,7 +1038,6 @@ watch(
   text-align: left;
 }
 
-.template-link span,
 .update-cell small,
 .folder-editor-title span {
   color: var(--color-text-3);

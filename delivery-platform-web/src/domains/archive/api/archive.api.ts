@@ -7,19 +7,6 @@ import type {
   ProjectArchiveTemplateDiff,
 } from '@/domains/archive/types/archive'
 
-export interface CreateTemporaryArchiveItemPayload {
-  name: string
-  description?: string
-  reason: string
-  ownerUserId: string
-  required?: boolean
-  reviewRequired?: boolean
-  approvalTemplateId?: string
-  suggestedForTemplate?: boolean
-  allowMultipleFiles?: boolean
-  allowedExtensions?: string[]
-}
-
 export interface UploadProjectArchiveFilePayload {
   uploadMode: 'REPLACE' | 'NEW_VERSION'
   revisionLevel: 'MINOR' | 'MAJOR'
@@ -66,14 +53,6 @@ export const archiveApi = {
       `/projects/${projectId}/archive-template-sync`,
       data,
     )
-  },
-
-  createTemporaryItem(
-    projectId: string,
-    folderId: string,
-    data: CreateTemporaryArchiveItemPayload,
-  ) {
-    return request.post(`/projects/${projectId}/archive-folders/${folderId}/items`, data)
   },
 
   archiveItem(projectId: string, itemId: string, reason?: string) {

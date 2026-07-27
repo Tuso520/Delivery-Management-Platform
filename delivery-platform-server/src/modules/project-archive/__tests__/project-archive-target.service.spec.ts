@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 
 import type { PrismaService } from '../../../database/prisma.service';
 import type { ProjectAccessService } from '../../project/project-access.service';
@@ -110,27 +110,6 @@ describe('ProjectArchiveTargetService', () => {
       namingRule: 'Drawing-{version}',
       canUpload: true,
     });
-  });
-
-  it('refuses to create a review-required temporary item without an approval template', async () => {
-    prisma.project.findFirst.mockResolvedValue({ id: 'project-1' });
-    prisma.projectArchiveFolder.findFirst.mockResolvedValue({ id: 'folder-1' });
-    prisma.projectMember.findFirst.mockResolvedValue({ userId: 'owner-1' });
-
-    await expect(
-      service.createTemporaryItem(
-        'project-1',
-        'folder-1',
-        {
-          name: '临时会签文件',
-          reason: '真实审核验收',
-          ownerUserId: 'owner-1',
-          reviewRequired: true,
-        },
-        actor,
-      ),
-    ).rejects.toThrow(new BadRequestException('需要审核的临时档案项必须选择审批模板'));
-    expect(prisma.projectArchiveEntry.create).not.toHaveBeenCalled();
   });
 
   it('returns 404 for an archive item that belongs to another project', async () => {

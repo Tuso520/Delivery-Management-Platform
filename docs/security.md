@@ -30,6 +30,7 @@
 - 合同、金额、回款、待审文件和历史版本还必须执行字段或对象级权限裁剪。
 - 路由权限不足只跳转首个可访问页面或无权限页，不得因只有设置权限而清除有效会话。
 - 项目常规删除语义是软归档；物理删除除 `project:delete` 外还要求 `SUPER_ADMIN`，文件、审核、财务或既有审计任一存在即拒绝，成功和失败尝试都记录审计。
+- 字段配置权限拆分为 `field_setting:view`、`field_setting:edit`、`field_setting:option_create` 和 `field_setting:option_toggle`；后端逐路由校验，前端隐藏编辑控件不能代替授权。
 
 ## 文件预览安全
 

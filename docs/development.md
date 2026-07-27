@@ -58,6 +58,7 @@ pnpm --dir delivery-platform-web budget
 - 服务端数据统一使用 `src/query/keys.ts` 和 `composables/queries/`；mutation 成功后按领域精确失效，提交不自动重试。
 - Pinia 不保存项目、档案、审核、标准、知识或设置响应；页面局部状态只保存表单、抽屉、上传进度等客户端状态。
 - 固定界面文案使用中英文同构 i18n key；状态文案和颜色通过 `components/business/status-registry.ts` 统一定义。
+- 国家、币种、项目类型、客户类型及其他配置字段只能通过 `useFieldConfig(moduleCode)` / `getFieldOptions(fieldCode)` 读取；页面和适配器不得维护备用业务枚举。
 - 筛选项保持简洁，能一行展示时不要拆成多行。
 - 涉及布局的修改必须通过浏览器截图或实际页面检查。
 - UI E2E 默认使用稳定版 Chrome；本地已有其他 Playwright 支持的 Chromium 通道时，可通过 `PLAYWRIGHT_BROWSER_CHANNEL` 显式指定，例如 `msedge`。CI 不设置该变量并继续使用 Chrome。
@@ -86,6 +87,7 @@ pnpm --dir delivery-platform-server build
 - 业务事务内写 Outbox；外部通知由 Outbox Worker 投递。文件转换由 File Worker 处理，API 进程不运行隐式定时任务。
 - 集成 Secret 只存 AES-256-GCM 密文，API 返回掩码；任何日志、异常和审计详情都要脱敏。
 - Controller 只处理协议层，业务规则放在 Service。
+- 业务写入必须使用 `ProjectConfigurationService` 或字段配置服务读取同一 `DictionaryCategory/DictionaryItem` 事实源做最终校验；不得恢复 `/projects/configuration`、`/knowledge/categories` 或运行时双读。
 
 ## 文档更新要求
 

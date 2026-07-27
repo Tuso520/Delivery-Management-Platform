@@ -28,26 +28,6 @@ export function formatDateTime(date: string | Date | null | undefined): string {
   return formatDate(date, 'YYYY-MM-DD HH:mm:ss')
 }
 
-/**
- * Format currency amount with 2 decimal places
- */
-export function formatCurrency(amount: number | string | null | undefined, currency: string = 'CNY'): string {
-  if (amount === null || amount === undefined) return '-'
-  const num = typeof amount === 'string' ? parseFloat(amount) : amount
-  if (isNaN(num)) return '-'
-
-  try {
-    return new Intl.NumberFormat('zh-CN', {
-      style: 'currency',
-      currency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(num)
-  } catch {
-    return `${num.toFixed(2)} ${currency}`
-  }
-}
-
 export interface FormatAdaptiveNumberOptions {
   fractionDigits?: number
   placeholder?: string

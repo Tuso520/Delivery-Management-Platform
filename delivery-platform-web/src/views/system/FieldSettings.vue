@@ -5,7 +5,9 @@ import Message from '@arco-design/web-vue/es/message'
 import Modal from '@arco-design/web-vue/es/modal'
 
 import { fieldConfigurationApi } from '@/api/field-configuration'
+import { usePermission } from '@/composables/usePermission'
 import { BusinessTable } from '@/design-system'
+import { invalidateFieldConfigCache } from '@/platform/field-configuration'
 import type { FieldCategory, FieldValue, SaveFieldValueDto } from '@/types/field-configuration'
 
 const PAGE_SIZE = 10
@@ -18,14 +20,17 @@ const selectedCategoryId = ref('')
 const values = ref<FieldValue[]>([])
 const page = ref(1)
 const total = ref(0)
-const keyword = ref('')
-const statusFilter = ref<FieldValue['status'] | ''>('')
 const loadingCategories = ref(false)
 const loadingValues = ref(false)
 const loadError = ref('')
 const saving = ref(false)
 const modalVisible = ref(false)
 const editing = ref<FieldValue | null>(null)
+const { hasPermission } = usePermission()
+const canCreateOption = computed(() => hasPermission('field_setting:option_create'))
+const canEditOption = computed(() => hasPermission('field_setting:edit'))
+const canToggleOption = computed(() => hasPermission('field_setting:option_toggle'))
+const canDeleteOption = computed(() => hasPermission('field_setting:edit'))
 const form = reactive<SaveFieldValueDto>({
   name: '',
   code: '',
@@ -76,8 +81,6 @@ async function loadValues(): Promise<void> {
     const result = await fieldConfigurationApi.getValues(selectedCategoryId.value, {
       page: page.value,
       pageSize: PAGE_SIZE,
-      keyword: keyword.value.trim() || undefined,
-      status: statusFilter.value || undefined,
     })
     values.value = result.items
     total.value = result.total
@@ -102,17 +105,6 @@ async function selectCategory(id: string): Promise<void> {
 async function changePage(nextPage: number): Promise<void> {
   page.value = nextPage
   await loadValues()
-}
-
-async function applyFilters(): Promise<void> {
-  page.value = 1
-  await loadValues()
-}
-
-async function refresh(): Promise<void> {
-  await loadCategories()
-  await loadValues()
-  Message.success('字段配置已刷新')
 }
 
 function openCreate(): void {
@@ -166,8 +158,25 @@ async function save(): Promise<boolean> {
       sortOrder: form.sortOrder ?? 0,
       status: form.status ?? 'Active',
     }
-    if (editing.value) await fieldConfigurationApi.update(editing.value.id, data)
-    else await fieldConfigurationApi.create(selectedCategoryId.value, data)
+    if (editing.value) {
+      if (canEditOption.value) {
+        await fieldConfigurationApi.update(editing.value.id, {
+          name: data.name,
+          code: data.code,
+          sortOrder: data.sortOrder,
+        })
+      }
+      if (editing.value.status !== data.status) {
+        if (!canToggleOption.value) {
+          Message.warning('当前账号没有启停字段枚举的权限')
+          return false
+        }
+        await fieldConfigurationApi.changeStatus(editing.value.id, data.status ?? 'Active')
+      }
+    } else {
+      await fieldConfigurationApi.create(selectedCategoryId.value, data)
+    }
+    invalidateFieldConfigCache()
     Message.success(editing.value ? '字段值已更新' : '字段值已新增')
     modalVisible.value = false
     await Promise.all([loadCategories(), loadValues()])
@@ -193,6 +202,7 @@ function remove(item: FieldValue): void {
           return
         }
         await fieldConfigurationApi.remove(item.id)
+        invalidateFieldConfigCache()
         Message.success('字段值已删除')
         await Promise.all([loadCategories(), loadValues()])
         done(true)
@@ -231,32 +241,6 @@ onMounted(async () => {
       </div>
     </a-spin>
 
-    <div class="field-toolbar" aria-label="字段值查询">
-      <a-input
-        v-model="keyword"
-        allow-clear
-        placeholder="搜索名称或编码"
-        @press-enter="applyFilters"
-        @clear="applyFilters"
-      />
-      <a-button type="primary" @click="applyFilters">
-        查询
-      </a-button>
-      <a-select
-        v-model="statusFilter"
-        allow-clear
-        placeholder="全部状态"
-        @change="applyFilters"
-        @clear="applyFilters"
-      >
-        <a-option value="Active" label="启用" />
-        <a-option value="Inactive" label="停用" />
-      </a-select>
-      <a-button @click="refresh">
-        刷新
-      </a-button>
-    </div>
-
     <BusinessTable
       class="field-value-table"
       :data="values"
@@ -286,10 +270,16 @@ onMounted(async () => {
       </template>
       <template #actions="{ record }">
         <a-space :size="16">
-          <a-button type="text" size="mini" @click="openEdit(record)">
+          <a-button
+            v-if="canEditOption || canToggleOption"
+            type="text"
+            size="mini"
+            @click="openEdit(record)"
+          >
             编辑
           </a-button>
           <a-button
+            v-if="canDeleteOption"
             type="text"
             size="mini"
             status="danger"
@@ -302,7 +292,12 @@ onMounted(async () => {
     </BusinessTable>
 
     <footer class="field-footer">
-      <a-button type="primary" size="small" @click="openCreate">
+      <a-button
+        v-if="canCreateOption"
+        type="primary"
+        size="small"
+        @click="openCreate"
+      >
         新增一行
       </a-button>
       <div class="pagination-group">
@@ -330,22 +325,32 @@ onMounted(async () => {
   >
     <a-form :model="form" layout="vertical" class="field-value-form">
       <a-form-item label="字段名称" required>
-        <a-input v-model="form.name" :max-length="100" placeholder="请输入字段名称" />
+        <a-input
+          v-model="form.name"
+          :disabled="Boolean(editing) && !canEditOption"
+          :max-length="100"
+          placeholder="请输入字段名称"
+        />
       </a-form-item>
       <a-form-item label="字段编码" :required="requiresCode">
         <a-input
           v-model="form.code"
-          :disabled="Boolean(editing?.isSystemDefault)"
+          :disabled="Boolean(editing?.isSystemDefault) || (Boolean(editing) && !canEditOption)"
           :max-length="100"
           placeholder="请输入稳定编码"
           @input="form.code = form.code?.toUpperCase()"
         />
       </a-form-item>
       <a-form-item label="排序" required>
-        <a-input-number v-model="form.sortOrder" :min="0" :max="999999" />
+        <a-input-number
+          v-model="form.sortOrder"
+          :disabled="Boolean(editing) && !canEditOption"
+          :min="0"
+          :max="999999"
+        />
       </a-form-item>
       <a-form-item label="状态">
-        <a-switch v-model="formActive" />
+        <a-switch v-model="formActive" :disabled="Boolean(editing) && !canToggleOption" />
       </a-form-item>
     </a-form>
   </a-modal>
@@ -402,15 +407,6 @@ onMounted(async () => {
   margin-top: 12px;
   border: 1px solid #e5e6eb;
 }
-.field-toolbar {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 8px;
-  padding-top: 12px;
-}
-.field-toolbar :deep(.arco-input-wrapper) { width: 260px; }
-.field-toolbar :deep(.arco-select-view) { width: 140px; }
 .field-value-table :deep(.business-table__viewport) { max-height: none; }
 .field-value-table :deep(.arco-table-th),
 .field-value-table :deep(.arco-table-td) {

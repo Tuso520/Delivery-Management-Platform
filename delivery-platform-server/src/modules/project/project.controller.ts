@@ -34,7 +34,6 @@ import { ProjectStatusActionDto } from './dto/project-status-action.dto';
 import { QueryProjectDto } from './dto/query-project.dto';
 import { UpdateProjectProgressDto } from './dto/update-project-progress.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
-import { ProjectConfigurationService } from './project-configuration.service';
 import { validateProjectCreateIdempotencyKey } from './project-create-idempotency';
 import { ProjectService, type ProjectReadAuditContext } from './project.service';
 
@@ -50,10 +49,7 @@ function getReadAuditContext(request: Request): ProjectReadAuditContext {
 @Controller('projects')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class ProjectController {
-  constructor(
-    private readonly projectService: ProjectService,
-    private readonly projectConfiguration: ProjectConfigurationService,
-  ) {}
+  constructor(private readonly projectService: ProjectService) {}
 
   @Get()
   @RequirePermissions({ all: ['project:view'] })
@@ -112,15 +108,6 @@ export class ProjectController {
   @ApiOperation({ summary: '获取当前数据范围内的项目概览统计' })
   getSummary(@Query() query: QueryProjectDto, @CurrentUser() user: JwtPayload) {
     return this.projectService.getSummary(user, query.scope);
-  }
-
-  @Get('configuration')
-  @RequirePermissions({
-    any: ['project:view', 'project:create', 'archive_template:view', 'archive_template:create'],
-  })
-  @ApiOperation({ summary: '获取项目表单的当前启用配置项' })
-  getConfiguration(@Query('includeInactive') includeInactive?: string) {
-    return this.projectConfiguration.getConfiguration(includeInactive === 'true');
   }
 
   @Get('archived')

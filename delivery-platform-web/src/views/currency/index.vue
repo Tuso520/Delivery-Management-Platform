@@ -17,16 +17,16 @@ import { useCurrenciesQuery } from '@/composables/queries/useAdministrationQueri
 import { usePermission } from '@/composables/usePermission'
 import { queryKeys } from '@/query/keys'
 import type {
-  CreateCurrencyDto,
   Currency,
   CurrencyRateSyncResult,
   UpdateCurrencyDto,
 } from '@/types/currency'
 import { arcoConfirm } from '@/utils/arco-dialog'
 
-type CurrencySaveVariables =
-  | { kind: 'create'; data: CreateCurrencyDto }
-  | { kind: 'update'; code: string; data: UpdateCurrencyDto }
+interface CurrencySaveVariables {
+  code: string
+  data: UpdateCurrencyDto
+}
 
 interface CurrencyLockVariables {
   code: string
@@ -57,9 +57,7 @@ async function invalidateCurrencies(): Promise<void> {
 
 const saveCurrencyMutation = useMutation({
   mutationFn: (variables: CurrencySaveVariables) =>
-    variables.kind === 'create'
-      ? currencyApi.create(variables.data)
-      : currencyApi.updateByCode(variables.code, variables.data),
+    currencyApi.updateByCode(variables.code, variables.data),
   retry: false,
   onSuccess: invalidateCurrencies,
 })
@@ -79,29 +77,6 @@ const rateLockMutation = useMutation({
   onSuccess: invalidateCurrencies,
 })
 
-const disableCurrencyMutation = useMutation({
-  mutationFn: currencyApi.disable,
-  retry: false,
-  onSuccess: invalidateCurrencies,
-})
-
-function resetForm(): void {
-  Object.assign(form, {
-    currencyCode: '',
-    currencyName: '',
-    currencySymbol: '',
-    decimalPlaces: 2,
-    cnyRate: undefined,
-  })
-}
-
-function openCreate(): void {
-  if (!canManage.value) return
-  editingCode.value = ''
-  resetForm()
-  editorVisible.value = true
-}
-
 function openEdit(row: Currency): void {
   if (!canManage.value) return
   editingCode.value = row.currencyCode
@@ -116,43 +91,18 @@ function openEdit(row: Currency): void {
 }
 
 async function saveCurrency(): Promise<void> {
-  if (!canManage.value) return
-  const code = form.currencyCode.trim().toUpperCase()
-  const name = form.currencyName.trim()
-  if (!/^[A-Z]{3,10}$/u.test(code)) {
-    Message.warning(t('currency.validation.code'))
-    return
-  }
-  if (!name) {
-    Message.warning(t('currency.validation.name'))
-    return
-  }
+  if (!canManage.value || !editingCode.value) return
 
   try {
-    if (editingCode.value) {
-      await saveCurrencyMutation.mutateAsync({
-        kind: 'update',
-        code: editingCode.value,
-        data: {
-          currencyName: name,
-          currencySymbol: form.currencySymbol.trim(),
-          decimalPlaces: form.decimalPlaces,
-          ...(form.cnyRate !== undefined ? { cnyRate: form.cnyRate } : {}),
-        },
-      })
-      Message.success(t('currency.updated'))
-    } else {
-      await saveCurrencyMutation.mutateAsync({
-        kind: 'create',
-        data: {
-          currencyCode: code,
-          currencyName: name,
-          currencySymbol: form.currencySymbol.trim() || undefined,
-          decimalPlaces: form.decimalPlaces,
-        },
-      })
-      Message.success(t('currency.created'))
-    }
+    await saveCurrencyMutation.mutateAsync({
+      code: editingCode.value,
+      data: {
+        currencySymbol: form.currencySymbol.trim(),
+        decimalPlaces: form.decimalPlaces,
+        ...(form.cnyRate !== undefined ? { cnyRate: form.cnyRate } : {}),
+      },
+    })
+    Message.success(t('currency.updated'))
     editorVisible.value = false
   } catch {
     // The shared request layer has already surfaced the failure.
@@ -195,28 +145,6 @@ function toggleRateLock(row: Currency): void {
     .catch(() => undefined)
 }
 
-function disableCurrency(row: Currency): void {
-  if (!canManage.value || row.status !== 'Active') return
-  arcoConfirm(
-    t('currency.disableConfirm', { code: row.currencyCode }),
-    t('currency.disableTitle', { name: row.currencyName }),
-    {
-      confirmButtonText: t('currency.confirmDisable'),
-      cancelButtonText: t('common.cancel'),
-      type: 'warning',
-    },
-  )
-    .then(async () => {
-      try {
-        await disableCurrencyMutation.mutateAsync(row.currencyCode)
-        Message.success(t('currency.disabled'))
-      } catch {
-        // The shared request layer has already surfaced the failure.
-      }
-    })
-    .catch(() => undefined)
-}
-
 function formatRate(value: Currency['cnyRate']): string {
   if (value === null || value === undefined || value === '') return '—'
   const numeric = Number(value)
@@ -245,14 +173,9 @@ function sourceLabel(source: string | null): string {
     <PageToolbar :title="t('currency.title')" :description="t('currency.description')">
       <template #actions>
         <Can permission="currency:manage">
-          <a-space>
-            <a-button :loading="syncRatesMutation.isPending.value" @click="syncRates">
-              {{ t('currency.sync') }}
-            </a-button>
-            <a-button type="primary" @click="openCreate">
-              {{ t('currency.create') }}
-            </a-button>
-          </a-space>
+          <a-button :loading="syncRatesMutation.isPending.value" @click="syncRates">
+            {{ t('currency.sync') }}
+          </a-button>
         </Can>
       </template>
     </PageToolbar>
@@ -339,7 +262,7 @@ function sourceLabel(source: string | null): string {
           </a-tag>
         </template>
       </a-table-column>
-      <a-table-column :title="t('common.action')" :width="210" fixed="right">
+      <a-table-column :title="t('common.action')" :width="150" fixed="right">
         <template #cell="{ record }">
           <Can permission="currency:manage">
             <a-space size="mini" :wrap="false">
@@ -354,15 +277,6 @@ function sourceLabel(source: string | null): string {
               >
                 {{ record.rateLocked ? t('currency.unlock') : t('currency.lock') }}
               </a-button>
-              <a-button
-                type="text"
-                size="small"
-                status="danger"
-                :disabled="record.status !== 'Active'"
-                @click="disableCurrency(record)"
-              >
-                {{ t('currency.inactive') }}
-              </a-button>
             </a-space>
           </Can>
         </template>
@@ -371,7 +285,7 @@ function sourceLabel(source: string | null): string {
 
     <BusinessModal
       v-model:visible="editorVisible"
-      :title="editingCode ? t('currency.editTitle') : t('currency.createTitle')"
+      :title="t('currency.editTitle')"
       :width="560"
       :mask-closable="false"
     >
@@ -380,7 +294,7 @@ function sourceLabel(source: string | null): string {
           <a-form-item :label="t('currency.columns.code')" required>
             <a-input
               v-model="form.currencyCode"
-              :disabled="Boolean(editingCode)"
+              disabled
               :placeholder="t('currency.codePlaceholder')"
               :max-length="10"
             />
@@ -388,6 +302,7 @@ function sourceLabel(source: string | null): string {
           <a-form-item :label="t('currency.columns.name')" required>
             <a-input
               v-model="form.currencyName"
+              disabled
               :placeholder="t('currency.namePlaceholder')"
               :max-length="50"
             />
@@ -402,7 +317,7 @@ function sourceLabel(source: string | null): string {
           <a-form-item :label="t('currency.columns.decimalPlaces')">
             <a-input-number v-model="form.decimalPlaces" :min="0" :max="6" />
           </a-form-item>
-          <a-form-item v-if="editingCode" :label="t('currency.columns.rate')" class="full-row">
+          <a-form-item :label="t('currency.columns.rate')" class="full-row">
             <a-input-number
               v-model="form.cnyRate"
               :min="0.00000001"

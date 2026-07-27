@@ -5,12 +5,17 @@ import { FieldConfigurationService } from '../field-configuration.service';
 
 function createPrismaMock() {
   return {
-    dictionaryCategory: { findFirst: jest.fn(), findMany: jest.fn() },
+    dictionaryCategory: {
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+      update: jest.fn().mockResolvedValue(category),
+    },
     dictionaryItem: {
       findFirst: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(),
       create: jest.fn(), update: jest.fn(), delete: jest.fn(), count: jest.fn(),
     },
     project: { count: jest.fn().mockResolvedValue(0) },
+    projectProcessRecord: { count: jest.fn().mockResolvedValue(0) },
     projectPayment: { count: jest.fn().mockResolvedValue(0) },
     archiveTemplate: { count: jest.fn().mockResolvedValue(0) },
     checklistTemplate: { count: jest.fn().mockResolvedValue(0) },
@@ -139,20 +144,56 @@ describe('FieldConfigurationService', () => {
     });
   });
 
-  it('batch reads only active, non-deleted options in requested order', async () => {
+  it('batch reads configured fields in request order and preserves inactive history labels', async () => {
     const prisma = createPrismaMock();
     prisma.dictionaryCategory.findMany.mockResolvedValue([{
       categoryCode: 'COUNTRY',
       categoryName: '国家',
-      items: [{ id: 'item-id', itemValue: 'CN', itemLabel: '中国', itemCode: 'CN', sortOrder: 10 }],
+      fieldType: 'SINGLE_SELECT',
+      required: true,
+      defaultValue: 'CN',
+      visibleScopes: ['project'],
+      permissions: { view: [], edit: ['field_setting:edit'] },
+      revision: 3,
+      status: 'Active',
+      updatedAt: new Date('2026-07-27T00:00:00.000Z'),
+      items: [
+        {
+          id: 'item-id',
+          itemValue: 'CN',
+          itemLabel: '中国',
+          itemCode: 'CN',
+          sortOrder: 10,
+          status: 'Active',
+        },
+        {
+          id: 'legacy-id',
+          itemValue: 'LEGACY',
+          itemLabel: '历史国家',
+          itemCode: 'LEGACY',
+          sortOrder: 20,
+          status: 'Inactive',
+        },
+      ],
     }]);
     const service = new FieldConfigurationService(prisma as unknown as PrismaService);
 
     await expect(service.findEnabledBatch(['CURRENCY', 'country', 'COUNTRY'])).resolves.toEqual([
-      { code: 'COUNTRY', name: '国家', values: [{ id: 'item-id', value: 'CN', name: '中国', code: 'CN', sortOrder: 10 }] },
+      expect.objectContaining({
+        code: 'COUNTRY',
+        name: '国家',
+        required: true,
+        enabled: true,
+        defaultValue: 'CN',
+        revision: 3,
+        values: [
+          expect.objectContaining({ value: 'CN', name: '中国', enabled: true }),
+          expect.objectContaining({ value: 'LEGACY', name: '历史国家', enabled: false }),
+        ],
+      }),
     ]);
     expect(prisma.dictionaryCategory.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { categoryCode: { in: ['CURRENCY', 'COUNTRY'] }, status: 'Active' },
+      where: { categoryCode: { in: ['CURRENCY', 'COUNTRY'] } },
     }));
   });
 
@@ -166,15 +207,22 @@ describe('FieldConfigurationService', () => {
 
   it('allows a referenced value to be deactivated for new records while preserving history', async () => {
     const prisma = createPrismaMock();
-    prisma.dictionaryItem.findUnique.mockResolvedValue(item());
+    const stageCategory = { ...category, categoryCode: 'PROJECT_STAGE' };
+    prisma.dictionaryItem.findUnique.mockResolvedValue(item({
+      itemValue: 'CUSTOM_VERIFICATION',
+      itemCode: 'CUSTOM_VERIFICATION',
+      category: stageCategory,
+    }));
     prisma.dictionaryItem.findFirst.mockResolvedValue(null);
-    prisma.project.count.mockResolvedValue(1);
+    prisma.projectProcessRecord.count.mockResolvedValue(1);
     prisma.dictionaryItem.update.mockResolvedValue(item({ status: 'Inactive' }));
     const service = new FieldConfigurationService(prisma as unknown as PrismaService);
 
-    await expect(service.update('item-id', {
-      name: '中国', code: 'CN', sortOrder: 10, status: 'Inactive',
-    }, 'admin-id')).resolves.toMatchObject({ status: 'Inactive' });
+    await expect(service.changeStatus('item-id', 'Inactive', 'admin-id'))
+      .resolves.toMatchObject({ status: 'Inactive' });
+    expect(prisma.projectProcessRecord.count).toHaveBeenCalledWith({
+      where: { stageCode: 'CUSTOM_VERIFICATION' },
+    });
     expect(prisma.dictionaryItem.update).toHaveBeenCalled();
   });
 });

@@ -50,7 +50,10 @@ export const roleCatalog = [
       'department:manage',
       'dictionary:view',
       'dictionary:manage',
-      'field_setting:manage',
+      'field_setting:view',
+      'field_setting:edit',
+      'field_setting:option_create',
+      'field_setting:option_toggle',
     ],
   },
   {

@@ -1,5 +1,7 @@
 # 基础清理报告
 
+> 历史清理快照：本文保留 2026-07-26 基础清理证据；本轮删除和迁移结果见 [删除与迁移报告](deletion-report.md)。
+
 ## 1. 清理范围
 
 清理日期：2026-07-26。
@@ -176,7 +178,7 @@
 
 - 前端 ESLint、TypeScript、Build、体积预算、42 个 Vitest 套件/193 个用例全部 PASS。
 - 后端 ESLint 0 error、TypeScript、Nest Build、74 个 Jest 套件/528 个用例全部 PASS。
-- 当前源码 Docker 冷构建 PASS；35 个 migration 在全新 MySQL 应用成功，`/ready` 的 MySQL、Redis、MinIO 全部为 `ok`。
+- 当前源码 Docker 冷构建 PASS；41 个 migration 在全新 MySQL 应用成功，`/ready` 的 MySQL、Redis、MinIO 全部为 `ok`。
 - Nest 真实 API 3/3、Playwright API 2/2、干净数据库 Chromium UI 12/12 PASS。
 - 本轮独立 Compose 项目的容器、网络、MySQL/Redis/MinIO 测试卷和 Playwright 临时报告已删除；不影响其他现有验收栈。
 - 宿主 Node 24.14.0 / pnpm 11.9.0 版本门禁为真实 FAIL；容器使用项目锁定的 Node 20 / pnpm 10.34.4 并通过。

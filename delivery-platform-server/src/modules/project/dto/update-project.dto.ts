@@ -12,15 +12,11 @@ import {
   MaxLength,
   Min,
   Max,
-  IsIn,
   Matches,
   ValidateNested,
 } from 'class-validator';
 
-import {
-  PROJECT_DELIVERY_STAGES,
-  type ProjectDeliveryStage,
-} from '../project.constants';
+import type { ProjectDeliveryStage } from '../project.constants';
 
 import { ProjectPaymentPlanWriteDto } from './create-project.dto';
 
@@ -61,6 +57,12 @@ export class UpdateProjectDto {
   @IsString()
   @MaxLength(200)
   customerName?: string | null;
+
+  @ApiPropertyOptional({ description: '客户类型（取自字段配置）' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  customerType?: string;
 
   @ApiPropertyOptional({ description: '项目类型（取自项目配置）' })
   @IsOptional()
@@ -166,9 +168,10 @@ export class UpdateProjectDto {
   @IsDateString()
   plannedEndDate?: string | null;
 
-  @ApiPropertyOptional({ description: '目标交付阶段', enum: PROJECT_DELIVERY_STAGES })
+  @ApiPropertyOptional({ description: '目标交付阶段，取值来自 PROJECT_STAGE 字段配置' })
   @IsOptional()
-  @IsIn(PROJECT_DELIVERY_STAGES)
+  @IsString()
+  @Matches(/^[A-Z][A-Z0-9_-]{0,99}$/u)
   deliveryStage?: ProjectDeliveryStage;
 
   @ApiPropertyOptional({ description: '项目进度百分比' })

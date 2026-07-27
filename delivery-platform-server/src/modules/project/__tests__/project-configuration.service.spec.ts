@@ -5,10 +5,11 @@ import { ProjectConfigurationService } from '../project-configuration.service';
 
 describe('ProjectConfigurationService', () => {
   const categories = [
-    ['project_type', 'FACTORY', '工厂'],
-    ['contract_type', 'EPC', 'EPC'],
-    ['product_type', 'DEEPSIGHT', 'DeepSight'],
-    ['project_keyword', 'NEW_BUILD', '新建项目'],
+    ['CUSTOMER_TYPE', 'ENTERPRISE', '企业客户'],
+    ['PROJECT_TYPE', 'FACTORY', '工厂'],
+    ['CONTRACT_TYPE', 'EPC', 'EPC'],
+    ['PRODUCT_TYPE', 'DEEPSIGHT', 'DeepSight'],
+    ['PROJECT_KEYWORD', 'NEW_BUILD', '新建项目'],
   ].map(([categoryCode, itemValue, itemLabel]) => ({
     categoryCode,
     items: [{ itemValue, itemLabel, extraData: null, status: 'Active' }],
@@ -22,6 +23,9 @@ describe('ProjectConfigurationService', () => {
 
   it('returns all project dictionaries from active database configuration', async () => {
     await expect(service.getConfiguration()).resolves.toEqual({
+      customerTypes: [
+        { value: 'ENTERPRISE', label: '企业客户', extraData: null, status: 'Active' },
+      ],
       projectTypes: [{ value: 'FACTORY', label: '工厂', extraData: null, status: 'Active' }],
       contractTypes: [{ value: 'EPC', label: 'EPC', extraData: null, status: 'Active' }],
       productTypes: [{ value: 'DEEPSIGHT', label: 'DeepSight', extraData: null, status: 'Active' }],
@@ -37,14 +41,19 @@ describe('ProjectConfigurationService', () => {
   it('accepts only values enabled in the current project configuration', async () => {
     await expect(
       service.validate({
+        customerType: 'ENTERPRISE',
         projectType: 'FACTORY',
         contractType: 'EPC',
         product: 'DEEPSIGHT',
         keywords: ['NEW_BUILD'],
       }),
     ).resolves.toBeUndefined();
-    await expect(service.validate({ projectType: 'DATA_CENTER' })).resolves.toBeUndefined();
-    await expect(service.validate({ projectType: 'LIGHTWEIGHT' })).resolves.toBeUndefined();
+    await expect(service.validate({ projectType: 'DATA_CENTER' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    await expect(service.validate({ projectType: 'LIGHTWEIGHT' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
     await expect(service.validate({ projectType: 'DISABLED_VALUE' })).rejects.toBeInstanceOf(
       BadRequestException,
     );

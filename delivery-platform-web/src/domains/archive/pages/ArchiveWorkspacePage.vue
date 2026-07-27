@@ -10,10 +10,7 @@ import {
   BusinessModal,
   BusinessTable,
   PageContainer,
-  PageToolbar,
-  SectionCard,
   StatCard,
-  StatusBadge,
 } from '@/design-system'
 import { Can } from '@/platform/permission'
 import {
@@ -21,8 +18,7 @@ import {
   useArchiveTemplateDiffQuery,
   useArchiveTreeQuery,
 } from '@/domains/archive/queries/useArchiveQueries'
-import { useProjectUserOptionsQuery } from '@/domains/project/queries/useProjectQueries'
-import { useApprovalTemplatesQuery } from '@/composables/queries/useOperationsQueries'
+import { fileApi } from '@/platform/file/file.api'
 import { useFilePreview } from '@/platform/file-preview/useFilePreview'
 import { queryKeys } from '@/query/keys'
 import type {
@@ -30,6 +26,7 @@ import type {
   ProjectArchiveTargetItem,
 } from '@/domains/archive/types/archive'
 import { arcoConfirm } from '@/utils/arco-dialog'
+import { downloadBlob } from '@/utils/blob'
 
 interface ArcoUploadFileItem {
   file?: File
@@ -43,6 +40,7 @@ const queryClient = useQueryClient()
 
 const selectedProjectId = ref(normalizeProjectId(route.query.projectId))
 const projectKeyword = ref('')
+const selectedFolderId = ref('')
 
 const uploadVisible = ref(false)
 const uploadItem = ref<ProjectArchiveTargetItem | null>(null)
@@ -55,40 +53,14 @@ const uploadForm = reactive({
   changeDescription: '',
 })
 
-const temporaryVisible = ref(false)
-const temporaryForm = reactive({
-  folderId: '',
-  name: '',
-  description: '',
-  reason: '',
-  ownerUserId: '',
-  required: false,
-  reviewRequired: false,
-  approvalTemplateId: '',
-  suggestedForTemplate: false,
-  allowMultipleFiles: false,
-  allowedExtensions: '',
-})
-
 const syncVisible = ref(false)
 
 const archiveProjectsQuery = useArchiveProjectOptionsQuery()
 const archiveTreeQuery = useArchiveTreeQuery(selectedProjectId)
 const archiveTemplateDiffQuery = useArchiveTemplateDiffQuery(selectedProjectId, syncVisible)
-const archiveUserOptionsQuery = useProjectUserOptionsQuery('project-member')
-const archiveApprovalTemplatesQuery = useApprovalTemplatesQuery({
-  page: 1,
-  pageSize: 100,
-  businessType: 'PROJECT_ARCHIVE_FILE',
-  enabled: true,
-})
 const projects = computed(() => archiveProjectsQuery.data.value?.items ?? [])
 const tree = computed(() => archiveTreeQuery.data.value ?? null)
 const templateDiff = computed(() => archiveTemplateDiffQuery.data.value ?? null)
-const userOptions = computed(() => archiveUserOptionsQuery.data.value ?? [])
-const approvalTemplateOptions = computed(
-  () => archiveApprovalTemplatesQuery.data.value?.items ?? [],
-)
 const loadingProjects = computed(() => archiveProjectsQuery.isFetching.value)
 const loadingTree = computed(() => archiveTreeQuery.isFetching.value)
 const syncLoading = computed(() => archiveTemplateDiffQuery.isFetching.value)
@@ -103,6 +75,9 @@ const filteredProjects = computed(() => {
 
 const activeFolders = computed(() =>
   (tree.value?.folders ?? []).filter((folder) => !folder.archivedAt),
+)
+const selectedFolder = computed<ProjectArchiveTargetFolder | null>(
+  () => activeFolders.value.find((folder) => folder.id === selectedFolderId.value) ?? null,
 )
 
 const totalItems = computed(() =>
@@ -119,6 +94,11 @@ const requiredTotal = computed(() =>
 
 const requiredCompleted = computed(() =>
   activeFolders.value.reduce((total, folder) => total + folder.requiredCompletedCount, 0),
+)
+const completedFolders = computed(
+  () => activeFolders.value.filter(
+    (folder) => folder.totalCount > 0 && folder.completedCount === folder.totalCount,
+  ).length,
 )
 
 const completionRate = computed(() =>
@@ -174,20 +154,6 @@ const uploadMutation = useMutation({
   onSuccess: async (_, variables) => invalidateArchiveTree(variables.projectId),
 })
 
-const temporaryItemMutation = useMutation({
-  mutationFn: ({
-    projectId,
-    folderId,
-    data,
-  }: {
-    projectId: string
-    folderId: string
-    data: Parameters<typeof archiveApi.createTemporaryItem>[2]
-  }) => archiveApi.createTemporaryItem(projectId, folderId, data),
-  retry: false,
-  onSuccess: async (_, variables) => invalidateArchiveTree(variables.projectId),
-})
-
 const templateSyncMutation = useMutation({
   mutationFn: ({
     projectId,
@@ -231,21 +197,7 @@ const archiveItemMutation = useMutation({
 })
 
 const uploading = computed(() => uploadMutation.isPending.value)
-const temporarySaving = computed(() => temporaryItemMutation.isPending.value)
 const syncSaving = computed(() => templateSyncMutation.isPending.value)
-
-function viewProject(): void {
-  if (!selectedProjectId.value) return
-  void router.push(`/projects/${selectedProjectId.value}`)
-}
-
-function folderProgress(folder: ProjectArchiveTargetFolder): number {
-  return folder.totalCount > 0 ? Math.round((folder.completedCount / folder.totalCount) * 100) : 0
-}
-
-function normalizeArchiveStatus(status: string): string {
-  return status ? status.toUpperCase() : 'NOT_STARTED'
-}
 
 function formatDate(value?: string | null): string {
   if (!value) return '—'
@@ -256,6 +208,14 @@ function formatDate(value?: string | null): string {
     month: '2-digit',
     day: '2-digit',
   }).format(date)
+}
+
+function formatFileSize(value?: string | null): string {
+  const bytes = Number(value)
+  if (!Number.isFinite(bytes) || bytes < 0) return '—'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 ** 2).toFixed(1)} MB`
 }
 
 function previewItem(item: ProjectArchiveTargetItem): void {
@@ -286,6 +246,27 @@ function openUpload(item: ProjectArchiveTargetItem): void {
   uploadVisible.value = true
 }
 
+function openFolderUpload(): void {
+  const target = selectedFolder.value?.items.find(
+    (item) => item.canUpload && !item.currentVersion,
+  ) ?? selectedFolder.value?.items.find((item) => item.canUpload)
+  if (!target) {
+    Message.info('当前文件夹没有可上传的档案项')
+    return
+  }
+  openUpload(target)
+}
+
+async function downloadItem(item: ProjectArchiveTargetItem): Promise<void> {
+  const logicalFileId = item.currentVersion?.logicalFileId
+  if (!logicalFileId) {
+    Message.info(t('archive.messages.noPreviewFile'))
+    return
+  }
+  const blob = await fileApi.download(logicalFileId)
+  downloadBlob(blob, item.currentVersion?.displayName || item.name)
+}
+
 function handleUploadSelection(
   _fileList: ArcoUploadFileItem[],
   fileItem?: ArcoUploadFileItem,
@@ -311,62 +292,6 @@ async function submitUpload(): Promise<void> {
       : t('archive.messages.uploaded'),
   )
   uploadVisible.value = false
-}
-
-async function openTemporaryItem(): Promise<void> {
-  if (!activeFolders.value.length) {
-    Message.warning(t('archive.messages.noAvailableFolder'))
-    return
-  }
-  temporaryForm.folderId = activeFolders.value[0].id
-  temporaryForm.name = ''
-  temporaryForm.description = ''
-  temporaryForm.reason = ''
-  temporaryForm.ownerUserId = ''
-  temporaryForm.required = false
-  temporaryForm.reviewRequired = false
-  temporaryForm.approvalTemplateId = ''
-  temporaryForm.suggestedForTemplate = false
-  temporaryForm.allowMultipleFiles = false
-  temporaryForm.allowedExtensions = ''
-  temporaryVisible.value = true
-  if (!archiveUserOptionsQuery.data.value) await archiveUserOptionsQuery.refetch()
-}
-
-async function saveTemporaryItem(): Promise<void> {
-  if (!selectedProjectId.value || !temporaryForm.folderId) return
-  if (!temporaryForm.name.trim() || !temporaryForm.reason.trim() || !temporaryForm.ownerUserId) {
-    Message.warning(t('archive.validation.temporaryRequired'))
-    return
-  }
-  if (temporaryForm.reviewRequired && !temporaryForm.approvalTemplateId) {
-    Message.warning(t('archive.validation.approvalTemplateRequired'))
-    return
-  }
-  const extensions = temporaryForm.allowedExtensions
-    .split(/[，,\s]+/u)
-    .map((value) => value.replace(/^\./u, '').trim().toLowerCase())
-    .filter(Boolean)
-  await temporaryItemMutation.mutateAsync({
-    projectId: selectedProjectId.value,
-    folderId: temporaryForm.folderId,
-    data: {
-      name: temporaryForm.name.trim(),
-      description: temporaryForm.description.trim() || undefined,
-      reason: temporaryForm.reason.trim(),
-      ownerUserId: temporaryForm.ownerUserId,
-      required: temporaryForm.required,
-      reviewRequired: temporaryForm.reviewRequired,
-      approvalTemplateId: temporaryForm.reviewRequired
-        ? temporaryForm.approvalTemplateId
-        : undefined,
-      suggestedForTemplate: temporaryForm.suggestedForTemplate,
-      allowMultipleFiles: temporaryForm.allowMultipleFiles,
-      allowedExtensions: extensions.length ? extensions : undefined,
-    },
-  })
-  Message.success(t('archive.messages.temporaryCreated'))
-  temporaryVisible.value = false
 }
 
 async function openTemplateSync(): Promise<void> {
@@ -441,6 +366,16 @@ watch(
   },
   { immediate: true },
 )
+
+watch(
+  activeFolders,
+  (folders) => {
+    if (!folders.some((folder) => folder.id === selectedFolderId.value)) {
+      selectedFolderId.value = folders[0]?.id ?? ''
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -466,98 +401,87 @@ watch(
       <StatCard :label="t('archive.summary.scale')" :value="activeFolders.length" tone="red">
         <small>{{ t('archive.summary.twoLevelFolders') }}</small>
       </StatCard>
+      <StatCard :label="t('archive.completedFolders')" :value="completedFolders" tone="blue">
+        <small>{{ completedFolders }} / {{ activeFolders.length }}</small>
+      </StatCard>
     </section>
 
     <section class="archive-workspace-panel">
-      <PageToolbar class="archive-toolbar">
-        <template #filters>
-          <div class="project-picker">
-            <span class="field-label">{{ t('archive.selectProject') }}</span>
-            <a-select
-              :model-value="selectedProjectId"
-              :loading="loadingProjects"
-              allow-search
-              :placeholder="t('archive.projectSearchPlaceholder')"
-              @search="projectKeyword = $event"
-              @change="changeProject"
-            >
-              <a-option
-                v-for="project in filteredProjects"
-                :key="project.id"
-                :value="project.id"
-                :label="`${project.projectName}（${project.projectCode}）`"
-              />
-            </a-select>
-            <a-button type="text" :disabled="!selectedProjectId" @click="viewProject">
-              {{ t('archive.projectDetail') }}
-            </a-button>
-          </div>
-        </template>
-        <template #actions>
-          <Can permission="archive:item:create_temporary">
-            <a-button :disabled="!tree" @click="openTemporaryItem">
-              {{ t('archive.temporaryCreate') }}
-            </a-button>
-          </Can>
+      <div class="archive-toolbar">
+        <a-select
+          :model-value="selectedProjectId"
+          :loading="loadingProjects"
+          allow-search
+          :placeholder="t('archive.projectSearchPlaceholder')"
+          @search="projectKeyword = $event"
+          @change="changeProject"
+        >
+          <a-option
+            v-for="project in filteredProjects"
+            :key="project.id"
+            :value="project.id"
+            :label="`${project.projectName}（${project.projectCode}）`"
+          />
+        </a-select>
+        <div v-if="tree" class="project-meta">
+          <span>{{ tree.project.code }}</span>
+          <span>
+            {{
+              tree.template.version
+                ? t('archive.templateVersion', { version: tree.template.version })
+                : t('archive.noTemplateVersion')
+            }}
+          </span>
+        </div>
+        <div class="archive-actions">
           <Can permission="archive:template:sync">
-            <a-button :disabled="!tree" type="primary" @click="openTemplateSync">
+            <a-button :disabled="!tree" @click="openTemplateSync">
               {{ t('archive.syncTemplate') }}
             </a-button>
           </Can>
-        </template>
-      </PageToolbar>
-
-      <div v-if="tree" class="project-meta">
-        <span>{{ tree.project.code }}</span>
-        <a-tag>
-          {{
-            tree.template.version
-              ? t('archive.templateVersion', { version: tree.template.version })
-              : t('archive.noTemplateVersion')
-          }}
-        </a-tag>
-        <a-tag v-if="tree.template.hasDiff" color="orange">
-          {{ t('archive.templateHasAdditions') }}
-        </a-tag>
+          <Can permission="archive:upload">
+            <a-button :disabled="!selectedFolder" type="primary" @click="openFolderUpload">
+              {{ t('common.upload') }}
+            </a-button>
+          </Can>
+        </div>
       </div>
 
       <a-spin :loading="loadingTree" class="archive-loading">
         <template v-if="tree">
           <a-empty v-if="!activeFolders.length" :description="t('archive.emptySnapshot')" />
-
-          <section v-else class="folder-tree">
-            <SectionCard
-              v-for="folder in activeFolders"
-              :key="folder.id"
-              class="folder-card"
-              :bordered="false"
-            >
-              <template #title>
-                <div class="folder-title">
-                  <div>
-                    <strong>{{ folder.name }}</strong>
-                    <span v-if="folder.description">{{ folder.description }}</span>
-                  </div>
-                  <div class="folder-progress">
-                    <span>{{ folder.completedCount }} / {{ folder.totalCount }}</span>
-                    <a-progress
-                      size="small"
-                      :percent="folderProgress(folder) / 100"
-                      :show-text="false"
-                    />
-                  </div>
+          <div v-else class="archive-content">
+            <aside class="folder-sidebar" :aria-label="t('archive.directoryAria')">
+              <button
+                v-for="folder in activeFolders"
+                :key="folder.id"
+                type="button"
+                :class="['folder-entry', { active: folder.id === selectedFolderId }]"
+                @click="selectedFolderId = folder.id"
+              >
+                <span>{{ folder.name }}</span>
+                <small>{{ folder.completedCount }}/{{ folder.totalCount }}</small>
+              </button>
+            </aside>
+            <section v-if="selectedFolder" class="file-panel">
+              <header class="folder-heading">
+                <div>
+                  <h2>{{ selectedFolder.name }}</h2>
+                  <p v-if="selectedFolder.description">
+                    {{ selectedFolder.description }}
+                  </p>
                 </div>
-              </template>
-
+                <span>{{ t('archive.selectedFileCount', { count: selectedFolder.totalCount }) }}</span>
+              </header>
               <BusinessTable
-                :data="folder.items"
+                :data="selectedFolder.items"
                 row-key="id"
-                size="medium"
-                :scroll="{ x: 960 }"
+                size="small"
+                :scroll="{ x: 750 }"
                 :empty-title="t('archive.emptyFolder')"
               >
                 <template #columns>
-                  <a-table-column :title="t('archive.columns.itemName')" :width="280" fixed="left">
+                  <a-table-column :title="t('archive.columns.fileName')" :width="220" fixed="left">
                     <template #cell="{ record }">
                       <button
                         class="item-title"
@@ -568,58 +492,31 @@ watch(
                         type="button"
                         @click="previewItem(record)"
                       >
-                        <span>{{ record.name }}</span>
-                        <a-tag v-if="record.required" size="small" color="red">
-                          {{ t('archive.required') }}
-                        </a-tag>
-                        <a-tag v-if="record.isTemporary" size="small">
-                          {{ t('archive.temporary') }}
-                        </a-tag>
+                        <span>{{ record.currentVersion?.displayName || record.name }}</span>
                       </button>
-                      <p v-if="record.description" class="item-description">
-                        {{ record.description }}
-                      </p>
                     </template>
                   </a-table-column>
-                  <a-table-column :title="t('archive.columns.fileStatus')" :width="120">
+                  <a-table-column :title="t('archive.columns.version')" :width="80">
                     <template #cell="{ record }">
-                      <StatusBadge
-                        domain="archive"
-                        :status="normalizeArchiveStatus(record.status)"
-                      />
-                      <span v-if="record.pendingReviewSummary.count" class="review-count">
-                        {{
-                          t('archive.reviewTaskCount', {
-                            count: record.pendingReviewSummary.count,
-                          })
-                        }}
-                      </span>
+                      {{ record.currentVersion?.version || '—' }}
                     </template>
                   </a-table-column>
-                  <a-table-column :title="t('archive.columns.currentVersion')" :width="150">
+                  <a-table-column :title="t('archive.columns.fileSize')" :width="90">
                     <template #cell="{ record }">
-                      <span v-if="record.currentVersion">
-                        {{ record.currentVersion.version }}
-                        <small v-if="record.fileCount > 1">{{
-                          t('archive.fileCount', { count: record.fileCount })
-                        }}</small>
-                      </span>
-                      <span v-else>—</span>
+                      {{ formatFileSize(record.currentVersion?.fileSize) }}
                     </template>
                   </a-table-column>
-                  <a-table-column :title="t('archive.columns.owner')" :width="130">
+                  <a-table-column :title="t('archive.columns.uploader')" :width="90">
                     <template #cell="{ record }">
-                      {{
-                        record.owner?.realName || record.owner?.username || t('archive.unassigned')
-                      }}
+                      {{ record.currentVersion?.uploader?.realName || '—' }}
                     </template>
                   </a-table-column>
-                  <a-table-column :title="t('archive.columns.updatedAt')" :width="120">
+                  <a-table-column :title="t('archive.columns.uploadedAt')" :width="120">
                     <template #cell="{ record }">
-                      {{ formatDate(record.updatedAt) }}
+                      {{ formatDate(record.currentVersion?.uploadedAt) }}
                     </template>
                   </a-table-column>
-                  <a-table-column :title="t('common.action')" :width="180" fixed="right">
+                  <a-table-column :title="t('common.action')" :width="150" fixed="right">
                     <template #cell="{ record }">
                       <a-space size="mini">
                         <a-button
@@ -628,11 +525,15 @@ watch(
                           size="mini"
                           @click="openUpload(record)"
                         >
-                          {{
-                            record.currentVersion
-                              ? t('archive.uploadNewVersion')
-                              : t('common.upload')
-                          }}
+                          {{ t('archive.updateFile') }}
+                        </a-button>
+                        <a-button
+                          v-if="record.currentVersion"
+                          type="text"
+                          size="mini"
+                          @click="downloadItem(record)"
+                        >
+                          {{ t('common.download') }}
                         </a-button>
                         <a-button
                           v-if="record.canArchive"
@@ -641,7 +542,7 @@ watch(
                           status="danger"
                           @click="archiveItem(record)"
                         >
-                          {{ t('archive.archiveItem.action') }}
+                          {{ t('common.delete') }}
                         </a-button>
                         <a-button
                           v-if="record.canRestore"
@@ -656,8 +557,8 @@ watch(
                   </a-table-column>
                 </template>
               </BusinessTable>
-            </SectionCard>
-          </section>
+            </section>
+          </div>
         </template>
         <a-empty v-else-if="!loadingTree" :description="t('archive.selectAccessibleProject')" />
       </a-spin>
@@ -732,97 +633,6 @@ watch(
           </a-button>
           <a-button type="primary" :loading="uploading" @click="submitUpload">
             {{ t('archive.confirmUpload') }}
-          </a-button>
-        </div>
-      </a-form>
-    </BusinessModal>
-
-    <BusinessModal
-      v-model:visible="temporaryVisible"
-      :title="t('archive.temporaryCreate')"
-      :width="640"
-      :footer="false"
-    >
-      <a-alert type="info" class="modal-alert">
-        {{ t('archive.temporaryHint') }}
-      </a-alert>
-      <a-form :model="temporaryForm" layout="vertical">
-        <a-form-item :label="t('archive.folder')" required>
-          <a-select v-model="temporaryForm.folderId">
-            <a-option v-for="folder in activeFolders" :key="folder.id" :value="folder.id">
-              {{ folder.name }}
-            </a-option>
-          </a-select>
-        </a-form-item>
-        <a-grid :cols="2" :col-gap="16">
-          <a-grid-item>
-            <a-form-item :label="t('archive.columns.itemName')" required>
-              <a-input v-model="temporaryForm.name" :max-length="200" />
-            </a-form-item>
-          </a-grid-item>
-          <a-grid-item>
-            <a-form-item :label="t('archive.columns.owner')" required>
-              <a-select v-model="temporaryForm.ownerUserId" allow-search>
-                <a-option
-                  v-for="user in userOptions"
-                  :key="user.id"
-                  :value="user.id"
-                  :label="user.displayName"
-                />
-              </a-select>
-            </a-form-item>
-          </a-grid-item>
-        </a-grid>
-        <a-form-item :label="t('common.description')">
-          <a-textarea v-model="temporaryForm.description" />
-        </a-form-item>
-        <a-form-item :label="t('archive.createReason')" required>
-          <a-textarea v-model="temporaryForm.reason" :max-length="500" show-word-limit />
-        </a-form-item>
-        <a-form-item :label="t('archive.allowedExtensions')">
-          <a-input
-            v-model="temporaryForm.allowedExtensions"
-            :placeholder="t('archive.extensionsPlaceholder')"
-          />
-        </a-form-item>
-        <a-form-item
-          v-if="temporaryForm.reviewRequired"
-          :label="t('archive.approvalTemplate')"
-          required
-        >
-          <a-select
-            v-model="temporaryForm.approvalTemplateId"
-            allow-search
-            :placeholder="t('archive.approvalTemplatePlaceholder')"
-          >
-            <a-option
-              v-for="template in approvalTemplateOptions"
-              :key="template.id"
-              :value="template.id"
-              :label="template.templateName"
-            />
-          </a-select>
-        </a-form-item>
-        <a-space wrap>
-          <a-checkbox v-model="temporaryForm.required">
-            {{ t('archive.required') }}
-          </a-checkbox>
-          <a-checkbox v-model="temporaryForm.reviewRequired">
-            {{ t('archive.reviewRequired') }}
-          </a-checkbox>
-          <a-checkbox v-model="temporaryForm.allowMultipleFiles">
-            {{ t('archive.allowMultipleFiles') }}
-          </a-checkbox>
-          <a-checkbox v-model="temporaryForm.suggestedForTemplate">
-            {{ t('archive.suggestTemplate') }}
-          </a-checkbox>
-        </a-space>
-        <div class="modal-actions">
-          <a-button :disabled="temporarySaving" @click="temporaryVisible = false">
-            {{ t('common.cancel') }}
-          </a-button>
-          <a-button type="primary" :loading="temporarySaving" @click="saveTemporaryItem">
-            {{ t('common.create') }}
           </a-button>
         </div>
       </a-form>
@@ -917,7 +727,6 @@ watch(
   font-family: Inter, 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
 
-.folder-title,
 .modal-actions,
 .diff-summary {
   display: flex;
@@ -926,25 +735,15 @@ watch(
   gap: 16px;
 }
 
-.project-picker,
 .project-meta {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.project-picker :deep(.arco-select-view) {
-  width: 360px;
-}
-
-.field-label {
-  color: var(--color-text-2);
-  font-weight: 600;
-}
-
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -989,29 +788,30 @@ watch(
 }
 
 .archive-toolbar {
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
   flex: 0 0 auto;
   padding: 12px 16px;
   border-bottom: 1px solid var(--archive-border);
 }
 
-.archive-toolbar :deep(.page-toolbar__filters) {
-  min-width: 0;
-  flex: 1 1 auto;
-  flex-wrap: nowrap;
+.archive-toolbar > :deep(.arco-select-view) {
+  width: 320px;
 }
 
-.archive-toolbar :deep(.page-toolbar__actions) {
-  flex: 0 0 auto;
-  flex-wrap: nowrap;
+.archive-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-left: auto;
 }
 
 .project-meta {
-  min-height: 38px;
-  flex: 0 0 auto;
-  padding: 6px 16px;
-  border-bottom: 1px solid var(--archive-border);
-  background: #f7f8fa;
+  margin-left: auto;
+  color: #4e5969;
+  font-size: 13px;
 }
 
 .archive-loading {
@@ -1024,54 +824,79 @@ watch(
 .archive-loading :deep(.arco-spin-children) {
   width: 100%;
   min-height: 100%;
-  display: grid;
-  align-content: start;
-  gap: 16px;
-  padding: 12px 16px 16px;
+  display: flex;
 }
 
-.folder-tree,
-.folder-card,
-.folder-card :deep(.arco-card),
-.folder-card :deep(.business-table) {
+.archive-content {
   width: 100%;
   min-width: 0;
-}
-
-.folder-tree {
   display: grid;
-  gap: 12px;
+  grid-template-columns: 220px minmax(0, 1fr);
 }
 
-.folder-card :deep(.arco-card-header) {
-  min-height: 56px;
-  border-bottom-color: var(--color-border-2);
+.folder-sidebar {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 0;
+  border-right: 1px solid var(--archive-border);
+  background: #fafafa;
 }
 
-.folder-card :deep(.arco-card-body) {
-  padding: 0;
-}
-
-.folder-title {
+.folder-entry {
   width: 100%;
-}
-
-.folder-title > div:first-child {
-  display: grid;
-  gap: 3px;
-}
-
-.folder-title span {
-  color: var(--color-text-3);
-  font-size: 12px;
-  font-weight: 400;
-}
-
-.folder-progress {
-  display: grid;
-  grid-template-columns: auto 120px;
+  min-height: 40px;
+  display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 16px;
+  border: 0;
+  background: transparent;
+  color: #4e5969;
+  cursor: pointer;
+  text-align: left;
+}
+
+.folder-entry:hover,
+.folder-entry.active {
+  background: #e8f3ff;
+  color: #165dff;
+}
+
+.folder-entry small {
+  flex: 0 0 auto;
+  color: #86909c;
+}
+
+.file-panel {
+  min-width: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
+.folder-heading {
+  min-height: 54px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+}
+
+.folder-heading h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.folder-heading p {
+  margin: 4px 0 0;
+  color: #86909c;
+  font-size: 12px;
+}
+
+.folder-heading > span {
+  color: #4e5969;
+  font-size: 13px;
 }
 
 .item-title {
@@ -1090,19 +915,6 @@ watch(
 .item-title.disabled {
   color: var(--color-text-1);
   cursor: default;
-}
-
-.item-description {
-  margin: 4px 0 0;
-  color: var(--color-text-3);
-  font-size: 12px;
-}
-
-.review-count {
-  display: block;
-  margin-top: 4px;
-  color: var(--color-text-3);
-  font-size: 12px;
 }
 
 .modal-alert {
@@ -1134,9 +946,6 @@ watch(
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .archive-toolbar :deep(.page-toolbar__filters) {
-    flex-wrap: wrap;
-  }
 }
 
 @media (max-width: 720px) {
@@ -1144,14 +953,14 @@ watch(
     grid-template-columns: 1fr;
   }
 
-  .project-picker {
-    width: 100%;
-    align-items: stretch;
-    flex-direction: column;
+  .archive-content {
+    grid-template-columns: 1fr;
   }
 
-  .project-picker :deep(.arco-select-view) {
-    width: 100%;
+  .folder-sidebar {
+    max-height: 180px;
+    border-right: 0;
+    border-bottom: 1px solid var(--archive-border);
   }
 }
 </style>

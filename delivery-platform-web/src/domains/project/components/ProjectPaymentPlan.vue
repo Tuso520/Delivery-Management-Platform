@@ -21,6 +21,8 @@ const props = defineProps<{
   modelValue: ProjectPaymentPlanItem[]
   contractAmount?: string | null
   contractCurrency?: string | null
+  baseCurrency?: string | null
+  baseCurrencyLabel?: string | null
   convertedAmount?: string | null
   readonly?: boolean
   operateAllowed?: boolean
@@ -43,15 +45,19 @@ const form = reactive<ProjectPaymentPlanItem>({
   originalAmount: '',
   remark: '',
 })
-const columns: TableColumnData[] = [
+const columns = computed<TableColumnData[]>(() => [
   { title: '付款项', dataIndex: 'paymentName', minWidth: 82 },
   { title: '付款日期', dataIndex: 'dueDate', slotName: 'dueDate', width: 170 },
   { title: '是否完成', dataIndex: 'completed', slotName: 'completed', width: 88 },
   { title: '付款比例', slotName: 'ratio', width: 96 },
   { title: '付款金额', slotName: 'originalAmount', width: 110 },
-  { title: '折算人民币', slotName: 'convertedAmount', width: 120 },
+  {
+    title: `折算${props.baseCurrencyLabel || '币种'}`,
+    slotName: 'convertedAmount',
+    width: 120,
+  },
   { title: '付款条件', dataIndex: 'remark', slotName: 'remark', minWidth: 195 },
-]
+])
 const keyedRows = computed(() =>
   props.modelValue.map((item, index) => ({ ...item, rowKey: item.id || `new-${index}` })),
 )
@@ -73,7 +79,9 @@ function ratio(item: ProjectPaymentPlanItem): string {
 }
 function converted(item: ProjectPaymentPlanItem): string {
   if (!props.contractAmount || props.convertedAmount == null) {
-    return props.contractCurrency === 'CNY' ? formatMoneyString(item.originalAmount) : '—'
+    return props.baseCurrency && props.contractCurrency === props.baseCurrency
+      ? formatMoneyString(item.originalAmount)
+      : '—'
   }
   return formatMoneyString(
     proportionalMoney(item.originalAmount, props.contractAmount, props.convertedAmount),

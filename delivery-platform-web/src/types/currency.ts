@@ -15,15 +15,7 @@ export interface Currency {
   updatedAt: string
 }
 
-export interface CreateCurrencyDto {
-  currencyCode: string
-  currencyName: string
-  currencySymbol?: string
-  decimalPlaces?: number
-}
-
 export interface UpdateCurrencyDto {
-  currencyName?: string
   currencySymbol?: string
   decimalPlaces?: number
   cnyRate?: number

@@ -31,6 +31,8 @@ export interface ProjectArchiveCurrentVersion {
   logicalFileId?: string
   previewIdentifier?: string
   displayName?: string
+  fileSize?: string
+  uploader?: { id: string; realName: string; username: string }
   pendingReview?: boolean
   canPreview?: boolean
 }

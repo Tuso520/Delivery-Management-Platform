@@ -11,22 +11,18 @@ const routerSource = readFileSync(resolve(process.cwd(), 'src/router/index.ts'),
 describe('settings navigation contract', () => {
   it('exposes one page for each settings business directory', () => {
     expect(settingItems.map((item) => item.title)).toEqual([
-      'menu.userCenter',
       'menu.systemCurrency',
-      'menu.systemNotification',
       'menu.systemApproval',
       'menu.systemFields',
-      'menu.systemIntegration',
       'menu.systemConfig',
+      'menu.userCenter',
     ])
     expect(settingItems.map((item) => item.path)).toEqual([
-      '/settings',
       '/settings/currency',
-      '/settings/notifications',
       '/settings/approvals',
       '/settings/fields',
-      '/settings/integrations',
       '/settings/system',
+      '/settings',
     ])
   })
 
@@ -38,7 +34,7 @@ describe('settings navigation contract', () => {
 
     expect(permissions).toMatchObject({
       UserCenter: ['user:view'],
-      FieldSettings: ['field_setting:manage'],
+      FieldSettings: ['field_setting:view'],
       Currency: ['currency:view', 'currency:manage'],
       Notifications: ['notification_rule:view', 'notification_rule:manage'],
       Approvals: ['approval_config:view', 'approval_config:manage'],

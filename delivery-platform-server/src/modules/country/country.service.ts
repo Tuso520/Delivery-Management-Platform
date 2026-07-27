@@ -32,27 +32,57 @@ export class CountryService {
   async findAll(query: QueryCountryDto): Promise<PaginatedResult<CountryListItem>> {
     const { page = 1, pageSize = 20, keyword, status } = query;
 
-    const where: Prisma.CountryWhereInput = {
+    const where: Prisma.DictionaryItemWhereInput = {
+      deletedAt: null,
       status: status ?? 'Active',
+      category: {
+        categoryCode: 'COUNTRY',
+        status: 'Active',
+      },
     };
 
     if (keyword) {
       where.OR = [
-        { nameZh: { contains: keyword } },
-        { nameEn: { contains: keyword } },
-        { countryCode: { contains: keyword } },
+        { itemLabel: { contains: keyword } },
+        { itemCode: { contains: keyword } },
+        { itemValue: { contains: keyword } },
       ];
     }
 
-    const [total, list] = await Promise.all([
-      this.prisma.country.count({ where }),
-      this.prisma.country.findMany({
+    const [total, options] = await Promise.all([
+      this.prisma.dictionaryItem.count({ where }),
+      this.prisma.dictionaryItem.findMany({
         where,
         skip: (page - 1) * pageSize,
         take: pageSize,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ sortOrder: 'asc' }, { itemLabel: 'asc' }],
       }),
     ]);
+    const metadata = await this.prisma.country.findMany({
+      where: { countryCode: { in: options.map((option) => option.itemValue) } },
+    });
+    const metadataByCode = new Map(metadata.map((country) => [country.countryCode, country]));
+    const list = options.map((option): CountryListItem => {
+      const country = metadataByCode.get(option.itemValue);
+      return {
+        id: option.id,
+        countryCode: option.itemValue,
+        nameZh: option.itemLabel,
+        nameEn: country?.nameEn ?? option.itemLabel,
+        defaultLanguage: country?.defaultLanguage ?? null,
+        defaultCurrency: country?.defaultCurrency ?? null,
+        timezone: country?.timezone ?? null,
+        weekendRule: country?.weekendRule ?? null,
+        entryRequirements: country?.entryRequirements ?? null,
+        safetyNotes: country?.safetyNotes ?? null,
+        taxNotes: country?.taxNotes ?? null,
+        paymentNotes: country?.paymentNotes ?? null,
+        supplierNotes: country?.supplierNotes ?? null,
+        status: option.status,
+        createdAt: option.createdAt,
+        updatedAt: option.updatedAt,
+      };
+    });
 
     return {
       items: list,

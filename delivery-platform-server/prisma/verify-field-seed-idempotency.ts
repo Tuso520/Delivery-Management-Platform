@@ -5,14 +5,14 @@ import { seedTargetDictionaries } from './seed-data/target-platform';
 const prisma = new PrismaClient();
 
 const expectedCounts: Record<string, number> = {
-  COUNTRY: 7,
+  COUNTRY: 8,
   CUSTOMER_TYPE: 7,
   CONTRACT_TYPE: 3,
   PRODUCT_TYPE: 2,
   PROJECT_KEYWORD: 16,
-  CURRENCY: 7,
+  CURRENCY: 8,
   PROJECT_STAGE: 9,
-  PROJECT_STATUS: 2,
+  PROJECT_STATUS: 5,
   STANDARD_CATEGORY: 7,
   KNOWLEDGE_CATEGORY: 6,
   JOB_POSITION: 6,

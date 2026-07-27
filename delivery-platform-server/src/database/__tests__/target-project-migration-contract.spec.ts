@@ -7,15 +7,13 @@ import {
   TARGET_PROJECT_DELIVERY_STAGES,
   TARGET_PROJECT_LIFECYCLE_STATUSES,
 } from '../../../prisma/target-foundation-migration-support';
-import {
-  PROJECT_DELIVERY_STAGES,
-  PROJECT_LIFECYCLE_STATUSES,
-} from '../../modules/project/project.constants';
+import { PROJECT_LIFECYCLE_STATUSES } from '../../modules/project/project.constants';
 
 describe('target project migration contract', () => {
-  it('keeps runtime and migration validation dictionaries aligned', () => {
+  it('keeps fixed lifecycle states aligned and leaves historical stages migration-only', () => {
     expect(TARGET_PROJECT_LIFECYCLE_STATUSES).toEqual(PROJECT_LIFECYCLE_STATUSES);
-    expect(TARGET_PROJECT_DELIVERY_STAGES).toEqual(PROJECT_DELIVERY_STAGES);
+    expect(TARGET_PROJECT_DELIVERY_STAGES).toContain('STARTUP');
+    expect(TARGET_PROJECT_DELIVERY_STAGES).toContain('WARRANTY');
   });
 
   it('allows every target stage during the destructive state-switch preflight', () => {

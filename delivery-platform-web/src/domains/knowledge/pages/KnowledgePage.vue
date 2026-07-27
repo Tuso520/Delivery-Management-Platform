@@ -15,17 +15,16 @@ import {
 } from '@/domains/knowledge/api/knowledge.api'
 import { BusinessTable, PageContainer, PageToolbar, StatCard } from '@/design-system'
 import {
-  useKnowledgeCategoriesQuery,
   useKnowledgeDetailQuery,
   useKnowledgeListQuery,
   useKnowledgeSummaryQuery,
 } from '@/domains/knowledge/queries/useKnowledgeQueries'
+import { useFieldConfig } from '@/platform/field-configuration'
 import { useFilePreview } from '@/platform/file-preview/useFilePreview'
 import { queryKeys } from '@/query/keys'
 import { firstRouteParam, preservedRouteQuery } from '@/router/query-state'
 import { usePermissionStore } from '@/store/permission'
 import type {
-  KnowledgeCategory,
   KnowledgeContentType,
   KnowledgeItem,
   KnowledgeItemStatus,
@@ -44,6 +43,7 @@ const { t, locale } = useI18n()
 const permissionStore = usePermissionStore()
 const filePreview = useFilePreview()
 const queryClient = useQueryClient()
+const fieldConfig = useFieldConfig('knowledge')
 
 const statusMeta: Record<KnowledgeItemStatus, { label: string; color: string }> = {
   DRAFT: { label: 'knowledge.status.DRAFT', color: 'gray' },
@@ -113,6 +113,7 @@ const query = reactive({
   page: Number(route.query.page) || 1,
   pageSize: Number(route.query.pageSize) || 20,
   keyword: typeof route.query.keyword === 'string' ? route.query.keyword : '',
+  categoryId: typeof route.query.categoryId === 'string' ? route.query.categoryId : '',
   status:
     typeof route.query.status === 'string'
       ? (route.query.status as KnowledgeItemStatus)
@@ -169,11 +170,9 @@ const versionForm = reactive({
 
 const knowledgeListQuery = useKnowledgeListQuery(appliedQuery)
 const knowledgeSummaryQuery = useKnowledgeSummaryQuery()
-const knowledgeCategoriesQuery = useKnowledgeCategoriesQuery()
 const knowledgeDetailQuery = useKnowledgeDetailQuery(selectedDetailId)
 const list = computed(() => knowledgeListQuery.data.value?.items ?? [])
 const total = computed(() => knowledgeListQuery.data.value?.total ?? 0)
-const categories = computed<KnowledgeCategory[]>(() => knowledgeCategoriesQuery.data.value ?? [])
 const summary = computed(
   () =>
     knowledgeSummaryQuery.data.value ?? {
@@ -234,14 +233,21 @@ const summaryItems = computed(() => [
 ])
 
 const categoryOptions = computed(() => {
-  const result: Array<{ value: string; label: string }> = []
-  const visit = (items: KnowledgeCategory[] | undefined, prefix = ''): void => {
-    for (const category of items ?? []) {
-      result.push({ value: category.id, label: `${prefix}${category.name}` })
-      visit(category.children, `${prefix}${category.name} / `)
-    }
+  const result = fieldConfig.getFieldOptions('KNOWLEDGE_CATEGORY').map((option) => ({
+    value: option.id,
+    label: option.label,
+  }))
+  const historicalCategory = detail.value?.category
+  if (
+    historicalCategory &&
+    editForm.categoryId === historicalCategory.id &&
+    !result.some((option) => option.value === historicalCategory.id)
+  ) {
+    result.push({
+      value: historicalCategory.id,
+      label: `${historicalCategory.name}（已停用）`,
+    })
   }
-  visit(categories.value)
   return result
 })
 
@@ -284,7 +290,7 @@ async function refreshPage(): Promise<void> {
   await Promise.allSettled([
     knowledgeSummaryQuery.refetch(),
     knowledgeListQuery.refetch(),
-    knowledgeCategoriesQuery.refetch(),
+    fieldConfig.refresh(),
   ])
 }
 
@@ -293,6 +299,7 @@ async function applyListQuery(): Promise<void> {
     page: query.page,
     pageSize: query.pageSize,
     keyword: query.keyword.trim(),
+    categoryId: query.categoryId,
     status: query.status,
   }
   await router.replace({
@@ -302,6 +309,7 @@ async function applyListQuery(): Promise<void> {
       page: query.page === 1 ? undefined : String(query.page),
       pageSize: query.pageSize === 20 ? undefined : String(query.pageSize),
       keyword: query.keyword.trim() || undefined,
+      categoryId: query.categoryId || undefined,
       status: query.status,
     },
   })
@@ -310,12 +318,6 @@ async function applyListQuery(): Promise<void> {
 function search(): void {
   query.page = 1
   void applyListQuery()
-}
-
-function resetSearch(): void {
-  query.keyword = ''
-  query.status = undefined
-  search()
 }
 
 function changePage(page: number): void {
@@ -835,6 +837,13 @@ watch(
       <PageToolbar class="library-toolbar">
         <template #filters>
           <div class="search-group">
+            <a-select
+              v-model="query.categoryId"
+              class="category-select"
+              allow-clear
+              :placeholder="t('knowledge.allCategories')"
+              :options="categoryOptions"
+            />
             <a-input
               v-model="query.keyword"
               class="keyword-input"
@@ -846,9 +855,6 @@ watch(
               {{ t('knowledge.query') }}
             </a-button>
           </div>
-          <a-button v-if="query.keyword || query.status" @click="resetSearch">
-            {{ t('common.reset') }}
-          </a-button>
         </template>
         <template #actions>
           <a-button :loading="loading" @click="refreshPage">
@@ -933,7 +939,9 @@ watch(
         <template #empty>
           <a-empty
             :description="
-              query.keyword || query.status ? t('knowledge.emptyFiltered') : t('knowledge.empty')
+              query.keyword || query.categoryId || query.status
+                ? t('knowledge.emptyFiltered')
+                : t('knowledge.empty')
             "
           />
         </template>
@@ -1432,6 +1440,11 @@ watch(
 .search-group {
   display: flex;
   align-items: stretch;
+  gap: 8px;
+}
+
+.category-select {
+  width: 180px;
 }
 
 .keyword-input {

@@ -27,14 +27,14 @@ API、File Worker 和 Outbox Worker 使用同一构建产物，但以独立进�
 
 - 位置：`delivery-platform-web/`。
 - 框架：Vue 3 + TypeScript + Vite，`strict`、`strictTemplates`、`noUnusedLocals`、`noUnusedParameters` 已开启。
-- UI：只使用 Arco Design Vue；当前由 `components/business/` 与 `styles/variables.scss` 承载平台组件和设计令牌，目标边界为 `design-system/`，不存在旧 UI 兼容层。
+- UI：只使用 Arco Design Vue；`design-system/` 承载页面骨架和业务组件，`styles/variables.scss` 承载设计令牌，不存在旧 UI 兼容层。
 - 路由：Vue Router hash 模式。`shellRoutes` 是路由、主菜单、设置菜单、标题、图标和页面权限的单一来源。
 - 状态：Pinia 只保存会话、权限、主题/侧栏和语言；所有在用页面的服务端数据由 TanStack Query 管理。
 - 请求：`src/api/` 的 Axios 客户端统一解包响应；Access Token 仅在内存，Refresh Token 使用 HttpOnly Cookie；并发 401 共享一次刷新。
 - 文件预览：根节点挂载单一 `AttachmentPreviewModal`，业务页面通过 `useFilePreview` 打开，`FilePreviewRouter` 根据后端只读会话选择 Viewer。
 - 国际化：中文与英文 key 集合同构；核心业务与设置页面使用 i18n，业务数据不自动翻译。
 
-平台定位、目标分层和迁移边界见 [基础架构模型 v0.1](platform-foundation-architecture-v0.1.md)；完整路由、页面、Query Key、组件和运行边界见 [前端页面架构](frontend-architecture.md)，端到端状态流见 [前端业务流程](frontend-business-flows.md)，正式设计约束见 [前端实施规范](frontend-architecture-refactored.md)。
+当前页面、字段、API、模型和 Figma 节点的闭环见 [平台目标架构](platform-architecture.md)；字段唯一来源规则见 [字段配置说明](field-configuration.md)。长期分层和迁移边界见 [基础架构模型 v0.1](platform-foundation-architecture-v0.1.md)；完整路由、页面、Query Key、组件和运行边界见 [前端页面架构](frontend-architecture.md)，端到端状态流见 [前端业务流程](frontend-business-flows.md)，正式设计约束见 [前端实施规范](frontend-architecture-refactored.md)。
 
 ## 后端
 
@@ -42,7 +42,7 @@ API、File Worker 和 Outbox Worker 使用同一构建产物，但以独立进�
 - 框架：NestJS 11 + TypeScript，Prisma 5 访问 MySQL 8。
 - 模块：认证、用户/角色/权限/数据范围、看板、项目、项目成员与回款、项目档案、档案模版、文件、统一审核、标准、知识、工具、币种、通知、审批配置、系统配置、集成和操作日志。
 - 权限：Controller 使用权限码守卫；角色是权限集合，不维护业务角色白名单。项目数据范围和敏感字段在 Service 再校验。
-- 配置：端口、显式 CORS 来源、JWT/Refresh 生命周期、Redis、文档预览和上传硬上限统一由类型化配置解析；生产环境拒绝通配 CORS 和短 JWT Secret。
+- 配置：端口、显式 CORS 来源、JWT/Refresh 生命周期、Redis、文档预览和上传硬上限统一由类型化配置解析；国家、币种、项目/客户/合同/产品类型、关键词、阶段、状态以及标准/知识分类由 `DictionaryCategory/DictionaryItem` 统一配置；生产环境拒绝通配 CORS 和短 JWT Secret。
 - 响应：成功响应为 `{ code, message, data, timestamp, traceId }`；列表 `data` 固定为 `{ items, page, pageSize, total }`。异常由全局过滤器返回安全信息，堆栈只写服务端日志。
 - 审计：合同/财务查看、文件预览与下载、审核决定、成员/权限/密码/设置/集成变更等敏感操作写操作日志。
 - 软删除：项目、成员、回款、用户等核心业务默认软删除；项目物理删除仅限超级管理员，且存在文件、审核、财务或审计记录时拒绝。

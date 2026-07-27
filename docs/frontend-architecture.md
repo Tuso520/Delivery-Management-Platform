@@ -4,31 +4,17 @@
 
 本文是交付管理平台前端的当前实现基线，记录当前工作树中已经存在的页面、路由、状态、请求、权限和文件预览实现，作为开发、评审和验收的统一依据。
 
-- 基线日期：2026-07-25。
+- 基线日期：2026-07-27。
 - 源码范围：`delivery-platform-web/src/`。
 - 技术栈：Vue 3、TypeScript、Vite、Pinia、Vue Router、TanStack Query、Arco Design Vue。
 - 业务流程与状态流转见 [前端业务流程](frontend-business-flows.md)。
 - 系统级边界见 [总体架构](architecture.md)，测试环境与命令见 [测试与验收](testing.md)。
 
-本文中的“可见”分为三种：左侧主导航可见、右上角设置菜单可见、仅可通过深链访问。菜单可见不等于数据可见，数据范围始终由后端过滤。
+本文中的“可见”分为两种：左侧分组导航可见、仅可通过深链访问。菜单可见不等于数据可见，数据范围始终由后端过滤。
 
 ## 1. 当前规模与边界
 
-| 项目                   | 当前数量 | 说明                                            |
-| ---------------------- | -------: | ----------------------------------------------- |
-| 左侧主导航组           |        3 | 工作台、项目管理、标准与知识                    |
-| 左侧主导航叶子         |        8 | 由 `shellRoutes` 自动生成并按权限过滤           |
-| 右上角设置入口         |        6 | 齿轮下拉菜单，不进入左侧导航                    |
-| 深链业务入口           |       10 | 项目 3、审核/标准/知识/档案模版 4、组织权限 3   |
-| 路由引用的唯一页面 SFC |       19 | 含登录与 404，不含布局和页面内组件              |
-| `views/` 下 Vue 文件   |       30 | 19 个路由页面、2 个项目抽屉视图、9 个页面内组件 |
-| 跨页业务组件           |       20 | 18 个 `business/` 组件及 2 个统一文件预览组件   |
-| Pinia Store            |        4 | 用户、权限、应用外观、语言                      |
-| Query composable       |        6 | 看板、项目、档案、内容、运营设置、组织权限      |
-| 运行时 API 文件        |       25 | 不含测试                                        |
-| 前端单元/组件测试文件  |       40 | Vitest + jsdom，另有真实 API Playwright 冒烟    |
-
-当前信息架构包含项目交付、档案、审核、标准、知识、工具和六类设置。
+当前信息架构按 Figma App Shell 分为工作台、项目管理、标准与知识、系统设置 4 个左侧分组；系统设置显示币种与汇率、审批规则、字段配置、参数配置和用户中心 5 个入口。通知与集成只保留授权深层路由。源码文件、页面、API、测试和路由数量由 `node scripts/verify-doc-facts.mjs` 实时核对，当前快照见 [测试验收](testing.md)，本文不再维护易漂移的重复计数。
 
 ## 2. 应用启动与渲染层级
 
@@ -75,10 +61,9 @@ flowchart TD
 
 ### 3.3 `AppHeader`
 
-- 左侧显示侧栏切换和当前页面标题。
-- 右侧依次为设置齿轮、中英文切换、浅色/深色/跟随系统切换、用户菜单和退出。
-- 齿轮始终显示；下拉内容按当前用户的设置权限过滤，无可访问设置时显示空提示。
-- 头部没有通知中心入口；看板中的系统通知只作为待办数据展示。
+- 左侧显示产品标识与“交付管理中心”标题。
+- 右侧显示当前用户头像和名称并承载用户菜单。
+- 系统设置属于左侧第四个导航分组；顶部栏不再提供设置齿轮或通知入口。
 
 ## 4. 路由与导航单一来源
 
@@ -109,28 +94,28 @@ flowchart TD
 | ---------- | ---------------------------- | ----------------- | -------------------------------- | ------------------------ |
 | 工作台     | 数据看板 `/dashboard`        | `Dashboard`       | `src/views/dashboard/index.vue`  | `dashboard:view`         |
 | 工作台     | 文件审核 `/review`           | `Review`          | `src/views/review/pending.vue`   | 无；所有已登录用户可进入 |
-| 项目管理   | 项目概览 `/projects`         | `Project`         | `src/views/project/index.vue`    | `project:view`           |
-| 项目管理   | 项目档案 `/archive`          | `Archive`         | `src/views/archive/index.vue`    | `archive:view`           |
-| 项目管理   | 档案模版 `/archive-template` | `ArchiveTemplate` | `src/views/archive/template.vue` | `archive_template:view`  |
+| 项目管理   | 项目概览 `/projects`         | `Project`         | `src/domains/project/pages/ProjectOverviewPage.vue` | `project:view`           |
+| 项目管理   | 项目档案 `/archive`          | `Archive`         | `src/domains/archive/pages/ArchiveWorkspacePage.vue` | `archive:view`           |
+| 项目管理   | 档案模版 `/archive-template` | `ArchiveTemplate` | `src/domains/archive/pages/ArchiveTemplatePage.vue` | `archive_template:view`  |
 | 标准与知识 | 标准库 `/standards`          | `Standard`        | `src/views/standard/index.vue`   | `standard:view`          |
-| 标准与知识 | 知识库 `/knowledge`          | `Knowledge`       | `src/views/knowledge/index.vue`  | `knowledge:view`         |
+| 标准与知识 | 知识库 `/knowledge`          | `Knowledge`       | `src/domains/knowledge/pages/KnowledgePage.vue` | `knowledge:view`         |
 | 标准与知识 | 工具中心 `/tools`            | `Tools`           | `src/views/tools/index.vue`      | `tools:view`             |
 
-项目概览页面由五项横向指标带、统一视图选择器、紧凑搜索工具栏和 `BusinessTable` 组成。指标带显示项目折算金额、项目总数、进行中、今年验收数和确收金额；视图选择器通过 `scope` 与 `view` URL query 管理“我的项目”“全部项目”“归档项目”，页面沿用真实项目配置、后端数据范围和敏感字段裁剪结果。
+项目概览页面由五项横向指标带、统一范围选择器、紧凑搜索工具栏和 `BusinessTable` 组成。范围选择器通过 `scope` URL query 管理“我的项目”“全部项目”；当前 Figma 不提供归档列表。页面沿用真实字段配置、后端数据范围和敏感字段裁剪结果。
 
 项目档案、标准库和知识库使用同一套工作台骨架。页面由四张领域指标卡、`PageToolbar` 和单一业务工作区组成；标准库与知识库的主列表使用 `BusinessTable`，项目档案保留按文件夹分组的业务表格。三个页面的关键名称列固定在左侧，横向滚动只移动其余业务列。
 
-### 4.4 右上角设置：6 个页面
+### 4.4 左侧系统设置：5 个可见页面、2 个授权深链
 
 | 设置项/路由                        | Route Name      | 页面文件                            | 路由权限                                               | 修改权限                   |
 | ---------------------------------- | --------------- | ----------------------------------- | ------------------------------------------------------ | -------------------------- |
 | 用户中心 `/settings`               | `UserCenter`    | `src/views/system/user/index.vue`   | `user:view`                                            | 对应 `user:*` 动作权限     |
 | 币种与汇率 `/settings/currency`    | `Currency`      | `src/views/currency/index.vue`      | `currency:view` 或 `currency:manage`                   | `currency:manage`          |
-| 通知规则 `/settings/notifications` | `Notifications` | `src/views/system/notification.vue` | `notification_rule:view` 或 `notification_rule:manage` | `notification_rule:manage` |
+| 通知规则 `/settings/notifications`（深链） | `Notifications` | `src/views/system/notification.vue` | `notification_rule:view` 或 `notification_rule:manage` | `notification_rule:manage` |
 | 审批规则 `/settings/approvals`     | `Approvals`     | `src/views/system/approvals.vue`    | `approval_config:view` 或 `approval_config:manage`     | `approval_config:manage`   |
-| 字段配置 `/settings/fields`        | `FieldSettings` | `src/views/system/FieldSettings.vue`| `field_setting:manage`                                 | `field_setting:manage`     |
-| 系统配置 `/settings/system`        | `SystemConfig`  | `src/views/system/config.vue`       | `system_setting:view` 或 `system_setting:manage`       | `system_setting:manage`    |
-| 接口集成 `/settings/integrations`  | `Integrations`  | `src/views/system/integrations.vue` | `integration:view` 或 `integration:manage`             | `integration:manage`       |
+| 字段配置 `/settings/fields`        | `FieldSettings` | `src/views/system/FieldSettings.vue`| `field_setting:view`                                   | `field_setting:edit`、`field_setting:option_create`、`field_setting:option_toggle` |
+| 系统配置 `/settings/config`        | `SystemConfig`  | `src/views/system/config.vue`       | `system_setting:view` 或 `system_setting:manage`       | `system_setting:manage`    |
+| 接口集成 `/settings/integrations`（深链） | `Integrations`  | `src/views/system/integrations.vue` | `integration:view` 或 `integration:manage`             | `integration:manage`       |
 
 ### 4.5 深链路由：10 个页面入口
 
@@ -150,7 +135,7 @@ flowchart TD
 
 ## 5. 页面文件与组件清单
 
-除上表中的 19 个唯一路由页面外，`views/` 中还有以下 11 个当前使用文件，共计 30 个 Vue 文件：
+路由页面和页面内组件分布在 `domains/`、`views/` 与 `platform/`；以下是仍位于 `views/` 的主要复用视图：
 
 | 类型         | 文件                                           | 当前职责                               |
 | ------------ | ---------------------------------------------- | -------------------------------------- |
@@ -166,12 +151,12 @@ flowchart TD
 | 审核组件     | `src/views/review/components/ReviewDialog.vue` | 当前审核步骤通过/驳回                  |
 | 用户组件     | `src/views/system/user/UserFormDialog.vue`     | 用户新增与编辑表单                     |
 
-`components/` 分为两类：
+前端公共组件分为两类：
 
 | 组件层 | 当前职责 |
 | ------ | -------- |
 | `AttachmentPreviewModal`、`FilePreviewRouter` | 根节点全局单例弹窗与统一只读 Viewer 路由 |
-| `components/business/` | `PageContainer`、`PageToolbar`、`SectionCard`、`StatCard`、`BusinessTable`、`BusinessDrawer`、`BusinessModal`、`StatusBadge`、`FileTypeBadge`、`FormSection`、`FormGrid`、`ReadonlyField`、`LoadingState`、`EmptyState`、`ErrorState`、`PermissionDeniedState`、`Can`、`StickyActionBar` |
+| `design-system/` | `PageContainer`、`PageToolbar`、`SectionCard`、`StatCard`、`BusinessTable`、`BusinessDrawer`、`BusinessModal`、`StatusBadge`、`Can` 等页面骨架与业务组件 |
 
 `BusinessTable` 是声明式 `a-table-column` 的唯一页面入口：它把默认列槽、`#columns`、`v-for` 动态列及 kebab-case 列属性转换为 Arco `TableColumnData`，同时支持显式 `columns` 数组与具名 cell slot。页面不得新增直接声明式 `a-table`；显式数组列的领域表格可继续直接使用 Arco。
 
@@ -181,24 +166,25 @@ flowchart TD
 | -------- | ------------------------------------- | ---------------------------------------------------------- |
 | 数据看板 | 分区看板                              | 5 个独立数据源、分区错误重试、待办与项目跳转               |
 | 文件审核 | 统计 + 筛选表格 + 详情抽屉 + 审核弹窗 | 任务列表、步骤/指派人/历史、只读预览、通过/驳回            |
-| 项目     | 统计 + 表格 + 80vw 抽屉               | 我的/全部范围、分类与关键词、创建/编辑/查看、统一进度、归档列表 |
-| 项目档案 | 项目选择 + 两级目录 + 多个操作弹窗    | 快照目录、上传版本、临时项、仅新增同步、归档/恢复、预览    |
+| 项目     | 5 项统计 + 宽表格 + 详情弹窗           | 我的/全部范围、分类与关键词、创建/编辑/查看、统一进度；不提供归档列表 |
+| 项目档案 | 项目选择 + 文件夹/文件两级结构 + 操作弹窗 | 快照目录、上传版本、仅新增同步、归档/恢复、预览；不允许临时项创建 |
 | 档案模版 | 列表 + 80vw 版本抽屉                  | 模版创建、草稿结构、版本、提交审核、发布、停用             |
 | 标准库   | 统计 + 表格 + 详情抽屉 + 编辑弹窗     | 文件正文、不可变版本、关系、审核、归档、预览/下载           |
 | 知识库   | 统计 + 表格 + 详情抽屉 + 编辑弹窗     | 文件/Markdown/链接、附件、版本、审核、归档、预览/下载      |
 | 工具中心 | 分类统计卡 + 响应式卡片目录 + 配置弹窗 | 点击分类筛选、20 条批次滚动、内部/外部工具打开、管理、启停、JSON 配置 |
-| 设置     | 表格或分段表单                        | 六类平台配置，查看与管理权限分离                           |
+| 设置     | 表格或分段表单                        | 5 个 Figma 可见设置入口，查看与管理权限分离                |
 
-项目、审核任务、档案模版、标准和知识的查看意图均使用 path 参数形成可分享深链；标准和知识创建使用 `?mode=create`。筛选、排序及档案模版版本选择使用 query 参数，并在打开/关闭弹窗或抽屉时保留列表状态。列表不显示分页器，由容器滚动按 20 条批次续载。
+项目、审核任务、档案模版、标准和知识的查看意图均使用 path 参数形成可分享深链；标准和知识创建使用 `?mode=create`。筛选、排序及档案模版版本选择使用 query 参数，并在打开/关闭弹窗或抽屉时保留列表状态。分页器或滚动续载按对应 Figma 页面和业务数据量选择，不在页面间强制复用一种模式。
 
 ## 7. 目录职责
 
 | 目录                   | 当前职责                                            |
 | ---------------------- | --------------------------------------------------- |
 | `api/`                 | 统一请求客户端、领域 API、文件上传幂等键            |
-| `components/`          | 统一文件预览与可复用业务展示/权限组件                |
-| `composables/`         | 认证、权限、全局文件预览状态                        |
-| `composables/queries/` | 按业务域封装服务端查询                              |
+| `app/`                 | 应用安装和启动                                      |
+| `design-system/`       | 统一页面骨架、表格、弹窗、状态和权限组件            |
+| `domains/`             | 项目、档案、知识等领域页面、API、查询和类型          |
+| `platform/`            | 权限、字段配置、审批、文件、预览、工作流和通知      |
 | `layouts/`             | 工作台壳、侧栏和顶栏                                |
 | `locales/`             | 中英文 i18n 资源和初始化                            |
 | `query/`               | QueryClient 默认策略和全局 Query Key 工厂           |
@@ -209,7 +195,7 @@ flowchart TD
 | `utils/`               | 对话框、下载、本地化、安全 Markdown、格式化等纯工具 |
 | `views/`               | 页面协调、页面内 mutation 和局部组件                |
 
-当前尚未建立 `app/`、`design-system/`、`modules/`、`shared/`、`services/` 五层目标目录；跨域展示与权限能力已沉淀到 `components/business/`，领域查询位于 `composables/queries/`，复杂业务编排仍由对应页面负责。目标职责、依赖方向和渐进迁移顺序见 [基础架构模型 v0.1](platform-foundation-architecture-v0.1.md)。
+当前已建立 `app/`、`design-system/`、`domains/` 和 `platform/` 分层。领域 API/查询随领域放置，跨域字段配置、权限、审批和文件能力位于 `platform/`；目标职责与依赖方向见 [平台目标架构](platform-architecture.md)。
 
 ## 8. 状态管理与 TanStack Query
 

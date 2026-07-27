@@ -312,9 +312,17 @@ describe('deployment seed safety', () => {
 
   it('does not replace edited target knowledge content or create legacy attachments', async () => {
     const categoryUpsert = jest.fn().mockResolvedValue({ id: 'knowledge-category-1' });
+    const fieldOptionUpsert = jest.fn().mockResolvedValue({ id: 'field-option-1' });
     const itemUpsert = jest.fn().mockResolvedValue({ id: 'knowledge-item-1' });
     const versionUpsert = jest.fn().mockResolvedValue({ id: 'knowledge-version-1' });
     const prisma = {
+      dictionaryCategory: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'knowledge-category-field' }),
+      },
+      dictionaryItem: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'field-option-1' }),
+        upsert: fieldOptionUpsert,
+      },
       knowledgeCategory: {
         findFirst: jest.fn().mockResolvedValue({ id: 'knowledge-category-1' }),
         upsert: categoryUpsert,
@@ -336,10 +344,13 @@ describe('deployment seed safety', () => {
 
     await seedTargetKnowledge(prisma);
 
-    for (const upsert of [categoryUpsert, itemUpsert, versionUpsert]) {
+    for (const upsert of [fieldOptionUpsert, itemUpsert, versionUpsert]) {
       for (const [call] of upsert.mock.calls) {
         expect(call.update).toEqual({});
       }
+    }
+    for (const [call] of categoryUpsert.mock.calls) {
+      expect(call.update).toEqual({ fieldOptionId: 'field-option-1' });
     }
     expect(versionUpsert).not.toHaveBeenCalled();
     expect(prisma).not.toHaveProperty('attachment');
@@ -491,9 +502,11 @@ describe('deployment seed safety', () => {
       Promise.resolve({ id: `category-${where.categoryCode}` }),
     );
     const itemUpsert = jest.fn().mockResolvedValue({ id: 'item-1' });
+    const knowledgeCategoryUpsert = jest.fn().mockResolvedValue({ id: 'knowledge-category-1' });
     const prisma = {
       dictionaryCategory: { upsert: categoryUpsert },
       dictionaryItem: { upsert: itemUpsert },
+      knowledgeCategory: { upsert: knowledgeCategoryUpsert },
     } as unknown as PrismaClient;
 
     await seedTargetDictionaries(prisma);

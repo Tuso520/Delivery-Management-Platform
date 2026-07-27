@@ -45,13 +45,11 @@ describe('sidebar navigation contract', () => {
         title: 'menu.system',
         icon: 'settings',
         children: [
-          'menu.userCenter',
           'menu.systemCurrency',
-          'menu.systemNotification',
           'menu.systemApproval',
           'menu.systemFields',
-          'menu.systemIntegration',
           'menu.systemConfig',
+          'menu.userCenter',
         ],
       },
     ])
@@ -72,10 +70,8 @@ describe('sidebar navigation contract', () => {
     ['/tools', '/standards-knowledge'],
     ['/settings', '/settings-group'],
     ['/settings/currency', '/settings-group'],
-    ['/settings/notifications', '/settings-group'],
     ['/settings/approvals', '/settings-group'],
     ['/settings/fields', '/settings-group'],
-    ['/settings/integrations', '/settings-group'],
     ['/settings/system', '/settings-group'],
   ])('maps route %s to the matching active group %s', (routePath, groupPath) => {
     const resolvedRoute = router.resolve(routePath)

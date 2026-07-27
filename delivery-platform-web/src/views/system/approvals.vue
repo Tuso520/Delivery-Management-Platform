@@ -15,11 +15,11 @@ import {
   BusinessTable,
   PageContainer,
   PageToolbar,
-  SectionCard,
   StatusBadge,
 } from '@/design-system'
 import { Can } from '@/platform/permission'
 import { usePermission } from '@/composables/usePermission'
+import { useFieldConfig } from '@/platform/field-configuration'
 import { useApprovalTemplatesQuery } from '@/composables/queries/useOperationsQueries'
 import { queryKeys } from '@/query/keys'
 import type {
@@ -47,6 +47,14 @@ const router = useRouter()
 const queryClient = useQueryClient()
 const { t } = useI18n()
 const canManage = computed(() => hasPermission('approval_config:manage'))
+const fieldConfig = useFieldConfig('approval')
+const filterField = ref('templateName')
+const countryOptions = computed(() =>
+  fieldConfig.getFieldOptions('COUNTRY').map((item) => ({
+    value: item.value,
+    label: `${item.label} (${item.value})`,
+  })),
+)
 
 const query = reactive<QueryApprovalTemplateParams>({
   page: Number(route.query.page) || 1,
@@ -174,7 +182,7 @@ function resetForm(): void {
     templateCode: '',
     templateName: '',
     businessType: 'PROJECT_ARCHIVE_FILE' as const,
-    countryCode: '',
+    countryCode: String(fieldConfig.getField('COUNTRY')?.defaultValue ?? ''),
     enabled: true,
     steps: [newStep(1)],
   })
@@ -353,7 +361,27 @@ resetForm()
 
 <template>
   <PageContainer class="approval-page">
-    <PageToolbar :title="t('approvals.title')" :description="t('approvals.description')">
+    <PageToolbar class="approval-toolbar">
+      <template #filters>
+        <div class="filter-field">
+          <a-select v-model="filterField">
+            <a-option value="templateName" :label="t('approvals.flowName')" />
+          </a-select>
+        </div>
+        <a-input
+          v-model="query.keyword"
+          class="keyword-input"
+          allow-clear
+          :placeholder="t('approvals.searchPlaceholder')"
+          @press-enter="search"
+        />
+        <a-button @click="search">
+          {{ t('review.query') }}
+        </a-button>
+        <a-button @click="resetSearch">
+          {{ t('common.reset') }}
+        </a-button>
+      </template>
       <template #actions>
         <Can permission="approval_config:manage">
           <a-button type="primary" @click="openCreate">
@@ -371,30 +399,6 @@ resetForm()
     >
       {{ t('approvals.readOnlyHint') }}
     </a-alert>
-    <SectionCard class="filter-card" :bordered="false">
-      <a-form :model="query" layout="inline" @submit-success="search">
-        <a-form-item :label="t('approvals.flowName')">
-          <a-input
-            v-model="query.keyword"
-            class="keyword-input"
-            allow-clear
-            :placeholder="t('approvals.searchPlaceholder')"
-            @press-enter="search"
-          />
-        </a-form-item>
-        <a-form-item>
-          <a-space>
-            <a-button type="primary" @click="search">
-              {{ t('review.query') }}
-            </a-button>
-            <a-button @click="resetSearch">
-              {{ t('common.reset') }}
-            </a-button>
-          </a-space>
-        </a-form-item>
-      </a-form>
-    </SectionCard>
-
     <BusinessTable
       :loading="loading"
       :columns="columns"
@@ -490,10 +494,11 @@ resetForm()
             </a-select>
           </a-form-item>
           <a-form-item :label="t('approvals.country')">
-            <a-input
+            <a-select
               v-model="form.countryCode"
               allow-clear
               :placeholder="t('approvals.countryPlaceholder')"
+              :options="countryOptions"
             />
           </a-form-item>
         </div>
@@ -567,9 +572,21 @@ resetForm()
   min-width: 0;
 }
 
-.page-alert,
-.filter-card {
+.page-alert {
   margin-bottom: 12px;
+}
+
+.approval-toolbar {
+  margin-bottom: 12px;
+}
+
+.filter-field {
+  width: 140px;
+  flex: 0 0 140px;
+}
+
+.filter-field :deep(.arco-select-view) {
+  width: 100%;
 }
 
 .keyword-input {

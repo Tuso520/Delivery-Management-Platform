@@ -153,16 +153,3 @@ export interface KnowledgeDraftFileUploadResult {
 }
 
 export type KnowledgeItemPage = PaginatedData<KnowledgeItem>
-
-export interface KnowledgeCategory {
-  id: string
-  name: string
-  description: string | null
-  parentId: string | null
-  sortOrder: number
-  status: string
-  createdAt: string
-  updatedAt: string
-  children: KnowledgeCategory[]
-  parent?: { id: string; name: string }
-}

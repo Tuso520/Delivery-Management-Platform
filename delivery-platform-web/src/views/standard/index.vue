@@ -16,6 +16,7 @@ import {
   useStandardSummaryQuery,
 } from '@/composables/queries/useContentQueries'
 import { useFilePreview } from '@/platform/file-preview/useFilePreview'
+import { useFieldConfig } from '@/platform/field-configuration'
 import { queryKeys } from '@/query/keys'
 import { firstRouteParam, preservedRouteQuery } from '@/router/query-state'
 import { usePermissionStore } from '@/store/permission'
@@ -36,6 +37,7 @@ const { t, locale } = useI18n()
 const permissionStore = usePermissionStore()
 const filePreview = useFilePreview()
 const queryClient = useQueryClient()
+const fieldConfig = useFieldConfig('standard')
 
 const statusMeta: Record<StandardStatus, { label: string; color: string }> = {
   DRAFT: { label: 'standard.status.DRAFT', color: 'gray' },
@@ -115,6 +117,7 @@ const query = reactive({
   page: Number(route.query.page) || 1,
   pageSize: Number(route.query.pageSize) || 20,
   keyword: typeof route.query.keyword === 'string' ? route.query.keyword : '',
+  category: typeof route.query.category === 'string' ? route.query.category : '',
   status:
     typeof route.query.status === 'string' ? (route.query.status as StandardStatus) : undefined,
 })
@@ -206,6 +209,12 @@ const hasActiveDraftVersion = computed(() =>
     detail.value?.versions?.some((version) => ['DRAFT', 'IN_REVIEW'].includes(version.status)),
   ),
 )
+const categoryOptions = computed(() =>
+  fieldConfig.getFieldOptions('STANDARD_CATEGORY').map((item) => ({
+    value: item.value,
+    label: item.label,
+  })),
+)
 
 const summaryItems = computed(() => [
   {
@@ -237,6 +246,10 @@ const summaryItems = computed(() => [
 function typeLabel(value: string): string {
   const option = standardTypeOptions.find((item) => item.value === value)
   return option ? (option.label === 'SOP' ? option.label : t(option.label)) : value
+}
+
+function categoryLabel(value?: string | null): string {
+  return fieldConfig.getFieldLabel('STANDARD_CATEGORY', value) || '-'
 }
 
 function statusLabel(value: string): string {
@@ -276,6 +289,7 @@ async function applyListQuery(): Promise<void> {
     page: query.page,
     pageSize: query.pageSize,
     keyword: query.keyword.trim(),
+    category: query.category,
     status: query.status,
   }
   await router.replace({
@@ -285,6 +299,7 @@ async function applyListQuery(): Promise<void> {
       page: query.page === 1 ? undefined : String(query.page),
       pageSize: query.pageSize === 20 ? undefined : String(query.pageSize),
       keyword: query.keyword.trim() || undefined,
+      category: query.category || undefined,
       status: query.status,
     },
   })
@@ -293,12 +308,6 @@ async function applyListQuery(): Promise<void> {
 function search(): void {
   query.page = 1
   void applyListQuery()
-}
-
-function resetSearch(): void {
-  query.keyword = ''
-  query.status = undefined
-  search()
 }
 
 function changePage(page: number): void {
@@ -317,7 +326,7 @@ function resetCreateForm(): void {
     code: '',
     name: '',
     type: 'SOP',
-    category: '',
+    category: String(fieldConfig.getField('STANDARD_CATEGORY')?.defaultValue ?? ''),
     effectiveAt: '',
     version: 'V1.0',
     fileVersionId: '',
@@ -747,6 +756,19 @@ watch(
       <PageToolbar class="library-toolbar">
         <template #filters>
           <div class="search-group">
+            <a-select
+              v-model="query.category"
+              class="category-select"
+              allow-clear
+              :placeholder="t('standard.allCategories')"
+            >
+              <a-option
+                v-for="item in categoryOptions"
+                :key="item.value"
+                :value="item.value"
+                :label="item.label"
+              />
+            </a-select>
             <a-input
               v-model="query.keyword"
               class="keyword-input"
@@ -758,9 +780,6 @@ watch(
               {{ t('standard.query') }}
             </a-button>
           </div>
-          <a-button v-if="query.keyword || query.status" @click="resetSearch">
-            {{ t('common.reset') }}
-          </a-button>
         </template>
         <template #actions>
           <a-button :loading="loading" @click="refreshPage">
@@ -788,7 +807,7 @@ watch(
           <button class="record-link" type="button" @click="openDetail(record)">
             <strong>{{ record.name }}</strong>
             <span>{{ record.code
-            }}<template v-if="record.category"> · {{ record.category }}</template></span>
+            }}<template v-if="record.category"> · {{ categoryLabel(record.category) }}</template></span>
           </button>
         </template>
         <template #type="{ record }">
@@ -843,7 +862,9 @@ watch(
         <template #empty>
           <a-empty
             :description="
-              query.keyword || query.status ? t('standard.emptyFiltered') : t('standard.empty')
+              query.keyword || query.category || query.status
+                ? t('standard.emptyFiltered')
+                : t('standard.empty')
             "
           />
         </template>
@@ -1057,7 +1078,12 @@ watch(
           </a-grid-item>
           <a-grid-item>
             <a-form-item :label="t('standard.fields.category')">
-              <a-input v-model="createForm.category" :placeholder="t('standard.optional')" />
+              <a-select
+                v-model="createForm.category"
+                :options="categoryOptions"
+                allow-clear
+                :placeholder="t('standard.categoryPlaceholder')"
+              />
             </a-form-item>
           </a-grid-item>
           <a-grid-item>
@@ -1118,7 +1144,12 @@ watch(
           <a-select v-model="editForm.type" :options="localizedStandardTypeOptions" />
         </a-form-item>
         <a-form-item :label="t('standard.fields.category')">
-          <a-input v-model="editForm.category" />
+          <a-select
+            v-model="editForm.category"
+            :options="categoryOptions"
+            allow-clear
+            :placeholder="t('standard.categoryPlaceholder')"
+          />
         </a-form-item>
         <a-form-item :label="t('standard.fields.effectiveAt')">
           <a-date-picker v-model="editForm.effectiveAt" format="YYYY-MM-DD" style="width: 100%" />
@@ -1288,6 +1319,11 @@ watch(
 .search-group {
   display: flex;
   align-items: stretch;
+  gap: 8px;
+}
+
+.category-select {
+  width: 180px;
 }
 
 .keyword-input {

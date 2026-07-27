@@ -9,7 +9,7 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
@@ -17,7 +17,6 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 
 import { CurrencyService } from './currency.service';
-import { CreateCurrencyDto } from './dto/create-currency.dto';
 import { UpdateCurrencyDto } from './dto/update-currency.dto';
 
 @ApiTags('Currencies')
@@ -37,14 +36,6 @@ export class CurrencyController {
     return this.currencyService.findAll();
   }
 
-  @Post()
-  @RequirePermissions({ all: ['currency:manage'] })
-  @ApiOperation({ summary: '创建币种' })
-  @ApiBody({ type: CreateCurrencyDto })
-  create(@Body() dto: CreateCurrencyDto) {
-    return this.currencyService.create(dto);
-  }
-
   @Post('sync-rates')
   @RequirePermissions({ all: ['currency:manage'] })
   @HttpCode(HttpStatus.OK)
@@ -55,7 +46,7 @@ export class CurrencyController {
 
   @Patch(':code')
   @RequirePermissions({ all: ['currency:manage'] })
-  @ApiOperation({ summary: '按币种代码更新币种或人工汇率' })
+  @ApiOperation({ summary: '按字段配置币种代码更新汇率元数据' })
   updateByCode(@Param('code') code: string, @Body() dto: UpdateCurrencyDto) {
     return this.currencyService.updateByCode(code, dto);
   }
@@ -76,11 +67,4 @@ export class CurrencyController {
     return this.currencyService.unlockCurrencyRate(code);
   }
 
-  @Post(':code/disable')
-  @RequirePermissions({ all: ['currency:manage'] })
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '停用币种' })
-  disableByCode(@Param('code') code: string) {
-    return this.currencyService.disableByCode(code);
-  }
 }

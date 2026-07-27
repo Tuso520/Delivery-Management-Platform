@@ -27,7 +27,7 @@
     "systemFields": "Field Configuration",
     "systemApproval": "Approval Rules",
     "systemIntegration": "Integrations",
-    "systemConfig": "System Configuration",
+    "systemConfig": "Parameter Configuration",
     "systemNotification": "Notification Rules",
     "userCenter": "User Center"
   },
@@ -718,6 +718,7 @@
       "acceptanceAt": "Acceptance Date",
       "contractAmount": "Contract Amount",
       "convertedCny": "Converted CNY",
+      "convertedCurrency": "Converted {currency}",
       "sales": "Sales",
       "manager": "Project Manager"
     },
@@ -995,6 +996,7 @@
       "currentVersion": "Current Version",
       "scale": "Directory Size",
       "projects": "Projects Using",
+      "updatedBy": "Updated By",
       "updatedByAt": "Updated By / Date"
     },
     "fields": {
@@ -1034,7 +1036,6 @@
   "archive": {
     "title": "Project Archive",
     "subtitle": "The archive structure is copied from the template when a project is created. Later synchronization only adds items and never overwrites existing records.",
-    "temporaryCreate": "Add Temporary Archive Item",
     "syncTemplate": "Sync Template",
     "selectProject": "Select Project",
     "projectSearchPlaceholder": "Search by project name or code",
@@ -1045,11 +1046,6 @@
     "emptySnapshot": "This project does not have an archive snapshot yet",
     "emptyFolder": "No archive items in this folder",
     "required": "Required",
-    "temporary": "Temporary",
-    "reviewTaskCount": "{count} review tasks",
-    "fileCount": " ({count} files)",
-    "unassigned": "Unassigned",
-    "uploadNewVersion": "Upload New Version",
     "restore": "Restore",
     "selectAccessibleProject": "Select an accessible project",
     "uploadTitle": "Upload Archive File",
@@ -1066,16 +1062,6 @@
     "changeDescription": "Change Description",
     "changePlaceholder": "Describe the changes in this file",
     "confirmUpload": "Upload",
-    "temporaryHint": "A temporary item belongs only to this project. Suggesting it for the template records a suggestion and does not modify a published template.",
-    "folder": "Folder",
-    "createReason": "Reason for Creation",
-    "allowedExtensions": "Allowed Extensions",
-    "extensionsPlaceholder": "For example: pdf, docx, xlsx. Leave blank to use the platform allowlist",
-    "reviewRequired": "Review Required",
-    "approvalTemplate": "Approval Template",
-    "approvalTemplatePlaceholder": "Select a project archive approval template",
-    "allowMultipleFiles": "Allow Multiple Files",
-    "suggestTemplate": "Suggest for Template",
     "syncTitle": "Sync Archive Template Additions",
     "migrationRequired": "Migrate the current snapshot before synchronizing",
     "alreadyLatest": "This project archive is already up to date",
@@ -1088,6 +1074,10 @@
     "changedNotOverwritten": "Template Changes Not Overwritten",
     "projectOnly": "Project-only Content",
     "confirmAddOnlySync": "Sync Additions Only",
+    "completedFolders": "Completed Folders",
+    "directoryAria": "Archive Directory",
+    "selectedFileCount": "{count} files",
+    "updateFile": "Update",
     "summary": {
       "completion": "Overall Completion",
       "items": "Archive Items",
@@ -1099,6 +1089,11 @@
     },
     "columns": {
       "itemName": "Archive Item",
+      "fileName": "File Name",
+      "version": "Version",
+      "fileSize": "File Size",
+      "uploader": "Uploader",
+      "uploadedAt": "Uploaded At",
       "fileStatus": "File Status",
       "currentVersion": "Current Version",
       "owner": "Owner",
@@ -1117,17 +1112,13 @@
       "ARCHIVED": "Archived"
     },
     "validation": {
-      "uploadFileRequired": "Select a file to upload",
-      "temporaryRequired": "Enter the item name and reason, then select an owner",
-      "approvalTemplateRequired": "Select a project archive approval template when review is required"
+      "uploadFileRequired": "Select a file to upload"
     },
     "messages": {
       "previewRestricted": "This file is under review. Only the uploader, current reviewer, or an authorized user can preview it.",
       "noPreviewFile": "This archive item has no previewable file",
       "uploadedForReview": "Upload complete. The file has entered review.",
       "uploaded": "Upload complete",
-      "noAvailableFolder": "This project has no available archive folders",
-      "temporaryCreated": "Temporary archive item created for this project only",
       "templateSynced": "Template additions synchronized without changing existing archive content",
       "archived": "Archive item archived",
       "restored": "Archive item restored"
@@ -1146,6 +1137,7 @@
     "createTitle": "New Knowledge Resource",
     "keyword": "Keyword",
     "searchPlaceholder": "Search by title, file name, or summary",
+    "allCategories": "All Categories",
     "query": "Search",
     "retry": "Retry",
     "loadFailed": "Failed to load knowledge resources. Please try again.",
@@ -1259,6 +1251,8 @@
     "create": "New Standard",
     "keyword": "Keyword",
     "searchPlaceholder": "Search by standard name, code, or file name",
+    "allCategories": "All Categories",
+    "categoryPlaceholder": "Select a standard category",
     "query": "Search",
     "retry": "Retry",
     "loadFailed": "Failed to load the standards list. Please try again.",

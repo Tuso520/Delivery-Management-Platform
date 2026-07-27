@@ -4,9 +4,10 @@
 
 ## 核心功能
 
-- 项目概览：支持“我的项目/全部项目”、项目分类与关键词、统一进度命令、居中详情弹窗及独立归档列表；原币/折算金额、验收、权限和高风险操作均由服务端终检并审计。
-- 项目档案：创建项目时复制已发布档案模版快照，提供两级目录、临时项、只新增同步、版本留痕和统一审核。
+- 项目概览：按当前 Figma 提供 5 项指标、“我的项目/全部项目”、项目分类与关键词、刷新、新建和宽表格；原币/折算金额、验收、权限和高风险操作均由服务端终检并审计。
+- 项目档案：创建项目时复制已发布档案模版快照，提供文件夹与文件两级结构、只新增同步、版本留痕和统一审核。
 - 标准与知识：交付流程、检查标准和文档模版统一进入仅文件化的标准库；知识版本在文件、Markdown 和链接中严格选择一个主内容源。
+- 字段配置：国家、币种、项目类型、客户类型等字段的枚举、默认值、排序、启停和展示名称统一由数据库字段配置驱动，前后端不维护平行枚举。
 - 在线预览：统一只读预览 Office、PDF、图片、大图、Markdown、XMind、视频和音频；CAD/Visio 等使用异步转换产物。
 - 权限体系：按角色和权限点控制菜单、按钮、接口和项目数据访问范围。
 - 通知集成：站内和飞书通过 Outbox Worker 幂等投递并保留逐通道回执。
@@ -69,6 +70,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\local-docker.ps1 up -Build
 - [文档总览](docs/README.md)
 - [产品说明](docs/product.md)
 - [技术架构](docs/architecture.md)
+- [平台目标架构](docs/platform-architecture.md)
+- [Figma 页面清单](docs/figma-page-inventory.md)
+- [字段配置说明](docs/field-configuration.md)
+- [删除与迁移报告](docs/deletion-report.md)
 - [基础架构模型 v0.1](docs/platform-foundation-architecture-v0.1.md)
 - [前端页面架构](docs/frontend-architecture.md)
 - [前端业务流程](docs/frontend-business-flows.md)

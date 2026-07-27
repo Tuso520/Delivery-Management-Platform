@@ -1,13 +1,17 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
+import { FieldConfigurationService } from '../field-configuration/field-configuration.service';
 
 import { CreateArchiveTemplateDto, QueryArchiveTemplateDto } from './dto/archive-template.dto';
 
 @Injectable()
 export class ArchiveTemplateService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly fieldConfiguration?: FieldConfigurationService,
+  ) {}
 
   findAll(query: QueryArchiveTemplateDto) {
     const where: Prisma.ArchiveTemplateWhereInput = {};
@@ -83,6 +87,10 @@ export class ArchiveTemplateService {
   }
 
   async create(dto: CreateArchiveTemplateDto, userId: string) {
+    await Promise.all([
+      this.fieldConfiguration?.assertConfiguredValue('PROJECT_TYPE', dto.projectType),
+      this.fieldConfiguration?.assertConfiguredValue('COUNTRY', dto.countryCode),
+    ]);
     const existing = await this.prisma.archiveTemplate.findUnique({
       where: { templateCode: dto.templateCode },
       select: { id: true },

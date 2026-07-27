@@ -40,13 +40,11 @@ describe('application navigation', () => {
       expect.objectContaining({ name: 'Currency' }),
     )
     expect(settingItems.map((item) => item.title)).toEqual([
-      'menu.userCenter',
       'menu.systemCurrency',
-      'menu.systemNotification',
       'menu.systemApproval',
       'menu.systemFields',
-      'menu.systemIntegration',
       'menu.systemConfig',
+      'menu.userCenter',
     ])
   })
 

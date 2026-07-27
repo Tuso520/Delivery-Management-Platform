@@ -3,7 +3,6 @@ import type { PaginatedData } from '@/types/api'
 import type {
   CreateProjectDto,
   Project,
-  ProjectConfiguration,
   ProjectMember,
   ProjectStatusActionDto,
   ProjectStatusCommand,
@@ -16,12 +15,6 @@ import type {
 } from '@/domains/project/types/project'
 
 export const projectApi = {
-  getConfiguration(includeInactive = false) {
-    return includeInactive
-      ? request.get<ProjectConfiguration>('/projects/configuration', { params: { includeInactive: true } })
-      : request.get<ProjectConfiguration>('/projects/configuration')
-  },
-
   getList(params: QueryProjectDto) {
     return request.get<PaginatedData<Project>>('/projects', { params })
   },
@@ -32,10 +25,6 @@ export const projectApi = {
 
   getSummaryByScope(scope: 'mine' | 'all') {
     return request.get<ProjectSummary>('/projects/summary', { params: { scope } })
-  },
-
-  getArchived(params: QueryProjectDto) {
-    return request.get<PaginatedData<Project>>('/projects/archived', { params })
   },
 
   getUserOptions(purpose: ProjectUserReferencePurpose) {
