@@ -3,11 +3,7 @@ import { computed, ref, type CSSProperties } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 
-import {
-  BusinessTable,
-  PageContainer,
-  PageToolbar,
-} from '@/design-system'
+import { BusinessTable, PageContainer, PageToolbar } from '@/design-system'
 import {
   useProjectListQuery,
   useProjectSummaryQuery,
@@ -25,11 +21,11 @@ import {
   projectDictionaryColor,
   type ProjectDictionaryKind,
 } from '@/domains/project/adapters/project-dictionaries'
-import summaryMoneyIcon from '@/assets/figma/project-overview/summary-money.svg'
-import summaryFolderIcon from '@/assets/figma/project-overview/summary-folder.svg'
-import summaryProgressIcon from '@/assets/figma/project-overview/summary-progress.svg'
-import summaryAcceptanceIcon from '@/assets/figma/project-overview/summary-acceptance.svg'
-import summaryRevenueIcon from '@/assets/figma/project-overview/summary-revenue.svg'
+import statTrendingUpIcon from '@/assets/figma/project-overview/stat-trending-up.svg'
+import statCheckCircleIcon from '@/assets/figma/project-overview/stat-check-circle.svg'
+import statLayersIcon from '@/assets/figma/project-overview/stat-layers.svg'
+import statPlayIcon from '@/assets/figma/project-overview/stat-play.svg'
+import statClipboardCheckIcon from '@/assets/figma/project-overview/stat-clipboard-check.svg'
 import selectDownIcon from '@/assets/figma/project-overview/select-down.svg'
 import toolbarPlusIcon from '@/assets/figma/project-overview/toolbar-plus.svg'
 import toolbarQueryAsset from '@/assets/figma/project-overview/toolbar-query.png'
@@ -61,13 +57,12 @@ const configuredBaseCurrencyLabel = computed(
     fieldConfig.getFieldLabel('CURRENCY', configuredBaseCurrency.value) ||
     configuredBaseCurrency.value,
 )
-const convertedCurrencyTitle = computed(
-  () =>
-    configuredBaseCurrencyLabel.value
-      ? t('projects.columns.convertedCurrency', {
-          currency: configuredBaseCurrencyLabel.value,
-        })
-      : t('projects.columns.convertedCny'),
+const convertedCurrencyTitle = computed(() =>
+  configuredBaseCurrencyLabel.value
+    ? t('projects.columns.convertedCurrency', {
+        currency: configuredBaseCurrencyLabel.value,
+      })
+    : t('projects.columns.convertedCny'),
 )
 const projects = computed(() => listQuery.data.value?.items ?? [])
 const pagination = computed(() => ({
@@ -88,50 +83,45 @@ const summary = computed(() => ({
 const summaryMetrics = computed(() => [
   {
     id: 'amount',
-    icon: summaryMoneyIcon,
+    icon: statTrendingUpIcon,
     label: t('projects.stats.totalAmount'),
     value: amountInTenThousands(summary.value.totalConvertedAmount),
     unit: summary.value.totalConvertedAmount === null ? '' : t('projects.stats.tenThousands'),
-    tone: 'purple',
+    filter: null,
+  },
+  {
+    id: 'acceptedAmount',
+    icon: statCheckCircleIcon,
+    label: t('projects.stats.acceptedAmount'),
+    value: amountInTenThousands(summary.value.acceptedConvertedAmount),
+    unit: summary.value.acceptedConvertedAmount === null ? '' : t('projects.stats.tenThousands'),
     filter: null,
   },
   {
     id: 'total',
-    icon: summaryFolderIcon,
+    icon: statLayersIcon,
     key: 'ALL' as const,
     label: t('projects.stats.total'),
     value: String(summary.value.total),
     unit: t('projects.stats.items'),
-    tone: 'green',
     filter: 'ALL' as const,
   },
   {
     id: 'active',
-    icon: summaryProgressIcon,
+    icon: statPlayIcon,
     key: 'ACTIVE' as const,
     label: t('projects.stats.activeProjects'),
     value: String(summary.value.active),
     unit: t('projects.stats.items'),
-    tone: 'orange',
     filter: 'ACTIVE' as const,
   },
   {
     id: 'accepted',
-    icon: summaryAcceptanceIcon,
+    icon: statClipboardCheckIcon,
     label: t('projects.stats.acceptedThisYear'),
     value: String(summary.value.acceptedThisYear),
     unit: t('projects.stats.items'),
-    tone: 'blue',
     filter: 'ACCEPTED_THIS_YEAR' as const,
-  },
-  {
-    id: 'acceptedAmount',
-    icon: summaryRevenueIcon,
-    label: t('projects.stats.acceptedAmount'),
-    value: amountInTenThousands(summary.value.acceptedConvertedAmount),
-    unit: summary.value.acceptedConvertedAmount === null ? '' : t('projects.stats.tenThousands'),
-    tone: 'red',
-    filter: null,
   },
 ])
 const canCreateProject = computed(() => permissionStore.hasPermission('project:create'))
@@ -222,8 +212,8 @@ function amountWithCurrency(
 ): string {
   const formatted = amount(value)
   if (formatted === '—') return formatted
-  const label = fieldConfig.getFieldLabel('CURRENCY', currencyCode) || currencyCode
-  return label ? `${label} ${formatted}` : formatted
+  const code = currencyCode?.trim().toUpperCase()
+  return code ? `${code} ${formatted}` : formatted
 }
 function amountInTenThousands(value?: number | null): string {
   if (value === null || value === undefined) return '—'
@@ -277,19 +267,17 @@ function dictionaryStyle(
 </script>
 
 <template>
-  <PageContainer class="project-page" gap="compact" :scrollable="false">
+  <PageContainer class="project-page" gap="normal" :scrollable="false">
     <section class="summary-band" :aria-label="t('projects.summaryAria')">
       <button
         v-for="metric in summaryMetrics"
         :key="metric.id"
         type="button"
         class="summary-metric"
-        :class="[
-          `summary-metric--${metric.tone}`,
-          {
-            'is-active': metric.filter && filters.summaryFilter === metric.filter,
-          },
-        ]"
+        :class="{
+          'is-active': metric.filter && filters.summaryFilter === metric.filter,
+        }"
+        :aria-pressed="metric.filter ? filters.summaryFilter === metric.filter : undefined"
         :disabled="!metric.filter"
         @click="metric.filter && selectSummary(metric.filter)"
       >
@@ -341,11 +329,7 @@ function dictionaryStyle(
               </span>
             </template>{{ t('projects.refresh') }}
           </a-button>
-          <a-button
-            v-if="canCreateProject"
-            type="primary"
-            @click="router.push('/projects/create')"
-          >
+          <a-button v-if="canCreateProject" type="primary" @click="router.push('/projects/create')">
             <template #icon>
               <img class="figma-button-icon" :src="toolbarPlusIcon" alt="" />
             </template>
@@ -354,152 +338,130 @@ function dictionaryStyle(
         </template>
       </PageToolbar>
 
-      <BusinessTable
-        :data="projects"
-        :loading="listQuery.isFetching.value"
-        :error="listQuery.error.value"
-        :empty-title="t('projects.empty')"
-        :retry-label="t('common.retry')"
-        :pagination="pagination"
-        :scroll="{ x: 'max-content' }"
-        size="large"
-        row-key="id"
-        preserve-column-widths
-        @retry="refresh"
-        @page-change="changePage"
-      >
-        <a-table-column
-          :title="t('projects.columns.name')"
-          :width="120"
-          fixed="left"
-          align="center"
+      <div class="project-table-frame">
+        <BusinessTable
+          :data="projects"
+          :loading="listQuery.isFetching.value"
+          :error="listQuery.error.value"
+          :empty-title="t('projects.empty')"
+          :retry-label="t('common.retry')"
+          :pagination="pagination"
+          :scroll="{ x: 'max-content' }"
+          size="large"
+          row-key="id"
+          preserve-column-widths
+          @retry="refresh"
+          @page-change="changePage"
         >
-          <template #cell="{ record: row }">
-            <a-tooltip :content="displayName(row)">
-              <button class="project-link" @click="openProject(row)">
-                {{ displayName(row) }}
-              </button>
-            </a-tooltip>
-          </template>
-        </a-table-column>
-        <a-table-column :title="t('projects.columns.manager')" :width="110" align="center">
-          <template #title>
-            <span class="manager-heading">{{ t('projects.columns.manager') }} <i>↕</i></span>
-          </template>
-          <template #cell="{ record: row }">
-            {{ row.projectManager?.realName || memberName(row, 'PROJECT_MANAGER') }}
-          </template>
-        </a-table-column>
-        <a-table-column :title="t('projects.columns.region')" :width="160" align="center">
-          <template #cell="{ record: row }">
-            <span class="cell-left nowrap">{{ region(row) }}</span>
-          </template>
-        </a-table-column>
-        <a-table-column
-          :title="t('projects.columns.currentStage')"
-          :width="200"
-          align="center"
-        >
-          <template #cell="{ record: row }">
-            <span class="stage-cell">
-              <span class="stage-tag" :style="stageStyle(row)">
-                {{ fieldConfig.getFieldLabel('PROJECT_STAGE', row.currentStage) }}
+          <a-table-column
+            :title="t('projects.columns.name')"
+            :width="120"
+            fixed="left"
+            align="center"
+          >
+            <template #cell="{ record: row }">
+              <a-tooltip :content="displayName(row)">
+                <button class="project-link" @click="openProject(row)">
+                  {{ displayName(row) }}
+                </button>
+              </a-tooltip>
+            </template>
+          </a-table-column>
+          <a-table-column :title="t('projects.columns.manager')" :width="110" align="center">
+            <template #title>
+              <span class="manager-heading">{{ t('projects.columns.manager') }} <i>↕</i></span>
+            </template>
+            <template #cell="{ record: row }">
+              {{ row.projectManager?.realName || memberName(row, 'PROJECT_MANAGER') }}
+            </template>
+          </a-table-column>
+          <a-table-column :title="t('projects.columns.region')" :width="160" align="center">
+            <template #cell="{ record: row }">
+              <span class="cell-left nowrap">{{ region(row) }}</span>
+            </template>
+          </a-table-column>
+          <a-table-column :title="t('projects.columns.currentStage')" :width="200" align="center">
+            <template #cell="{ record: row }">
+              <span class="stage-cell">
+                <span class="stage-tag" :style="stageStyle(row)">
+                  {{ fieldConfig.getFieldLabel('PROJECT_STAGE', row.currentStage) }}
+                </span>
               </span>
-            </span>
-          </template>
-        </a-table-column>
-        <a-table-column
-          :title="t('projects.columns.progress')"
-          :width="180"
-          align="center"
-        >
-          <template #cell="{ record: row }">
-            <div class="progress">
-              <span class="progress-track">
-                <span
-                  class="progress-fill"
-                  :class="{ 'is-complete': progressValue(row) === 100 }"
-                  :style="{ width: `${progressValue(row)}%` }"
-                />
+            </template>
+          </a-table-column>
+          <a-table-column :title="t('projects.columns.progress')" :width="180" align="center">
+            <template #cell="{ record: row }">
+              <div class="progress">
+                <span class="progress-track">
+                  <span
+                    class="progress-fill"
+                    :class="{ 'is-complete': progressValue(row) === 100 }"
+                    :style="{ width: `${progressValue(row)}%` }"
+                  />
+                </span>
+                <span>{{ progressValue(row) }}%</span>
+              </div>
+            </template>
+          </a-table-column>
+          <a-table-column :title="t('projects.columns.signedAt')" :width="120" align="center">
+            <template #cell="{ record: row }">
+              {{ date(row.contractSignedAt) }}
+            </template>
+          </a-table-column>
+          <a-table-column :title="t('projects.columns.acceptanceAt')" :width="120" align="center">
+            <template #cell="{ record: row }">
+              {{ acceptance(row) }}
+            </template>
+          </a-table-column>
+          <a-table-column :title="t('projects.columns.contractAmount')" :width="160" align="center">
+            <template #cell="{ record: row }">
+              <span class="cell-left money-cell">
+                {{ amountWithCurrency(row.contractAmount, row.contractCurrency) }}
               </span>
-              <span>{{ progressValue(row) }}%</span>
-            </div>
-          </template>
-        </a-table-column>
-        <a-table-column
-          :title="t('projects.columns.signedAt')"
-          :width="120"
-          align="center"
-        >
-          <template #cell="{ record: row }">
-            {{ date(row.contractSignedAt) }}
-          </template>
-        </a-table-column>
-        <a-table-column
-          :title="t('projects.columns.acceptanceAt')"
-          :width="120"
-          align="center"
-        >
-          <template #cell="{ record: row }">
-            {{ acceptance(row) }}
-          </template>
-        </a-table-column>
-        <a-table-column
-          :title="t('projects.columns.contractAmount')"
-          :width="160"
-          align="center"
-        >
-          <template #cell="{ record: row }">
-            <span class="cell-left money-cell">
-              {{ amountWithCurrency(row.contractAmount, row.contractCurrency) }}
-            </span>
-          </template>
-        </a-table-column>
-        <a-table-column
-          :title="convertedCurrencyTitle"
-          :width="160"
-          align="center"
-        >
-          <template #cell="{ record: row }">
-            <span class="cell-left money-cell">
-              {{ amountWithCurrency(row.convertedAmount, row.baseCurrency) }}
-            </span>
-          </template>
-        </a-table-column>
-        <a-table-column
-          :title="t('projects.columns.customerType')"
-          :width="120"
-          align="center"
-        >
-          <template #cell="{ record: row }">
-            <span
-              v-if="row.customerType"
-              class="dictionary-tag"
-              :style="dictionaryStyle('customerType', row.customerType)"
-            >
-              {{
-                configuredOption('CUSTOMER_TYPE', row.customerType)?.label || row.customerType
-              }} </span><span v-else>—</span>
-          </template>
-        </a-table-column>
-        <a-table-column :title="t('projects.createForm.contractType')" :width="110" align="center">
-          <template #cell="{ record: row }">
-            <span
-              v-if="row.contractType"
-              class="dictionary-tag"
-              :style="dictionaryStyle('contractType', row.contractType)"
-            >
-              {{
-                configuredOption('CONTRACT_TYPE', row.contractType)?.label || row.contractType
-              }} </span><span v-else>—</span>
-          </template>
-        </a-table-column>
-        <a-table-column :title="t('projects.columns.sales')" :width="100" align="center">
-          <template #cell="{ record: row }">
-            {{ row.salesOwner?.realName || memberName(row, 'SALES_OWNER') }}
-          </template>
-        </a-table-column>
-      </BusinessTable>
+            </template>
+          </a-table-column>
+          <a-table-column :title="convertedCurrencyTitle" :width="160" align="center">
+            <template #cell="{ record: row }">
+              <span class="cell-left money-cell">
+                {{ amountWithCurrency(row.convertedAmount, row.baseCurrency) }}
+              </span>
+            </template>
+          </a-table-column>
+          <a-table-column :title="t('projects.columns.customerType')" :width="120" align="center">
+            <template #cell="{ record: row }">
+              <span
+                v-if="row.customerType"
+                class="dictionary-tag"
+                :style="dictionaryStyle('customerType', row.customerType)"
+              >
+                {{
+                  configuredOption('CUSTOMER_TYPE', row.customerType)?.label || row.customerType
+                }} </span><span v-else>—</span>
+            </template>
+          </a-table-column>
+          <a-table-column
+            :title="t('projects.createForm.contractType')"
+            :width="110"
+            align="center"
+          >
+            <template #cell="{ record: row }">
+              <span
+                v-if="row.contractType"
+                class="dictionary-tag"
+                :style="dictionaryStyle('contractType', row.contractType)"
+              >
+                {{
+                  configuredOption('CONTRACT_TYPE', row.contractType)?.label || row.contractType
+                }} </span><span v-else>—</span>
+            </template>
+          </a-table-column>
+          <a-table-column :title="t('projects.columns.sales')" :width="100" align="center">
+            <template #cell="{ record: row }">
+              {{ row.salesOwner?.realName || memberName(row, 'SALES_OWNER') }}
+            </template>
+          </a-table-column>
+        </BusinessTable>
+      </div>
     </section>
 
     <ProjectDetailDialog
@@ -514,13 +476,21 @@ function dictionaryStyle(
 
 <style scoped>
 .project-page {
-  --project-border: #e5e6eb;
+  --project-action: #2563eb;
+  --project-action-hover: #1d4ed8;
+  --project-complete: #10b981;
+  --project-border: var(--app-border);
+  --project-header-bg: var(--app-fill-strong);
+  --project-row-alt: var(--app-fill-soft);
+  --project-text: var(--color-text-1);
+  --project-text-secondary: var(--color-text-2);
+  --project-text-muted: #999ea8;
   height: 100%;
   padding: 13px;
   overflow: hidden;
-  border-radius: 4px;
-  background: #fff;
-  color: #1d2129;
+  border-radius: 0;
+  background: var(--color-bg-1);
+  color: var(--project-text);
   font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
 
@@ -533,30 +503,23 @@ function dictionaryStyle(
 
 .summary-metric {
   position: relative;
+  height: 94px;
   min-width: 0;
+  align-self: center;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px;
+  padding: 14px 16px;
   border: 0;
   background: transparent;
   color: inherit;
   text-align: left;
 }
-.summary-metric:not(:last-of-type)::after {
-  content: '';
-  position: absolute;
-  top: 20px;
-  right: 0;
-  width: 1px;
-  height: 60px;
-  background: var(--project-border);
-}
 .summary-metric:not(:disabled) {
   cursor: pointer;
 }
 .summary-metric:not(:disabled):hover {
-  background: #f7f8fa;
+  background: var(--project-row-alt);
 }
 .metric-icon {
   width: 48px;
@@ -565,29 +528,13 @@ function dictionaryStyle(
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #eceefb;
+  background: transparent;
   overflow: hidden;
 }
 .metric-icon img {
-  width: 46px;
-  height: 46px;
+  width: 28px;
+  height: 28px;
   display: block;
-}
-.summary-metric--green .metric-icon {
-  background: #e6f7ed;
-  color: #00b42a;
-}
-.summary-metric--orange .metric-icon {
-  background: #fff3e0;
-  color: #ff8a00;
-}
-.summary-metric--blue .metric-icon {
-  background: #e3f2fd;
-  color: #168cff;
-}
-.summary-metric--red .metric-icon {
-  background: #ffebed;
-  color: #f53f3f;
 }
 .metric-copy {
   min-width: 0;
@@ -597,14 +544,14 @@ function dictionaryStyle(
 }
 .metric-label {
   overflow: hidden;
-  color: #999ea8;
+  color: var(--project-text-muted);
   font-size: 12px;
-  line-height: 18px;
+  line-height: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .metric-value {
-  color: #1d2129;
+  color: var(--project-text);
   font-size: 22px;
   font-weight: 700;
   line-height: 26px;
@@ -629,7 +576,7 @@ function dictionaryStyle(
   overflow: hidden;
   border: 0;
   border-radius: 0;
-  background: #fff;
+  background: var(--color-bg-1);
 }
 
 .project-toolbar {
@@ -715,7 +662,36 @@ function dictionaryStyle(
 }
 
 .search-group :deep(.keyword-input .arco-input-wrapper) {
+  height: 32px;
+  padding: 0 12px;
   border-radius: 2px;
+}
+
+.project-toolbar :deep(.arco-btn) {
+  height: 32px;
+  min-width: 82px;
+  gap: 8px;
+  padding: 0 16px;
+  border-color: var(--project-header-bg);
+  border-radius: 2px;
+  background: var(--project-header-bg);
+  color: var(--project-text-secondary);
+}
+.project-toolbar :deep(.arco-btn:hover) {
+  border-color: var(--project-row-alt);
+  background: var(--project-row-alt);
+}
+.project-toolbar :deep(.arco-btn-primary) {
+  border-color: var(--project-action);
+  background: var(--project-action);
+  color: #fff;
+}
+.project-toolbar :deep(.arco-btn-primary:hover) {
+  border-color: var(--project-action-hover);
+  background: var(--project-action-hover);
+}
+.project-toolbar :deep(.arco-btn-icon) {
+  margin-right: 0;
 }
 
 .search-button {
@@ -742,6 +718,7 @@ function dictionaryStyle(
 }
 
 .project-link {
+  width: 100%;
   display: block;
   max-width: 100%;
   overflow: hidden;
@@ -767,18 +744,17 @@ function dictionaryStyle(
   text-overflow: ellipsis;
 }
 .money-cell {
-  min-width: max-content;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .progress {
-  display: grid;
-  grid-template-columns: 80px 34px;
+  width: 100%;
+  display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 8px;
-  color: #4e5969;
-  font-size: 12px;
+  color: var(--project-text-secondary);
+  font-size: 13px;
   white-space: nowrap;
 }
 .progress-track {
@@ -792,10 +768,10 @@ function dictionaryStyle(
 .progress-fill {
   height: 100%;
   display: block;
-  background: #2563eb;
+  background: var(--project-action);
 }
 .progress-fill.is-complete {
-  background: #10b981;
+  background: var(--project-complete);
 }
 .stage-cell {
   width: 100%;
@@ -841,7 +817,7 @@ function dictionaryStyle(
   font-weight: 400;
 }
 
-:deep(.project-list-panel > .business-table) {
+.project-table-frame {
   min-height: 0;
   display: flex;
   flex: 1;
@@ -849,8 +825,33 @@ function dictionaryStyle(
   overflow: hidden;
   border: 1px solid var(--project-border);
 }
+.project-table-frame > :deep(.business-table) {
+  min-height: 0;
+  flex: 1;
+}
+.project-table-frame > :deep(.arco-result) {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
 :deep(.project-list-panel .business-table__viewport) {
   max-height: none;
+  scrollbar-color: #b5babf #f0f2f2;
+  scrollbar-width: auto;
+}
+:deep(.project-list-panel .business-table__viewport::-webkit-scrollbar) {
+  width: 6px;
+  height: 10px;
+}
+:deep(.project-list-panel .business-table__viewport::-webkit-scrollbar-track) {
+  background: #f0f2f2;
+}
+:deep(.project-list-panel .business-table__viewport::-webkit-scrollbar-thumb) {
+  border: 0;
+  border-radius: 3px;
+  background: #b5babf;
 }
 :deep(.project-list-panel .business-table__viewport > .arco-table) {
   width: max-content;
@@ -871,24 +872,32 @@ function dictionaryStyle(
 }
 :deep(.project-list-panel .arco-table-th) {
   height: 44px;
-  background: #f2f3f5;
-  color: #1d2129;
+  background: var(--project-header-bg);
+  color: var(--project-text);
   font-size: 13px;
   font-weight: 500;
 }
 :deep(.project-list-panel .arco-table-td) {
   height: 44px;
-  color: #1d2129;
+  color: var(--project-text);
   font-size: 13px;
 }
 :deep(.project-list-panel .arco-table-th),
 :deep(.project-list-panel .arco-table-td) {
-  padding: 0 12px;
+  padding: 0;
   border-color: var(--project-border);
   white-space: nowrap;
 }
+:deep(.project-list-panel .arco-table-cell) {
+  width: 100%;
+  height: 100%;
+  padding: 0 12px;
+}
+:deep(.project-list-panel .arco-table) {
+  font-family: inherit;
+}
 :deep(.project-list-panel .arco-table-tr:nth-child(even) .arco-table-td) {
-  background: #f7f8fa;
+  background: var(--project-row-alt);
 }
 :deep(.project-list-panel .arco-table-tr:hover .arco-table-td) {
   background: #e8f3ff;
@@ -903,8 +912,20 @@ function dictionaryStyle(
   .summary-band {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-  .summary-metric:nth-of-type(3)::after {
-    display: none;
+}
+
+@media (max-width: 900px) {
+  .project-toolbar {
+    height: auto;
+    min-height: 32px;
+    flex-wrap: wrap;
+  }
+  .project-toolbar :deep(.page-toolbar__filters),
+  .project-toolbar :deep(.page-toolbar__actions) {
+    width: auto;
+  }
+  .project-toolbar :deep(.page-toolbar__actions) {
+    margin-left: 0;
   }
 }
 
@@ -919,12 +940,6 @@ function dictionaryStyle(
   .summary-metric {
     padding: 12px;
   }
-  .summary-metric:nth-of-type(3)::after {
-    display: block;
-  }
-  .summary-metric:nth-of-type(even)::after {
-    display: none;
-  }
   .project-toolbar :deep(.page-toolbar__filters) {
     flex-wrap: wrap;
   }
@@ -932,5 +947,4 @@ function dictionaryStyle(
     width: min(273px, calc(100vw - 42px));
   }
 }
-
 </style>

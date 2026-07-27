@@ -9,6 +9,8 @@ import { useUserStore } from '@/store/user'
 
 import BusinessDrawer from '../BusinessDrawer.vue'
 import BusinessTable from '../BusinessTable.vue'
+import EmptyState from '../EmptyState.vue'
+import ErrorState from '../ErrorState.vue'
 import StatusBadge from '../StatusBadge.vue'
 import Can from '@/platform/permission/Can.vue'
 import type { PermissionCode } from '@/platform/permission/access-control.generated'
@@ -247,6 +249,44 @@ describe('BusinessTable mount contract', () => {
     expect(wrapper.findComponent(TableStub).exists()).toBe(false)
     expect(wrapper.get('[data-testid="error-state"]').text()).toContain('项目列表加载失败')
     await wrapper.get('[data-testid="retry"]').trigger('click')
+    expect(wrapper.emitted('retry')).toHaveLength(1)
+  })
+})
+
+describe('shared table states', () => {
+  it('renders empty-state title and description through the Arco description slot', () => {
+    const AEmptyStub = defineComponent({
+      name: 'AEmpty',
+      template: '<div data-testid="arco-empty"><slot /></div>',
+    })
+    const wrapper = mount(EmptyState, {
+      props: { title: '暂无符合条件的项目', description: '请调整筛选条件' },
+      global: { stubs: { AEmpty: AEmptyStub } },
+    })
+
+    expect(wrapper.get('[data-testid="arco-empty"]').text()).toContain('暂无符合条件的项目')
+    expect(wrapper.get('[data-testid="arco-empty"]').text()).toContain('请调整筛选条件')
+  })
+
+  it('renders error details and relays the retry action', async () => {
+    const AResultStub = defineComponent({
+      name: 'AResult',
+      props: { title: String, subtitle: String },
+      template:
+        '<div data-testid="arco-result"><strong>{{ title }}</strong><p>{{ subtitle }}</p><slot name="extra" /></div>',
+    })
+    const wrapper = mount(ErrorState, {
+      props: {
+        title: '项目列表加载失败',
+        description: '请稍后重试',
+        retryLabel: '重试',
+      },
+      global: { stubs: { AResult: AResultStub, AButton: true } },
+    })
+
+    expect(wrapper.get('[data-testid="arco-result"]').text()).toContain('项目列表加载失败')
+    expect(wrapper.get('[data-testid="arco-result"]').text()).toContain('请稍后重试')
+    await wrapper.get('a-button-stub').trigger('click')
     expect(wrapper.emitted('retry')).toHaveLength(1)
   })
 })

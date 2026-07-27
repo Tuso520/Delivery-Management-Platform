@@ -1,5 +1,5 @@
 <script setup lang="ts">
-withDefaults(defineProps<{ title?: string; description?: string }>(), {
+const props = withDefaults(defineProps<{ title?: string; description?: string }>(), {
   title: '',
   description: '',
 })
@@ -7,13 +7,13 @@ withDefaults(defineProps<{ title?: string; description?: string }>(), {
 
 <template>
   <a-empty class="business-empty">
-    <template v-if="title || description" #description>
-      <strong v-if="title">{{ title }}</strong>
-      <p v-if="description">
-        {{ description }}
+    <template v-if="props.title || props.description || $slots.default" #default>
+      <strong v-if="props.title">{{ props.title }}</strong>
+      <p v-if="props.description">
+        {{ props.description }}
       </p>
+      <slot />
     </template>
-    <slot />
   </a-empty>
 </template>
 

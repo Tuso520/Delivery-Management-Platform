@@ -697,7 +697,7 @@
       "tenThousands": "万",
       "items": "个"
     },
-    "searchPlaceholder": "搜索项目名称、项目编号或客户名称",
+    "searchPlaceholder": "搜索项目名称",
     "refresh": "刷新",
     "query": "查询",
     "create": "新建",

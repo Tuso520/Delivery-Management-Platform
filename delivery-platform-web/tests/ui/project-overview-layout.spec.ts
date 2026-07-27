@@ -76,13 +76,6 @@ function createProjectScenario() {
   }
 }
 
-interface FieldOptionsEnvelope {
-  data: Array<{
-    fieldCode: string
-    options: Array<{ label: string; value: string }>
-  }>
-}
-
 async function projectTableMetrics(page: Page) {
   return page.locator('.project-list-panel').evaluate((panel) => {
     const viewport = panel.querySelector<HTMLElement>('.business-table__viewport')
@@ -121,69 +114,72 @@ async function firstColumnHorizontalMovement(page: Page): Promise<number> {
 }
 
 async function alignmentMetrics(page: Page, zoom: 1 | 2, requireSelect = true) {
-  return page.evaluate(({ scale, shouldRequireSelect }) => {
-    document.documentElement.style.zoom = String(scale)
+  return page.evaluate(
+    ({ scale, shouldRequireSelect }) => {
+      document.documentElement.style.zoom = String(scale)
 
-    const centerY = (element: Element): number => {
-      const box = element.getBoundingClientRect()
-      return box.top + box.height / 2
-    }
-    const delta = (row: Element, child: Element | null): number =>
-      child ? Math.abs(centerY(row) - centerY(child)) : Number.POSITIVE_INFINITY
+      const centerY = (element: Element): number => {
+        const box = element.getBoundingClientRect()
+        return box.top + box.height / 2
+      }
+      const delta = (row: Element, child: Element | null): number =>
+        child ? Math.abs(centerY(row) - centerY(child)) : Number.POSITIVE_INFINITY
 
-    const primaryRows = [
-      ...document.querySelectorAll<HTMLElement>(
-        '.sidebar-menu > .arco-menu-inner > .arco-menu-item, .sidebar-menu > .arco-menu-inner > .arco-menu-inline > .arco-menu-inline-header',
-      ),
-    ]
-    const primaryDeltas = primaryRows.map((row) => ({
-      icon: delta(row, row.querySelector('.menu-icon-box')),
-      label: delta(row, row.querySelector('.menu-title, .arco-menu-item-inner')),
-      chevron: row.matches('.arco-menu-inline-header')
-        ? delta(row, row.querySelector('.menu-chevron-box'))
-        : 0,
-    }))
-    const secondaryRows = [
-      ...document.querySelectorAll<HTMLElement>(
-        '.sidebar-menu .arco-menu-inline-content > .arco-menu-item',
-      ),
-    ]
-    const select = document.querySelector<HTMLElement>('.scope-field .arco-select-view-single')
-    const selectValue = document.querySelector<HTMLElement>('.scope-field .arco-select-view-value')
-    const selectArrow = document.querySelector<HTMLElement>('.scope-field .select-arrow-box')
-    if (shouldRequireSelect && (!select || !selectValue || !selectArrow)) {
-      throw new Error('Project scope select alignment nodes are incomplete')
-    }
+      const primaryRows = [
+        ...document.querySelectorAll<HTMLElement>(
+          '.sidebar-menu > .arco-menu-inner > .arco-menu-item, .sidebar-menu > .arco-menu-inner > .arco-menu-inline > .arco-menu-inline-header',
+        ),
+      ]
+      const primaryDeltas = primaryRows.map((row) => ({
+        icon: delta(row, row.querySelector('.menu-icon-box')),
+        label: delta(row, row.querySelector('.menu-title, .arco-menu-item-inner')),
+        chevron: row.matches('.arco-menu-inline-header')
+          ? delta(row, row.querySelector('.menu-chevron-box'))
+          : 0,
+      }))
+      const secondaryRows = [
+        ...document.querySelectorAll<HTMLElement>(
+          '.sidebar-menu .arco-menu-inline-content > .arco-menu-item',
+        ),
+      ]
+      const select = document.querySelector<HTMLElement>('.scope-field .arco-select-view-single')
+      const selectValue = document.querySelector<HTMLElement>(
+        '.scope-field .arco-select-view-value',
+      )
+      const selectArrow = document.querySelector<HTMLElement>('.scope-field .select-arrow-box')
+      if (shouldRequireSelect && (!select || !selectValue || !selectArrow)) {
+        throw new Error('Project scope select alignment nodes are incomplete')
+      }
 
-    return {
-      primaryCount: primaryRows.length,
-      primaryMaxDelta: Math.max(
-        ...primaryDeltas.flatMap((item) => [item.icon, item.label, item.chevron]),
-      ),
-      secondaryCount: secondaryRows.length,
-      secondaryMaxDelta: Math.max(
-        ...secondaryRows.map((row) => delta(row, row.querySelector('.arco-menu-item-inner'))),
-      ),
-      secondaryLeft: secondaryRows.map((row) =>
-        Number.parseFloat(getComputedStyle(row).paddingLeft),
-      ),
-      selectValueDelta: select && selectValue ? delta(select, selectValue) : 0,
-      selectArrowDelta: select && selectArrow ? delta(select, selectArrow) : 0,
-      selectArrowCount: document.querySelectorAll('.scope-field .select-arrow-box').length,
-      defaultSelectArrowCount: document.querySelectorAll('.scope-field .arco-icon-down').length,
-      menuIconDisplay: getComputedStyle(
-        document.querySelector<HTMLElement>('.figma-menu-icon')!,
-      ).display,
-      menuIconBoxDisplay: getComputedStyle(
-        document.querySelector<HTMLElement>('.menu-icon-box')!,
-      ).display,
-      menuChevronBoxDisplay: getComputedStyle(
-        document.querySelector<HTMLElement>('.menu-chevron-box')!,
-      ).display,
-      selectArrowBoxDisplay: selectArrow ? getComputedStyle(selectArrow).display : '',
-      zoom: Number.parseFloat(getComputedStyle(document.documentElement).zoom),
-    }
-  }, { scale: zoom, shouldRequireSelect: requireSelect })
+      return {
+        primaryCount: primaryRows.length,
+        primaryMaxDelta: Math.max(
+          ...primaryDeltas.flatMap((item) => [item.icon, item.label, item.chevron]),
+        ),
+        secondaryCount: secondaryRows.length,
+        secondaryMaxDelta: Math.max(
+          ...secondaryRows.map((row) => delta(row, row.querySelector('.arco-menu-item-inner'))),
+        ),
+        secondaryLeft: secondaryRows.map((row) =>
+          Number.parseFloat(getComputedStyle(row).paddingLeft),
+        ),
+        selectValueDelta: select && selectValue ? delta(select, selectValue) : 0,
+        selectArrowDelta: select && selectArrow ? delta(select, selectArrow) : 0,
+        selectArrowCount: document.querySelectorAll('.scope-field .select-arrow-box').length,
+        defaultSelectArrowCount: document.querySelectorAll('.scope-field .arco-icon-down').length,
+        menuIconDisplay: getComputedStyle(document.querySelector<HTMLElement>('.figma-menu-icon')!)
+          .display,
+        menuIconBoxDisplay: getComputedStyle(document.querySelector<HTMLElement>('.menu-icon-box')!)
+          .display,
+        menuChevronBoxDisplay: getComputedStyle(
+          document.querySelector<HTMLElement>('.menu-chevron-box')!,
+        ).display,
+        selectArrowBoxDisplay: selectArrow ? getComputedStyle(selectArrow).display : '',
+        zoom: Number.parseFloat(getComputedStyle(document.documentElement).zoom),
+      }
+    },
+    { scale: zoom, shouldRequireSelect: requireSelect },
+  )
 }
 
 test('project overview matches the Figma shell with real API data at 1440x900', async ({
@@ -207,17 +203,34 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
     const header = document.querySelector<HTMLElement>('.layout-header')
     const sidebar = document.querySelector<HTMLElement>('.layout-aside')
     const content = document.querySelector<HTMLElement>('.layout-content')
+    const projectPage = document.querySelector<HTMLElement>('.project-page')
     const summary = document.querySelector<HTMLElement>('.summary-band')
     const toolbar = document.querySelector<HTMLElement>('.project-toolbar')
-    if (!header || !sidebar || !content || !summary || !toolbar) {
+    const tableFrame = document.querySelector<HTMLElement>('.project-table-frame')
+    if (!header || !sidebar || !content || !projectPage || !summary || !toolbar || !tableFrame) {
       throw new Error('Project overview shell nodes are incomplete')
     }
+    const pageBox = projectPage.getBoundingClientRect()
+    const summaryBox = summary.getBoundingClientRect()
+    const toolbarBox = toolbar.getBoundingClientRect()
+    const tableBox = tableFrame.getBoundingClientRect()
+    const metricIcon = document.querySelector<HTMLElement>('.metric-icon')
+    const metricImage = metricIcon?.querySelector<HTMLImageElement>('img')
+    if (!metricIcon || !metricImage) throw new Error('Project overview metric icon is missing')
     return {
       headerHeight: Math.round(header.getBoundingClientRect().height),
       sidebarWidth: Math.round(sidebar.getBoundingClientRect().width),
       contentPaddingLeft: Math.round(Number.parseFloat(getComputedStyle(content).paddingLeft)),
+      pageWidth: Math.round(pageBox.width),
+      pageHeight: Math.round(pageBox.height),
       summaryHeight: Math.round(summary.getBoundingClientRect().height),
+      summaryTop: Math.round(summaryBox.top - pageBox.top),
       toolbarHeight: Math.round(toolbar.getBoundingClientRect().height),
+      toolbarTop: Math.round(toolbarBox.top - pageBox.top),
+      tableTop: Math.round(tableBox.top - pageBox.top),
+      iconContainerSize: Math.round(metricIcon.getBoundingClientRect().width),
+      iconSize: Math.round(metricImage.getBoundingClientRect().width),
+      iconBackground: getComputedStyle(metricIcon).backgroundColor,
     }
   })
 
@@ -225,19 +238,40 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
     headerHeight: 60,
     sidebarWidth: 180,
     contentPaddingLeft: 13,
+    pageWidth: 1234,
+    pageHeight: 784,
     summaryHeight: 100,
+    summaryTop: 13,
     toolbarHeight: 32,
+    toolbarTop: 125,
+    tableTop: 169,
+    iconContainerSize: 48,
+    iconSize: 28,
+    iconBackground: 'rgba(0, 0, 0, 0)',
   })
 
-  for (const label of [
+  const expectedSummaryLabels = [
     '项目金额（CNY）',
+    '确收金额（CNY）',
     '项目总数',
     '进行中的项目',
     '今年验收项目',
-    '确收金额（CNY）',
-  ]) {
+  ]
+  await expect(page.locator('.metric-label')).toHaveText(expectedSummaryLabels)
+  for (const label of expectedSummaryLabels) {
     await expect(page.getByText(label, { exact: true })).toBeVisible()
   }
+  await expect(page.locator('.keyword-input input')).toHaveAttribute('placeholder', '搜索项目名称')
+  expect(
+    await page
+      .locator('.search-button')
+      .evaluate((button) => getComputedStyle(button).backgroundColor),
+  ).toBe('rgb(37, 99, 235)')
+  const refreshButton = page.locator('.project-toolbar .page-toolbar__actions .arco-btn').first()
+  await expect(refreshButton).toBeEnabled()
+  expect(await refreshButton.evaluate((button) => getComputedStyle(button).backgroundColor)).toBe(
+    'rgb(242, 243, 245)',
+  )
 
   const tableHeaders = await page
     .locator('.project-list-panel thead .arco-table-th')
@@ -257,8 +291,137 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
     '销售',
   ])
 
+  const columnWidths = await page
+    .locator('.project-list-panel thead .arco-table-th')
+    .evaluateAll((headers) =>
+      headers.slice(0, 12).map((header) => Math.round(header.getBoundingClientRect().width)),
+    )
+  expect(columnWidths).toEqual([120, 110, 160, 200, 180, 120, 120, 160, 160, 120, 110, 100])
+
+  const leftAlignedOffsets = await page
+    .locator('.project-list-panel tbody .arco-table-tr')
+    .first()
+    .evaluate((row) => {
+      const cells = [...row.querySelectorAll<HTMLElement>('.arco-table-td')]
+      const selectors = new Map<number, string>([
+        [0, '.project-link'],
+        [2, '.cell-left'],
+        [3, '.stage-cell'],
+        [4, '.progress'],
+        [7, '.money-cell'],
+      ])
+      return [...selectors].map(([index, selector]) => {
+        const cell = cells[index]
+        const content = cell?.querySelector<HTMLElement>(selector)
+        if (!cell || !content) throw new Error(`Missing alignment node for column ${index}`)
+        return Math.round(content.getBoundingClientRect().left - cell.getBoundingClientRect().left)
+      })
+    })
+  expect(leftAlignedOffsets).toEqual([12, 12, 12, 12, 12])
+
   await expect(page.locator('.arco-message')).toHaveCount(0, { timeout: 10_000 })
   await page.screenshot({ path: acceptanceScreenshot, animations: 'disabled' })
+})
+
+test('project overview keeps loading, empty and error states inside the Figma table frame', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await login(page)
+
+  let responseMode: 'empty' | 'error' = 'empty'
+  await page.route('**/api/v1/projects?**', async (route) => {
+    if (responseMode === 'error') {
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        json: {
+          code: 500,
+          message: '项目列表验收错误',
+          data: null,
+          timestamp: new Date().toISOString(),
+          traceId: 'project-overview-state-test',
+        },
+      })
+      return
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 750))
+    const response = await route.fetch()
+    const envelope = await response.json()
+    await route.fulfill({
+      response,
+      json: {
+        ...envelope,
+        data: {
+          ...envelope.data,
+          items: [],
+          page: 1,
+          pageSize: 20,
+          total: 0,
+        },
+      },
+    })
+  })
+
+  await page.goto('/#/projects?keyword=project-overview-empty-state')
+  await expect(page.locator('.project-list-panel .arco-spin-loading')).toBeVisible()
+  await expect(page.locator('.business-empty')).toContainText('暂无符合条件的项目')
+  await expect(page.locator('.project-table-frame')).toHaveCSS('height', '602px')
+
+  responseMode = 'error'
+  await page.getByPlaceholder('搜索项目名称', { exact: true }).fill('project-overview-error-state')
+  await page.getByRole('button', { name: '查询', exact: true }).click()
+  await expect(page.locator('.project-table-frame .arco-result')).toBeVisible()
+  await expect(page.locator('.project-table-frame')).toContainText(
+    'Request failed with status code 500',
+  )
+  await expect(page.getByRole('button', { name: '重新加载', exact: true })).toBeVisible()
+  await expect(page.locator('.project-table-frame')).toHaveCSS('height', '602px')
+})
+
+test('project overview stays inside the App Shell at common desktop widths', async ({ page }) => {
+  await login(page)
+
+  for (const viewport of [
+    { width: 1280, height: 800 },
+    { width: 1440, height: 900 },
+    { width: 1920, height: 1080 },
+  ]) {
+    await page.setViewportSize(viewport)
+    await page.goto('/#/projects')
+    await expect(page.locator('.project-table-frame')).toBeVisible()
+    const metrics = await page.evaluate(() => {
+      const root = document.documentElement
+      const main = document.querySelector<HTMLElement>('.layout-main')
+      const projectPage = document.querySelector<HTMLElement>('.project-page')
+      const tableFrame = document.querySelector<HTMLElement>('.project-table-frame')
+      if (!main || !projectPage || !tableFrame) {
+        throw new Error('Project overview responsive layout nodes are incomplete')
+      }
+      const mainBox = main.getBoundingClientRect()
+      const pageBox = projectPage.getBoundingClientRect()
+      const tableBox = tableFrame.getBoundingClientRect()
+      return {
+        documentOverflow: root.scrollWidth - root.clientWidth,
+        pageOverflow: projectPage.scrollWidth - projectPage.clientWidth,
+        pageInsideMain:
+          pageBox.left >= mainBox.left - 1 &&
+          pageBox.right <= mainBox.right + 1 &&
+          pageBox.bottom <= mainBox.bottom + 1,
+        tableInsidePage:
+          tableBox.left >= pageBox.left &&
+          tableBox.right <= pageBox.right &&
+          tableBox.bottom <= pageBox.bottom,
+      }
+    })
+    expect(metrics).toEqual({
+      documentOverflow: 0,
+      pageOverflow: 0,
+      pageInsideMain: true,
+      tableInsidePage: true,
+    })
+  }
 })
 
 test('sidebar and project scope select remain centered at 100% and 200%', async ({ page }) => {
@@ -322,25 +485,13 @@ test('project overview uses wheel loading, large rows and a fixed project-name c
     (route) => scenario.fulfill(route),
   )
 
-  const fieldOptionsResponse = page.waitForResponse(
-    (response) =>
-      response.request().method() === 'GET' &&
-      response.url().includes('/api/v1/field-options/module/project'),
-  )
   await page.goto('/#/projects')
-  const fieldOptions = (await (await fieldOptionsResponse).json()) as FieldOptionsEnvelope
-  const currencyOptions =
-    fieldOptions.data.find((field) => field.fieldCode === 'CURRENCY')?.options ?? []
-  const vndLabel = currencyOptions.find((option) => option.value === 'VND')?.label
-  const cnyLabel = currencyOptions.find((option) => option.value === 'CNY')?.label
-  expect(vndLabel).toEqual(expect.any(String))
-  expect(cnyLabel).toEqual(expect.any(String))
   const viewport = page.locator('.project-list-panel .business-table__viewport')
   await expect(page.locator('.project-link')).toHaveCount(20, { timeout: 60_000 })
   await expect(page.locator('.business-table__pagination')).toHaveCount(0)
   await expect(page.locator('.project-list-panel .arco-pagination')).toHaveCount(0)
-  await expect(page.getByText(`${vndLabel} 987,654,321,012.00`, { exact: true })).toBeVisible()
-  await expect(page.getByText(`${cnyLabel} 2,888,888.13`, { exact: true })).toBeVisible()
+  await expect(page.getByText('VND 987,654,321,012.00', { exact: true })).toBeVisible()
+  await expect(page.getByText('CNY 2,888,888.13', { exact: true })).toBeVisible()
   await expect(page.getByText('越南 · 胡志明市', { exact: true })).toBeVisible()
 
   const metrics = await projectTableMetrics(page)

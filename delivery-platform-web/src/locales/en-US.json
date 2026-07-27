@@ -697,7 +697,7 @@
       "tenThousands": "×10k",
       "items": ""
     },
-    "searchPlaceholder": "Search project name, code or customer",
+    "searchPlaceholder": "Search project name",
     "refresh": "Refresh",
     "query": "Query",
     "create": "New",
