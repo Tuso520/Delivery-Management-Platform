@@ -6,6 +6,8 @@ import type {
   QueryStandardDto,
   ReviewSubmissionResult,
   Standard,
+  StandardCategoryCount,
+  StandardCategoryDimension,
   StandardPage,
   StandardRelation,
   StandardRelationType,
@@ -32,6 +34,12 @@ export const standardApi = {
     return request.get<StandardPage>('/standards', { params })
   },
 
+  getCategoryCounts(dimension: StandardCategoryDimension, keyword?: string) {
+    return request.get<StandardCategoryCount[]>('/standards/category-counts', {
+      params: { dimension, ...(keyword ? { keyword } : {}) },
+    })
+  },
+
   getById(id: string) {
     return request.get<Standard>(`/standards/${id}`)
   },
@@ -42,6 +50,10 @@ export const standardApi = {
 
   update(id: string, data: UpdateStandardDto) {
     return request.patch<Standard>(`/standards/${id}`, data)
+  },
+
+  changeEnabled(id: string, enabled: boolean) {
+    return request.patch<Standard>(`/standards/${id}/enabled`, { enabled })
   },
 
   createVersion(id: string, data: CreateStandardVersionDto) {

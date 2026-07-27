@@ -64,6 +64,7 @@ UI E2E 默认使用 Playwright 锁定版本的 Chromium，CI 通过 `playwright 
 - 项目概览的加载、空数据、接口异常、固定项目名列、横向/纵向滚动、项目经理升降序和只读统计卡必须分别验收；控制台错误、页面异常、失败请求和图片资源加载失败均视为失败。
 - 受限角色只看到数据范围内项目，合同/折算金额等敏感字段为空，且看不到物理删除操作。
 - 项目档案在 1234×784 内容区断言 13px 内边距、100px 五指标区、32px 工具栏、270/937px 双栏、44px 目录/表格行和 `340/80/100/113/122/182px` 列宽；覆盖真实项目查询、上传、下载、逻辑文件删除、版本刷新、权限和 `FILE_TYPE` 启停联动。
+- 标准库在 1440×900 下断言 88px 指标区、32px 工具栏、625px 主工作区、270/937px 双栏、44px 页签/分类/表头/数据行、80px 分类说明、`365/90/130/170/182px` 五列和无分页器；覆盖关键词、两个分类维度、详情、新增、字段配置联动、版本审核发布、下载、启停、归档和权限边界。
 - 文件首传、同键重试、版本晋升、审核通过/驳回、审核历史和深链抽屉。
 - PDF 至少实际渲染一页；Office、图片、Markdown、XMind、音视频按环境能力验证只读路由和明确降级。
 - 标准、知识、档案模板、审核、用户中心、审批规则、通知、集成和角色权限矩阵表格有真实表头与数据行。
@@ -84,7 +85,7 @@ UI E2E 默认使用 Playwright 锁定版本的 Chromium，CI 通过 `playwright 
 8. 标准历史结构化正文必须物化为经流式 checksum 校验的真实 MinIO 文件；每个有效 StandardVersion 都有唯一主文件。KnowledgeVersion 必须严格满足 FILE/MARKDOWN/LINK 三选一，支持文件归属和 published pointer 一致。
 9. UI 翻译退役只允许把 `translations` 原子归档为 `retired_ui_translations_20260713`，部署表计数报告必须证明行数未减少；运行时 Prisma、seed 和 API 不再读写该表。
 10. 迁移失败不得继续启动 API 或 Worker；回滚必须成对恢复数据库和 MinIO。
-11. `_prisma_migrations` 必须恰好包含源码中的 42 个有效迁移，每个迁移完成且 `migration.sql` SHA-256 与数据库记录一致；数据库中不得存在源码缺失的有效迁移。
+11. `_prisma_migrations` 必须恰好包含源码中的 43 个有效迁移，每个迁移完成且 `migration.sql` SHA-256 与数据库记录一致；数据库中不得存在源码缺失的有效迁移。
 12. 三组 migrator apply 完成后捕获全部业务表计数，第二次 seed 后逐表比较；任一表新增、减少或消失均阻断应用启动。
 13. 真实浏览器验收必须上传私有 PNG、通过鉴权下载并逐字节回读原文件，等待 File Worker 生成 WebP 缩略图，并确认 `ArchiveFileUploaded` 与 `FileProcessingCompleted` Outbox 事件进入终态。
 
@@ -102,16 +103,16 @@ UI E2E 默认使用 Playwright 锁定版本的 Chromium，CI 通过 `playwright 
 
 ## 2026-07-28 当前验收状态
 
-源码静态事实由 `node scripts/verify-doc-facts.mjs` 在每次验收中重新计算。当前仓库扫描范围为 647 个受版本控制或待纳入版本控制的文件；前端 191 个 TypeScript/Vue 文件、24 个 `views/` Vue 文件、26 个运行时 API 文件和 43 个测试文件；后端 248 个 TypeScript 文件、28 个 Controller、42 个 Service、30 个 Module、171 个 HTTP 路由和 42 个 Prisma migration。以上数字只作为本次交付快照，后续发布仍以脚本实时计算结果为准。
+源码静态事实由 `node scripts/verify-doc-facts.mjs` 在每次验收中重新计算。当前仓库扫描范围为 662 个受版本控制或待纳入版本控制的文件；前端 191 个 TypeScript/Vue 文件、24 个 `views/` Vue 文件、26 个运行时 API 文件和 43 个测试文件；后端 248 个 TypeScript 文件、28 个 Controller、42 个 Service、30 个 Module、173 个 HTTP 路由和 43 个 Prisma migration。以上数字只作为本次交付快照，后续发布仍以脚本实时计算结果为准。
 
 发布迁移验收脚本核对应用迁移与校验和、二次 seed 全库表计数以及 MinIO/File Worker/Outbox Worker 一致性。
 
 本地自动化结果：
 
-- 前端 Vitest：43 个测试文件、215 个用例全部通过。
+- 前端 Vitest：43 个测试文件、217 个用例全部通过。
 - 前端 ESLint（只读模式）、TypeScript 类型检查和生产构建通过；普通 JavaScript 单块 500 KiB、CSS 450 KiB、独立 Worker 1500 KiB 和总 JavaScript 2600 KiB 预算门禁通过。
 - 后端 Prisma Client：按当前 schema 生成成功。
-- 后端 Jest：74 个测试套件、528 个用例全部通过。
+- 后端 Jest：74 个测试套件、533 个用例全部通过。
 - 后端 ESLint（只读模式）、TypeScript 类型检查、生产构建和 Prisma schema 校验通过。
 - 代码规则扫描：前后端源码未发现新增无约束 `any`，未发现其他 UI 组件库导入；前端常规业务请求集中在 `src/api/`，统一文件预览组件按只读会话使用受控 `fetch` 获取预览内容。
 - 文档事实已按当前项目字段、统一进度命令、Figma 正常列表边界、迁移数量和测试数量校正。
@@ -121,9 +122,10 @@ UI E2E 默认使用 Playwright 锁定版本的 Chromium，CI 通过 `playwright 
 
 当前真实验收结果：
 
-- `_prisma_migrations` 精确包含源码中的 42 个 migration，全部完成且迁移运行器校验通过。
-- 三组数据 migrator 的 dry-run、apply 和只读 verify 全部通过；第二次 seed 前后的 86 张表计数逐表一致。
-- `/api/v1/ready` 的 database、redis、storage 全部为 `ok`；真实 API E2E 5/5，覆盖字段配置来源关联与真实变更传播、登录刷新、项目、标准、知识、审核、通知和受限角色权限矩阵。
+- `_prisma_migrations` 精确包含源码中的 43 个 migration，全部完成且迁移运行器校验通过。
+- 三组数据 migrator 的 dry-run、apply 和只读 verify 全部通过；第二次 seed 前后的 88 张表计数逐表一致。
+- `/api/v1/ready` 的 database、redis、storage 全部为 `ok`；真实 API E2E 8/8，其中标准库覆盖字段配置来源关联与真实变更传播、服务端筛选排序、版本关系、文件上传下载、审核发布、当前版本、生效日期、启停、归档和受限角色权限矩阵；依赖冒烟 2/2。
+- 标准库 Chromium 视觉与交互用例 1/1：1440×900 下关键区域尺寸、五列宽度、44px 行高、无分页器、真实关键词查询、两个分类维度、详情版本区和新增弹窗全部通过，浏览器控制台无错误。
 - 干净数据库上的 Chromium 浏览器 15/15 通过：项目概览 Figma 尺寸与响应式、加载/空/异常状态、项目新增编辑归档恢复、受限角色数据范围、字段设置、项目详情弹窗、MinIO 私有文件回读及 File Worker 缩略图均使用真实依赖验收。
 - 运行时核验确认 LogicalFile、FileVersion、MinIO 对象、`THUMBNAIL` 输出资产、`ArchiveFileUploaded` 和 `FileProcessingCompleted` Outbox 事件一致。
 - 后端、前端、MySQL、Redis、MinIO、File Worker 和 Outbox Worker 的重启次数均为 0。

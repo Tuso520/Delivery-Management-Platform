@@ -5,7 +5,7 @@ import { reviewApi } from '@/platform/approval/review.api'
 import { standardApi } from '@/api/standard'
 import { queryKeys } from '@/query/keys'
 import type { QueryReviewTaskParams } from '@/platform/approval/review.types'
-import type { QueryStandardDto } from '@/types/standard'
+import type { QueryStandardDto, StandardCategoryDimension } from '@/types/standard'
 
 export function useReviewListQuery(params: MaybeRefOrGetter<QueryReviewTaskParams>) {
   return useQuery({
@@ -43,6 +43,18 @@ export function useStandardListQuery(params: MaybeRefOrGetter<QueryStandardDto>)
 
 export function useStandardSummaryQuery() {
   return useQuery({ queryKey: queryKeys.standards.summary(), queryFn: standardApi.getSummary })
+}
+
+export function useStandardCategoryCountsQuery(
+  dimension: MaybeRefOrGetter<StandardCategoryDimension>,
+  keyword: MaybeRefOrGetter<string>,
+) {
+  return useQuery({
+    queryKey: computed(() =>
+      queryKeys.standards.categoryCounts(toValue(dimension), toValue(keyword)),
+    ),
+    queryFn: () => standardApi.getCategoryCounts(toValue(dimension), toValue(keyword)),
+  })
 }
 
 export function useStandardDetailQuery(standardId: MaybeRefOrGetter<string>) {

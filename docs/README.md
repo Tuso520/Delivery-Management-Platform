@@ -9,6 +9,7 @@
 - [平台目标架构](platform-architecture.md)
 - [Figma 页面清单](figma-page-inventory.md)
 - [字段配置说明](field-configuration.md)
+- [标准库说明](standard-library.md)
 - [删除与迁移报告](deletion-report.md)
 - [基础架构模型 v0.1](platform-foundation-architecture-v0.1.md)
 - [前端页面架构](frontend-architecture.md)

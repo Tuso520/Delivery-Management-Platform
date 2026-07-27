@@ -58,6 +58,8 @@ export const queryKeys = {
     lists: () => ['standards', 'list'] as const,
     list: <T extends QueryParams>(params: T) => ['standards', 'list', snapshot(params)] as const,
     summary: () => ['standards', 'summary'] as const,
+    categoryCounts: (dimension: string, keyword: string) =>
+      ['standards', 'category-counts', dimension, keyword] as const,
     detail: (standardId: string) => ['standards', 'detail', standardId] as const,
     relations: (standardId: string) => ['standards', 'detail', standardId, 'relations'] as const,
     relationCandidates: () => ['standards', 'relation-candidates'] as const,

@@ -17,13 +17,13 @@
 
 `DictionaryItem` 表示字段选项，保存稳定值、展示名、排序、状态、系统内置标记和修订信息。业务表只保存稳定值或显式外键，不复制展示名称。
 
-知识分类保留 `KnowledgeCategory` 业务实体以承载已有知识外键，同时通过 `fieldOptionId` 与 `KNOWLEDGE_CATEGORY` 选项一对一关联；对外展示名来自字段选项。标准分类直接保存 `STANDARD_CATEGORY` 的稳定值。
+知识分类保留 `KnowledgeCategory` 业务实体以承载已有知识外键，同时通过 `fieldOptionId` 与 `KNOWLEDGE_CATEGORY` 选项一对一关联；对外展示名来自字段选项。标准按类型、交付阶段、管理领域、业务类型、状态、启用状态和国家分别保存稳定编码或关联主键，不通过显示名称关联。
 
 ## 3. 配置字段与消费页面
 
 | 配置编码 | 主要消费方 |
 |---|---|
-| `COUNTRY` | 项目、档案模板、审批规则、国家元数据页 |
+| `COUNTRY` | 项目、档案模板、审批规则、标准使用国家、国家元数据页 |
 | `CURRENCY` | 项目合同、币种与汇率页 |
 | `CUSTOMER_TYPE` | 项目列表、详情和表单 |
 | `CONTRACT_TYPE` | 项目列表、详情和表单 |
@@ -33,7 +33,14 @@
 | `PROJECT_STATUS` | 项目状态展示和写入校验 |
 | `JOB_POSITION` | 字段配置和组织岗位引用 |
 | `PROJECT_TYPE` | 项目、档案模板 |
-| `STANDARD_CATEGORY` | 标准筛选、列表、详情和表单 |
+| `STANDARD_TYPE` | 标准类型筛选、列表、详情和表单 |
+| `STANDARD_DELIVERY_STAGE` | 标准库交付阶段页签、分类、列表和表单 |
+| `STANDARD_MANAGEMENT_DOMAIN` | 标准库管理领域页签、分类、列表和表单 |
+| `STANDARD_BUSINESS_TYPE` | 标准业务类型筛选、详情和表单 |
+| `STANDARD_STATUS` | 标准发布状态展示和写入校验 |
+| `STANDARD_ENABLED_STATUS` | 标准启停展示、默认值和写入校验 |
+| `STANDARD_CURRENT_VERSION` | 标准当前版本字段定义和展示名 |
+| `STANDARD_EFFECTIVE_DATE` | 标准版本生效日期字段定义和展示名 |
 | `KNOWLEDGE_CATEGORY` | 知识筛选、列表、详情和表单 |
 | `FILE_TYPE` | 档案模板允许类型、项目档案上传选择与服务端上传校验 |
 
@@ -70,6 +77,8 @@ Figma 字段配置页只呈现目标节点定义的用户可管理页签；标�
 
 新增数据只使用启用选项；历史记录如果引用了已停用选项，详情和列表仍可通过完整配置或业务关联显示原标签。
 
+标准库使用 `STANDARD_TYPE`、`STANDARD_DELIVERY_STAGE`、`STANDARD_MANAGEMENT_DOMAIN`、`STANDARD_BUSINESS_TYPE`、`STANDARD_STATUS`、`STANDARD_ENABLED_STATUS`、`STANDARD_CURRENT_VERSION`、`STANDARD_EFFECTIVE_DATE` 和 `COUNTRY`。重命名、排序、默认值或启停更新后，标准库筛选、分类、列表、详情和表单读取同一配置版本；旧 `STANDARD_CATEGORY` 已迁移并停用，不再参与运行时双读或双写。详细映射见 [标准库](standard-library.md)。
+
 ## 6. 权限
 
 - `field_setting:view`：查看管理配置。
@@ -98,3 +107,4 @@ Figma 字段配置页只呈现目标节点定义的用户可管理页签；标�
 - 项目阶段 DTO 只校验稳定编码格式，默认阶段、可用性和顺序由 `PROJECT_STAGE` 配置在 Service 层校验；新增启用阶段无需修改前后端常量。
 - `CountryService` 和 `CurrencyService` 以字段选项决定可见集合，再关联各自专属元数据。
 - 标准和知识的 DTO/Service 在保存时调用字段配置校验。
+- 标准的交付阶段、管理领域、业务类型、状态和启停分别校验对应稳定编码；使用国家通过 `StandardCountry` 关联 `COUNTRY` 稳定编码，停用选项只禁止新引用，不破坏历史显示。

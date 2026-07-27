@@ -19,6 +19,10 @@ import type {
 export const FIELD_CATEGORY_CODES = [
   'COUNTRY', 'CUSTOMER_TYPE', 'CONTRACT_TYPE', 'PRODUCT_TYPE', 'PROJECT_KEYWORD',
   'CURRENCY', 'PROJECT_STAGE', 'PROJECT_STATUS', 'JOB_POSITION', 'PROJECT_TYPE',
+  'KNOWLEDGE_CATEGORY', 'FILE_TYPE',
+  'STANDARD_TYPE', 'STANDARD_DELIVERY_STAGE', 'STANDARD_MANAGEMENT_DOMAIN',
+  'STANDARD_BUSINESS_TYPE', 'STANDARD_STATUS', 'STANDARD_ENABLED_STATUS',
+  'STANDARD_CURRENT_VERSION', 'STANDARD_EFFECTIVE_DATE',
 ] as const;
 
 const CODE_REQUIRED = new Set(['COUNTRY', 'CURRENCY']);
@@ -491,6 +495,7 @@ export class FieldConfigurationService {
     const checks: Array<Promise<ReferenceSource>> = [];
     const add = (module: string, promise: Promise<number>) => checks.push(promise.then((count) => ({ module, count })));
     if (code === 'COUNTRY') {
+      add('标准库', this.prisma.standardCountry.count({ where: { countryCode: value } }));
       add('项目台账', this.prisma.project.count({ where: { countryCode: value, deletedAt: null } }));
       add('档案模板', this.prisma.archiveTemplate.count({ where: { countryCode: value } }));
       add('检查模板', this.prisma.checklistTemplate.count({ where: { countryCode: value } }));
@@ -518,12 +523,33 @@ export class FieldConfigurationService {
       add('档案模板', this.prisma.archiveTemplate.count({ where: { projectType: value } }));
       add('检查模板', this.prisma.checklistTemplate.count({ where: { projectType: value } }));
       add('文档模板', this.prisma.documentTemplate.count({ where: { projectType: value } }));
-    } else if (code === 'STANDARD_CATEGORY') {
-      add('标准库', this.prisma.standard.count({ where: { category: value } }));
+    } else if (code === 'STANDARD_TYPE') {
+      add('标准库', this.prisma.standard.count({ where: { type: value } }));
+    } else if (code === 'STANDARD_DELIVERY_STAGE') {
+      add('标准库', this.prisma.standard.count({ where: { deliveryStageCode: value } }));
+    } else if (code === 'STANDARD_MANAGEMENT_DOMAIN') {
+      add('标准库', this.prisma.standard.count({ where: { managementDomainCode: value } }));
+    } else if (code === 'STANDARD_BUSINESS_TYPE') {
+      add('标准库', this.prisma.standard.count({ where: { businessTypeCode: value } }));
+    } else if (code === 'STANDARD_STATUS') {
+      add('标准库', this.prisma.standard.count({ where: { status: value } }));
     } else if (code === 'KNOWLEDGE_CATEGORY') {
       add('知识库', this.prisma.knowledgeItem.count({
         where: { category: { fieldOptionId: item.id } },
       }));
+    } else if (code === 'FILE_TYPE') {
+      add(
+        '档案模板',
+        this.prisma.archiveTemplateVersionItem.count({
+          where: { allowedExtensions: { array_contains: value } },
+        }),
+      );
+      add(
+        '项目档案',
+        this.prisma.projectArchiveEntry.count({
+          where: { allowedExtensions: { array_contains: value } },
+        }),
+      );
     }
     const sources = (await Promise.all(checks)).filter((source) => source.count > 0);
     const total = sources.reduce((sum, source) => sum + source.count, 0);
@@ -556,6 +582,7 @@ export class FieldConfigurationService {
       itemValue: string;
       itemLabel: string;
       itemCode: string | null;
+      description: string | null;
       sortOrder: number;
       status: string;
     }>;
@@ -574,6 +601,7 @@ export class FieldConfigurationService {
         label: item.itemLabel,
         value: item.itemValue,
         code: item.itemCode,
+        description: item.description,
         sort: item.sortOrder,
         enabled: item.status === 'Active',
       })),

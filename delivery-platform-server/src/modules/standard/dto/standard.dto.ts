@@ -1,5 +1,9 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayUnique,
+  IsArray,
+  IsBoolean,
   IsDateString,
   IsIn,
   IsInt,
@@ -31,6 +35,18 @@ export const STANDARD_RELATION_TYPES = [
   'FOLLOW_UP',
 ] as const;
 
+export const STANDARD_SORT_FIELDS = [
+  'updatedAt',
+  'name',
+  'effectiveAt',
+  'currentVersion',
+] as const;
+
+export const STANDARD_LIBRARY_DIMENSIONS = [
+  'DELIVERY_STAGE',
+  'MANAGEMENT_DOMAIN',
+] as const;
+
 export class QueryStandardDto {
   @IsOptional()
   @Type(() => Number)
@@ -58,11 +74,49 @@ export class QueryStandardDto {
   @IsOptional()
   @IsString()
   @MaxLength(100)
-  category?: string;
+  deliveryStageCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  managementDomainCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  businessTypeCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  countryCode?: string;
 
   @IsOptional()
   @IsIn([...STANDARD_STATUSES])
   status?: (typeof STANDARD_STATUSES)[number];
+
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  isEnabled?: boolean;
+
+  @IsOptional()
+  @IsIn([...STANDARD_SORT_FIELDS])
+  sortBy?: (typeof STANDARD_SORT_FIELDS)[number];
+
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  sortOrder?: 'asc' | 'desc';
+}
+
+export class QueryStandardCategoryCountsDto {
+  @IsIn([...STANDARD_LIBRARY_DIMENSIONS])
+  dimension!: (typeof STANDARD_LIBRARY_DIMENSIONS)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  keyword?: string;
 }
 
 export class CreateStandardDto {
@@ -70,22 +124,44 @@ export class CreateStandardDto {
   @IsNotEmpty()
   @MaxLength(50)
   @Matches(/^[A-Za-z0-9._-]+$/)
-  code: string;
+  code!: string;
 
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)
-  name: string;
+  name!: string;
 
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  type: string;
+  type!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  deliveryStageCode!: string;
 
   @IsOptional()
   @IsString()
   @MaxLength(100)
-  category?: string;
+  managementDomainCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  businessTypeCode?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  @MaxLength(10, { each: true })
+  countryCodes?: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  isEnabled?: boolean;
 
   @IsOptional()
   @IsDateString()
@@ -97,7 +173,7 @@ export class CreateStandardDto {
   version?: string;
 
   @IsUUID()
-  fileVersionId: string;
+  fileVersionId!: string;
 
   @IsOptional()
   @IsString()
@@ -125,14 +201,42 @@ export class UpdateStandardDto {
   @MaxLength(50)
   type?: string;
 
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  deliveryStageCode?: string;
+
   @ValidateIf((_object, value: unknown) => value !== undefined && value !== null)
   @IsString()
   @MaxLength(100)
-  category?: string | null;
+  managementDomainCode?: string | null;
+
+  @ValidateIf((_object, value: unknown) => value !== undefined && value !== null)
+  @IsString()
+  @MaxLength(100)
+  businessTypeCode?: string | null;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  @MaxLength(10, { each: true })
+  countryCodes?: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  isEnabled?: boolean;
 
   @ValidateIf((_object, value: unknown) => value !== undefined && value !== null)
   @IsDateString()
   effectiveAt?: string | null;
+}
+
+export class ChangeStandardEnabledDto {
+  @IsBoolean()
+  enabled!: boolean;
 }
 
 export class CreateStandardVersionDto {
@@ -163,7 +267,7 @@ export class CreateStandardVersionDto {
 export class SubmitStandardReviewDto {
   @IsInt()
   @Min(1)
-  revision: number;
+  revision!: number;
 
   @IsOptional()
   @IsUUID()
@@ -172,8 +276,8 @@ export class SubmitStandardReviewDto {
 
 export class CreateStandardRelationDto {
   @IsUUID()
-  targetStandardId: string;
+  targetStandardId!: string;
 
   @IsIn([...STANDARD_RELATION_TYPES])
-  relationType: (typeof STANDARD_RELATION_TYPES)[number];
+  relationType!: (typeof STANDARD_RELATION_TYPES)[number];
 }

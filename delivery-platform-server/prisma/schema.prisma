@@ -1066,7 +1066,10 @@ model Standard {
   code                      String    @unique @db.VarChar(50)
   name                      String    @db.VarChar(200)
   type                      String    @db.VarChar(50)
-  category                  String?   @db.VarChar(100)
+  deliveryStageCode         String?   @map("delivery_stage_code") @db.VarChar(100)
+  managementDomainCode      String?   @map("management_domain_code") @db.VarChar(100)
+  businessTypeCode          String?   @map("business_type_code") @db.VarChar(100)
+  isEnabled                 Boolean   @default(true) @map("is_enabled")
   status                    String    @default("DRAFT") @db.VarChar(20)
   currentPublishedVersionId String?   @unique @map("current_published_version_id") @db.VarChar(36)
   effectiveAt               DateTime? @map("effective_at")
@@ -1082,12 +1085,28 @@ model Standard {
   currentPublishedVersion StandardVersion?   @relation("StandardCurrentPublishedVersion", fields: [currentPublishedVersionId], references: [id], onDelete: SetNull)
   outgoingRelations       StandardRelation[] @relation("StandardRelationSource")
   incomingRelations       StandardRelation[] @relation("StandardRelationTarget")
+  applicableCountries     StandardCountry[]
 
   @@index([type, status])
-  @@index([category])
+  @@index([deliveryStageCode, isEnabled], map: "standards_delivery_stage_enabled_idx")
+  @@index([managementDomainCode, isEnabled], map: "standards_management_domain_enabled_idx")
+  @@index([businessTypeCode])
   @@index([updatedBy])
   @@index([archivedAt])
   @@map("standards")
+}
+
+model StandardCountry {
+  standardId  String   @map("standard_id") @db.VarChar(36)
+  countryCode String   @map("country_code") @db.VarChar(10)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  standard Standard @relation(fields: [standardId], references: [id], onDelete: Cascade)
+  country  Country  @relation(fields: [countryCode], references: [countryCode], onDelete: Restrict, onUpdate: Cascade)
+
+  @@id([standardId, countryCode])
+  @@index([countryCode])
+  @@map("standard_countries")
 }
 
 model StandardVersion {
@@ -1455,6 +1474,8 @@ model Country {
   status            String   @default("Active") @db.VarChar(20)
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
+
+  standards StandardCountry[]
 
   @@map("countries")
 }

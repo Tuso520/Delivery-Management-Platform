@@ -45,21 +45,22 @@ describe('standard and knowledge target flows', () => {
     expect(retiredFiles.filter((file) => existsSync(resolve(process.cwd(), file)))).toEqual([])
   })
 
-  it('uses target standard APIs for summary, versions, relations and review', () => {
+  it('uses target standard APIs for summary, configured categories, versions and review', () => {
     const source = readSource('src/views/standard/index.vue')
     const types = readSource('src/types/standard.ts')
     const queries = readSource('src/composables/queries/useContentQueries.ts')
 
     expect(source).toContain('useStandardSummaryQuery()')
     expect(queries).toContain('queryFn: standardApi.getSummary')
+    expect(source).toContain('useStandardCategoryCountsQuery(dimension, appliedKeyword)')
+    expect(queries).toContain('standardApi.getCategoryCounts(')
     expect(source).toContain('standardApi.createVersion(')
-    expect(source).toContain('useStandardRelationsQuery(selectedDetailId)')
-    expect(queries).toContain('standardApi.getRelations(toValue(standardId))')
     expect(source).toContain('standardApi.submitReview(')
     expect(source).toContain('standardApi.archive(')
     expect(source).toContain('useMutation({')
-    expect(source).toContain('queryKeys.standards.detail(')
-    expect(source).toContain("t('standard.readonlyHint')")
+    expect(source).toContain('queryKeys.standards.detail(id)')
+    expect(source).toContain("useFieldConfig('standard')")
+    expect(source).not.toContain('useStandardRelationsQuery(')
     expect(source).not.toContain('templateApi.')
     expect(source).not.toContain('workflowApi.')
     expect(source).not.toContain('checklistApi.')
@@ -126,7 +127,7 @@ describe('standard and knowledge target flows', () => {
     const standard = readSource('src/views/standard/index.vue')
     const knowledge = readSource('src/domains/knowledge/pages/KnowledgePage.vue')
 
-    expect(standard).toContain('firstRouteParam(route.params.id)')
+    expect(standard).toContain('firstRouteParam(value)')
     expect(standard).toContain("name: 'StandardDetail'")
     expect(knowledge).toContain('firstRouteParam(route.params.id)')
     expect(knowledge).toContain("name: 'KnowledgeDetail'")
@@ -134,25 +135,27 @@ describe('standard and knowledge target flows', () => {
     expect(knowledge).not.toContain("query: { mode: 'view', id:")
   })
 
-  it('uses the project-overview page frame for both libraries', () => {
-    for (const file of [
-      'src/views/standard/index.vue',
-      'src/domains/knowledge/pages/KnowledgePage.vue',
-    ]) {
-      const page = readSource(file)
+  it('uses the Figma standard-library frame without changing the knowledge-library frame', () => {
+    const standard = readSource('src/views/standard/index.vue')
+    const knowledge = readSource('src/domains/knowledge/pages/KnowledgePage.vue')
 
-      expect(page).toContain(
-        '<PageContainer class="domain-page" gap="compact" :scrollable="false">',
-      )
-      expect(page).toContain('<section class="summary-grid"')
-      expect(page).toContain('<section class="library-list-panel">')
-      expect(page).toContain('<PageToolbar class="library-toolbar">')
-      expect(page).toContain('<BusinessTable')
-      expect(page).toContain(':scroll="{ x: \'max-content\' }"')
-      expect(page).toContain("fixed: 'left'")
-      expect(page).not.toContain('class="summary-strip"')
-      expect(page).not.toContain('class="filter-bar"')
-    }
+    expect(standard).toContain('<section class="standard-library">')
+    expect(standard).toContain('<div class="metrics">')
+    expect(standard).toContain('<div class="toolbar">')
+    expect(standard).toContain('<aside class="category-sidebar">')
+    expect(standard).toContain('<table class="standard-table">')
+    expect(standard).toContain('width: 365px')
+    expect(standard).toContain('width: 90px')
+    expect(standard).toContain('width: 130px')
+    expect(standard).toContain('width: 170px')
+    expect(standard).toContain('width: 182px')
+    expect(standard).toContain('height: 44px')
+    expect(standard).not.toContain('<PageToolbar')
+    expect(standard).not.toContain('<BusinessTable')
+    expect(knowledge).toContain(
+      '<PageContainer class="domain-page" gap="compact" :scrollable="false">',
+    )
+    expect(knowledge).toContain('<BusinessTable')
   })
 
   it('uses controlled draft-file uploads and never asks users for internal file ids', () => {

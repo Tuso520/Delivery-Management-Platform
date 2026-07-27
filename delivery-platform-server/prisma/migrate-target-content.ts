@@ -110,6 +110,44 @@ function stableId(value: string): string {
   return uuidv5(value, namespace);
 }
 
+function legacyStandardDeliveryStage(category: string | null | undefined): string {
+  const mapping: Record<string, string> = {
+    PROJECT_STARTUP: 'PROJECT_STARTUP',
+    DETAILED_DESIGN: 'DETAILED_DESIGN',
+    PROCUREMENT_PRODUCTION: 'PROCUREMENT_PRODUCTION',
+    CONSTRUCTION_INSTALLATION: 'CONSTRUCTION_INSTALLATION',
+    HARDWARE_COMMISSIONING: 'HARDWARE_COMMISSIONING',
+    SOFTWARE_TESTING: 'SOFTWARE_TESTING',
+    INTERNAL_ACCEPTANCE: 'INTERNAL_ACCEPTANCE',
+    CUSTOMER_ACCEPTANCE: 'CUSTOMER_ACCEPTANCE',
+    CLOSEOUT_HANDOVER: 'CLOSEOUT_HANDOVER',
+    WARRANTY_REVIEW: 'WARRANTY_REVIEW',
+    流程总览: 'PROJECT_STARTUP',
+    项目启动: 'PROJECT_STARTUP',
+    会议纪要: 'PROJECT_STARTUP',
+    项目计划: 'PROJECT_STARTUP',
+    深化设计: 'DETAILED_DESIGN',
+    设计表单: 'DETAILED_DESIGN',
+    采购与生产: 'PROCUREMENT_PRODUCTION',
+    施工安装: 'CONSTRUCTION_INSTALLATION',
+    施工与安装: 'CONSTRUCTION_INSTALLATION',
+    安全记录: 'CONSTRUCTION_INSTALLATION',
+    系统调试: 'HARDWARE_COMMISSIONING',
+    调试记录: 'HARDWARE_COMMISSIONING',
+    软件测试: 'SOFTWARE_TESTING',
+    测试验证: 'SOFTWARE_TESTING',
+    项目质量检查: 'INTERNAL_ACCEPTANCE',
+    内部验收: 'INTERNAL_ACCEPTANCE',
+    客户验收: 'CUSTOMER_ACCEPTANCE',
+    验收收尾: 'CLOSEOUT_HANDOVER',
+    验收移交: 'CLOSEOUT_HANDOVER',
+    收尾与移交: 'CLOSEOUT_HANDOVER',
+    质保收尾: 'WARRANTY_REVIEW',
+    维保与复盘: 'WARRANTY_REVIEW',
+  };
+  return (category && mapping[category]) || 'PROJECT_STARTUP';
+}
+
 function getStorageConfig(): { client: MinioClient; defaultBucket: string } | null {
   if (storageConfig !== undefined) return storageConfig;
   const rawEndpoint = process.env.MINIO_ENDPOINT?.trim();
@@ -693,7 +731,9 @@ async function ensureStandard(input: {
           code: input.code,
           name: input.name,
           type: input.type,
-          category: input.category,
+          deliveryStageCode: legacyStandardDeliveryStage(input.category),
+          businessTypeCode: 'GENERAL',
+          isEnabled: true,
           status: input.status,
           createdBy: input.createdBy,
           updatedBy: input.createdBy,
@@ -1482,7 +1522,12 @@ async function ensureStandardGeneratedFile(input: {
   submittedBy: string;
   createdAt: Date;
   publishedAt: Date | null;
-  standard: { code: string; name: string; type: string; category: string | null };
+  standard: {
+    code: string;
+    name: string;
+    type: string;
+    deliveryStageCode: string | null;
+  };
 }): Promise<void> {
   const plan = buildStandardGeneratedObjectPlan({
     standardId: input.standardId,
@@ -1490,7 +1535,7 @@ async function ensureStandardGeneratedFile(input: {
     code: input.standard.code,
     name: input.standard.name,
     type: input.standard.type,
-    category: input.standard.category,
+    category: input.standard.deliveryStageCode,
     version: input.version,
     structuredContent: input.structuredContent,
     applicability: input.applicability,
@@ -1867,7 +1912,9 @@ async function backfillStandardFiles(): Promise<void> {
       createdAt: true,
       publishedAt: true,
       legacySnapshot: true,
-      standard: { select: { code: true, name: true, type: true, category: true } },
+      standard: {
+        select: { code: true, name: true, type: true, deliveryStageCode: true },
+      },
     },
     orderBy: [{ standardId: 'asc' }, { createdAt: 'asc' }],
   });

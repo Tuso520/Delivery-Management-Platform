@@ -29,6 +29,7 @@ export interface FieldOption {
   label: string
   value: string
   code: string | null
+  description: string | null
   sort: number
   enabled: boolean
 }

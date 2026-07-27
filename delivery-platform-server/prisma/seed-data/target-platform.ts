@@ -10,7 +10,7 @@ interface DictionarySeed {
 }
 
 interface FieldConfigurationSeed {
-  fieldType: 'SINGLE_SELECT' | 'MULTI_SELECT';
+  fieldType: 'TEXT' | 'NUMBER' | 'DATE' | 'SINGLE_SELECT' | 'MULTI_SELECT' | 'BOOLEAN';
   required: boolean;
   defaultValue?: string;
   visibleScopes: readonly string[];
@@ -18,12 +18,15 @@ interface FieldConfigurationSeed {
 
 const fieldConfigurationCodes = new Set([
   'COUNTRY', 'CUSTOMER_TYPE', 'CONTRACT_TYPE', 'PRODUCT_TYPE', 'PROJECT_KEYWORD',
-  'CURRENCY', 'PROJECT_STAGE', 'PROJECT_STATUS', 'STANDARD_CATEGORY',
-  'KNOWLEDGE_CATEGORY', 'JOB_POSITION', 'PROJECT_TYPE',
+  'CURRENCY', 'PROJECT_STAGE', 'PROJECT_STATUS',
+  'KNOWLEDGE_CATEGORY', 'JOB_POSITION', 'PROJECT_TYPE', 'FILE_TYPE',
+  'STANDARD_TYPE', 'STANDARD_DELIVERY_STAGE', 'STANDARD_MANAGEMENT_DOMAIN',
+  'STANDARD_BUSINESS_TYPE', 'STANDARD_STATUS', 'STANDARD_ENABLED_STATUS',
+  'STANDARD_CURRENT_VERSION', 'STANDARD_EFFECTIVE_DATE',
 ]);
 
 const fieldConfigurationMeta: Readonly<Record<string, FieldConfigurationSeed>> = {
-  COUNTRY: { fieldType: 'SINGLE_SELECT', required: true, defaultValue: 'CN', visibleScopes: ['project', 'archive-template', 'approval'] },
+  COUNTRY: { fieldType: 'SINGLE_SELECT', required: true, defaultValue: 'CN', visibleScopes: ['project', 'archive-template', 'approval', 'standard'] },
   CUSTOMER_TYPE: { fieldType: 'SINGLE_SELECT', required: true, visibleScopes: ['project', 'archive-template', 'checklist-template', 'document-template'] },
   CONTRACT_TYPE: { fieldType: 'SINGLE_SELECT', required: true, visibleScopes: ['project'] },
   PRODUCT_TYPE: { fieldType: 'SINGLE_SELECT', required: false, visibleScopes: ['project'] },
@@ -31,10 +34,18 @@ const fieldConfigurationMeta: Readonly<Record<string, FieldConfigurationSeed>> =
   CURRENCY: { fieldType: 'SINGLE_SELECT', required: false, defaultValue: 'CNY', visibleScopes: ['project', 'currency', 'payment'] },
   PROJECT_STAGE: { fieldType: 'SINGLE_SELECT', required: false, defaultValue: 'STARTUP', visibleScopes: ['project', 'dashboard', 'checklist-template', 'document-template'] },
   PROJECT_STATUS: { fieldType: 'SINGLE_SELECT', required: false, defaultValue: 'ACTIVE', visibleScopes: ['project', 'dashboard'] },
-  STANDARD_CATEGORY: { fieldType: 'SINGLE_SELECT', required: true, visibleScopes: ['standard'] },
   KNOWLEDGE_CATEGORY: { fieldType: 'SINGLE_SELECT', required: true, visibleScopes: ['knowledge'] },
   JOB_POSITION: { fieldType: 'SINGLE_SELECT', required: false, visibleScopes: ['identity', 'project'] },
   PROJECT_TYPE: { fieldType: 'SINGLE_SELECT', required: false, visibleScopes: ['project', 'archive-template'] },
+  FILE_TYPE: { fieldType: 'MULTI_SELECT', required: true, visibleScopes: ['project-archive', 'archive-template'] },
+  STANDARD_TYPE: { fieldType: 'SINGLE_SELECT', required: true, defaultValue: 'DOCUMENT_TEMPLATE', visibleScopes: ['standard'] },
+  STANDARD_DELIVERY_STAGE: { fieldType: 'SINGLE_SELECT', required: true, defaultValue: 'PROJECT_STARTUP', visibleScopes: ['standard'] },
+  STANDARD_MANAGEMENT_DOMAIN: { fieldType: 'SINGLE_SELECT', required: false, visibleScopes: ['standard'] },
+  STANDARD_BUSINESS_TYPE: { fieldType: 'SINGLE_SELECT', required: false, defaultValue: 'GENERAL', visibleScopes: ['standard'] },
+  STANDARD_STATUS: { fieldType: 'SINGLE_SELECT', required: true, defaultValue: 'DRAFT', visibleScopes: ['standard'] },
+  STANDARD_ENABLED_STATUS: { fieldType: 'SINGLE_SELECT', required: true, defaultValue: 'ENABLED', visibleScopes: ['standard'] },
+  STANDARD_CURRENT_VERSION: { fieldType: 'TEXT', required: false, defaultValue: 'V1.0', visibleScopes: ['standard'] },
+  STANDARD_EFFECTIVE_DATE: { fieldType: 'DATE', required: false, visibleScopes: ['standard'] },
 };
 
 const legacyTargetDictionaries: readonly DictionarySeed[] = [
@@ -122,16 +133,6 @@ const legacyTargetDictionaries: readonly DictionarySeed[] = [
     ],
   },
   {
-    code: 'standard_type',
-    name: '标准类型',
-    items: [
-      { value: 'PROCESS', label: '流程标准' },
-      { value: 'CHECKLIST', label: '检查标准' },
-      { value: 'DOCUMENT_TEMPLATE', label: '文档模板' },
-      { value: 'POLICY', label: '制度规范' },
-    ],
-  },
-  {
     code: 'knowledge_content_type',
     name: '知识内容类型',
     items: [
@@ -170,10 +171,23 @@ const fieldConfigurationDictionaries: readonly DictionarySeed[] = [
   { code: 'CURRENCY', name: '合同币种', items: [['CNY', '人民币'], ['USD', '美元'], ['VND', '越南盾'], ['THB', '泰铢'], ['IDR', '印尼盾'], ['MYR', '马来西亚林吉特'], ['OMR', '阿曼里亚尔'], ['SGD', '新加坡元']].map(([value, label]) => ({ value, label })) },
   { code: 'PROJECT_STAGE', name: '项目阶段', items: [['STARTUP', '启动'], ['DEEPENING', '深化'], ['PROCUREMENT', '采购'], ['CONSTRUCTION', '施工'], ['COMMISSIONING', '调试'], ['TESTING', '测试'], ['INTERNAL_ACCEPTANCE', '内验'], ['EXTERNAL_ACCEPTANCE', '外验'], ['WARRANTY', '维保']].map(([value, label]) => ({ value, label })) },
   { code: 'PROJECT_STATUS', name: '项目状态', items: [['DRAFT', '草稿'], ['ACTIVE', '进行中'], ['PAUSED', '已暂停'], ['COMPLETED', '已验收'], ['CANCELLED', '已取消']].map(([value, label]) => ({ value, label })) },
-  { code: 'STANDARD_CATEGORY', name: '标准分类', items: [['MANAGEMENT_POLICY', '管理制度'], ['ROLES_RESPONSIBILITIES', '岗位与职责'], ['PROCESS_SOP', '流程与SOP'], ['TECH_PRODUCT_STANDARD', '技术与产品标准'], ['WORK_SPECIFICATION', '作业规范'], ['INSPECTION_ACCEPTANCE', '检查与验收'], ['TEMPLATE_FORM', '模板与表单']].map(([value, label]) => ({ value, label })) },
   { code: 'KNOWLEDGE_CATEGORY', name: '知识分类', items: [['PROJECT_CASE_REVIEW', '项目案例与复盘'], ['BEST_PRACTICE', '最佳实践与经验'], ['FAQ_TROUBLESHOOTING', '常见问题与故障'], ['TRAINING_TUTORIAL', '培训与教程'], ['EXTERNAL_STANDARD', '外部标准与资料'], ['RESOURCE_TOOL', '资源与工具']].map(([value, label]) => ({ value, label })) },
   { code: 'JOB_POSITION', name: '岗位', items: [['PROJECT_MANAGER', '项目经理'], ['ELECTRICAL_ENGINEER', '电气工程师'], ['SOFTWARE_ENGINEER', '软件工程师'], ['OPERATIONS_ENGINEER', '运维工程师'], ['SALES', '销售'], ['PRESALES', '售前']].map(([value, label]) => ({ value, label })) },
   { code: 'PROJECT_TYPE', name: '项目类型', items: [['EPC_INTEGRATED', 'EPC综合'], ['SYSTEM_INTEGRATION', '系统集成'], ['EQUIPMENT_SUPPLY', '设备供货'], ['CONSTRUCTION_IMPLEMENTATION', '施工实施'], ['SOFTWARE_ONLY', '纯软件'], ['TECHNICAL_SERVICE', '技术服务'], ['GENERAL', '通用']].map(([value, label]) => ({ value, label })) },
+  { code: 'STANDARD_TYPE', name: '标准类型', items: [['SOP', 'SOP'], ['MANAGEMENT_POLICY', '管理制度'], ['DELIVERY_WORKFLOW', '交付流程'], ['CHECK_STANDARD', '检查标准'], ['DOCUMENT_TEMPLATE', '文档模板'], ['FORM_TEMPLATE', '表单模板'], ['TECHNICAL_STANDARD', '技术标准'], ['WORK_INSTRUCTION', '作业指导书']].map(([value, label]) => ({ value, label })) },
+  { code: 'STANDARD_DELIVERY_STAGE', name: '交付阶段', items: [['PROJECT_STARTUP', '项目启动'], ['DETAILED_DESIGN', '深化设计'], ['PROCUREMENT_PRODUCTION', '采购与生产'], ['CONSTRUCTION_INSTALLATION', '施工与安装'], ['HARDWARE_COMMISSIONING', '硬件调试'], ['SOFTWARE_TESTING', '软件测试'], ['INTERNAL_ACCEPTANCE', '内部验收'], ['CUSTOMER_ACCEPTANCE', '客户验收'], ['CLOSEOUT_HANDOVER', '收尾与移交'], ['WARRANTY_REVIEW', '维保与复盘']].map(([value, label]) => ({ value, label })) },
+  { code: 'STANDARD_MANAGEMENT_DOMAIN', name: '管理领域', items: [['MANAGEMENT_POLICY', '管理制度'], ['ROLES_RESPONSIBILITIES', '岗位与职责'], ['PROCESS_SOP', '流程与 SOP'], ['TECH_PRODUCT_STANDARD', '技术与产品标准'], ['WORK_SPECIFICATION', '作业规范'], ['INSPECTION_ACCEPTANCE', '检查与验收'], ['TEMPLATE_FORM', '模板与表单']].map(([value, label]) => ({ value, label })) },
+  { code: 'STANDARD_BUSINESS_TYPE', name: '业务类型', items: [{ value: 'GENERAL', label: '通用' }] },
+  { code: 'STANDARD_STATUS', name: '状态', items: [['DRAFT', '草稿'], ['IN_REVIEW', '审核中'], ['REJECTED', '已驳回'], ['PUBLISHED', '已发布'], ['ARCHIVED', '已归档']].map(([value, label]) => ({ value, label })) },
+  { code: 'STANDARD_ENABLED_STATUS', name: '启用状态', items: [['ENABLED', '启用'], ['DISABLED', '停用']].map(([value, label]) => ({ value, label })) },
+  { code: 'STANDARD_CURRENT_VERSION', name: '当前版本', items: [] },
+  { code: 'STANDARD_EFFECTIVE_DATE', name: '生效日期', items: [] },
+  { code: 'FILE_TYPE', name: '文件类型', items: [
+    ['pdf', 'PDF'], ['doc', 'Word 97-2003'], ['docx', 'Word'], ['xls', 'Excel 97-2003'],
+    ['xlsx', 'Excel'], ['ppt', 'PowerPoint 97-2003'], ['pptx', 'PowerPoint'],
+    ['jpg', 'JPG 图片'], ['jpeg', 'JPEG 图片'], ['png', 'PNG 图片'],
+    ['dwg', 'DWG 图纸'], ['cad', 'CAD 图纸'], ['zip', 'ZIP 压缩包'], ['rar', 'RAR 压缩包'],
+  ].map(([value, label]) => ({ value, label })) },
 ] as const;
 
 const replacedLegacyCodes = new Set([

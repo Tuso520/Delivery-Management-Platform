@@ -6,7 +6,7 @@
 
 - 项目概览：按当前 Figma 提供 5 项只读指标、项目范围、项目名称查询、新建和容器内滚动宽表格；原币/折算金额、验收、权限和高风险操作均由服务端终检并审计。
 - 项目档案：按 Figma `43:317` 提供五项完成度指标、270px 项目目录和固定列宽文件表；上传、下载、逻辑文件删除、版本留痕和统一审核均使用真实后端能力，说明见 [docs/project-archive.md](docs/project-archive.md)。
-- 标准与知识：交付流程、检查标准和文档模版统一进入仅文件化的标准库；知识版本在文件、Markdown 和链接中严格选择一个主内容源。
+- 标准与知识：标准库按 Figma `70:322` 提供交付阶段/管理领域分类、固定列宽文件列表和真实版本审核，类型、状态、生效日期、业务类型、使用国家与启停均由字段配置驱动，说明见 [docs/standard-library.md](docs/standard-library.md)；知识版本在文件、Markdown 和链接中严格选择一个主内容源。
 - 字段配置：国家、币种、项目类型、客户类型、文件类型等字段的枚举、默认值、排序、启停和展示名称统一由数据库字段配置驱动，前后端不维护平行枚举。
 - 在线预览：统一只读预览 Office、PDF、图片、大图、Markdown、XMind、视频和音频；CAD/Visio 等使用异步转换产物。
 - 权限体系：按角色和权限点控制菜单、按钮、接口和项目数据访问范围。
@@ -73,6 +73,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\local-docker.ps1 up -Build
 - [平台目标架构](docs/platform-architecture.md)
 - [Figma 页面清单](docs/figma-page-inventory.md)
 - [字段配置说明](docs/field-configuration.md)
+- [标准库说明](docs/standard-library.md)
 - [删除与迁移报告](docs/deletion-report.md)
 - [基础架构模型 v0.1](docs/platform-foundation-architecture-v0.1.md)
 - [前端页面架构](docs/frontend-architecture.md)

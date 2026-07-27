@@ -1,184 +1,105 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useI18n } from 'vue-i18n'
+import { IconSearch } from '@arco-design/web-vue/es/icon'
 import Message from '@arco-design/web-vue/es/message'
 import Modal from '@arco-design/web-vue/es/modal'
-import type { TableColumnData } from '@arco-design/web-vue'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
+import { useI18n } from 'vue-i18n'
 
 import { standardApi } from '@/api/standard'
-import { BusinessTable, PageContainer, PageToolbar, StatCard } from '@/design-system'
 import {
+  useStandardCategoryCountsQuery,
   useStandardDetailQuery,
   useStandardListQuery,
-  useStandardRelationsQuery,
   useStandardSummaryQuery,
 } from '@/composables/queries/useContentQueries'
-import { useFilePreview } from '@/platform/file-preview/useFilePreview'
+import downloadMetricIcon from '@/assets/figma/standard-library/download.svg'
+import eyeMetricIcon from '@/assets/figma/standard-library/eye.svg'
+import fileMetricIcon from '@/assets/figma/standard-library/file-text.svg'
+import plusIcon from '@/assets/figma/standard-library/plus.svg'
 import { useFieldConfig } from '@/platform/field-configuration'
+import { useFilePreview } from '@/platform/file-preview/useFilePreview'
 import { queryKeys } from '@/query/keys'
-import { firstRouteParam, preservedRouteQuery } from '@/router/query-state'
+import { firstRouteParam } from '@/router/query-state'
 import { usePermissionStore } from '@/store/permission'
+import type { FieldOption } from '@/types/field-configuration'
 import type {
   CreateStandardDto,
   CreateStandardVersionDto,
   Standard,
-  StandardRelation,
-  StandardRelationType,
+  StandardCategoryDimension,
   StandardStatus,
   StandardVersion,
+  UpdateStandardDto,
 } from '@/types/standard'
 import { downloadBlob } from '@/utils/blob'
 
 const route = useRoute()
 const router = useRouter()
-const { t, locale } = useI18n()
+const { t } = useI18n()
+const queryClient = useQueryClient()
 const permissionStore = usePermissionStore()
 const filePreview = useFilePreview()
-const queryClient = useQueryClient()
 const fieldConfig = useFieldConfig('standard')
 
-const statusMeta: Record<StandardStatus, { label: string; color: string }> = {
-  DRAFT: { label: 'standard.status.DRAFT', color: 'gray' },
-  IN_REVIEW: { label: 'standard.status.IN_REVIEW', color: 'orange' },
-  REJECTED: { label: 'standard.status.REJECTED', color: 'red' },
-  PUBLISHED: { label: 'standard.status.PUBLISHED', color: 'green' },
-  ARCHIVED: { label: 'standard.status.ARCHIVED', color: 'arcoblue' },
-}
-
-const standardTypeOptions = [
-  { value: 'SOP', label: 'SOP' },
-  { value: 'MANAGEMENT_POLICY', label: 'standard.types.MANAGEMENT_POLICY' },
-  { value: 'DELIVERY_WORKFLOW', label: 'standard.types.DELIVERY_WORKFLOW' },
-  { value: 'CHECK_STANDARD', label: 'standard.types.CHECK_STANDARD' },
-  { value: 'DOCUMENT_TEMPLATE', label: 'standard.types.DOCUMENT_TEMPLATE' },
-  { value: 'FORM_TEMPLATE', label: 'standard.types.FORM_TEMPLATE' },
-  { value: 'TECHNICAL_STANDARD', label: 'standard.types.TECHNICAL_STANDARD' },
-  { value: 'WORK_INSTRUCTION', label: 'standard.types.WORK_INSTRUCTION' },
-]
-
-const relationTypeOptions: Array<{ value: StandardRelationType; label: string }> = [
-  { value: 'SUPPORTING_FORM', label: 'standard.relationTypes.SUPPORTING_FORM' },
-  { value: 'SUPPORTING_TEMPLATE', label: 'standard.relationTypes.SUPPORTING_TEMPLATE' },
-  { value: 'REFERENCES', label: 'standard.relationTypes.REFERENCES' },
-  { value: 'REPLACES', label: 'standard.relationTypes.REPLACES' },
-  { value: 'PRECONDITION', label: 'standard.relationTypes.PRECONDITION' },
-  { value: 'FOLLOW_UP', label: 'standard.relationTypes.FOLLOW_UP' },
-]
-
-const localizedStandardTypeOptions = computed(() =>
-  standardTypeOptions.map((option) => ({
-    ...option,
-    label: option.label === 'SOP' ? option.label : t(option.label),
-  })),
+const dimension = ref<StandardCategoryDimension>(
+  route.query.dimension === 'MANAGEMENT_DOMAIN' ? 'MANAGEMENT_DOMAIN' : 'DELIVERY_STAGE',
 )
-const localizedRelationTypeOptions = computed(() =>
-  relationTypeOptions.map((option) => ({ ...option, label: t(option.label) })),
-)
-
-const columns = computed<TableColumnData[]>(() => [
-  {
-    title: t('standard.fields.name'),
-    dataIndex: 'name',
-    slotName: 'name',
-    width: 250,
-    fixed: 'left',
-  },
-  { title: t('standard.fields.type'), dataIndex: 'type', slotName: 'type', width: 128 },
-  { title: t('standard.fields.currentVersion'), slotName: 'version', width: 96 },
-  { title: t('common.status'), dataIndex: 'status', slotName: 'status', width: 96 },
-  {
-    title: t('standard.fields.effectiveAt'),
-    dataIndex: 'effectiveAt',
-    slotName: 'effectiveAt',
-    width: 116,
-  },
-  { title: t('standard.fields.updater'), slotName: 'updater', width: 104 },
-  { title: t('common.action'), slotName: 'actions', width: 230, fixed: 'right' },
-])
-
-const versionColumns = computed<TableColumnData[]>(() => [
-  { title: t('standard.fields.version'), dataIndex: 'version', width: 90 },
-  { title: t('standard.fields.fileName'), slotName: 'content', minWidth: 180 },
-  { title: t('common.status'), dataIndex: 'status', slotName: 'status', width: 92 },
-  {
-    title: t('standard.fields.changeDescription'),
-    dataIndex: 'changeDescription',
-    slotName: 'changeDescription',
-    minWidth: 180,
-  },
-  { title: t('standard.fields.submitter'), slotName: 'submitter', width: 96 },
-  { title: t('standard.fields.time'), slotName: 'createdAt', width: 118 },
-  { title: t('common.action'), slotName: 'actions', width: 190, fixed: 'right' },
-])
-
-const query = reactive({
-  page: Number(route.query.page) || 1,
-  pageSize: Number(route.query.pageSize) || 20,
-  keyword: typeof route.query.keyword === 'string' ? route.query.keyword : '',
-  category: typeof route.query.category === 'string' ? route.query.category : '',
-  status:
-    typeof route.query.status === 'string' ? (route.query.status as StandardStatus) : undefined,
-})
-const appliedQuery = ref({ ...query })
-
-function listRouteQuery() {
-  return preservedRouteQuery(route.query, ['mode', 'id'])
-}
-
-const detailVisible = ref(false)
+const keyword = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
+const appliedKeyword = ref(keyword.value.trim())
+const selectedCategoryCode = ref('')
 const selectedDetailId = ref('')
-
+const detailVisible = ref(false)
 const createVisible = ref(false)
-const createSelectedFile = ref<File | null>(null)
-const createForm = reactive({
-  code: '',
-  name: '',
-  type: 'SOP',
-  category: '',
-  effectiveAt: '',
-  version: 'V1.0',
-  fileVersionId: '',
-  changeDescription: t('standard.initialVersion'),
-})
-
 const editVisible = ref(false)
-const editForm = reactive({
-  code: '',
-  name: '',
-  type: '',
-  category: '',
-  effectiveAt: '',
-})
-
 const versionVisible = ref(false)
 const editingVersionId = ref('')
+const createSelectedFile = ref<File | null>(null)
 const versionSelectedFile = ref<File | null>(null)
-const versionForm = reactive({
-  version: '',
-  fileVersionId: '',
-  effectiveAt: '',
-  changeDescription: '',
-})
 
-const relationVisible = ref(false)
-const relationForm = reactive({
-  targetStandardId: '',
-  relationType: 'REFERENCES' as StandardRelationType,
-})
+const categoryFieldCode = computed(() =>
+  dimension.value === 'DELIVERY_STAGE'
+    ? 'STANDARD_DELIVERY_STAGE'
+    : 'STANDARD_MANAGEMENT_DOMAIN',
+)
+const categoryOptions = computed(() => fieldConfig.getFieldOptions(categoryFieldCode.value))
+const selectedCategory = computed<FieldOption | undefined>(() =>
+  fieldConfig
+    .getFieldOptions(categoryFieldCode.value, true)
+    .find((option) => option.value === selectedCategoryCode.value),
+)
+const categoryCountsQuery = useStandardCategoryCountsQuery(dimension, appliedKeyword)
+const categoryCountMap = computed(
+  () =>
+    new Map(
+      (categoryCountsQuery.data.value ?? []).map((item) => [item.code, item.count] as const),
+    ),
+)
 
-const standardListQuery = useStandardListQuery(appliedQuery)
-const standardSummaryQuery = useStandardSummaryQuery()
-const standardDetailQuery = useStandardDetailQuery(selectedDetailId)
-const standardRelationsQuery = useStandardRelationsQuery(selectedDetailId)
-const relationCandidatesQuery = useStandardListQuery({ page: 1, pageSize: 100 })
-const list = computed(() => standardListQuery.data.value?.items ?? [])
-const total = computed(() => standardListQuery.data.value?.total ?? 0)
+const listParams = computed(() => ({
+  page: 1,
+  pageSize: 100,
+  keyword: appliedKeyword.value || undefined,
+  ...(dimension.value === 'DELIVERY_STAGE'
+    ? { deliveryStageCode: selectedCategoryCode.value || undefined }
+    : { managementDomainCode: selectedCategoryCode.value || undefined }),
+  sortBy: 'updatedAt' as const,
+  sortOrder: 'desc' as const,
+}))
+const listQuery = useStandardListQuery(listParams)
+const summaryQuery = useStandardSummaryQuery()
+const detailQuery = useStandardDetailQuery(selectedDetailId)
+
+const list = computed(() => listQuery.data.value?.items ?? [])
+const detail = computed<Standard | null>(() => detailQuery.data.value ?? null)
+const loading = computed(() => listQuery.isFetching.value)
 const summary = computed(
   () =>
-    standardSummaryQuery.data.value ?? {
+    summaryQuery.data.value ?? {
       total: 0,
+      viewCount: 0,
+      downloadCount: 0,
       draft: 0,
       inReview: 0,
       rejected: 0,
@@ -186,149 +107,213 @@ const summary = computed(
       archived: 0,
     },
 )
-const detail = computed<Standard | null>(() => standardDetailQuery.data.value ?? null)
-const relations = computed<StandardRelation[]>(() => standardRelationsQuery.data.value ?? [])
-const relationCandidates = computed(() =>
-  (relationCandidatesQuery.data.value?.items ?? []).filter(
-    (item) => item.id !== detail.value?.id && item.status !== 'ARCHIVED',
-  ),
-)
-const loading = computed(() => standardListQuery.isFetching.value)
-const loadError = computed(() => (standardListQuery.isError.value ? t('standard.loadFailed') : ''))
-const detailLoading = computed(
-  () => standardDetailQuery.isFetching.value || standardRelationsQuery.isFetching.value,
-)
 
 const canCreate = computed(() => permissionStore.hasPermission('standard:create'))
 const canEdit = computed(() => permissionStore.hasPermission('standard:update_draft'))
 const canSubmitReview = computed(() => permissionStore.hasPermission('standard:submit_review'))
 const canArchive = computed(() => permissionStore.hasPermission('standard:archive'))
 const canDownload = computed(() => permissionStore.hasPermission('standard:download'))
+
+const createForm = reactive({
+  code: '',
+  name: '',
+  type: '',
+  deliveryStageCode: '',
+  managementDomainCode: '',
+  businessTypeCode: '',
+  countryCodes: [] as string[],
+  isEnabled: true,
+  effectiveAt: '',
+  version: '',
+  fileVersionId: '',
+  changeDescription: '',
+})
+
+const editForm = reactive({
+  code: '',
+  name: '',
+  type: '',
+  deliveryStageCode: '',
+  managementDomainCode: '',
+  businessTypeCode: '',
+  countryCodes: [] as string[],
+  isEnabled: true,
+  effectiveAt: '',
+})
+
+const versionForm = reactive({
+  version: '',
+  fileVersionId: '',
+  effectiveAt: '',
+  changeDescription: '',
+})
+
+const typeOptions = computed(() => fieldConfig.getFieldOptions('STANDARD_TYPE'))
+const deliveryStageOptions = computed(() =>
+  fieldConfig.getFieldOptions('STANDARD_DELIVERY_STAGE'),
+)
+const managementDomainOptions = computed(() =>
+  fieldConfig.getFieldOptions('STANDARD_MANAGEMENT_DOMAIN'),
+)
+const businessTypeOptions = computed(() =>
+  fieldConfig.getFieldOptions('STANDARD_BUSINESS_TYPE'),
+)
+const countryOptions = computed(() => fieldConfig.getFieldOptions('COUNTRY'))
 const hasActiveDraftVersion = computed(() =>
   Boolean(
     detail.value?.versions?.some((version) => ['DRAFT', 'IN_REVIEW'].includes(version.status)),
   ),
 )
-const categoryOptions = computed(() =>
-  fieldConfig.getFieldOptions('STANDARD_CATEGORY').map((item) => ({
-    value: item.value,
-    label: item.label,
-  })),
+
+const createMutation = useMutation({
+  mutationFn: (payload: CreateStandardDto) => standardApi.create(payload),
+  onSuccess: invalidateStandards,
+})
+const updateMutation = useMutation({
+  mutationFn: ({ id, payload }: { id: string; payload: UpdateStandardDto }) =>
+    standardApi.update(id, payload),
+  onSuccess: invalidateStandards,
+})
+const saveVersionMutation = useMutation({
+  mutationFn: ({
+    standardId,
+    versionId,
+    payload,
+  }: {
+    standardId: string
+    versionId?: string
+    payload: CreateStandardVersionDto
+  }) =>
+    versionId
+      ? standardApi.updateVersion(versionId, payload)
+      : standardApi.createVersion(standardId, payload),
+  onSuccess: invalidateStandards,
+})
+const archiveMutation = useMutation({
+  mutationFn: (id: string) => standardApi.archive(id),
+  onSuccess: invalidateStandards,
+})
+const submitReviewMutation = useMutation({
+  mutationFn: ({ versionId, revision }: { versionId: string; revision: number }) =>
+    standardApi.submitReview(versionId, revision),
+  onSuccess: invalidateStandards,
+})
+const uploadMutation = useMutation({
+  mutationFn: ({ file, description }: { file: File; description?: string }) =>
+    standardApi.uploadDraftFile(file, description),
+})
+
+watch(
+  [categoryOptions, categoryFieldCode],
+  ([options]) => {
+    if (options.some((option) => option.value === selectedCategoryCode.value)) return
+    const configuredDefault = String(
+      fieldConfig.getField(categoryFieldCode.value)?.defaultValue ?? '',
+    )
+    selectedCategoryCode.value =
+      options.find((option) => option.value === configuredDefault)?.value ?? options[0]?.value ?? ''
+  },
+  { immediate: true },
 )
 
-const summaryItems = computed(() => [
-  {
-    key: undefined,
-    label: t('standard.summary.total'),
-    value: summary.value.total,
-    tone: 'blue' as const,
+watch(
+  () => route.params.id,
+  (value) => {
+    const id = firstRouteParam(value)
+    selectedDetailId.value = id
+    detailVisible.value = Boolean(id)
   },
-  {
-    key: 'IN_REVIEW' as StandardStatus,
-    label: t('standard.summary.inReview'),
-    value: summary.value.inReview,
-    tone: 'cyan' as const,
-  },
-  {
-    key: 'PUBLISHED' as StandardStatus,
-    label: t('standard.status.PUBLISHED'),
-    value: summary.value.published,
-    tone: 'green' as const,
-  },
-  {
-    key: 'ARCHIVED' as StandardStatus,
-    label: t('standard.status.ARCHIVED'),
-    value: summary.value.archived,
-    tone: 'red' as const,
-  },
-])
+  { immediate: true },
+)
 
-function typeLabel(value: string): string {
-  const option = standardTypeOptions.find((item) => item.value === value)
-  return option ? (option.label === 'SOP' ? option.label : t(option.label)) : value
+async function invalidateStandards(): Promise<void> {
+  await queryClient.invalidateQueries({ queryKey: queryKeys.standards.all })
 }
 
-function categoryLabel(value?: string | null): string {
-  return fieldConfig.getFieldLabel('STANDARD_CATEGORY', value) || '-'
+function fieldName(code: string, fallback: string): string {
+  return fieldConfig.getField(code)?.fieldName || fallback
 }
 
-function statusLabel(value: string): string {
-  const meta = statusMeta[value as StandardStatus]
-  return meta ? t(meta.label) : value
+function fieldEnabled(code: string): boolean {
+  const field = fieldConfig.getField(code)
+  return field ? field.enabled : true
 }
 
-function statusColor(value: string): string {
-  return statusMeta[value as StandardStatus]?.color ?? 'gray'
+function optionLabel(code: string, value?: string | null): string {
+  return fieldConfig.getFieldLabel(code, value) || value || '-'
 }
 
-function relationLabel(value: StandardRelationType): string {
-  const option = relationTypeOptions.find((item) => item.value === value)
-  return option ? t(option.label) : value
+function statusLabel(status: StandardStatus): string {
+  return optionLabel('STANDARD_STATUS', status)
 }
 
 function formatDate(value?: string | null): string {
-  if (!value) return '-'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(locale.value)
+  return value ? value.slice(0, 10) : '-'
+}
+
+function currentVersion(row: Standard): string {
+  return row.currentPublishedVersion?.version || '-'
+}
+
+function effectiveDate(row: Standard): string {
+  return formatDate(row.currentPublishedVersion?.effectiveAt || row.effectiveAt)
 }
 
 function versionFileName(version: StandardVersion): string {
   return version.fileVersion.asset.originalName
 }
 
-async function fetchList(): Promise<void> {
-  await standardListQuery.refetch()
-}
-
-async function refreshPage(): Promise<void> {
-  await Promise.allSettled([standardSummaryQuery.refetch(), standardListQuery.refetch()])
-}
-
-async function applyListQuery(): Promise<void> {
-  appliedQuery.value = {
-    page: query.page,
-    pageSize: query.pageSize,
-    keyword: query.keyword.trim(),
-    category: query.category,
-    status: query.status,
-  }
-  await router.replace({
+function applySearch(): void {
+  appliedKeyword.value = keyword.value.trim()
+  void router.replace({
     path: route.path,
     query: {
       ...route.query,
-      page: query.page === 1 ? undefined : String(query.page),
-      pageSize: query.pageSize === 20 ? undefined : String(query.pageSize),
-      keyword: query.keyword.trim() || undefined,
-      category: query.category || undefined,
-      status: query.status,
+      keyword: appliedKeyword.value || undefined,
+      dimension: dimension.value === 'MANAGEMENT_DOMAIN' ? dimension.value : undefined,
     },
   })
 }
 
-function search(): void {
-  query.page = 1
-  void applyListQuery()
+function switchDimension(value: StandardCategoryDimension): void {
+  if (dimension.value === value) return
+  dimension.value = value
+  selectedCategoryCode.value = ''
+  void router.replace({
+    path: route.path,
+    query: {
+      ...route.query,
+      dimension: value === 'MANAGEMENT_DOMAIN' ? value : undefined,
+    },
+  })
 }
 
-function changePage(page: number): void {
-  query.page = page
-  void applyListQuery()
+function selectCategory(value: string): void {
+  selectedCategoryCode.value = value
 }
 
-function selectSummary(status?: StandardStatus): void {
-  query.status = query.status === status ? undefined : status
-  query.page = 1
-  void applyListQuery()
+function defaultValue(code: string, fallback = ''): string {
+  return String(fieldConfig.getField(code)?.defaultValue ?? fallback)
 }
 
 function resetCreateForm(): void {
   Object.assign(createForm, {
     code: '',
     name: '',
-    type: 'SOP',
-    category: String(fieldConfig.getField('STANDARD_CATEGORY')?.defaultValue ?? ''),
+    type: defaultValue('STANDARD_TYPE', typeOptions.value[0]?.value),
+    deliveryStageCode: defaultValue(
+      'STANDARD_DELIVERY_STAGE',
+      deliveryStageOptions.value[0]?.value,
+    ),
+    managementDomainCode: defaultValue('STANDARD_MANAGEMENT_DOMAIN'),
+    businessTypeCode: defaultValue(
+      'STANDARD_BUSINESS_TYPE',
+      businessTypeOptions.value[0]?.value,
+    ),
+    countryCodes: [],
+    isEnabled: defaultValue('STANDARD_ENABLED_STATUS', 'ENABLED') !== 'DISABLED',
     effectiveAt: '',
-    version: 'V1.0',
+    version: defaultValue('STANDARD_CURRENT_VERSION', 'V1.0'),
     fileVersionId: '',
     changeDescription: t('standard.initialVersion'),
   })
@@ -341,229 +326,125 @@ function openCreate(): void {
   createVisible.value = true
 }
 
-function closeCreate(): void {
-  createVisible.value = false
-  if (route.query.mode === 'create') {
-    void router.replace({ name: 'Standard', query: listRouteQuery() })
-  }
-}
-
-async function invalidateStandard(standardId?: string): Promise<void> {
-  const invalidations = [
-    queryClient.invalidateQueries({ queryKey: queryKeys.standards.lists() }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.standards.summary() }),
-  ]
-  if (standardId) {
-    invalidations.push(
-      queryClient.invalidateQueries({ queryKey: queryKeys.standards.detail(standardId) }),
-    )
-  }
-  await Promise.all(invalidations)
-}
-
-const uploadDraftMutation = useMutation({
-  mutationFn: ({ file, changeDescription }: { file: File; changeDescription?: string }) =>
-    standardApi.uploadDraftFile(file, changeDescription),
-  retry: false,
-})
-
-const createStandardMutation = useMutation({
-  mutationFn: (data: CreateStandardDto) => standardApi.create(data),
-  retry: false,
-  onSuccess: (created) => invalidateStandard(created.id),
-})
-
-const updateStandardMutation = useMutation({
-  mutationFn: ({ id, data }: { id: string; data: Parameters<typeof standardApi.update>[1] }) =>
-    standardApi.update(id, data),
-  retry: false,
-  onSuccess: (_, variables) => invalidateStandard(variables.id),
-})
-
-const saveVersionMutation = useMutation({
-  mutationFn: ({
-    standardId,
-    versionId,
-    data,
-  }: {
-    standardId: string
-    versionId?: string
-    data: CreateStandardVersionDto
-  }) =>
-    versionId
-      ? standardApi.updateVersion(versionId, data)
-      : standardApi.createVersion(standardId, data),
-  retry: false,
-  onSuccess: (_, variables) => invalidateStandard(variables.standardId),
-})
-
-const submitReviewMutation = useMutation({
-  mutationFn: ({
-    versionId,
-    revision,
-  }: {
-    standardId: string
-    versionId: string
-    revision: number
-  }) => standardApi.submitReview(versionId, revision),
-  retry: false,
-  onSuccess: (_, variables) => invalidateStandard(variables.standardId),
-})
-
-const relationMutation = useMutation({
-  mutationFn: async ({
-    standardId,
-    relationId,
-    data,
-  }: {
-    standardId: string
-    relationId?: string
-    data?: { targetStandardId: string; relationType: StandardRelationType }
-  }) => {
-    if (relationId) await standardApi.deleteRelation(standardId, relationId)
-    else await standardApi.createRelation(standardId, data!)
-  },
-  retry: false,
-  onSuccess: async (_, variables) => {
-    await Promise.all([
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.standards.relations(variables.standardId),
-      }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.standards.detail(variables.standardId) }),
-    ])
-  },
-})
-
-const archiveStandardMutation = useMutation({
-  mutationFn: (standardId: string) => standardApi.archive(standardId),
-  retry: false,
-  onSuccess: (_, standardId) => invalidateStandard(standardId),
-})
-
-const createSubmitting = computed(
-  () => createStandardMutation.isPending.value || uploadDraftMutation.isPending.value,
-)
-const editSubmitting = computed(() => updateStandardMutation.isPending.value)
-const versionSubmitting = computed(
-  () => saveVersionMutation.isPending.value || uploadDraftMutation.isPending.value,
-)
-const relationSubmitting = computed(() => relationMutation.isPending.value)
-
 function selectCreateFile(event: Event): void {
   createSelectedFile.value = (event.target as HTMLInputElement).files?.[0] ?? null
   createForm.fileVersionId = ''
 }
 
-function selectVersionFile(event: Event): void {
-  versionSelectedFile.value = (event.target as HTMLInputElement).files?.[0] ?? null
-  versionForm.fileVersionId = ''
-}
-
 async function submitCreate(): Promise<void> {
-  if (!createForm.code.trim() || !createForm.name.trim() || !createForm.type) {
-    Message.warning(t('standard.validation.masterRequired'))
+  if (
+    !createForm.code.trim() ||
+    !createForm.name.trim() ||
+    !createForm.type ||
+    !createForm.deliveryStageCode
+  ) {
+    Message.warning(t('standard.validation.configuredMasterRequired'))
     return
   }
-  if (!createSelectedFile.value && !createForm.fileVersionId.trim()) {
+  if (!createSelectedFile.value) {
     Message.warning(t('standard.validation.fileRequired'))
     return
   }
-
-  if (createSelectedFile.value && !createForm.fileVersionId) {
-    const uploaded = await uploadDraftMutation.mutateAsync({
-      file: createSelectedFile.value,
-      changeDescription: createForm.changeDescription,
-    })
-    createForm.fileVersionId = uploaded.fileVersionId
-  }
-  const created = await createStandardMutation.mutateAsync({
+  const uploaded = await uploadMutation.mutateAsync({
+    file: createSelectedFile.value,
+    description: createForm.changeDescription.trim() || undefined,
+  })
+  const created = await createMutation.mutateAsync({
     code: createForm.code.trim(),
     name: createForm.name.trim(),
     type: createForm.type,
-    category: createForm.category.trim() || undefined,
+    deliveryStageCode: createForm.deliveryStageCode,
+    managementDomainCode: createForm.managementDomainCode || undefined,
+    businessTypeCode: createForm.businessTypeCode || undefined,
+    countryCodes: createForm.countryCodes,
+    isEnabled: createForm.isEnabled,
     effectiveAt: createForm.effectiveAt || undefined,
     version: createForm.version.trim() || undefined,
-    fileVersionId: createForm.fileVersionId.trim(),
+    fileVersionId: uploaded.fileVersionId,
     changeDescription: createForm.changeDescription.trim() || undefined,
   })
-  Message.success(t('standard.messages.created'))
   createVisible.value = false
-  await router.replace({
-    name: 'StandardDetail',
-    params: { id: created.id },
-    query: listRouteQuery(),
+  Message.success(t('standard.messages.created'))
+  openDetail(created)
+}
+
+async function loadStandard(id: string): Promise<Standard> {
+  return queryClient.ensureQueryData({
+    queryKey: queryKeys.standards.detail(id),
+    queryFn: () => standardApi.getById(id),
   })
 }
 
-async function loadDetail(id: string): Promise<void> {
-  detailVisible.value = true
-  const isCurrent = selectedDetailId.value === id
-  selectedDetailId.value = id
-  if (isCurrent) {
-    await Promise.allSettled([standardDetailQuery.refetch(), standardRelationsQuery.refetch()])
-  }
-}
-
-function openDetail(row: Standard): void {
-  void router.push({
-    name: 'StandardDetail',
-    params: { id: row.id },
-    query: listRouteQuery(),
-  })
-}
-
-function closeDetail(): void {
-  detailVisible.value = false
-  selectedDetailId.value = ''
-  void router.push({ name: 'Standard', query: listRouteQuery() })
-}
-
-function handleDetailVisibility(visible: boolean): void {
-  if (!visible) closeDetail()
-}
-
-function openEdit(): void {
-  if (!detail.value || !canEdit.value || detail.value.status === 'ARCHIVED') return
+async function openEdit(row?: Standard): Promise<void> {
+  if (!canEdit.value) return
+  const record = row ? await loadStandard(row.id) : detail.value
+  if (!record || record.status === 'ARCHIVED') return
+  selectedDetailId.value = record.id
   Object.assign(editForm, {
-    code: detail.value.code,
-    name: detail.value.name,
-    type: detail.value.type,
-    category: detail.value.category ?? '',
-    effectiveAt: detail.value.effectiveAt?.slice(0, 10) ?? '',
+    code: record.code,
+    name: record.name,
+    type: record.type,
+    deliveryStageCode: record.deliveryStageCode || '',
+    managementDomainCode: record.managementDomainCode || '',
+    businessTypeCode: record.businessTypeCode || '',
+    countryCodes: [...record.countryCodes],
+    isEnabled: record.isEnabled,
+    effectiveAt: record.effectiveAt?.slice(0, 10) || '',
   })
   editVisible.value = true
 }
 
 async function submitEdit(): Promise<void> {
-  if (!detail.value || !editForm.code.trim() || !editForm.name.trim()) {
-    Message.warning(t('standard.validation.nameRequired'))
+  if (!selectedDetailId.value) return
+  if (!editForm.code.trim() || !editForm.name.trim() || !editForm.deliveryStageCode) {
+    Message.warning(t('standard.validation.configuredMasterRequired'))
     return
   }
-  await updateStandardMutation.mutateAsync({
-    id: detail.value.id,
-    data: {
+  await updateMutation.mutateAsync({
+    id: selectedDetailId.value,
+    payload: {
       code: editForm.code.trim(),
       name: editForm.name.trim(),
       type: editForm.type,
-      category: editForm.category.trim() || null,
+      deliveryStageCode: editForm.deliveryStageCode,
+      managementDomainCode: editForm.managementDomainCode || null,
+      businessTypeCode: editForm.businessTypeCode || null,
+      countryCodes: editForm.countryCodes,
+      isEnabled: editForm.isEnabled,
       effectiveAt: editForm.effectiveAt || null,
     },
   })
-  Message.success(t('standard.messages.updated'))
   editVisible.value = false
+  Message.success(t('standard.messages.updated'))
+}
+
+function openDetail(row: Standard): void {
+  void router.push({ name: 'StandardDetail', params: { id: row.id }, query: route.query })
+}
+
+function closeDetail(): void {
+  detailVisible.value = false
+  selectedDetailId.value = ''
+  void router.push({ name: 'Standard', query: route.query })
+}
+
+function handleDetailVisible(value: boolean): void {
+  if (!value) closeDetail()
 }
 
 function openCreateVersion(): void {
-  if (!detail.value || !canEdit.value || detail.value.status === 'ARCHIVED') return
+  if (!detail.value || !canEdit.value || hasActiveDraftVersion.value) return
   const source =
-    detail.value.versions?.find((item) => item.id === detail.value?.currentPublishedVersionId) ??
-    detail.value.versions?.[0]
+    detail.value.versions?.find(
+      (version) => version.id === detail.value?.currentPublishedVersionId,
+    ) ?? detail.value.versions?.[0]
   editingVersionId.value = ''
   versionSelectedFile.value = null
   Object.assign(versionForm, {
     version: '',
-    fileVersionId: source?.fileVersionId ?? '',
-    effectiveAt: source?.effectiveAt?.slice(0, 10) ?? detail.value.effectiveAt?.slice(0, 10) ?? '',
+    fileVersionId: source?.fileVersionId || '',
+    effectiveAt:
+      source?.effectiveAt?.slice(0, 10) || detail.value.effectiveAt?.slice(0, 10) || '',
     changeDescription: '',
   })
   versionVisible.value = true
@@ -576,111 +457,64 @@ function openEditVersion(version: StandardVersion): void {
   Object.assign(versionForm, {
     version: version.version,
     fileVersionId: version.fileVersionId,
-    effectiveAt: version.effectiveAt?.slice(0, 10) ?? '',
-    changeDescription: version.changeDescription ?? '',
+    effectiveAt: version.effectiveAt?.slice(0, 10) || '',
+    changeDescription: version.changeDescription || '',
   })
   versionVisible.value = true
 }
 
+function selectVersionFile(event: Event): void {
+  versionSelectedFile.value = (event.target as HTMLInputElement).files?.[0] ?? null
+  if (versionSelectedFile.value) versionForm.fileVersionId = ''
+}
+
 async function submitVersion(): Promise<void> {
   if (!detail.value) return
-  if (!versionSelectedFile.value && !versionForm.fileVersionId.trim()) {
-    Message.warning(t('standard.validation.versionFileRequired'))
-    return
-  }
-  if (versionSelectedFile.value && !versionForm.fileVersionId) {
-    const uploaded = await uploadDraftMutation.mutateAsync({
+  if (versionSelectedFile.value) {
+    const uploaded = await uploadMutation.mutateAsync({
       file: versionSelectedFile.value,
-      changeDescription: versionForm.changeDescription,
+      description: versionForm.changeDescription.trim() || undefined,
     })
     versionForm.fileVersionId = uploaded.fileVersionId
   }
-  const payload: CreateStandardVersionDto = {
-    revision: editingVersionId.value
-      ? detail.value.versions?.find((version) => version.id === editingVersionId.value)?.revision
-      : undefined,
-    version: versionForm.version.trim() || undefined,
-    fileVersionId: versionForm.fileVersionId.trim(),
-    effectiveAt: versionForm.effectiveAt || null,
-    changeDescription: versionForm.changeDescription.trim() || undefined,
+  if (!versionForm.fileVersionId) {
+    Message.warning(t('standard.validation.versionFileRequired'))
+    return
   }
+  const current = detail.value.versions?.find(
+    (version) => version.id === editingVersionId.value,
+  )
   await saveVersionMutation.mutateAsync({
     standardId: detail.value.id,
     versionId: editingVersionId.value || undefined,
-    data: payload,
+    payload: {
+      revision: current?.revision,
+      version: versionForm.version.trim() || undefined,
+      fileVersionId: versionForm.fileVersionId,
+      effectiveAt: versionForm.effectiveAt || null,
+      changeDescription: versionForm.changeDescription.trim() || undefined,
+    },
   })
-  if (editingVersionId.value) {
-    Message.success(t('standard.messages.versionUpdated'))
-  } else {
-    Message.success(t('standard.messages.versionCreated'))
-  }
   versionVisible.value = false
+  Message.success(
+    editingVersionId.value
+      ? t('standard.messages.versionUpdated')
+      : t('standard.messages.versionCreated'),
+  )
 }
 
 function submitReview(version: StandardVersion): void {
   Modal.confirm({
     title: t('standard.review.title'),
     content: t('standard.review.confirm', { version: version.version }),
-    okText: t('standard.review.action'),
+    okText: t('common.submit'),
     cancelText: t('common.cancel'),
     async onOk() {
-      if (!detail.value) return
       await submitReviewMutation.mutateAsync({
-        standardId: detail.value.id,
         versionId: version.id,
         revision: version.revision,
       })
       Message.success(t('standard.messages.reviewSubmitted'))
-    },
-  })
-}
-
-async function openRelationCreate(): Promise<void> {
-  if (!detail.value || !canEdit.value) return
-  relationForm.targetStandardId = ''
-  relationForm.relationType = 'REFERENCES'
-  relationVisible.value = true
-  await relationCandidatesQuery.refetch()
-}
-
-async function submitRelation(): Promise<void> {
-  if (!detail.value || !relationForm.targetStandardId) {
-    Message.warning(t('standard.validation.relationTargetRequired'))
-    return
-  }
-  await relationMutation.mutateAsync({
-    standardId: detail.value.id,
-    data: { ...relationForm },
-  })
-  relationVisible.value = false
-  Message.success(t('standard.messages.relationAdded'))
-}
-
-function removeRelation(relation: StandardRelation): void {
-  if (!detail.value) return
-  const standardId = detail.value.id
-  Modal.confirm({
-    title: t('standard.removeRelation.title'),
-    content: t('standard.removeRelation.confirm', { name: relation.targetStandard.name }),
-    okText: t('standard.removeRelation.action'),
-    cancelText: t('common.cancel'),
-    async onOk() {
-      await relationMutation.mutateAsync({ standardId, relationId: relation.id })
-      Message.success(t('standard.messages.relationRemoved'))
-    },
-  })
-}
-
-function archiveStandard(row: Standard): void {
-  Modal.confirm({
-    title: t('standard.archive.title'),
-    content: t('standard.archive.confirm', { name: row.name }),
-    okText: t('standard.archive.action'),
-    cancelText: t('common.cancel'),
-    async onOk() {
-      await archiveStandardMutation.mutateAsync(row.id)
-      Message.success(t('standard.messages.archived'))
-      if (detail.value?.id === row.id) closeDetail()
     },
   })
 }
@@ -695,16 +529,11 @@ function previewVersion(version: StandardVersion): void {
 async function downloadVersion(version: StandardVersion): Promise<void> {
   const blob = await standardApi.downloadFile(version.fileVersion.logicalFileId)
   downloadBlob(blob, versionFileName(version))
+  await summaryQuery.refetch()
 }
 
 async function downloadStandard(row: Standard): Promise<void> {
-  const record =
-    detail.value?.id === row.id
-      ? detail.value
-      : await queryClient.ensureQueryData({
-          queryKey: queryKeys.standards.detail(row.id),
-          queryFn: () => standardApi.getById(row.id),
-        })
+  const record = detail.value?.id === row.id ? detail.value : await loadStandard(row.id)
   const version =
     record.versions?.find((item) => item.id === record.currentPublishedVersionId) ??
     record.versions?.find((item) => item.status === 'PUBLISHED')
@@ -715,335 +544,344 @@ async function downloadStandard(row: Standard): Promise<void> {
   await downloadVersion(version)
 }
 
-async function syncRouteIntent(): Promise<void> {
-  const mode = typeof route.query.mode === 'string' ? route.query.mode : ''
-  const id = firstRouteParam(route.params.id)
-  if (id) {
-    if (detail.value?.id !== id) await loadDetail(id)
-    return
-  }
-
-  detailVisible.value = false
-  selectedDetailId.value = ''
-  if (mode === 'create' && canCreate.value) {
-    if (!createVisible.value) openCreate()
-  }
+function archiveStandard(row: Standard): void {
+  Modal.confirm({
+    title: t('standard.archive.title'),
+    content: t('standard.archive.confirm', { name: row.name }),
+    okText: t('standard.archive.actionShort'),
+    cancelText: t('common.cancel'),
+    async onOk() {
+      await archiveMutation.mutateAsync(row.id)
+      Message.success(t('standard.messages.archived'))
+      if (detail.value?.id === row.id) closeDetail()
+    },
+  })
 }
-
-watch(
-  () => route.fullPath,
-  () => void syncRouteIntent(),
-  { immediate: true },
-)
 </script>
 
 <template>
-  <PageContainer class="domain-page" gap="compact" :scrollable="false">
-    <section class="summary-grid" :aria-label="t('standard.summary.aria')">
-      <StatCard
-        v-for="item in summaryItems"
-        :key="item.label"
-        :label="item.label"
-        :value="item.value"
-        :tone="item.tone"
-        :active="query.status === item.key"
-        interactive
-        @select="selectSummary(item.key)"
-      />
-    </section>
+  <section class="standard-library">
+    <div class="metrics">
+      <div class="metric">
+        <div class="metric__icon">
+          <img :src="fileMetricIcon" alt="" />
+        </div>
+        <div class="metric__content">
+          <span>{{ t('standard.summary.total') }}</span>
+          <strong>{{ summary.total }}<small>{{ t('standard.units.items') }}</small></strong>
+        </div>
+      </div>
+      <div class="metric">
+        <div class="metric__icon">
+          <img :src="eyeMetricIcon" alt="" />
+        </div>
+        <div class="metric__content">
+          <span>{{ t('standard.summary.views') }}</span>
+          <strong>{{ summary.viewCount }}<small>{{ t('standard.units.times') }}</small></strong>
+        </div>
+      </div>
+      <div class="metric">
+        <div class="metric__icon">
+          <img :src="downloadMetricIcon" alt="" />
+        </div>
+        <div class="metric__content">
+          <span>{{ t('standard.summary.downloads') }}</span>
+          <strong>{{ summary.downloadCount }}<small>{{ t('standard.units.times') }}</small></strong>
+        </div>
+      </div>
+    </div>
 
-    <section class="library-list-panel">
-      <PageToolbar class="library-toolbar">
-        <template #filters>
-          <div class="search-group">
-            <a-select
-              v-model="query.category"
-              class="category-select"
-              allow-clear
-              :placeholder="t('standard.allCategories')"
-            >
-              <a-option
-                v-for="item in categoryOptions"
-                :key="item.value"
-                :value="item.value"
-                :label="item.label"
-              />
-            </a-select>
-            <a-input
-              v-model="query.keyword"
-              class="keyword-input"
-              allow-clear
-              :placeholder="t('standard.searchPlaceholder')"
-              @press-enter="search"
-            />
-            <a-button type="primary" class="search-button" @click="search">
-              {{ t('standard.query') }}
-            </a-button>
-          </div>
-        </template>
-        <template #actions>
-          <a-button :loading="loading" @click="refreshPage">
-            {{ t('standard.refresh') }}
-          </a-button>
-          <a-button v-if="canCreate" type="primary" @click="openCreate">
-            {{ t('standard.create') }}
-          </a-button>
-        </template>
-      </PageToolbar>
-
-      <BusinessTable
-        :columns="columns"
-        :data="list"
-        :loading="loading"
-        :error="loadError"
-        :retry-label="t('standard.retry')"
-        :pagination="{ page: query.page, pageSize: query.pageSize, total }"
-        :scroll="{ x: 'max-content' }"
-        row-key="id"
-        @retry="fetchList"
-        @page-change="changePage"
+    <div class="toolbar">
+      <div class="toolbar__left">
+        <a-input
+          v-model="keyword"
+          class="keyword-input"
+          :placeholder="t('standard.searchPlaceholder')"
+          @press-enter="applySearch"
+        />
+        <a-button type="primary" class="design-button" @click="applySearch">
+          <template #icon>
+            <IconSearch />
+          </template>
+          {{ t('standard.query') }}
+        </a-button>
+      </div>
+      <a-button
+        v-if="canCreate"
+        type="primary"
+        class="design-button"
+        @click="openCreate"
       >
-        <template #name="{ record }">
-          <button class="record-link" type="button" @click="openDetail(record)">
-            <strong>{{ record.name }}</strong>
-            <span>{{ record.code
-            }}<template v-if="record.category"> · {{ categoryLabel(record.category) }}</template></span>
+        <template #icon>
+          <img :src="plusIcon" alt="" class="button-icon" />
+        </template>
+        {{ t('common.create') }}
+      </a-button>
+    </div>
+
+    <div class="library-panel">
+      <aside class="category-sidebar">
+        <div class="category-tabs">
+          <button
+            type="button"
+            :class="{ active: dimension === 'DELIVERY_STAGE' }"
+            @click="switchDimension('DELIVERY_STAGE')"
+          >
+            {{ fieldName('STANDARD_DELIVERY_STAGE', t('standard.fields.deliveryStage')) }}
           </button>
-        </template>
-        <template #type="{ record }">
-          {{ typeLabel(record.type) }}
-        </template>
-        <template #version="{ record }">
-          {{ record.currentPublishedVersion?.version || '-' }}
-        </template>
-        <template #status="{ record }">
-          <a-tag :color="statusColor(record.status)" size="small">
-            {{ statusLabel(record.status) }}
-          </a-tag>
-        </template>
-        <template #effectiveAt="{ record }">
-          {{ formatDate(record.effectiveAt) }}
-        </template>
-        <template #updater="{ record }">
-          {{ record.updater?.realName || '-' }}
-        </template>
-        <template #actions="{ record }">
-          <a-space size="mini" :wrap="false">
-            <a-button type="text" size="mini" @click="openDetail(record)">
-              {{ t('common.view') }}
-            </a-button>
-            <a-button
-              v-if="canDownload && record.currentPublishedVersion"
-              type="text"
-              size="mini"
-              @click="downloadStandard(record)"
-            >
-              {{ t('common.download') }}
-            </a-button>
-            <a-button
-              v-if="canEdit && record.status !== 'ARCHIVED'"
-              type="text"
-              size="mini"
-              @click="openDetail(record)"
-            >
-              {{ t('common.edit') }}
-            </a-button>
-            <a-button
-              v-if="canArchive && record.status !== 'ARCHIVED' && record.status !== 'IN_REVIEW'"
-              type="text"
-              status="danger"
-              size="mini"
-              @click="archiveStandard(record)"
-            >
-              {{ t('standard.archive.actionShort') }}
-            </a-button>
-          </a-space>
-        </template>
-        <template #empty>
-          <a-empty
-            :description="
-              query.keyword || query.category || query.status
-                ? t('standard.emptyFiltered')
-                : t('standard.empty')
-            "
-          />
-        </template>
-      </BusinessTable>
-    </section>
+          <button
+            type="button"
+            :class="{ active: dimension === 'MANAGEMENT_DOMAIN' }"
+            @click="switchDimension('MANAGEMENT_DOMAIN')"
+          >
+            {{ fieldName('STANDARD_MANAGEMENT_DOMAIN', t('standard.fields.managementDomain')) }}
+          </button>
+        </div>
+        <div class="category-list">
+          <button
+            v-for="option in categoryOptions"
+            :key="option.id"
+            type="button"
+            :class="{ active: selectedCategoryCode === option.value }"
+            @click="selectCategory(option.value)"
+          >
+            <span>{{ option.label }}</span>
+            <small>{{ categoryCountMap.get(option.value) ?? 0 }}</small>
+          </button>
+        </div>
+      </aside>
+
+      <div class="content-scroll">
+        <div class="content-panel">
+          <header class="category-description">
+            <h1>{{ selectedCategory?.label || '-' }}</h1>
+            <p>{{ selectedCategory?.description || '' }}</p>
+          </header>
+
+          <div class="table-region">
+            <table class="standard-table">
+              <colgroup>
+                <col class="column-title" />
+                <col v-if="fieldEnabled('STANDARD_CURRENT_VERSION')" class="column-version" />
+                <col v-if="fieldEnabled('STANDARD_EFFECTIVE_DATE')" class="column-date" />
+                <col class="column-updater" />
+                <col class="column-actions" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>{{ t('standard.fields.title') }}</th>
+                  <th v-if="fieldEnabled('STANDARD_CURRENT_VERSION')">
+                    {{ fieldName('STANDARD_CURRENT_VERSION', t('standard.fields.currentVersion')) }}
+                  </th>
+                  <th v-if="fieldEnabled('STANDARD_EFFECTIVE_DATE')">
+                    {{ fieldName('STANDARD_EFFECTIVE_DATE', t('standard.fields.effectiveAt')) }}
+                  </th>
+                  <th>{{ t('standard.fields.updater') }}</th>
+                  <th>{{ t('common.action') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in list" :key="row.id">
+                  <td class="title-cell">
+                    <button type="button" :title="row.name" @click="openDetail(row)">
+                      {{ row.name }}
+                    </button>
+                  </td>
+                  <td v-if="fieldEnabled('STANDARD_CURRENT_VERSION')" class="center-cell">
+                    {{ currentVersion(row) }}
+                  </td>
+                  <td v-if="fieldEnabled('STANDARD_EFFECTIVE_DATE')" class="center-cell">
+                    {{ effectiveDate(row) }}
+                  </td>
+                  <td class="center-cell">
+                    {{ row.updater?.realName || '-' }}
+                  </td>
+                  <td class="action-cell">
+                    <button
+                      v-if="!row.currentPublishedVersion && canEdit"
+                      type="button"
+                      class="action-edit"
+                      @click="openEdit(row)"
+                    >
+                      {{ t('common.edit') }}
+                    </button>
+                    <button
+                      v-else-if="row.currentPublishedVersion && canDownload"
+                      type="button"
+                      class="action-edit"
+                      @click="downloadStandard(row)"
+                    >
+                      {{ t('common.download') }}
+                    </button>
+                    <button
+                      v-if="canArchive && row.status !== 'IN_REVIEW'"
+                      type="button"
+                      class="action-archive"
+                      @click="archiveStandard(row)"
+                    >
+                      {{ t('standard.archive.actionShort') }}
+                    </button>
+                  </td>
+                </tr>
+                <tr v-if="!loading && !list.length">
+                  <td
+                    class="empty-cell"
+                    :colspan="
+                      3 +
+                        Number(fieldEnabled('STANDARD_CURRENT_VERSION')) +
+                        Number(fieldEnabled('STANDARD_EFFECTIVE_DATE'))
+                    "
+                  >
+                    {{ t('standard.empty') }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <a-spin v-if="loading" class="table-loading" />
+          </div>
+        </div>
+      </div>
+    </div>
 
     <a-drawer
       :visible="detailVisible"
-      width="80vw"
-      :title="detail ? `${detail.code} · ${detail.name}` : t('standard.detailTitle')"
+      :width="760"
+      :title="detail?.name || t('standard.detailTitle')"
       :footer="false"
       unmount-on-close
-      @update:visible="handleDetailVisibility"
+      @update:visible="handleDetailVisible"
     >
-      <a-spin :loading="detailLoading" class="detail-spin">
+      <a-spin :loading="detailQuery.isFetching.value" class="detail-loading">
         <template v-if="detail">
-          <div class="detail-command-bar">
-            <a-space size="small">
-              <a-button
-                v-if="canEdit && detail.status !== 'ARCHIVED'"
-                size="small"
-                @click="openEdit"
-              >
-                {{ t('standard.editMaster') }}
-              </a-button>
-              <a-button
-                v-if="canEdit && detail.status !== 'ARCHIVED' && !hasActiveDraftVersion"
-                size="small"
-                type="primary"
-                @click="openCreateVersion"
-              >
-                {{ t('standard.createVersion') }}
-              </a-button>
-              <a-button
-                v-if="canEdit && detail.status !== 'ARCHIVED'"
-                size="small"
-                @click="openRelationCreate"
-              >
-                {{ t('standard.addRelation') }}
-              </a-button>
-              <a-button
-                v-if="canArchive && detail.status !== 'ARCHIVED' && detail.status !== 'IN_REVIEW'"
-                size="small"
-                status="danger"
-                @click="archiveStandard(detail)"
-              >
-                {{ t('standard.archive.actionShort') }}
-              </a-button>
-            </a-space>
-            <span>{{ t('standard.readonlyHint') }}</span>
+          <div class="detail-actions">
+            <a-button v-if="canEdit && detail.status !== 'ARCHIVED'" @click="openEdit()">
+              {{ t('common.edit') }}
+            </a-button>
+            <a-button
+              v-if="canEdit && detail.status !== 'ARCHIVED' && !hasActiveDraftVersion"
+              type="primary"
+              @click="openCreateVersion"
+            >
+              {{ t('standard.createVersion') }}
+            </a-button>
+            <a-button
+              v-if="canArchive && detail.status !== 'ARCHIVED' && detail.status !== 'IN_REVIEW'"
+              status="danger"
+              @click="archiveStandard(detail)"
+            >
+              {{ t('standard.archive.actionShort') }}
+            </a-button>
           </div>
-
-          <a-descriptions
-            :column="3"
-            bordered
-            size="small"
-            class="master-detail"
-          >
-            <a-descriptions-item :label="t('standard.fields.type')">
-              {{ typeLabel(detail.type) }}
+          <a-descriptions :column="2" bordered size="small">
+            <a-descriptions-item :label="t('standard.fields.code')">
+              {{ detail.code }}
             </a-descriptions-item>
-            <a-descriptions-item :label="t('standard.fields.category')">
-              {{ detail.category || '-' }}
+            <a-descriptions-item :label="fieldName('STANDARD_TYPE', t('standard.fields.type'))">
+              {{ optionLabel('STANDARD_TYPE', detail.type) }}
             </a-descriptions-item>
-            <a-descriptions-item :label="t('common.status')">
-              <a-tag :color="statusMeta[detail.status].color" size="small">
-                {{ t(statusMeta[detail.status].label) }}
-              </a-tag>
+            <a-descriptions-item :label="fieldName('STANDARD_DELIVERY_STAGE', t('standard.fields.deliveryStage'))">
+              {{ optionLabel('STANDARD_DELIVERY_STAGE', detail.deliveryStageCode) }}
             </a-descriptions-item>
-            <a-descriptions-item :label="t('standard.fields.effectiveAt')">
-              {{ formatDate(detail.effectiveAt) }}
+            <a-descriptions-item :label="fieldName('STANDARD_MANAGEMENT_DOMAIN', t('standard.fields.managementDomain'))">
+              {{ optionLabel('STANDARD_MANAGEMENT_DOMAIN', detail.managementDomainCode) }}
             </a-descriptions-item>
-            <a-descriptions-item :label="t('standard.fields.creator')">
-              {{ detail.creator?.realName || '-' }}
+            <a-descriptions-item :label="fieldName('STANDARD_BUSINESS_TYPE', t('standard.fields.businessType'))">
+              {{ optionLabel('STANDARD_BUSINESS_TYPE', detail.businessTypeCode) }}
             </a-descriptions-item>
-            <a-descriptions-item :label="t('standard.fields.updater')">
-              {{ detail.updater?.realName || '-' }}
+            <a-descriptions-item :label="fieldName('COUNTRY', t('standard.fields.countries'))">
+              {{
+                detail.countryCodes.map((code) => optionLabel('COUNTRY', code)).join('、') || '-'
+              }}
             </a-descriptions-item>
-            <a-descriptions-item :label="t('common.updatedAt')">
-              {{ formatDate(detail.updatedAt) }}
+            <a-descriptions-item :label="fieldName('STANDARD_STATUS', t('common.status'))">
+              {{ statusLabel(detail.status) }}
+            </a-descriptions-item>
+            <a-descriptions-item :label="fieldName('STANDARD_ENABLED_STATUS', t('standard.fields.enabledStatus'))">
+              {{
+                optionLabel(
+                  'STANDARD_ENABLED_STATUS',
+                  detail.isEnabled ? 'ENABLED' : 'DISABLED',
+                )
+              }}
+            </a-descriptions-item>
+            <a-descriptions-item
+              v-if="fieldEnabled('STANDARD_CURRENT_VERSION')"
+              :label="fieldName('STANDARD_CURRENT_VERSION', t('standard.fields.currentVersion'))"
+            >
+              {{ currentVersion(detail) }}
+            </a-descriptions-item>
+            <a-descriptions-item
+              v-if="fieldEnabled('STANDARD_EFFECTIVE_DATE')"
+              :label="fieldName('STANDARD_EFFECTIVE_DATE', t('standard.fields.effectiveAt'))"
+            >
+              {{ effectiveDate(detail) }}
             </a-descriptions-item>
           </a-descriptions>
 
-          <section class="detail-section">
-            <header>
-              <h2>{{ t('standard.versions') }}</h2>
-              <span>{{ t('standard.versionCount', { count: detail.versions?.length || 0 }) }}</span>
-            </header>
-            <BusinessTable
-              :columns="versionColumns"
+          <section class="version-section">
+            <h2>{{ t('standard.versions') }}</h2>
+            <a-table
               :data="detail.versions || []"
-              :scroll="{ x: 980 }"
+              :pagination="false"
               row-key="id"
               size="small"
+              :scroll="{ x: 690 }"
             >
-              <template #content="{ record }">
-                {{ versionFileName(record) }}
-              </template>
-              <template #status="{ record }">
-                <a-tag :color="statusColor(record.status)" size="small">
+              <a-table-column :title="t('standard.fields.version')" data-index="version" :width="80" />
+              <a-table-column :title="t('standard.fields.fileName')" :width="210">
+                <template #cell="{ record }">
+                  <button class="version-link" type="button" @click="previewVersion(record)">
+                    {{ versionFileName(record) }}
+                  </button>
+                </template>
+              </a-table-column>
+              <a-table-column :title="fieldName('STANDARD_STATUS', t('common.status'))" :width="90">
+                <template #cell="{ record }">
                   {{ statusLabel(record.status) }}
-                </a-tag>
-              </template>
-              <template #changeDescription="{ record }">
-                {{ record.changeDescription || '-' }}
-              </template>
-              <template #submitter="{ record }">
-                {{ record.submitter?.realName || '-' }}
-              </template>
-              <template #createdAt="{ record }">
-                {{ formatDate(record.publishedAt || record.createdAt) }}
-              </template>
-              <template #actions="{ record }">
-                <a-space size="mini" :wrap="false">
-                  <a-button type="text" size="mini" @click="previewVersion(record)">
-                    {{ t('common.view') }}
-                  </a-button>
-                  <a-button
-                    v-if="canEdit && ['DRAFT', 'REJECTED'].includes(record.status)"
-                    type="text"
-                    size="mini"
-                    @click="openEditVersion(record)"
-                  >
-                    {{ t('standard.editDraft') }}
-                  </a-button>
-                  <a-button
-                    v-if="canDownload"
-                    type="text"
-                    size="mini"
-                    @click="downloadVersion(record)"
-                  >
-                    {{ t('common.download') }}
-                  </a-button>
-                  <a-button
-                    v-if="canSubmitReview && ['DRAFT', 'REJECTED'].includes(record.status)"
-                    type="text"
-                    status="success"
-                    size="mini"
-                    @click="submitReview(record)"
-                  >
-                    {{ t('standard.review.action') }}
-                  </a-button>
-                </a-space>
-              </template>
-            </BusinessTable>
-          </section>
-
-          <section class="detail-section">
-            <header>
-              <h2>{{ t('standard.relations') }}</h2>
-              <a-button
-                v-if="canEdit && detail.status !== 'ARCHIVED'"
-                size="mini"
-                @click="openRelationCreate"
+                </template>
+              </a-table-column>
+              <a-table-column
+                :title="fieldName('STANDARD_EFFECTIVE_DATE', t('standard.fields.effectiveAt'))"
+                :width="110"
               >
-                {{ t('standard.addRelation') }}
-              </a-button>
-            </header>
-            <div v-if="relations.length" class="relation-list">
-              <div v-for="relation in relations" :key="relation.id" class="relation-row">
-                <a-tag size="small">
-                  {{ relationLabel(relation.relationType) }}
-                </a-tag>
-                <button type="button" @click="openDetail(relation.targetStandard as Standard)">
-                  {{ relation.targetStandard.code }} · {{ relation.targetStandard.name }}
-                </button>
-                <span>{{ typeLabel(relation.targetStandard.type) }}</span>
-                <a-button
-                  v-if="canEdit"
-                  type="text"
-                  status="danger"
-                  size="mini"
-                  @click="removeRelation(relation)"
-                >
-                  {{ t('standard.removeRelation.action') }}
-                </a-button>
-              </div>
-            </div>
-            <a-empty v-else :description="t('standard.noRelations')" />
+                <template #cell="{ record }">
+                  {{ formatDate(record.effectiveAt) }}
+                </template>
+              </a-table-column>
+              <a-table-column :title="t('common.action')" :width="190" fixed="right">
+                <template #cell="{ record }">
+                  <a-space size="mini">
+                    <a-button type="text" size="mini" @click="previewVersion(record)">
+                      {{ t('common.view') }}
+                    </a-button>
+                    <a-button
+                      v-if="canEdit && ['DRAFT', 'REJECTED'].includes(record.status)"
+                      type="text"
+                      size="mini"
+                      @click="openEditVersion(record)"
+                    >
+                      {{ t('common.edit') }}
+                    </a-button>
+                    <a-button
+                      v-if="canDownload"
+                      type="text"
+                      size="mini"
+                      @click="downloadVersion(record)"
+                    >
+                      {{ t('common.download') }}
+                    </a-button>
+                    <a-button
+                      v-if="canSubmitReview && ['DRAFT', 'REJECTED'].includes(record.status)"
+                      type="text"
+                      size="mini"
+                      @click="submitReview(record)"
+                    >
+                      {{ t('common.submit') }}
+                    </a-button>
+                  </a-space>
+                </template>
+              </a-table-column>
+            </a-table>
           </section>
         </template>
       </a-spin>
@@ -1052,72 +890,77 @@ watch(
     <a-modal
       v-model:visible="createVisible"
       :title="t('standard.create')"
-      :width="860"
-      :ok-loading="createSubmitting"
-      :ok-text="t('standard.saveDraft')"
-      :cancel-text="t('common.cancel')"
+      :width="820"
+      :ok-loading="createMutation.isPending.value || uploadMutation.isPending.value"
       @ok="submitCreate"
-      @cancel="closeCreate"
     >
       <a-form :model="createForm" layout="vertical">
-        <a-grid :cols="2" :col-gap="12" :row-gap="0">
+        <a-grid :cols="2" :col-gap="12">
           <a-grid-item>
             <a-form-item :label="t('standard.fields.code')" required>
-              <a-input v-model="createForm.code" :placeholder="t('standard.codePlaceholder')" />
+              <a-input v-model="createForm.code" />
             </a-form-item>
           </a-grid-item>
           <a-grid-item>
-            <a-form-item :label="t('standard.fields.name')" required>
-              <a-input v-model="createForm.name" :placeholder="t('standard.namePlaceholder')" />
+            <a-form-item :label="t('standard.fields.title')" required>
+              <a-input v-model="createForm.name" />
             </a-form-item>
           </a-grid-item>
-          <a-grid-item>
-            <a-form-item :label="t('standard.fields.type')" required>
-              <a-select v-model="createForm.type" :options="localizedStandardTypeOptions" />
+          <a-grid-item v-if="fieldEnabled('STANDARD_TYPE')">
+            <a-form-item :label="fieldName('STANDARD_TYPE', t('standard.fields.type'))" required>
+              <a-select v-model="createForm.type" :options="typeOptions" />
             </a-form-item>
           </a-grid-item>
-          <a-grid-item>
-            <a-form-item :label="t('standard.fields.category')">
+          <a-grid-item v-if="fieldEnabled('STANDARD_DELIVERY_STAGE')">
+            <a-form-item :label="fieldName('STANDARD_DELIVERY_STAGE', t('standard.fields.deliveryStage'))" required>
+              <a-select v-model="createForm.deliveryStageCode" :options="deliveryStageOptions" />
+            </a-form-item>
+          </a-grid-item>
+          <a-grid-item v-if="fieldEnabled('STANDARD_MANAGEMENT_DOMAIN')">
+            <a-form-item :label="fieldName('STANDARD_MANAGEMENT_DOMAIN', t('standard.fields.managementDomain'))">
               <a-select
-                v-model="createForm.category"
-                :options="categoryOptions"
+                v-model="createForm.managementDomainCode"
+                :options="managementDomainOptions"
                 allow-clear
-                :placeholder="t('standard.categoryPlaceholder')"
+              />
+            </a-form-item>
+          </a-grid-item>
+          <a-grid-item v-if="fieldEnabled('STANDARD_BUSINESS_TYPE')">
+            <a-form-item :label="fieldName('STANDARD_BUSINESS_TYPE', t('standard.fields.businessType'))">
+              <a-select
+                v-model="createForm.businessTypeCode"
+                :options="businessTypeOptions"
+                allow-clear
               />
             </a-form-item>
           </a-grid-item>
           <a-grid-item>
-            <a-form-item :label="t('standard.initialVersionLabel')">
-              <a-input v-model="createForm.version" placeholder="V1.0" />
+            <a-form-item :label="fieldName('COUNTRY', t('standard.fields.countries'))">
+              <a-select v-model="createForm.countryCodes" :options="countryOptions" multiple />
             </a-form-item>
           </a-grid-item>
-          <a-grid-item>
-            <a-form-item :label="t('standard.fields.effectiveAt')">
-              <a-date-picker
-                v-model="createForm.effectiveAt"
-                format="YYYY-MM-DD"
-                style="width: 100%"
-              />
+          <a-grid-item v-if="fieldEnabled('STANDARD_CURRENT_VERSION')">
+            <a-form-item :label="fieldName('STANDARD_CURRENT_VERSION', t('standard.fields.currentVersion'))">
+              <a-input v-model="createForm.version" />
+            </a-form-item>
+          </a-grid-item>
+          <a-grid-item v-if="fieldEnabled('STANDARD_EFFECTIVE_DATE')">
+            <a-form-item :label="fieldName('STANDARD_EFFECTIVE_DATE', t('standard.fields.effectiveAt'))">
+              <a-date-picker v-model="createForm.effectiveAt" style="width: 100%" />
+            </a-form-item>
+          </a-grid-item>
+          <a-grid-item v-if="fieldEnabled('STANDARD_ENABLED_STATUS')">
+            <a-form-item :label="fieldName('STANDARD_ENABLED_STATUS', t('standard.fields.enabledStatus'))">
+              <a-switch v-model="createForm.isEnabled" />
             </a-form-item>
           </a-grid-item>
         </a-grid>
         <a-form-item :label="t('standard.fields.changeDescription')">
-          <a-textarea
-            v-model="createForm.changeDescription"
-            :auto-size="{ minRows: 2, maxRows: 3 }"
-          />
+          <a-textarea v-model="createForm.changeDescription" />
         </a-form-item>
-        <a-form-item
-          :label="t('standard.standardFile')"
-          required
-          :extra="t('standard.fileDraftHint')"
-        >
+        <a-form-item :label="t('standard.standardFile')" required>
           <label class="file-picker">
-            <input
-              type="file"
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.md,.png,.jpg,.jpeg"
-              @change="selectCreateFile"
-            />
+            <input type="file" @change="selectCreateFile" />
             <span>{{ createSelectedFile?.name || t('standard.selectFile') }}</span>
           </label>
         </a-form-item>
@@ -1127,84 +970,95 @@ watch(
     <a-modal
       v-model:visible="editVisible"
       :title="t('standard.editMasterTitle')"
-      :ok-loading="editSubmitting"
+      :width="820"
+      :ok-loading="updateMutation.isPending.value"
       @ok="submitEdit"
     >
-      <a-alert type="info" show-icon class="modal-note">
-        {{ t('standard.editMasterHint') }}
-      </a-alert>
       <a-form :model="editForm" layout="vertical">
-        <a-form-item :label="t('standard.fields.code')" required>
-          <a-input v-model="editForm.code" />
-        </a-form-item>
-        <a-form-item :label="t('standard.fields.name')" required>
-          <a-input v-model="editForm.name" />
-        </a-form-item>
-        <a-form-item :label="t('standard.fields.type')" required>
-          <a-select v-model="editForm.type" :options="localizedStandardTypeOptions" />
-        </a-form-item>
-        <a-form-item :label="t('standard.fields.category')">
-          <a-select
-            v-model="editForm.category"
-            :options="categoryOptions"
-            allow-clear
-            :placeholder="t('standard.categoryPlaceholder')"
-          />
-        </a-form-item>
-        <a-form-item :label="t('standard.fields.effectiveAt')">
-          <a-date-picker v-model="editForm.effectiveAt" format="YYYY-MM-DD" style="width: 100%" />
-        </a-form-item>
+        <a-grid :cols="2" :col-gap="12">
+          <a-grid-item>
+            <a-form-item :label="t('standard.fields.code')" required>
+              <a-input v-model="editForm.code" />
+            </a-form-item>
+          </a-grid-item>
+          <a-grid-item>
+            <a-form-item :label="t('standard.fields.title')" required>
+              <a-input v-model="editForm.name" />
+            </a-form-item>
+          </a-grid-item>
+          <a-grid-item v-if="fieldEnabled('STANDARD_TYPE')">
+            <a-form-item :label="fieldName('STANDARD_TYPE', t('standard.fields.type'))" required>
+              <a-select v-model="editForm.type" :options="typeOptions" />
+            </a-form-item>
+          </a-grid-item>
+          <a-grid-item v-if="fieldEnabled('STANDARD_DELIVERY_STAGE')">
+            <a-form-item :label="fieldName('STANDARD_DELIVERY_STAGE', t('standard.fields.deliveryStage'))" required>
+              <a-select v-model="editForm.deliveryStageCode" :options="deliveryStageOptions" />
+            </a-form-item>
+          </a-grid-item>
+          <a-grid-item v-if="fieldEnabled('STANDARD_MANAGEMENT_DOMAIN')">
+            <a-form-item :label="fieldName('STANDARD_MANAGEMENT_DOMAIN', t('standard.fields.managementDomain'))">
+              <a-select
+                v-model="editForm.managementDomainCode"
+                :options="managementDomainOptions"
+                allow-clear
+              />
+            </a-form-item>
+          </a-grid-item>
+          <a-grid-item v-if="fieldEnabled('STANDARD_BUSINESS_TYPE')">
+            <a-form-item :label="fieldName('STANDARD_BUSINESS_TYPE', t('standard.fields.businessType'))">
+              <a-select
+                v-model="editForm.businessTypeCode"
+                :options="businessTypeOptions"
+                allow-clear
+              />
+            </a-form-item>
+          </a-grid-item>
+          <a-grid-item>
+            <a-form-item :label="fieldName('COUNTRY', t('standard.fields.countries'))">
+              <a-select v-model="editForm.countryCodes" :options="countryOptions" multiple />
+            </a-form-item>
+          </a-grid-item>
+          <a-grid-item v-if="fieldEnabled('STANDARD_EFFECTIVE_DATE')">
+            <a-form-item :label="fieldName('STANDARD_EFFECTIVE_DATE', t('standard.fields.effectiveAt'))">
+              <a-date-picker v-model="editForm.effectiveAt" style="width: 100%" />
+            </a-form-item>
+          </a-grid-item>
+          <a-grid-item v-if="fieldEnabled('STANDARD_ENABLED_STATUS')">
+            <a-form-item :label="fieldName('STANDARD_ENABLED_STATUS', t('standard.fields.enabledStatus'))">
+              <a-switch v-model="editForm.isEnabled" />
+            </a-form-item>
+          </a-grid-item>
+        </a-grid>
       </a-form>
     </a-modal>
 
     <a-modal
       v-model:visible="versionVisible"
       :title="editingVersionId ? t('standard.editVersionDraft') : t('standard.createVersion')"
-      :width="760"
-      :ok-loading="versionSubmitting"
-      :ok-text="t('standard.saveVersionDraft')"
+      :width="680"
+      :ok-loading="saveVersionMutation.isPending.value || uploadMutation.isPending.value"
       @ok="submitVersion"
     >
-      <a-alert type="info" show-icon class="modal-note">
-        {{ t('standard.versionDraftHint') }}
-      </a-alert>
       <a-form :model="versionForm" layout="vertical">
         <a-grid :cols="2" :col-gap="12">
           <a-grid-item>
-            <a-form-item :label="t('standard.fields.version')">
-              <a-input
-                v-model="versionForm.version"
-                :placeholder="t('standard.autoVersionPlaceholder')"
-              />
+            <a-form-item :label="fieldName('STANDARD_CURRENT_VERSION', t('standard.fields.version'))">
+              <a-input v-model="versionForm.version" :placeholder="t('standard.autoVersionPlaceholder')" />
             </a-form-item>
           </a-grid-item>
           <a-grid-item>
-            <a-form-item :label="t('standard.fields.effectiveAt')">
-              <a-date-picker
-                v-model="versionForm.effectiveAt"
-                format="YYYY-MM-DD"
-                style="width: 100%"
-              />
+            <a-form-item :label="fieldName('STANDARD_EFFECTIVE_DATE', t('standard.fields.effectiveAt'))">
+              <a-date-picker v-model="versionForm.effectiveAt" style="width: 100%" />
             </a-form-item>
           </a-grid-item>
         </a-grid>
         <a-form-item :label="t('standard.fields.changeDescription')">
-          <a-textarea
-            v-model="versionForm.changeDescription"
-            :auto-size="{ minRows: 2, maxRows: 3 }"
-          />
+          <a-textarea v-model="versionForm.changeDescription" />
         </a-form-item>
-        <a-form-item
-          :label="t('standard.newVersionFile')"
-          required
-          :extra="t('standard.newFileHint')"
-        >
+        <a-form-item :label="t('standard.newVersionFile')">
           <label class="file-picker">
-            <input
-              type="file"
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.md,.png,.jpg,.jpeg"
-              @change="selectVersionFile"
-            />
+            <input type="file" @change="selectVersionFile" />
             <span>{{
               versionSelectedFile?.name ||
                 (versionForm.fileVersionId ? t('standard.keepCurrentFile') : t('standard.selectFile'))
@@ -1213,304 +1067,479 @@ watch(
         </a-form-item>
       </a-form>
     </a-modal>
-
-    <a-modal
-      v-model:visible="relationVisible"
-      :title="t('standard.addRelation')"
-      :ok-loading="relationSubmitting"
-      @ok="submitRelation"
-    >
-      <a-form :model="relationForm" layout="vertical">
-        <a-form-item :label="t('standard.relationType')" required>
-          <a-select v-model="relationForm.relationType" :options="localizedRelationTypeOptions" />
-        </a-form-item>
-        <a-form-item :label="t('standard.targetStandard')" required>
-          <a-select
-            v-model="relationForm.targetStandardId"
-            allow-search
-            :placeholder="t('standard.targetPlaceholder')"
-          >
-            <a-option v-for="item in relationCandidates" :key="item.id" :value="item.id">
-              {{ item.code }} · {{ item.name }}
-            </a-option>
-          </a-select>
-        </a-form-item>
-      </a-form>
-    </a-modal>
-  </PageContainer>
+  </section>
 </template>
 
 <style scoped lang="scss">
-.domain-page {
-  --library-border: #e5e6eb;
-  height: 100%;
+.standard-library {
+  width: 100%;
+  min-width: 0;
+  min-height: 758px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 13px 13px;
   overflow: hidden;
   color: #1d2129;
-  font-family: Inter, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: #fff;
+  font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
 
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-:deep(.summary-grid .stat-card) {
-  min-height: 72px;
+.metrics {
+  width: 100%;
+  min-width: 936px;
+  height: 88px;
   display: flex;
+  flex: 0 0 88px;
   align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  border-color: var(--library-border);
-  border-radius: 2px;
+  gap: 12px;
   background: #fff;
 }
 
-:deep(.summary-grid .stat-card--active) {
-  border-color: var(--library-border);
-  border-top: 2px solid rgb(var(--stat-color));
-  background: rgb(var(--primary-1));
-  box-shadow: none;
-}
-
-:deep(.summary-grid .stat-card__label) {
-  color: #4e5969;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-:deep(.summary-grid .stat-card__value) {
-  margin: 0 0 0 12px;
-  font-size: 30px;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-}
-
-.library-list-panel {
+.metric {
   min-width: 0;
-  min-height: 0;
+  height: 76px;
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  overflow: hidden;
+}
+
+.metric__icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  flex: 0 0 48px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+
+  img {
+    width: 32px;
+    height: 32px;
+    display: block;
+  }
+}
+
+.metric__content {
+  min-width: 0;
   display: flex;
   flex: 1;
   flex-direction: column;
-  overflow: hidden;
-  border: 1px solid var(--library-border);
-  border-radius: 2px;
-  background: #fff;
+  align-items: flex-start;
+  gap: 6px;
+
+  > span {
+    color: #999ea8;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: normal;
+  }
+
+  strong {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    color: #1d2129;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: normal;
+    white-space: nowrap;
+  }
+
+  small {
+    font-size: 12px;
+    font-weight: 400;
+  }
 }
 
-.library-toolbar {
-  flex: 0 0 auto;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--library-border);
-}
-
-.library-toolbar :deep(.page-toolbar__filters) {
-  min-width: 0;
-  flex: 1 1 auto;
-  flex-wrap: nowrap;
-}
-
-.library-toolbar :deep(.page-toolbar__actions) {
-  flex: 0 0 auto;
-  flex-wrap: nowrap;
-  margin-left: auto;
-}
-
-.search-group {
+.toolbar {
+  width: 100%;
+  min-width: 936px;
+  height: 32px;
   display: flex;
-  align-items: stretch;
-  gap: 8px;
+  flex: 0 0 32px;
+  align-items: center;
+  justify-content: space-between;
 }
 
-.category-select {
-  width: 180px;
+.toolbar__left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .keyword-input {
-  width: min(360px, 38vw);
-}
+  width: 270px;
 
-.search-group :deep(.keyword-input .arco-input-wrapper) {
-  border-radius: 2px 0 0 2px;
-}
+  :deep(.arco-input-wrapper) {
+    height: 32px;
+    padding: 5px 12px;
+    border: 0;
+    border-radius: 0;
+    background: #f2f3f5;
+  }
 
-.search-button {
-  margin-left: -1px;
-  border-radius: 0 2px 2px 0 !important;
-}
-
-:deep(.library-list-panel > .business-table),
-:deep(.library-list-panel .business-table__viewport > .arco-table) {
-  width: max-content;
-  min-width: 100%;
-  overflow: visible;
-}
-
-:deep(.library-list-panel .arco-table-container) {
-  width: max-content;
-  min-width: 100%;
-  overflow: visible;
-  border: 0;
-  border-radius: 0;
-}
-
-:deep(.library-list-panel .arco-table-element) {
-  width: max-content;
-  min-width: 100%;
-  table-layout: auto !important;
-}
-
-:deep(.library-list-panel .arco-table-th) {
-  height: 42px;
-  background: #f7f8fa;
-  color: #4e5969;
-  font-weight: 500;
-}
-
-:deep(.library-list-panel .arco-table-th),
-:deep(.library-list-panel .arco-table-td) {
-  padding-right: 16px;
-  padding-left: 16px;
-  border-color: var(--library-border);
-  white-space: nowrap;
-}
-
-.record-link {
-  width: 100%;
-  display: grid;
-  gap: 2px;
-  padding: 0;
-  border: 0;
-  color: inherit;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-
-  strong {
-    color: rgb(var(--primary-6));
+  :deep(.arco-input) {
+    color: #1d2129;
     font-size: 13px;
-    font-weight: 600;
+    line-height: 22px;
   }
-  span {
-    color: var(--color-text-3);
-    font-size: 11px;
-  }
-  &:hover strong {
-    text-decoration: underline;
+
+  :deep(.arco-input::placeholder) {
+    color: #86909c;
   }
 }
 
-.detail-spin {
+.design-button {
+  height: 32px;
+  padding: 5px 16px;
+  border-radius: 0;
+  font-size: 14px;
+  line-height: 22px;
+
+  :deep(.arco-btn-icon) {
+    width: 14px;
+    height: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 8px;
+  }
+}
+
+.button-icon {
+  width: 11px;
+  height: 11px;
+  display: block;
+}
+
+.library-panel {
+  width: 100%;
+  min-width: 936px;
+  height: 625px;
+  display: flex;
+  flex: 0 0 625px;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid #e5e6eb;
+  background: #fff;
+}
+
+.category-sidebar {
+  width: 270px;
+  height: 100%;
+  display: flex;
+  flex: 0 0 270px;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid #e5e6eb;
+  background: #fafafc;
+}
+
+.category-tabs {
+  width: 100%;
+  height: 44px;
+  display: flex;
+  flex: 0 0 44px;
+  border-bottom: 1px solid #e5e6eb;
+
+  button {
+    height: 44px;
+    position: relative;
+    display: flex;
+    flex: 1 1 0;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    color: #999;
+    background: transparent;
+    font: 500 13px/normal inherit;
+    cursor: pointer;
+  }
+
+  button.active {
+    color: #2563eb;
+  }
+
+  button.active::after {
+    height: 2px;
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    content: '';
+    background: #2563eb;
+  }
+}
+
+.category-list {
+  min-height: 0;
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+
+  button {
+    width: 100%;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    padding: 0 12px 0 16px;
+    border: 0;
+    color: #212121;
+    background: #fafafc;
+    font: 400 13px/normal inherit;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  button.active {
+    color: #2563eb;
+    background: #e8effc;
+    font-weight: 500;
+  }
+
+  span {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  small {
+    flex: 0 0 auto;
+    color: #999;
+    font-size: 11px;
+    font-weight: 400;
+    text-align: right;
+    white-space: nowrap;
+  }
+}
+
+.content-scroll {
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.content-panel {
+  width: 100%;
+  min-width: 937px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+}
+
+.category-description {
+  width: 100%;
+  height: 80px;
+  display: flex;
+  flex: 0 0 80px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 16px;
+  overflow: hidden;
+
+  h1 {
+    margin: 0;
+    color: #212121;
+    font-size: 16px;
+    font-weight: 500;
+    line-height: normal;
+    white-space: nowrap;
+  }
+
+  p {
+    width: 100%;
+    margin: 0;
+    overflow: hidden;
+    color: #808080;
+    font-size: 13px;
+    font-weight: 400;
+    line-height: normal;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.table-region {
+  min-height: 0;
+  position: relative;
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.standard-table {
+  width: 937px;
+  border-spacing: 0;
+  border-collapse: separate;
+  table-layout: fixed;
+
+  .column-title {
+    width: 365px;
+  }
+
+  .column-version {
+    width: 90px;
+  }
+
+  .column-date {
+    width: 130px;
+  }
+
+  .column-updater {
+    width: 170px;
+  }
+
+  .column-actions {
+    width: 182px;
+  }
+
+  th,
+  td {
+    height: 44px;
+    padding: 0 12px;
+    overflow: hidden;
+    border-right: 1px solid #e5e6eb;
+    border-bottom: 1px solid #e5e6eb;
+    color: #1d2129;
+    font-size: 13px;
+    line-height: normal;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  th {
+    position: sticky;
+    z-index: 2;
+    top: 0;
+    background: #f2f3f5;
+    font-weight: 500;
+    text-align: center;
+  }
+
+  tbody tr:nth-child(odd) td {
+    background: #fff;
+  }
+
+  tbody tr:nth-child(even) td {
+    background: #f7f8fa;
+  }
+
+  .title-cell button,
+  .action-cell button,
+  .version-link {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .title-cell button {
+    max-width: 100%;
+    overflow: hidden;
+    color: #165dff;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .center-cell {
+    text-align: center;
+  }
+
+  .action-cell {
+    text-align: center;
+
+    button + button {
+      margin-left: 24px;
+    }
+  }
+
+  .action-edit {
+    color: #3878f5;
+  }
+
+  .action-archive {
+    color: #e33836;
+  }
+
+  .empty-cell {
+    color: #86909c;
+    text-align: center;
+  }
+}
+
+.table-loading {
+  position: absolute;
+  z-index: 3;
+  inset: 44px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(255 255 255 / 64%);
+}
+
+.detail-loading {
   min-height: 240px;
   display: block;
 }
-.detail-command-bar {
+
+.detail-actions {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-.detail-command-bar > span {
-  color: var(--color-text-3);
-  font-size: 12px;
-}
-.master-detail {
+  gap: 8px;
   margin-bottom: 12px;
-}
-.detail-section {
-  margin-top: 14px;
-  border-top: 1px solid var(--color-border-2);
-  padding-top: 10px;
-}
-.detail-section > header {
-  min-height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-.detail-section h2 {
-  margin: 0;
-  font-size: 14px;
-}
-.detail-section header > span {
-  color: var(--color-text-3);
-  font-size: 12px;
 }
 
-.relation-list {
-  border: 1px solid var(--color-border-2);
+.version-section {
+  margin-top: 20px;
+
+  h2 {
+    margin: 0 0 10px;
+    font-size: 15px;
+    font-weight: 500;
+  }
 }
-.relation-row {
-  min-height: 40px;
-  display: grid;
-  grid-template-columns: 104px minmax(220px, 1fr) 130px 56px;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--color-border-2);
+
+.version-link {
+  max-width: 100%;
+  overflow: hidden;
+  color: #165dff;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.relation-row:last-child {
-  border-bottom: 0;
-}
-.relation-row button[type='button'] {
-  padding: 0;
-  border: 0;
-  color: rgb(var(--primary-6));
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-}
-.relation-row > span {
-  color: var(--color-text-3);
-  font-size: 12px;
-}
-.modal-note {
-  margin-bottom: 12px;
-  border-radius: 0;
-}
+
 .file-picker {
   min-height: 36px;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 8px;
-  border: 1px dashed var(--color-border-3);
-  background: var(--color-fill-1);
+  padding: 6px 10px;
+  border: 1px dashed #c9cdd4;
+  background: #f7f8fa;
   cursor: pointer;
-}
-.file-picker input {
-  max-width: 220px;
-}
-.file-picker span {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--color-text-2);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
-@media (max-width: 900px) {
-  .detail-command-bar {
-    align-items: flex-start;
-    flex-direction: column;
+  input {
+    max-width: 240px;
   }
-  .summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .library-toolbar :deep(.page-toolbar__filters) {
-    flex-wrap: wrap;
-  }
-  .keyword-input {
-    width: 100%;
-  }
-  .relation-row {
-    grid-template-columns: 92px minmax(0, 1fr) 56px;
-  }
-  .relation-row > span {
-    display: none;
+
+  span {
+    min-width: 0;
+    overflow: hidden;
+    color: #4e5969;
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 </style>

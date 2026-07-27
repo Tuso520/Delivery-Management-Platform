@@ -30,8 +30,9 @@ interface DocumentTemplateSeed {
 interface TargetStandardSeed {
   code: string;
   name: string;
-  type: 'PROCESS' | 'CHECKLIST' | 'DOCUMENT_TEMPLATE';
+  type: 'DELIVERY_WORKFLOW' | 'CHECK_STANDARD' | 'DOCUMENT_TEMPLATE';
   category: string;
+  deliveryStageCode: string;
   content: Prisma.InputJsonValue;
 }
 
@@ -216,8 +217,18 @@ function buildTargetStandards(): TargetStandardSeed[] {
   const processSeeds: TargetStandardSeed[] = workflowStandards.map((definition) => ({
     code: definition.code,
     name: definition.name,
-    type: 'PROCESS',
+    type: 'DELIVERY_WORKFLOW',
     category: definition.category,
+    deliveryStageCode:
+      definition.code === 'FLOW-DEEPENING-DESIGN'
+        ? 'DETAILED_DESIGN'
+        : definition.code === 'FLOW-SITE-HSE-MEETING'
+          ? 'CONSTRUCTION_INSTALLATION'
+          : definition.code === 'FLOW-COMMISSIONING'
+            ? 'HARDWARE_COMMISSIONING'
+            : definition.code === 'FLOW-PROJECT-ACCEPTANCE'
+              ? 'CLOSEOUT_HANDOVER'
+              : 'PROJECT_STARTUP',
     content: json({
       schema: 'delivery.process-standard.v1',
       applicableScope: definition.applicableScope,
@@ -232,7 +243,8 @@ function buildTargetStandards(): TargetStandardSeed[] {
   const checklistSeed: TargetStandardSeed = {
     code: 'DC-CHK-DEFAULT',
     name: '交付项目质量检查标准',
-    type: 'CHECKLIST',
+    type: 'CHECK_STANDARD',
+    deliveryStageCode: 'INTERNAL_ACCEPTANCE',
     category: '项目质量检查',
     content: json({
       schema: 'delivery.checklist-standard.v1',
@@ -250,6 +262,14 @@ function buildTargetStandards(): TargetStandardSeed[] {
     code: definition.code,
     name: definition.name,
     type: 'DOCUMENT_TEMPLATE',
+    deliveryStageCode:
+      definition.code === 'DC-TPL-HSE-MEETING'
+        ? 'CONSTRUCTION_INSTALLATION'
+        : definition.code === 'DC-TPL-COMMISSIONING'
+          ? 'HARDWARE_COMMISSIONING'
+          : definition.code === 'DC-TPL-ACCEPTANCE'
+            ? 'CLOSEOUT_HANDOVER'
+            : 'PROJECT_STARTUP',
     category: definition.category,
     content: json({
       schema: 'delivery.document-template.v1',
@@ -381,7 +401,8 @@ export async function seedTargetStandards(prisma: PrismaClient): Promise<void> {
           code: definition.code,
           name: definition.name,
           type: definition.type,
-          category: definition.category,
+          deliveryStageCode: definition.deliveryStageCode,
+          businessTypeCode: 'GENERAL',
           status: 'PUBLISHED',
           effectiveAt: publishedAt,
           createdBy: admin.id,
@@ -424,7 +445,8 @@ export async function seedTargetStandards(prisma: PrismaClient): Promise<void> {
               code: definition.code,
               name: definition.name,
               type: definition.type,
-              category: definition.category,
+              deliveryStageCode: definition.deliveryStageCode,
+              businessTypeCode: 'GENERAL',
               status: 'PUBLISHED',
               effectiveAt: publishedAt,
               createdBy: admin.id,

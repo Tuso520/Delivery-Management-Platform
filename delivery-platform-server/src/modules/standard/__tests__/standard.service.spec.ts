@@ -1,6 +1,7 @@
 import { UnprocessableEntityException } from '@nestjs/common';
 
 import type { PrismaService } from '../../../database/prisma.service';
+import type { FieldConfigurationService } from '../../field-configuration/field-configuration.service';
 import type { ReviewConfigurationService } from '../../review/review-configuration.service';
 import type { ReviewTaskService } from '../../review/review-task.service';
 import { StandardService } from '../standard.service';
@@ -26,7 +27,16 @@ describe('StandardService', () => {
     const service = new StandardService(prisma, reviewConfiguration, reviewTasks);
 
     await expect(
-      service.create({ code: 'SOP-001', name: '交付规范', type: 'SOP', fileVersionId: '' }, owner),
+      service.create(
+        {
+          code: 'SOP-001',
+          name: '交付规范',
+          type: 'SOP',
+          deliveryStageCode: 'PROJECT_STARTUP',
+          fileVersionId: '',
+        },
+        owner,
+      ),
     ).rejects.toThrow(new UnprocessableEntityException('标准版本必须关联有效文件版本'));
   });
 
@@ -46,6 +56,7 @@ describe('StandardService', () => {
           code: 'SOP-001',
           name: '交付规范',
           type: 'SOP',
+          deliveryStageCode: 'PROJECT_STARTUP',
           fileVersionId: 'file-version-1',
         },
         owner,
@@ -92,6 +103,7 @@ describe('StandardService', () => {
       },
       logicalFile: { update: logicalFileUpdate },
       fileAsset: { update: fileAssetUpdate },
+      operationLog: { create: jest.fn().mockResolvedValue({ id: 'operation-log-1' }) },
     };
     const prisma = {
       reviewTask: { findMany: jest.fn().mockResolvedValue([]) },
@@ -118,6 +130,7 @@ describe('StandardService', () => {
         code: 'SOP-001',
         name: '交付规范',
         type: 'SOP',
+        deliveryStageCode: 'PROJECT_STARTUP',
         fileVersionId: 'file-version-1',
       },
       owner,
@@ -625,6 +638,172 @@ describe('StandardService', () => {
       }),
     );
   });
+
+  it('returns real visible standard, view and download metrics', async () => {
+    const operationCount = jest.fn().mockResolvedValueOnce(12).mockResolvedValueOnce(5);
+    const prisma = {
+      standard: {
+        groupBy: jest.fn().mockResolvedValue([
+          { status: 'DRAFT', _count: { _all: 2 } },
+          { status: 'PUBLISHED', _count: { _all: 3 } },
+        ]),
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'standard-1' },
+          { id: 'standard-2' },
+        ]),
+      },
+      logicalFile: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'logical-file-1' },
+          { id: 'logical-file-2' },
+        ]),
+      },
+      operationLog: { count: operationCount },
+    } as unknown as PrismaService;
+    const service = new StandardService(prisma, reviewConfiguration, reviewTasks);
+
+    await expect(
+      service.getSummary({ sub: 'manager-1', permissions: ['standard:publish'] }),
+    ).resolves.toMatchObject({
+      total: 5,
+      viewCount: 12,
+      downloadCount: 5,
+      draft: 2,
+      published: 3,
+    });
+  });
+
+  it('groups sidebar counts by stable configured dimension codes', async () => {
+    const groupBy = jest.fn().mockResolvedValue([
+      { deliveryStageCode: 'PROJECT_STARTUP', _count: { _all: 3 } },
+      { deliveryStageCode: 'DETAILED_DESIGN', _count: { _all: 5 } },
+    ]);
+    const prisma = {
+      standard: { groupBy },
+    } as unknown as PrismaService;
+    const service = new StandardService(prisma, reviewConfiguration, reviewTasks);
+
+    await expect(
+      service.getCategoryCounts(
+        { dimension: 'DELIVERY_STAGE', keyword: '交付' },
+        { sub: 'manager-1', permissions: ['standard:publish'] },
+      ),
+    ).resolves.toEqual([
+      { code: 'PROJECT_STARTUP', count: 3 },
+      { code: 'DETAILED_DESIGN', count: 5 },
+    ]);
+    expect(groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        by: ['deliveryStageCode'],
+        where: expect.objectContaining({ deliveryStageCode: { not: null } }),
+      }),
+    );
+  });
+
+  it('filters and sorts the list in the database using stable codes', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const prisma = {
+      standard: {
+        count: jest.fn().mockResolvedValue(0),
+        findMany,
+      },
+    } as unknown as PrismaService;
+    const service = new StandardService(prisma, reviewConfiguration, reviewTasks);
+
+    await service.findAll(
+      {
+        page: 2,
+        pageSize: 10,
+        deliveryStageCode: 'PROJECT_STARTUP',
+        managementDomainCode: 'PROCESS_SOP',
+        businessTypeCode: 'GENERAL',
+        countryCode: 'CN',
+        isEnabled: true,
+        sortBy: 'name',
+        sortOrder: 'asc',
+      },
+      { sub: 'manager-1', permissions: ['standard:publish'] },
+    );
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skip: 10,
+        take: 10,
+        orderBy: { name: 'asc' },
+        where: {
+          AND: [
+            {},
+            expect.objectContaining({
+              deliveryStageCode: 'PROJECT_STARTUP',
+              managementDomainCode: 'PROCESS_SOP',
+              businessTypeCode: 'GENERAL',
+              applicableCountries: { some: { countryCode: 'CN' } },
+              isEnabled: true,
+            }),
+          ],
+        },
+      }),
+    );
+  });
+
+  it('preserves disabled configured values that are already referenced', async () => {
+    const assertConfiguredValue = jest.fn().mockResolvedValue(undefined);
+    const fieldConfiguration = {
+      assertConfiguredValue,
+    } as unknown as FieldConfigurationService;
+    const standard = standardRecord({
+      createdBy: 'user-1',
+      applicableCountries: [{ countryCode: 'CN' }],
+    });
+    const transaction = {
+      standard: { update: jest.fn().mockResolvedValue(standard) },
+      standardCountry: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+        createMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      operationLog: { create: jest.fn().mockResolvedValue({ id: 'operation-log-1' }) },
+    };
+    const prisma = {
+      standard: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValueOnce(standard)
+          .mockResolvedValueOnce(standard),
+      },
+      standardVersion: { findMany: jest.fn().mockResolvedValue([]) },
+      reviewTask: { findMany: jest.fn().mockResolvedValue([]) },
+      country: { count: jest.fn().mockResolvedValue(1) },
+      $transaction: jest
+        .fn()
+        .mockImplementation((callback: (tx: typeof transaction) => Promise<unknown>) =>
+          callback(transaction),
+        ),
+    } as unknown as PrismaService;
+    const service = new StandardService(
+      prisma,
+      reviewConfiguration,
+      reviewTasks,
+      fieldConfiguration,
+    );
+
+    await service.update(
+      'standard-1',
+      {
+        type: 'SOP',
+        deliveryStageCode: 'PROJECT_STARTUP',
+        countryCodes: ['CN'],
+      },
+      owner,
+    );
+
+    expect(assertConfiguredValue).toHaveBeenCalledWith('STANDARD_TYPE', 'SOP', 'SOP');
+    expect(assertConfiguredValue).toHaveBeenCalledWith(
+      'STANDARD_DELIVERY_STAGE',
+      'PROJECT_STARTUP',
+      'PROJECT_STARTUP',
+    );
+    expect(assertConfiguredValue).toHaveBeenCalledWith('COUNTRY', 'CN', 'CN');
+  });
 });
 
 function standardRecord(overrides: Record<string, unknown> = {}) {
@@ -634,7 +813,11 @@ function standardRecord(overrides: Record<string, unknown> = {}) {
     code: 'SOP-001',
     name: '交付规范',
     type: 'SOP',
-    category: null,
+    deliveryStageCode: 'PROJECT_STARTUP',
+    managementDomainCode: null,
+    businessTypeCode: 'GENERAL',
+    isEnabled: true,
+    applicableCountries: [],
     status: 'DRAFT',
     currentPublishedVersionId: null,
     currentPublishedVersion: null,

@@ -19,6 +19,7 @@ import {
   CreateStandardDto,
   CreateStandardRelationDto,
   CreateStandardVersionDto,
+  QueryStandardCategoryCountsDto,
   QueryStandardDto,
   SubmitStandardReviewDto,
   UpdateStandardDto,
@@ -68,7 +69,10 @@ const publicStandardSelect = {
   code: true,
   name: true,
   type: true,
-  category: true,
+  deliveryStageCode: true,
+  managementDomainCode: true,
+  businessTypeCode: true,
+  isEnabled: true,
   status: true,
   currentPublishedVersionId: true,
   effectiveAt: true,
@@ -79,6 +83,10 @@ const publicStandardSelect = {
   updatedAt: true,
   creator: { select: { id: true, realName: true } },
   updater: { select: { id: true, realName: true } },
+  applicableCountries: {
+    select: { countryCode: true },
+    orderBy: { countryCode: 'asc' },
+  },
   currentPublishedVersion: {
     select: {
       id: true,
@@ -161,7 +169,11 @@ function mapPublicStandard(record: PublicStandardRecord, versions?: PublicStanda
     code: record.code,
     name: record.name,
     type: record.type,
-    category: record.category,
+    deliveryStageCode: record.deliveryStageCode,
+    managementDomainCode: record.managementDomainCode,
+    businessTypeCode: record.businessTypeCode,
+    countryCodes: record.applicableCountries.map((item) => item.countryCode),
+    isEnabled: record.isEnabled,
     status: record.status,
     currentPublishedVersionId: record.currentPublishedVersionId,
     currentPublishedVersion: record.currentPublishedVersion
@@ -217,25 +229,116 @@ export class StandardService {
 
   async getSummary(actor: StandardActor) {
     const visibility = await this.buildVisibilityWhere(actor);
-    const groups = await this.prisma.standard.groupBy({
-      by: ['status'],
-      where: visibility,
-      _count: { _all: true },
-    });
+    const [groups, visibleStandards] = await Promise.all([
+      this.prisma.standard.groupBy({
+        by: ['status'],
+        where: visibility,
+        _count: { _all: true },
+      }),
+      this.prisma.standard.findMany({
+        where: visibility,
+        select: { id: true },
+      }),
+    ]);
     const counts = new Map(groups.map((group) => [group.status, group._count._all]));
     const draft = counts.get('DRAFT') ?? 0;
     const inReview = counts.get('IN_REVIEW') ?? 0;
     const rejected = counts.get('REJECTED') ?? 0;
     const published = counts.get('PUBLISHED') ?? 0;
     const archived = counts.get('ARCHIVED') ?? 0;
+    const standardIds = visibleStandards.map((standard) => standard.id);
+    const logicalFiles = standardIds.length
+      ? await this.prisma.logicalFile.findMany({
+          where: { ownerType: 'STANDARD', ownerId: { in: standardIds }, archivedAt: null },
+          select: { id: true },
+        })
+      : [];
+    const logicalFileIds = logicalFiles.map((file) => file.id);
+    const [viewCount, downloadCount] = await Promise.all([
+      standardIds.length
+        ? this.prisma.operationLog.count({
+            where: {
+              module: 'standard',
+              action: 'view',
+              targetType: 'standard',
+              targetId: { in: standardIds },
+              result: 'success',
+            },
+          })
+        : 0,
+      logicalFileIds.length
+        ? this.prisma.operationLog.count({
+            where: {
+              module: 'file',
+              action: 'download',
+              targetType: 'logical_file',
+              targetId: { in: logicalFileIds },
+              result: 'success',
+            },
+          })
+        : 0,
+    ]);
     return {
       total: draft + inReview + rejected + published + archived,
+      viewCount,
+      downloadCount,
       draft,
       inReview,
       rejected,
       published,
       archived,
     };
+  }
+
+  async getCategoryCounts(query: QueryStandardCategoryCountsDto, actor: StandardActor) {
+    const visibility = await this.buildVisibilityWhere(actor);
+    const where: Prisma.StandardWhereInput = {
+      AND: [
+        visibility,
+        {
+          archivedAt: null,
+          ...(query.keyword
+            ? {
+                OR: [
+                  { code: { contains: query.keyword } },
+                  { name: { contains: query.keyword } },
+                  {
+                    versions: {
+                      some: {
+                        fileVersion: {
+                          asset: { originalName: { contains: query.keyword } },
+                        },
+                      },
+                    },
+                  },
+                ],
+              }
+            : {}),
+        },
+      ],
+    };
+    if (query.dimension === 'DELIVERY_STAGE') {
+      const groups = await this.prisma.standard.groupBy({
+        by: ['deliveryStageCode'],
+        where: { ...where, deliveryStageCode: { not: null } },
+        _count: { _all: true },
+      });
+      return groups.flatMap((group) =>
+        group.deliveryStageCode
+          ? [{ code: group.deliveryStageCode, count: group._count._all }]
+          : [],
+      );
+    }
+    const groups = await this.prisma.standard.groupBy({
+      by: ['managementDomainCode'],
+      where: { ...where, managementDomainCode: { not: null } },
+      _count: { _all: true },
+    });
+    return groups.flatMap((group) =>
+      group.managementDomainCode
+        ? [{ code: group.managementDomainCode, count: group._count._all }]
+        : [],
+    );
   }
 
   async findAll(query: QueryStandardDto, actor: StandardActor) {
@@ -249,7 +352,15 @@ export class StandardService {
           ...(query.status ? { status: query.status } : {}),
           archivedAt: query.status === 'ARCHIVED' ? { not: null } : null,
           ...(query.type ? { type: query.type } : {}),
-          ...(query.category ? { category: query.category } : {}),
+          ...(query.deliveryStageCode ? { deliveryStageCode: query.deliveryStageCode } : {}),
+          ...(query.managementDomainCode
+            ? { managementDomainCode: query.managementDomainCode }
+            : {}),
+          ...(query.businessTypeCode ? { businessTypeCode: query.businessTypeCode } : {}),
+          ...(query.countryCode
+            ? { applicableCountries: { some: { countryCode: query.countryCode } } }
+            : {}),
+          ...(query.isEnabled === undefined ? {} : { isEnabled: query.isEnabled }),
           ...(query.keyword
             ? {
                 OR: [
@@ -277,7 +388,7 @@ export class StandardService {
         select: publicStandardSelect,
         skip: (page - 1) * pageSize,
         take: pageSize,
-        orderBy: { updatedAt: 'desc' },
+        orderBy: this.standardOrderBy(query),
       }),
     ]);
     return {
@@ -290,7 +401,15 @@ export class StandardService {
 
   async create(dto: CreateStandardDto, actor: StandardActor) {
     await this.assertCodeAvailable(dto.code);
-    await this.fieldConfiguration?.assertConfiguredValue('STANDARD_CATEGORY', dto.category);
+    const countryCodes = this.normalizeCountryCodes(dto.countryCodes);
+    await this.assertConfiguredFields({
+      type: dto.type,
+      deliveryStageCode: dto.deliveryStageCode,
+      managementDomainCode: dto.managementDomainCode,
+      businessTypeCode: dto.businessTypeCode,
+      countryCodes,
+    });
+    await this.assertCountryCodesExist(countryCodes);
     const fileVersionId = this.requireFileVersionId(dto.fileVersionId);
     await this.assertFileVersionsAccessible([fileVersionId], actor);
     const standardId = await this.prisma.$transaction(async (tx) => {
@@ -299,11 +418,17 @@ export class StandardService {
           code: dto.code.trim(),
           name: dto.name.trim(),
           type: dto.type.trim(),
-          category: dto.category?.trim(),
+          deliveryStageCode: dto.deliveryStageCode.trim(),
+          managementDomainCode: dto.managementDomainCode?.trim() || null,
+          businessTypeCode: dto.businessTypeCode?.trim() || null,
+          isEnabled: dto.isEnabled ?? true,
           status: 'DRAFT',
           effectiveAt: dto.effectiveAt ? new Date(dto.effectiveAt) : undefined,
           createdBy: actor.sub,
           updatedBy: actor.sub,
+          applicableCountries: {
+            create: countryCodes.map((countryCode) => ({ countryCode })),
+          },
         },
         select: { id: true },
       });
@@ -319,12 +444,23 @@ export class StandardService {
         },
       });
       await this.bindFileVersions(tx, [fileVersionId], standard.id, actor.sub);
+      await writeOperationLog(tx, {
+        userId: actor.sub,
+        module: 'standard',
+        action: 'create',
+        targetType: 'standard',
+        targetId: standard.id,
+        afterData: {
+          code: dto.code.trim(),
+          deliveryStageCode: dto.deliveryStageCode.trim(),
+        },
+      });
       return standard.id;
     });
     return this.findById(standardId, actor);
   }
 
-  async findById(id: string, actor: StandardActor) {
+  async findById(id: string, actor: StandardActor, recordView = false) {
     const visibility = await this.buildVisibilityWhere(actor);
     const standard = await this.prisma.standard.findFirst({
       where: { AND: [{ id }, visibility] },
@@ -350,33 +486,105 @@ export class StandardService {
       select: publicStandardVersionSelect,
       orderBy: { createdAt: 'desc' },
     });
+    if (recordView) {
+      await writeOperationLog(this.prisma, {
+        userId: actor.sub,
+        module: 'standard',
+        action: 'view',
+        targetType: 'standard',
+        targetId: id,
+      });
+    }
     return mapPublicStandard(standard, versions);
   }
 
   async update(id: string, dto: UpdateStandardDto, actor: StandardActor) {
     const standard = await this.findEditableMaster(id, actor);
-    await this.fieldConfiguration?.assertConfiguredValue(
-      'STANDARD_CATEGORY',
-      dto.category,
-      standard.category,
+    const countryCodes =
+      dto.countryCodes === undefined
+        ? undefined
+        : this.normalizeCountryCodes(dto.countryCodes);
+    await this.assertConfiguredFields(
+      {
+        type: dto.type,
+        deliveryStageCode: dto.deliveryStageCode,
+        managementDomainCode: dto.managementDomainCode,
+        businessTypeCode: dto.businessTypeCode,
+        countryCodes,
+      },
+      {
+        type: standard.type,
+        deliveryStageCode: standard.deliveryStageCode,
+        managementDomainCode: standard.managementDomainCode,
+        businessTypeCode: standard.businessTypeCode,
+        countryCodes: standard.applicableCountries.map((item) => item.countryCode),
+      },
     );
+    if (countryCodes) await this.assertCountryCodesExist(countryCodes);
     if (dto.code && dto.code !== standard.code) {
       await this.assertCodeAvailable(dto.code, id);
     }
-    await this.prisma.standard.update({
-      where: { id },
-      data: {
-        updatedBy: actor.sub,
-        ...(dto.code !== undefined ? { code: dto.code.trim() } : {}),
-        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
-        ...(dto.type !== undefined ? { type: dto.type.trim() } : {}),
-        ...(dto.category !== undefined ? { category: dto.category?.trim() || null } : {}),
-        ...(dto.effectiveAt !== undefined
-          ? {
-              effectiveAt: dto.effectiveAt ? new Date(dto.effectiveAt) : null,
-            }
-          : {}),
-      },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.standard.update({
+        where: { id },
+        data: {
+          updatedBy: actor.sub,
+          ...(dto.code !== undefined ? { code: dto.code.trim() } : {}),
+          ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+          ...(dto.type !== undefined ? { type: dto.type.trim() } : {}),
+          ...(dto.deliveryStageCode !== undefined
+            ? { deliveryStageCode: dto.deliveryStageCode.trim() }
+            : {}),
+          ...(dto.managementDomainCode !== undefined
+            ? { managementDomainCode: dto.managementDomainCode?.trim() || null }
+            : {}),
+          ...(dto.businessTypeCode !== undefined
+            ? { businessTypeCode: dto.businessTypeCode?.trim() || null }
+            : {}),
+          ...(dto.isEnabled !== undefined ? { isEnabled: dto.isEnabled } : {}),
+          ...(dto.effectiveAt !== undefined
+            ? {
+                effectiveAt: dto.effectiveAt ? new Date(dto.effectiveAt) : null,
+              }
+            : {}),
+        },
+      });
+      if (countryCodes) {
+        await tx.standardCountry.deleteMany({ where: { standardId: id } });
+        if (countryCodes.length) {
+          await tx.standardCountry.createMany({
+            data: countryCodes.map((countryCode) => ({ standardId: id, countryCode })),
+          });
+        }
+      }
+      await writeOperationLog(tx, {
+        userId: actor.sub,
+        module: 'standard',
+        action: 'update',
+        targetType: 'standard',
+        targetId: id,
+      });
+    });
+    return this.findById(id, actor);
+  }
+
+  async changeEnabled(id: string, enabled: boolean, actor: StandardActor) {
+    const standard = await this.findEditableMaster(id, actor, true);
+    if (standard.isEnabled === enabled) return this.findById(id, actor);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.standard.update({
+        where: { id },
+        data: { isEnabled: enabled, updatedBy: actor.sub },
+      });
+      await writeOperationLog(tx, {
+        userId: actor.sub,
+        module: 'standard',
+        action: enabled ? 'enable' : 'disable',
+        targetType: 'standard',
+        targetId: id,
+        beforeData: { enabled: standard.isEnabled },
+        afterData: { enabled },
+      });
     });
     return this.findById(id, actor);
   }
@@ -683,7 +891,7 @@ export class StandardService {
       }
       const claimed = await tx.standard.updateMany({
         where: { id, archivedAt: null },
-        data: { status: 'ARCHIVED', archivedAt, updatedBy: actor.sub },
+        data: { status: 'ARCHIVED', archivedAt, isEnabled: false, updatedBy: actor.sub },
       });
       if (claimed.count !== 1) {
         throw new ConflictException('标准状态已变化，请刷新后重试');
@@ -732,10 +940,15 @@ export class StandardService {
       select: {
         id: true,
         code: true,
+        type: true,
         status: true,
-        category: true,
+        deliveryStageCode: true,
+        managementDomainCode: true,
+        businessTypeCode: true,
+        isEnabled: true,
         createdBy: true,
         currentPublishedVersionId: true,
+        applicableCountries: { select: { countryCode: true } },
       },
     });
     if (
@@ -940,6 +1153,103 @@ export class StandardService {
       }
     }
     return minor < 0 ? 'V1.0' : `V${major}.${minor + 1}`;
+  }
+
+  private standardOrderBy(query: QueryStandardDto): Prisma.StandardOrderByWithRelationInput {
+    const direction = query.sortOrder ?? 'desc';
+    switch (query.sortBy) {
+      case 'name':
+        return { name: direction };
+      case 'effectiveAt':
+        return { effectiveAt: direction };
+      case 'currentVersion':
+        return { currentPublishedVersion: { version: direction } };
+      default:
+        return { updatedAt: direction };
+    }
+  }
+
+  private normalizeCountryCodes(countryCodes?: string[]): string[] {
+    return Array.from(
+      new Set(
+        (countryCodes ?? [])
+          .map((countryCode) => countryCode.trim().toUpperCase())
+          .filter(Boolean),
+      ),
+    );
+  }
+
+  private async assertCountryCodesExist(countryCodes: string[]): Promise<void> {
+    if (!countryCodes.length) return;
+    const count = await this.prisma.country.count({
+      where: { countryCode: { in: countryCodes } },
+    });
+    if (count !== countryCodes.length) {
+      throw new UnprocessableEntityException('适用国家包含不存在的国家编码');
+    }
+  }
+
+  private async assertConfiguredFields(
+    next: {
+      type?: string;
+      deliveryStageCode?: string;
+      managementDomainCode?: string | null;
+      businessTypeCode?: string | null;
+      countryCodes?: string[];
+    },
+    current: {
+      type?: string;
+      deliveryStageCode?: string | null;
+      managementDomainCode?: string | null;
+      businessTypeCode?: string | null;
+      countryCodes?: string[];
+    } = {},
+  ): Promise<void> {
+    if (!this.fieldConfiguration) return;
+    const validations: Array<Promise<void>> = [];
+    if (next.type !== undefined) {
+      validations.push(
+        this.fieldConfiguration.assertConfiguredValue('STANDARD_TYPE', next.type, current.type),
+      );
+    }
+    if (next.deliveryStageCode !== undefined) {
+      validations.push(
+        this.fieldConfiguration.assertConfiguredValue(
+          'STANDARD_DELIVERY_STAGE',
+          next.deliveryStageCode,
+          current.deliveryStageCode,
+        ),
+      );
+    }
+    if (next.managementDomainCode !== undefined) {
+      validations.push(
+        this.fieldConfiguration.assertConfiguredValue(
+          'STANDARD_MANAGEMENT_DOMAIN',
+          next.managementDomainCode,
+          current.managementDomainCode,
+        ),
+      );
+    }
+    if (next.businessTypeCode !== undefined) {
+      validations.push(
+        this.fieldConfiguration.assertConfiguredValue(
+          'STANDARD_BUSINESS_TYPE',
+          next.businessTypeCode,
+          current.businessTypeCode,
+        ),
+      );
+    }
+    const currentCountryCodes = new Set(current.countryCodes ?? []);
+    for (const countryCode of next.countryCodes ?? []) {
+      validations.push(
+        this.fieldConfiguration.assertConfiguredValue(
+          'COUNTRY',
+          countryCode,
+          currentCountryCodes.has(countryCode) ? countryCode : undefined,
+        ),
+      );
+    }
+    await Promise.all(validations);
   }
 
   private async lockActiveStandard(

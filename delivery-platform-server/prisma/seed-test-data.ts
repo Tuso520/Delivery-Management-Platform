@@ -19,7 +19,8 @@ interface TestFieldValues {
   projectKeywords: string[];
   projectTypes: string[];
   stages: string[];
-  standardCategories: string[];
+  standardDeliveryStages: string[];
+  standardTypes: string[];
 }
 
 const seed = process.env.TEST_DATA_SEED?.trim() || 'test-release';
@@ -69,7 +70,8 @@ async function loadTestFieldValues(): Promise<TestFieldValues> {
     'PROJECT_KEYWORD',
     'PROJECT_STAGE',
     'PROJECT_TYPE',
-    'STANDARD_CATEGORY',
+    'STANDARD_DELIVERY_STAGE',
+    'STANDARD_TYPE',
   ] as const;
   const categories = await prisma.dictionaryCategory.findMany({
     where: { categoryCode: { in: [...categoryCodes] }, status: 'Active' },
@@ -104,7 +106,8 @@ async function loadTestFieldValues(): Promise<TestFieldValues> {
     projectKeywords: required('PROJECT_KEYWORD'),
     projectTypes: required('PROJECT_TYPE'),
     stages: required('PROJECT_STAGE'),
-    standardCategories: required('STANDARD_CATEGORY'),
+    standardDeliveryStages: required('STANDARD_DELIVERY_STAGE'),
+    standardTypes: required('STANDARD_TYPE'),
   };
 }
 
@@ -258,8 +261,10 @@ async function seedContentLibraries(
     data: Array.from({ length: standardMissing }, (_, index) => ({
       code: `TS-${suffix(index)}`.slice(0, 50),
       name: `随机测试标准 ${index + 1}`,
-      type: pick(['PROCESS', 'CHECKLIST', 'DOCUMENT_TEMPLATE']),
-      category: pick(fields.standardCategories),
+      type: pick(fields.standardTypes),
+      deliveryStageCode: pick(fields.standardDeliveryStages),
+      businessTypeCode: 'GENERAL',
+      isEnabled: true,
       status: 'DRAFT',
       createdBy: adminId,
       updatedBy: adminId,

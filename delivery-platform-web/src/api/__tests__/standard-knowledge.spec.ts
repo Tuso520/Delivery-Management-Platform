@@ -15,16 +15,20 @@ import { standardApi } from '@/api/standard'
 describe('standard target API contract', () => {
   beforeEach(() => Object.values(mocks).forEach((mock) => mock.mockReset()))
 
-  it('uses the unified standard summary, list and detail endpoints', () => {
+  it('uses the unified standard summary, configured category, list and detail endpoints', () => {
     const params = { page: 2, pageSize: 20, keyword: '验收', status: 'PUBLISHED' as const }
 
     standardApi.getSummary()
+    standardApi.getCategoryCounts('DELIVERY_STAGE', '验收')
     standardApi.getList(params)
     standardApi.getById('standard-1')
 
     expect(mocks.get).toHaveBeenNthCalledWith(1, '/standards/summary')
-    expect(mocks.get).toHaveBeenNthCalledWith(2, '/standards', { params })
-    expect(mocks.get).toHaveBeenNthCalledWith(3, '/standards/standard-1')
+    expect(mocks.get).toHaveBeenNthCalledWith(2, '/standards/category-counts', {
+      params: { dimension: 'DELIVERY_STAGE', keyword: '验收' },
+    })
+    expect(mocks.get).toHaveBeenNthCalledWith(3, '/standards', { params })
+    expect(mocks.get).toHaveBeenNthCalledWith(4, '/standards/standard-1')
   })
 
   it('creates explicit versions, submits unified review and archives softly', () => {
@@ -46,15 +50,20 @@ describe('standard target API contract', () => {
       code: 'SOP-001',
       name: '交付作业规范',
       type: 'SOP',
+      deliveryStageCode: 'PROJECT_STARTUP',
       fileVersionId: 'file-version-1',
     }
 
     standardApi.create(createPayload)
     standardApi.update('standard-1', { name: '交付作业规范 V2' })
+    standardApi.changeEnabled('standard-1', false)
 
     expect(mocks.post).toHaveBeenCalledWith('/standards', createPayload)
     expect(mocks.patch).toHaveBeenCalledWith('/standards/standard-1', {
       name: '交付作业规范 V2',
+    })
+    expect(mocks.patch).toHaveBeenCalledWith('/standards/standard-1/enabled', {
+      enabled: false,
     })
   })
 

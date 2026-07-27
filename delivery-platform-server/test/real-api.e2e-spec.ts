@@ -23,6 +23,7 @@ interface ProjectListData {
 }
 
 interface FieldConfigurationData {
+  id: string;
   fieldCode: string;
   fieldName: string;
   required: boolean;
@@ -30,6 +31,7 @@ interface FieldConfigurationData {
   defaultValue: unknown;
   sort: number;
   options: Array<{
+    description: string | null;
     id: string;
     label: string;
     value: string;
@@ -59,6 +61,52 @@ interface FieldValuesPage {
   page: number;
   pageSize: number;
   total: number;
+}
+
+interface StandardSummaryData {
+  total: number;
+  viewCount: number;
+  downloadCount: number;
+}
+
+interface StandardListItem {
+  id: string;
+  code: string;
+  name: string;
+  deliveryStageCode: string;
+  managementDomainCode: string | null;
+  businessTypeCode: string | null;
+  countryCodes: string[];
+  isEnabled: boolean;
+  currentPublishedVersion: {
+    id: string;
+    version: string;
+    status: string;
+    effectiveAt: string | null;
+  } | null;
+}
+
+interface StandardListData {
+  items: StandardListItem[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+interface StandardVersionData {
+  id: string;
+  revision: number;
+  status: string;
+  effectiveAt: string | null;
+  fileVersion: {
+    logicalFileId: string;
+  };
+}
+
+interface StandardDetailData extends StandardListItem {
+  status: string;
+  currentPublishedVersionId: string | null;
+  versions: StandardVersionData[];
 }
 
 const AUTHENTICATED_E2E_TIMEOUT_MS = 90_000;
@@ -483,6 +531,424 @@ describe('running Delivery Platform API', () => {
   );
 
   it(
+    'serves the Figma standard library from configured stable codes and real database queries',
+    async () => {
+      if (!username || !password) {
+        throw new Error('E2E_USERNAME and E2E_PASSWORD are required for standard library E2E');
+      }
+
+      const admin = await login(username, password);
+      const fields = (
+        await expectAuthenticatedGet('/field-options/module/standard', admin.accessToken)
+      ).data as FieldConfigurationData[];
+      expect(fields.map((field) => field.fieldCode)).toEqual(
+        expect.arrayContaining([
+          'COUNTRY',
+          'STANDARD_TYPE',
+          'STANDARD_DELIVERY_STAGE',
+          'STANDARD_MANAGEMENT_DOMAIN',
+          'STANDARD_BUSINESS_TYPE',
+          'STANDARD_STATUS',
+          'STANDARD_ENABLED_STATUS',
+          'STANDARD_CURRENT_VERSION',
+          'STANDARD_EFFECTIVE_DATE',
+        ]),
+      );
+      const stageField = fields.find(
+        (field) => field.fieldCode === 'STANDARD_DELIVERY_STAGE',
+      );
+      expect(stageField?.options[0]).toEqual(
+        expect.objectContaining({
+          value: expect.any(String),
+          label: expect.any(String),
+          description: expect.any(String),
+          enabled: true,
+        }),
+      );
+
+      const summary = (
+        await expectAuthenticatedGet('/standards/summary', admin.accessToken)
+      ).data as StandardSummaryData;
+      expect(summary).toEqual({
+        total: expect.any(Number),
+        viewCount: expect.any(Number),
+        downloadCount: expect.any(Number),
+        draft: expect.any(Number),
+        inReview: expect.any(Number),
+        rejected: expect.any(Number),
+        published: expect.any(Number),
+        archived: expect.any(Number),
+      });
+
+      const counts = (
+        await expectAuthenticatedGet(
+          '/standards/category-counts?dimension=DELIVERY_STAGE',
+          admin.accessToken,
+        )
+      ).data as Array<{ code: string; count: number }>;
+      expect(counts.every((item) => typeof item.code === 'string' && item.count >= 0)).toBe(true);
+
+      const page = (
+        await expectAuthenticatedGet(
+          '/standards?page=1&pageSize=100&sortBy=name&sortOrder=asc',
+          admin.accessToken,
+        )
+      ).data as StandardListData;
+      expect(page.page).toBe(1);
+      expect(page.pageSize).toBe(100);
+      expect(page.items.length).toBeLessThanOrEqual(100);
+      const descendingPage = (
+        await expectAuthenticatedGet(
+          '/standards?page=1&pageSize=100&sortBy=name&sortOrder=desc',
+          admin.accessToken,
+        )
+      ).data as StandardListData;
+      expect(descendingPage.items.map((item) => item.id)).toEqual(
+        [...page.items.map((item) => item.id)].reverse(),
+      );
+      for (const item of page.items) {
+        expect(typeof item.id).toBe('string');
+        expect(typeof item.code).toBe('string');
+        expect(typeof item.deliveryStageCode).toBe('string');
+        expect(Array.isArray(item.countryCodes)).toBe(true);
+        expect(typeof item.isEnabled).toBe('boolean');
+      }
+
+      const firstStage = stageField?.options.find((option) => option.enabled);
+      if (!firstStage) throw new Error('An enabled standard delivery stage is required');
+      const filtered = (
+        await expectAuthenticatedGet(
+          `/standards?page=1&pageSize=100&deliveryStageCode=${encodeURIComponent(firstStage.value)}`,
+          admin.accessToken,
+        )
+      ).data as StandardListData;
+      expect(filtered.items.every((item) => item.deliveryStageCode === firstStage.value)).toBe(
+        true,
+      );
+
+      const published = page.items.find((item) => item.currentPublishedVersion);
+      if (published) {
+        const detail = (
+          await expectAuthenticatedGet(`/standards/${published.id}`, admin.accessToken)
+        ).data as StandardListItem & { versions: Array<{ id: string; status: string }> };
+        expect(detail.versions).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              id: published.currentPublishedVersion?.id,
+              status: 'PUBLISHED',
+            }),
+          ]),
+        );
+      }
+    },
+    AUTHENTICATED_E2E_TIMEOUT_MS,
+  );
+
+  it(
+    'creates, reviews, publishes, enables, downloads and archives a real standard version',
+    async () => {
+      if (!username || !password || !process.env.SEED_DEFAULT_PASSWORD) {
+        throw new Error('Admin and seeded reviewer credentials are required for standard lifecycle E2E');
+      }
+
+      const admin = await login(username, password);
+      const reviewer = await login('delivery_mgr', process.env.SEED_DEFAULT_PASSWORD);
+      const marker = Date.now().toString(36).toUpperCase();
+      let standardId = '';
+      try {
+        const form = new FormData();
+        form.append(
+          'file',
+          new Blob(['%PDF-1.4\n% standard lifecycle E2E\n'], { type: 'application/pdf' }),
+          `standard-${marker}.pdf`,
+        );
+        form.append('ownerType', 'STANDARD');
+        form.append('changeDescription', 'standard lifecycle E2E');
+        const uploadResponse = await fetch(`${baseUrl}/files/drafts`, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${admin.accessToken}`,
+            'idempotency-key': `standard-upload-${marker}`,
+          },
+          body: form,
+        });
+        const upload = (await uploadResponse.json()) as ApiEnvelope<{
+          logicalFileId: string;
+          fileVersionId: string;
+        }>;
+        expect(uploadResponse.status).toBe(201);
+
+        const effectiveAt = '2026-08-01T00:00:00.000Z';
+        const created = (
+          await expectAuthenticatedRequest<StandardDetailData>(
+            '/standards',
+            admin.accessToken,
+            {
+              method: 'POST',
+              body: JSON.stringify({
+                code: `E2E-STD-${marker}`,
+                name: `标准版本端到端验证-${marker}`,
+                type: 'DOCUMENT_TEMPLATE',
+                deliveryStageCode: 'PROJECT_STARTUP',
+                businessTypeCode: 'GENERAL',
+                countryCodes: ['CN'],
+                isEnabled: true,
+                effectiveAt,
+                version: 'V1.0',
+                fileVersionId: upload.data.fileVersionId,
+                changeDescription: 'standard lifecycle E2E',
+              }),
+            },
+            201,
+          )
+        ).data;
+        standardId = created.id;
+        const draft = created.versions.find((version) => version.status === 'DRAFT');
+        if (!draft) throw new Error('Created standard draft version is missing');
+
+        const submitted = (
+          await expectAuthenticatedRequest<{ id: string; status: string }>(
+            `/standard-versions/${draft.id}/submit-review`,
+            admin.accessToken,
+            {
+              method: 'POST',
+              body: JSON.stringify({ revision: draft.revision }),
+            },
+            201,
+          )
+        ).data;
+        expect(submitted.status).toBe('PENDING');
+
+        await expectAuthenticatedRequest(
+          `/file-reviews/${submitted.id}/approve`,
+          reviewer.accessToken,
+          {
+            method: 'POST',
+            body: JSON.stringify({ comment: 'standard lifecycle E2E approved' }),
+          },
+          201,
+        );
+
+        let detail = (
+          await expectAuthenticatedGet(`/standards/${standardId}`, admin.accessToken)
+        ).data as StandardDetailData;
+        expect(detail.status).toBe('PUBLISHED');
+        expect(detail.currentPublishedVersionId).toBe(draft.id);
+        expect(detail.currentPublishedVersion).toEqual(
+          expect.objectContaining({
+            id: draft.id,
+            status: 'PUBLISHED',
+            effectiveAt,
+          }),
+        );
+        expect(detail.versions.find((version) => version.id === draft.id)?.status).toBe(
+          'PUBLISHED',
+        );
+
+        detail = (
+          await expectAuthenticatedRequest<StandardDetailData>(
+            `/standards/${standardId}/enabled`,
+            admin.accessToken,
+            { method: 'PATCH', body: JSON.stringify({ enabled: false }) },
+          )
+        ).data;
+        expect(detail.isEnabled).toBe(false);
+        detail = (
+          await expectAuthenticatedRequest<StandardDetailData>(
+            `/standards/${standardId}/enabled`,
+            admin.accessToken,
+            { method: 'PATCH', body: JSON.stringify({ enabled: true }) },
+          )
+        ).data;
+        expect(detail.isEnabled).toBe(true);
+
+        const downloadResponse = await fetch(
+          `${baseUrl}/files/${upload.data.logicalFileId}/download`,
+          { headers: { authorization: `Bearer ${admin.accessToken}` } },
+        );
+        expect(downloadResponse.status).toBe(200);
+        expect(downloadResponse.headers.get('content-disposition')).toContain(
+          `standard-${marker}.pdf`,
+        );
+        expect((await downloadResponse.arrayBuffer()).byteLength).toBeGreaterThan(0);
+      } finally {
+        if (standardId) {
+          await expectAuthenticatedRequest(
+            `/standards/${standardId}/archive`,
+            admin.accessToken,
+            { method: 'POST' },
+          );
+        }
+      }
+    },
+    AUTHENTICATED_E2E_TIMEOUT_MS,
+  );
+
+  it(
+    'propagates standard field names, defaults, option ordering and disabled history by stable code',
+    async () => {
+      if (!username || !password) {
+        throw new Error('E2E_USERNAME and E2E_PASSWORD are required for standard field linkage E2E');
+      }
+
+      const admin = await login(username, password);
+      const fields = (
+        await expectAuthenticatedGet('/field-options/module/standard', admin.accessToken)
+      ).data as FieldConfigurationData[];
+      const stageField = fields.find(
+        (field) => field.fieldCode === 'STANDARD_DELIVERY_STAGE',
+      );
+      if (!stageField) throw new Error('Missing STANDARD_DELIVERY_STAGE field configuration');
+      const projectStartup = stageField.options.find(
+        (option) => option.value === 'PROJECT_STARTUP',
+      );
+      const alternateDefault = stageField.options.find(
+        (option) => option.value !== 'PROJECT_STARTUP' && option.enabled,
+      );
+      if (!projectStartup || !alternateDefault) {
+        throw new Error('Configured delivery stage options are required');
+      }
+
+      const categories = (
+        await expectAuthenticatedGet('/field-config/categories', admin.accessToken)
+      ).data as FieldCategoryData[];
+      const category = categories.find(
+        (item) => item.categoryCode === 'STANDARD_DELIVERY_STAGE',
+      );
+      if (!category) throw new Error('Missing standard delivery stage category');
+      const values = (
+        await expectAuthenticatedGet(
+          `/field-config/categories/${category.id}/values?page=1&pageSize=100`,
+          admin.accessToken,
+        )
+      ).data as FieldValuesPage;
+      const startupValue = values.items.find((item) => item.value === 'PROJECT_STARTUP');
+      if (!startupValue) throw new Error('Missing PROJECT_STARTUP field option');
+
+      const marker = Date.now().toString(36).toUpperCase();
+      const changedFieldName = `${stageField.fieldName}-${marker}`;
+      const changedOptionName = `${startupValue.name}-${marker}`;
+      let fieldChanged = false;
+      let valueChanged = false;
+      let statusChanged = false;
+      try {
+        await expectAuthenticatedRequest(
+          `/field-config/${stageField.id}`,
+          admin.accessToken,
+          {
+            method: 'PATCH',
+            body: JSON.stringify({
+              fieldName: changedFieldName,
+              defaultValue: alternateDefault.value,
+            }),
+          },
+        );
+        fieldChanged = true;
+        await expectAuthenticatedRequest(
+          `/field-config/values/${startupValue.id}`,
+          admin.accessToken,
+          {
+            method: 'PATCH',
+            body: JSON.stringify({
+              name: changedOptionName,
+              code: startupValue.code,
+              description: startupValue.description,
+              sortOrder: startupValue.sortOrder + 1,
+            }),
+          },
+        );
+        valueChanged = true;
+
+        let linkedFields = (
+          await expectAuthenticatedGet('/field-options/module/standard', admin.accessToken)
+        ).data as FieldConfigurationData[];
+        let linkedStage = linkedFields.find(
+          (field) => field.fieldCode === 'STANDARD_DELIVERY_STAGE',
+        );
+        expect(linkedStage).toEqual(
+          expect.objectContaining({
+            fieldName: changedFieldName,
+            defaultValue: alternateDefault.value,
+          }),
+        );
+        expect(
+          linkedStage?.options.find((option) => option.value === startupValue.value),
+        ).toEqual(
+          expect.objectContaining({
+            label: changedOptionName,
+            sort: startupValue.sortOrder + 1,
+            enabled: true,
+          }),
+        );
+
+        await expectAuthenticatedRequest(
+          `/field-config/values/${startupValue.id}/status`,
+          admin.accessToken,
+          { method: 'PATCH', body: JSON.stringify({ status: 'Inactive' }) },
+        );
+        statusChanged = true;
+        linkedFields = (
+          await expectAuthenticatedGet('/field-options/module/standard', admin.accessToken)
+        ).data as FieldConfigurationData[];
+        linkedStage = linkedFields.find(
+          (field) => field.fieldCode === 'STANDARD_DELIVERY_STAGE',
+        );
+        expect(
+          linkedStage?.options.find((option) => option.value === startupValue.value),
+        ).toEqual(expect.objectContaining({ enabled: false, value: 'PROJECT_STARTUP' }));
+
+        const historical = (
+          await expectAuthenticatedGet(
+            '/standards?page=1&pageSize=100&deliveryStageCode=PROJECT_STARTUP',
+            admin.accessToken,
+          )
+        ).data as StandardListData;
+        expect(historical.items.length).toBeGreaterThan(0);
+        expect(
+          historical.items.every((item) => item.deliveryStageCode === 'PROJECT_STARTUP'),
+        ).toBe(true);
+      } finally {
+        if (statusChanged) {
+          await expectAuthenticatedRequest(
+            `/field-config/values/${startupValue.id}/status`,
+            admin.accessToken,
+            { method: 'PATCH', body: JSON.stringify({ status: 'Active' }) },
+          );
+        }
+        if (valueChanged) {
+          await expectAuthenticatedRequest(
+            `/field-config/values/${startupValue.id}`,
+            admin.accessToken,
+            {
+              method: 'PATCH',
+              body: JSON.stringify({
+                name: startupValue.name,
+                code: startupValue.code,
+                description: startupValue.description,
+                sortOrder: startupValue.sortOrder,
+              }),
+            },
+          );
+        }
+        if (fieldChanged) {
+          await expectAuthenticatedRequest(
+            `/field-config/${stageField.id}`,
+            admin.accessToken,
+            {
+              method: 'PATCH',
+              body: JSON.stringify({
+                fieldName: stageField.fieldName,
+                defaultValue: stageField.defaultValue,
+              }),
+            },
+          );
+        }
+      }
+    },
+    AUTHENTICATED_E2E_TIMEOUT_MS,
+  );
+
+  it(
     'logs in, rotates the refresh cookie and returns flat project pagination',
     async () => {
       if (!username || !password) {
@@ -540,6 +1006,8 @@ describe('running Delivery Platform API', () => {
 
       const admin = await login(username, password);
       for (const path of [
+        '/standards/summary',
+        '/standards/category-counts?dimension=DELIVERY_STAGE',
         '/standards?page=1&pageSize=5',
         '/knowledge?page=1&pageSize=5',
         '/file-reviews?page=1&pageSize=5',
@@ -553,6 +1021,8 @@ describe('running Delivery Platform API', () => {
 
       const limited = await login(limitedUsername, limitedPassword);
       for (const path of [
+        '/standards/summary',
+        '/standards/category-counts?dimension=DELIVERY_STAGE',
         '/standards?page=1&pageSize=5',
         '/knowledge?page=1&pageSize=5',
         '/notification-rules?page=1&pageSize=5',

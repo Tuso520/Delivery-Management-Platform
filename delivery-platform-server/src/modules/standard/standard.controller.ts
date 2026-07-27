@@ -21,9 +21,11 @@ import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import type { JwtPayload } from '../auth/strategies/jwt.strategy';
 
 import {
+  ChangeStandardEnabledDto,
   CreateStandardDto,
   CreateStandardRelationDto,
   CreateStandardVersionDto,
+  QueryStandardCategoryCountsDto,
   QueryStandardDto,
   SubmitStandardReviewDto,
   UpdateStandardDto,
@@ -39,9 +41,19 @@ export class StandardController {
 
   @Get('standards/summary')
   @RequirePermissions({ all: ['standard:view'] })
-  @ApiOperation({ summary: '查询可见标准统计' })
+  @ApiOperation({ summary: '查询可见标准、查看和下载统计' })
   getSummary(@CurrentUser() actor: JwtPayload) {
     return this.standards.getSummary(actor);
+  }
+
+  @Get('standards/category-counts')
+  @RequirePermissions({ all: ['standard:view'] })
+  @ApiOperation({ summary: '按交付阶段或管理领域查询标准数量' })
+  getCategoryCounts(
+    @Query() query: QueryStandardCategoryCountsDto,
+    @CurrentUser() actor: JwtPayload,
+  ) {
+    return this.standards.getCategoryCounts(query, actor);
   }
 
   @Get('standards')
@@ -63,7 +75,7 @@ export class StandardController {
   @RequirePermissions({ all: ['standard:view'] })
   @ApiOperation({ summary: '查询标准详情和可见版本' })
   findById(@Param('id') id: string, @CurrentUser() actor: JwtPayload) {
-    return this.standards.findById(id, actor);
+    return this.standards.findById(id, actor, true);
   }
 
   @Patch('standards/:id')
@@ -75,6 +87,17 @@ export class StandardController {
     @CurrentUser() actor: JwtPayload,
   ) {
     return this.standards.update(id, dto, actor);
+  }
+
+  @Patch('standards/:id/enabled')
+  @RequirePermissions({ all: ['standard:update_draft'] })
+  @ApiOperation({ summary: '启用或停用标准' })
+  changeEnabled(
+    @Param('id') id: string,
+    @Body() dto: ChangeStandardEnabledDto,
+    @CurrentUser() actor: JwtPayload,
+  ) {
+    return this.standards.changeEnabled(id, dto.enabled, actor);
   }
 
   @Post('standards/:id/versions')
@@ -90,7 +113,7 @@ export class StandardController {
 
   @Patch('standard-versions/:id')
   @RequirePermissions({ all: ['standard:update_draft'] })
-  @ApiOperation({ summary: '更新草稿或已驳回的标准版本内容' })
+  @ApiOperation({ summary: '更新草稿或已驳回的标准版本' })
   updateVersion(
     @Param('id') id: string,
     @Body() dto: CreateStandardVersionDto,

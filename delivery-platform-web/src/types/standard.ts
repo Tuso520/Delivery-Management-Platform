@@ -1,4 +1,4 @@
-import type { PaginatedData } from '@/types/api'
+import type { PaginatedData } from './api'
 
 export const STANDARD_STATUSES = [
   'DRAFT',
@@ -9,6 +9,8 @@ export const STANDARD_STATUSES = [
 ] as const
 
 export type StandardStatus = (typeof STANDARD_STATUSES)[number]
+export type StandardCategoryDimension = 'DELIVERY_STAGE' | 'MANAGEMENT_DOMAIN'
+export type StandardSortField = 'updatedAt' | 'name' | 'effectiveAt' | 'currentVersion'
 
 export const STANDARD_RELATION_TYPES = [
   'SUPPORTING_FORM',
@@ -68,7 +70,11 @@ export interface Standard {
   code: string
   name: string
   type: string
-  category: string | null
+  deliveryStageCode: string | null
+  managementDomainCode: string | null
+  businessTypeCode: string | null
+  countryCodes: string[]
+  isEnabled: boolean
   status: StandardStatus
   currentPublishedVersionId?: string | null
   currentPublishedVersion: StandardPublishedVersionSummary | null
@@ -85,6 +91,8 @@ export interface Standard {
 
 export interface StandardSummary {
   total: number
+  viewCount: number
+  downloadCount: number
   draft: number
   inReview: number
   rejected: number
@@ -92,20 +100,35 @@ export interface StandardSummary {
   archived: number
 }
 
+export interface StandardCategoryCount {
+  code: string
+  count: number
+}
+
 export interface QueryStandardDto {
   page?: number
   pageSize?: number
   keyword?: string
   type?: string
-  category?: string
+  deliveryStageCode?: string
+  managementDomainCode?: string
+  businessTypeCode?: string
+  countryCode?: string
   status?: StandardStatus
+  isEnabled?: boolean
+  sortBy?: StandardSortField
+  sortOrder?: 'asc' | 'desc'
 }
 
 export interface CreateStandardDto {
   code: string
   name: string
   type: string
-  category?: string
+  deliveryStageCode: string
+  managementDomainCode?: string
+  businessTypeCode?: string
+  countryCodes?: string[]
+  isEnabled?: boolean
   effectiveAt?: string
   version?: string
   fileVersionId: string
@@ -116,7 +139,11 @@ export interface UpdateStandardDto {
   code?: string
   name?: string
   type?: string
-  category?: string | null
+  deliveryStageCode?: string
+  managementDomainCode?: string | null
+  businessTypeCode?: string | null
+  countryCodes?: string[]
+  isEnabled?: boolean
   effectiveAt?: string | null
 }
 
