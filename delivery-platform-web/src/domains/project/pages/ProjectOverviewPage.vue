@@ -2,11 +2,6 @@
 import { computed, ref, type CSSProperties } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import {
-  IconSort,
-  IconSortAscending,
-  IconSortDescending,
-} from '@arco-design/web-vue/es/icon'
 
 import { BusinessTable, PageContainer, PageToolbar } from '@/design-system'
 import {
@@ -19,7 +14,6 @@ import type {
   Project,
   ProjectScope,
   ProjectSort,
-  ProjectSummaryFilter,
   QueryProjectDto,
 } from '@/domains/project/types/project'
 import { formatAdaptiveNumber } from '@/utils/format'
@@ -35,7 +29,6 @@ import statClipboardCheckIcon from '@/assets/figma/project-overview/stat-clipboa
 import selectDownIcon from '@/assets/figma/project-overview/select-down.svg'
 import toolbarPlusIcon from '@/assets/figma/project-overview/toolbar-plus.svg'
 import toolbarQueryAsset from '@/assets/figma/project-overview/toolbar-query.png'
-import toolbarRefreshAsset from '@/assets/figma/project-overview/toolbar-refresh.png'
 
 import ProjectDetailDialog from '../components/ProjectDetailDialog.vue'
 
@@ -50,32 +43,28 @@ const scope = ref<ProjectScope>(
     : 'mine',
 )
 const requestedSort = String(route.query.sort ?? '')
-const initialSort: ProjectSort = [
-  'updatedAt:desc',
-  'updatedAt:asc',
-  'projectName:asc',
-  'projectName:desc',
+const initialSort: ProjectSort | undefined = [
   'projectManager:asc',
   'projectManager:desc',
 ].includes(requestedSort)
   ? (requestedSort as ProjectSort)
-  : 'updatedAt:desc'
+  : undefined
+const keywordInput = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
 const filters = ref<QueryProjectDto>({
   page: Number(route.query.page) || 1,
   pageSize: Number(route.query.pageSize) || 20,
-  keyword: typeof route.query.keyword === 'string' ? route.query.keyword : '',
+  keyword: keywordInput.value,
   scope: scope.value,
-  summaryFilter: (route.query.summaryFilter as ProjectSummaryFilter) || 'ALL',
   sort: initialSort,
 })
 const listQuery = useProjectListQuery(filters)
-const summaryFilters = computed<QueryProjectDto>(() => ({
-  ...filters.value,
+const summaryParams = computed<QueryProjectDto>(() => ({
   page: 1,
   pageSize: 1,
-  sort: undefined,
+  keyword: filters.value.keyword,
+  scope: filters.value.scope,
 }))
-const summaryQuery = useProjectSummaryQuery(summaryFilters)
+const summaryQuery = useProjectSummaryQuery(summaryParams)
 const fieldConfig = useFieldConfig('project')
 const configuredBaseCurrency = computed(() =>
   String(fieldConfig.getField('CURRENCY')?.defaultValue ?? ''),
@@ -85,9 +74,15 @@ const configuredBaseCurrencyLabel = computed(
     fieldConfig.getFieldLabel('CURRENCY', configuredBaseCurrency.value) ||
     configuredBaseCurrency.value,
 )
+const configuredBaseCurrencyCode = computed(() => {
+  const configured = fieldConfig
+    .getFieldOptions('CURRENCY', true)
+    .find((option) => option.value === configuredBaseCurrency.value)
+  return configured?.code || configured?.value || configuredBaseCurrency.value || 'CNY'
+})
 const convertedCurrencyTitle = computed(() =>
   configuredBaseCurrencyLabel.value
-    ? t('projects.columns.convertedAmount', {
+    ? t('projects.columns.convertedCurrency', {
         currency: configuredBaseCurrencyLabel.value,
       })
     : t('projects.columns.convertedCny'),
@@ -101,9 +96,7 @@ const pagination = computed(() => ({
 const summary = computed(() => ({
   total: 0,
   active: 0,
-  accepted: 0,
   acceptedThisYear: 0,
-  highRisk: 0,
   totalConvertedAmount: null,
   acceptedConvertedAmount: null,
   ...(summaryQuery.data.value ?? {}),
@@ -112,36 +105,30 @@ const summaryMetrics = computed(() => [
   {
     id: 'amount',
     icon: statTrendingUpIcon,
-    label: t('projects.stats.totalAmount'),
+    label: t('projects.stats.totalAmount', { currency: configuredBaseCurrencyCode.value }),
     value: amountInTenThousands(summary.value.totalConvertedAmount),
     unit: summary.value.totalConvertedAmount === null ? '' : t('projects.stats.tenThousands'),
-    filter: null,
   },
   {
     id: 'acceptedAmount',
     icon: statCheckCircleIcon,
-    label: t('projects.stats.acceptedAmount'),
+    label: t('projects.stats.acceptedAmount', { currency: configuredBaseCurrencyCode.value }),
     value: amountInTenThousands(summary.value.acceptedConvertedAmount),
     unit: summary.value.acceptedConvertedAmount === null ? '' : t('projects.stats.tenThousands'),
-    filter: null,
   },
   {
     id: 'total',
     icon: statLayersIcon,
-    key: 'ALL' as const,
     label: t('projects.stats.total'),
     value: String(summary.value.total),
     unit: t('projects.stats.items'),
-    filter: 'ALL' as const,
   },
   {
     id: 'active',
     icon: statPlayIcon,
-    key: 'ACTIVE' as const,
     label: t('projects.stats.activeProjects'),
     value: String(summary.value.active),
     unit: t('projects.stats.items'),
-    filter: 'ACTIVE' as const,
   },
   {
     id: 'accepted',
@@ -149,7 +136,6 @@ const summaryMetrics = computed(() => [
     label: t('projects.stats.acceptedThisYear'),
     value: String(summary.value.acceptedThisYear),
     unit: t('projects.stats.items'),
-    filter: 'ACCEPTED_THIS_YEAR' as const,
   },
 ])
 const canCreateProject = computed(() => permissionStore.hasPermission('project:create'))
@@ -180,26 +166,20 @@ async function syncUrl(): Promise<void> {
     query: {
       scope: scope.value === 'mine' ? undefined : scope.value,
       keyword: filters.value.keyword || undefined,
-      summaryFilter:
-        filters.value.summaryFilter === 'ALL' ? undefined : filters.value.summaryFilter,
       page: filters.value.page === 1 ? undefined : String(filters.value.page),
       pageSize: filters.value.pageSize === 20 ? undefined : String(filters.value.pageSize),
-      sort: filters.value.sort === 'updatedAt:desc' ? undefined : filters.value.sort,
+      sort: filters.value.sort,
     },
   })
 }
 function search(): void {
+  filters.value.keyword = keywordInput.value.trim()
   filters.value.page = 1
   void syncUrl()
 }
 function changeView(value: ProjectScope): void {
   scope.value = value
   filters.value.scope = scope.value
-  filters.value.page = 1
-  void syncUrl()
-}
-function selectSummary(key: ProjectSummaryFilter): void {
-  filters.value.summaryFilter = key
   filters.value.page = 1
   void syncUrl()
 }
@@ -233,10 +213,10 @@ function displayName(project: Project): string {
 function region(project: Project): string {
   const country = (project.countryName || project.countryCode || '').trim()
   const city = (project.cityName || project.city || '').trim()
-  return [country, city].filter(Boolean).join(' · ') || '—'
+  return [country, city].filter(Boolean).join('·') || '-'
 }
 function date(value?: string | null): string {
-  return value ? value.slice(0, 10) : '—'
+  return value ? value.slice(0, 10) : '-'
 }
 function acceptance(project: Project): string {
   return project.actualAcceptanceAt
@@ -244,22 +224,23 @@ function acceptance(project: Project): string {
     : date(project.expectedAcceptanceAt)
 }
 function amount(value?: number | string | null): string {
-  return formatAdaptiveNumber(value, { placeholder: '—', fractionDigits: 2 })
+  return formatAdaptiveNumber(value, { placeholder: '-', fractionDigits: 2 })
 }
-function currencyLabel(currencyCode?: string | null): string {
-  if (!currencyCode) return '—'
-  return configuredOption('CURRENCY', currencyCode)?.label || currencyCode
+function currencyCodeLabel(currencyCode?: string | null): string {
+  if (!currencyCode) return '-'
+  const option = configuredOption('CURRENCY', currencyCode)
+  return option?.code || option?.value || currencyCode
 }
 function amountInTenThousands(value?: number | null): string {
-  if (value === null || value === undefined) return '—'
-  return formatAdaptiveNumber(value / 10_000, { placeholder: '—', fractionDigits: 1 })
+  if (value === null || value === undefined) return '-'
+  return formatAdaptiveNumber(value / 10_000, { placeholder: '-', fractionDigits: 1 })
 }
 function progressValue(project: Project): number {
   const value = Number(project.progressPercent ?? 0)
   return Math.min(100, Math.max(0, Number.isFinite(value) ? value : 0))
 }
 function memberName(project: Project, role: string): string {
-  return project.members?.find((item) => item.projectRole === role)?.user?.realName || '—'
+  return project.members?.find((item) => item.projectRole === role)?.user?.realName || '-'
 }
 
 function projectStages(project: Project): string[] {
@@ -267,17 +248,24 @@ function projectStages(project: Project): string[] {
 }
 
 function stageStyle(stage: string): CSSProperties {
+  const figmaStyles: Readonly<Record<string, CSSProperties>> = {
+    DEEPENING: { color: '#10b981', backgroundColor: '#d1fae5' },
+    PROCUREMENT: { color: '#f97316', backgroundColor: '#ffedd5' },
+    CONSTRUCTION: { color: '#2563eb', backgroundColor: '#dbeafe' },
+    COMMISSIONING: { color: '#f97316', backgroundColor: '#ffedd5' },
+  }
+  if (figmaStyles[stage]) return figmaStyles[stage]
   const palette = projectDictionaryColor('projectStage', stage)
   if (palette === 'green' || palette === 'lime') {
-    return { color: '#10b981', backgroundColor: '#d1fae5', borderColor: '#a7f3d0' }
+    return { color: '#10b981', backgroundColor: '#d1fae5' }
   }
   if (palette === 'orange' || palette === 'gold') {
-    return { color: '#f97316', backgroundColor: '#ffedd5', borderColor: '#fed7aa' }
+    return { color: '#f97316', backgroundColor: '#ffedd5' }
   }
   if (palette === 'purple') {
-    return { color: '#722ed1', backgroundColor: '#f5e8ff', borderColor: '#d3adf7' }
+    return { color: '#722ed1', backgroundColor: '#f5e8ff' }
   }
-  return { color: '#2563eb', backgroundColor: '#dbeafe', borderColor: '#93c5fd' }
+  return { color: '#2563eb', backgroundColor: '#dbeafe' }
 }
 function configuredOption(fieldCode: string, value?: string | null) {
   return fieldConfig.getFieldOptions(fieldCode, true).find((item) => item.value === value)
@@ -291,6 +279,26 @@ function dictionaryStyle(
   value?: string | null,
 ): CSSProperties | undefined {
   if (!value) return undefined
+  const figmaStyles: Partial<
+    Record<ProjectDictionaryKind, Readonly<Record<string, CSSProperties>>>
+  > = {
+    customerType: {
+      FACTORY: { color: '#00b42a', backgroundColor: '#e8ffea' },
+      IDC: { color: '#722ed1', backgroundColor: '#f5e8ff' },
+      AIDC: { color: '#722ed1', backgroundColor: '#f5e8ff' },
+      COMMERCIAL: { color: '#165dff', backgroundColor: '#e8f3ff' },
+      MEDICAL: { color: '#f53f3f', backgroundColor: '#ffece8' },
+      RAIL_TRANSIT: { color: '#722ed1', backgroundColor: '#f5e8ff' },
+      STANDARD_PRODUCT: { color: '#13c2c2', backgroundColor: '#e6fffb' },
+    },
+    contractType: {
+      EPC: { color: '#722ed1', backgroundColor: '#f5e8ff' },
+      EMC: { color: '#00b42a', backgroundColor: '#e8ffea' },
+      POC: { color: '#165dff', backgroundColor: '#e8f3ff' },
+    },
+  }
+  const figmaStyle = figmaStyles[kind]?.[value]
+  if (figmaStyle) return figmaStyle
   const palette = configuredColor(kind, value)
   if (palette === 'purple' || palette === 'magenta') {
     return { color: '#722ed1', backgroundColor: '#f5e8ff' }
@@ -303,29 +311,35 @@ function dictionaryStyle(
   }
   return { color: '#165dff', backgroundColor: '#e8f3ff' }
 }
+function currencyStyle(currencyCode?: string | null): CSSProperties | undefined {
+  if (!currencyCode) return undefined
+  const styles: Readonly<Record<string, CSSProperties>> = {
+    USD: { color: '#3b82f6', backgroundColor: '#dbeafe' },
+    THB: { color: '#8b5cf6', backgroundColor: '#ede9fe' },
+    OMR: { color: '#f97316', backgroundColor: '#ffedd5' },
+    MYR: { color: '#10b981', backgroundColor: '#d1fae5' },
+    SGD: { color: '#14b8a6', backgroundColor: '#ccfbf1' },
+  }
+  return styles[currencyCode] || { color: '#165dff', backgroundColor: '#e8f3ff' }
+}
 </script>
 
 <template>
   <PageContainer class="project-page" gap="normal" :scrollable="false">
     <section class="summary-band" :aria-label="t('projects.summaryAria')">
-      <button
+      <article
         v-for="metric in summaryMetrics"
         :key="metric.id"
-        type="button"
         class="summary-metric"
-        :class="{
-          'is-active': metric.filter && filters.summaryFilter === metric.filter,
-        }"
-        :aria-pressed="metric.filter ? filters.summaryFilter === metric.filter : undefined"
-        :disabled="!metric.filter"
-        @click="metric.filter && selectSummary(metric.filter)"
       >
         <span class="metric-icon"><img :src="metric.icon" alt="" /></span>
         <span class="metric-copy">
           <span class="metric-label">{{ metric.label }}</span>
-          <span class="metric-value">{{ metric.value }} <small>{{ metric.unit }}</small></span>
+          <span class="metric-value">
+            <strong>{{ metric.value }}</strong><small>{{ metric.unit }}</small>
+          </span>
         </span>
-      </button>
+      </article>
       <a-spin v-if="summaryQuery.isFetching.value" class="summary-loading" :size="18" />
     </section>
 
@@ -346,7 +360,7 @@ function dictionaryStyle(
           </div>
           <div class="search-group">
             <a-input
-              v-model="filters.keyword"
+              v-model="keywordInput"
               class="keyword-input"
               allow-clear
               :placeholder="t('projects.searchPlaceholder')"
@@ -362,13 +376,6 @@ function dictionaryStyle(
           </div>
         </template>
         <template #actions>
-          <a-button :loading="listQuery.isFetching.value" @click="refresh">
-            <template #icon>
-              <span class="figma-button-icon figma-button-icon--sprite">
-                <img :src="toolbarRefreshAsset" alt="" />
-              </span>
-            </template>{{ t('projects.refresh') }}
-          </a-button>
           <a-button v-if="canCreateProject" type="primary" @click="router.push('/projects/create')">
             <template #icon>
               <img class="figma-button-icon" :src="toolbarPlusIcon" alt="" />
@@ -395,7 +402,7 @@ function dictionaryStyle(
         >
           <a-table-column
             :title="t('projects.columns.name')"
-            :width="120"
+            :width="240"
             fixed="left"
             align="center"
           >
@@ -416,9 +423,9 @@ function dictionaryStyle(
                 @click="toggleManagerSort"
               >
                 {{ t('projects.columns.manager') }}
-                <IconSortAscending v-if="managerSort === 'projectManager:asc'" />
-                <IconSortDescending v-else-if="managerSort === 'projectManager:desc'" />
-                <IconSort v-else />
+                <span class="manager-sort-icon" aria-hidden="true">
+                  {{ managerSort === 'projectManager:asc' ? '↑' : managerSort === 'projectManager:desc' ? '↓' : '↕' }}
+                </span>
               </button>
             </template>
             <template #cell="{ record: row }">
@@ -468,9 +475,16 @@ function dictionaryStyle(
               {{ acceptance(row) }}
             </template>
           </a-table-column>
-          <a-table-column :title="t('projects.columns.contractCurrency')" :width="110" align="center">
+          <a-table-column :title="t('projects.columns.contractCurrency')" :width="80" align="center">
             <template #cell="{ record: row }">
-              {{ currencyLabel(row.contractCurrency) }}
+              <span
+                v-if="row.contractCurrency"
+                class="dictionary-tag"
+                :style="currencyStyle(row.contractCurrency)"
+              >
+                {{ currencyCodeLabel(row.contractCurrency) }}
+              </span>
+              <span v-else>-</span>
             </template>
           </a-table-column>
           <a-table-column :title="t('projects.columns.contractAmount')" :width="160" align="center">
@@ -496,7 +510,7 @@ function dictionaryStyle(
               >
                 {{
                   configuredOption('CUSTOMER_TYPE', row.customerType)?.label || row.customerType
-                }} </span><span v-else>—</span>
+                }} </span><span v-else>-</span>
             </template>
           </a-table-column>
           <a-table-column
@@ -512,7 +526,7 @@ function dictionaryStyle(
               >
                 {{
                   configuredOption('CONTRACT_TYPE', row.contractType)?.label || row.contractType
-                }} </span><span v-else>—</span>
+                }} </span><span v-else>-</span>
             </template>
           </a-table-column>
           <a-table-column :title="t('projects.columns.sales')" :width="100" align="center">
@@ -558,7 +572,8 @@ function dictionaryStyle(
   position: relative;
   min-height: 100px;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, 242px) minmax(0, 1fr);
+  gap: 16px;
 }
 
 .summary-metric {
@@ -570,16 +585,9 @@ function dictionaryStyle(
   align-items: center;
   gap: 12px;
   padding: 14px 16px;
-  border: 0;
   background: transparent;
   color: inherit;
   text-align: left;
-}
-.summary-metric:not(:disabled) {
-  cursor: pointer;
-}
-.summary-metric:not(:disabled):hover {
-  background: var(--project-row-alt);
 }
 .metric-icon {
   width: 48px;
@@ -611,12 +619,18 @@ function dictionaryStyle(
   white-space: nowrap;
 }
 .metric-value {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
   color: var(--project-text);
   font-size: 22px;
-  font-weight: 700;
   line-height: 26px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+.metric-value strong {
+  font: inherit;
+  font-weight: 700;
 }
 .metric-value small {
   font-size: 12px;
@@ -660,8 +674,8 @@ function dictionaryStyle(
 }
 
 .scope-field {
-  width: 125px;
-  flex: 0 0 125px;
+  width: 100px;
+  flex: 0 0 100px;
 }
 
 .scope-field :deep(.arco-select) {
@@ -683,6 +697,7 @@ function dictionaryStyle(
   align-items: center;
   padding: 0;
   line-height: 22px;
+  color: #86909c;
 }
 .scope-field :deep(.arco-select-view-suffix) {
   height: 100%;
@@ -712,7 +727,7 @@ function dictionaryStyle(
 }
 
 .keyword-input {
-  width: 273px;
+  width: 242px;
 }
 
 .search-group {
@@ -724,16 +739,18 @@ function dictionaryStyle(
 .search-group :deep(.keyword-input .arco-input-wrapper) {
   height: 32px;
   padding: 0 12px;
-  border-radius: 2px;
+  border-radius: 0;
 }
 
 .project-toolbar :deep(.arco-btn) {
+  box-sizing: border-box;
+  width: 82px;
   height: 32px;
   min-width: 82px;
   gap: 8px;
   padding: 0 16px;
   border-color: var(--project-header-bg);
-  border-radius: 2px;
+  border-radius: 0;
   background: var(--project-header-bg);
   color: var(--project-text-secondary);
 }
@@ -757,7 +774,7 @@ function dictionaryStyle(
 .search-button {
   min-width: 82px;
   margin-left: 0;
-  border-radius: 2px !important;
+  border-radius: 0 !important;
 }
 .figma-button-icon {
   width: 14px;
@@ -786,7 +803,7 @@ function dictionaryStyle(
   background: none;
   color: #165dff;
   font-size: 13px;
-  font-weight: 400;
+  font-weight: 500;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -818,8 +835,9 @@ function dictionaryStyle(
   white-space: nowrap;
 }
 .progress-track {
-  width: 80px;
+  min-width: 0;
   height: 6px;
+  flex: 1 1 auto;
   display: block;
   overflow: hidden;
   border-radius: 10px;
@@ -846,21 +864,17 @@ function dictionaryStyle(
   display: inline-flex;
   align-items: center;
   padding: 0 8px;
-  border: 1px solid;
-  border-radius: 2px;
   font-size: 12px;
   font-weight: 500;
-  line-height: 16px;
+  line-height: 14px;
   white-space: nowrap;
 }
 .dictionary-tag {
-  min-width: 40px;
   height: 18px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0 8px;
-  border-radius: 2px;
   font-size: 12px;
   font-weight: 500;
   line-height: 18px;
@@ -868,8 +882,10 @@ function dictionaryStyle(
   white-space: nowrap;
 }
 .manager-sort-button {
+  width: 100%;
   display: inline-flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 4px;
   padding: 0;
   border: 0;
@@ -877,9 +893,14 @@ function dictionaryStyle(
   color: inherit;
   cursor: pointer;
 }
-.manager-sort-button :deep(svg) {
+.manager-sort-icon {
+  width: 19px;
+  display: inline-flex;
+  justify-content: center;
   color: #999;
   font-size: 13px;
+  font-weight: 400;
+  line-height: 16px;
 }
 .manager-sort-button:hover,
 .manager-sort-button:focus-visible {
@@ -971,15 +992,30 @@ function dictionaryStyle(
 :deep(.project-list-panel .arco-table-tr:hover .arco-table-td) {
   background: #e8f3ff;
 }
+:deep(.project-list-panel .arco-table-col-fixed-left-last) {
+  box-shadow: 3px 0 4px rgba(0, 0, 0, 0.08);
+}
 :deep(.project-page .arco-btn),
 :deep(.project-page .arco-input-wrapper),
 :deep(.project-page .arco-select-view-single) {
-  border-radius: 2px;
+  border-radius: 0;
+}
+
+@media (max-width: 1399px) {
+  .summary-band {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 1100px) {
   .summary-band {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1600px) {
+  .summary-band {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 }
 
@@ -1013,7 +1049,7 @@ function dictionaryStyle(
     flex-wrap: wrap;
   }
   .keyword-input {
-    width: min(273px, calc(100vw - 42px));
+    width: min(242px, calc(100vw - 42px));
   }
 }
 </style>

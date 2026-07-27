@@ -185,8 +185,18 @@ async function alignmentMetrics(page: Page, zoom: 1 | 2, requireSelect = true) {
 test('project overview matches the Figma shell with real API data at 1440x900', async ({
   page,
 }) => {
+  const consoleErrors: string[] = []
+  const pageErrors: string[] = []
+  const requestFailures: string[] = []
   await page.setViewportSize({ width: 1440, height: 900 })
   await login(page)
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text())
+  })
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  page.on('requestfailed', (request) => {
+    requestFailures.push(`${request.method()} ${request.url()} ${request.failure()?.errorText || ''}`)
+  })
 
   const listResponse = page.waitForResponse(
     (response) =>
@@ -216,7 +226,17 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
     const tableBox = tableFrame.getBoundingClientRect()
     const metricIcon = document.querySelector<HTMLElement>('.metric-icon')
     const metricImage = metricIcon?.querySelector<HTMLImageElement>('img')
-    if (!metricIcon || !metricImage) throw new Error('Project overview metric icon is missing')
+    const scope = document.querySelector<HTMLElement>('.scope-field')
+    const keyword = document.querySelector<HTMLElement>('.keyword-input')
+    const searchButton = document.querySelector<HTMLElement>('.search-button')
+    const createButton = document.querySelector<HTMLElement>(
+      '.project-toolbar .page-toolbar__actions .arco-btn',
+    )
+    if (!metricIcon || !metricImage || !scope || !keyword || !searchButton || !createButton) {
+      throw new Error('Project overview Figma alignment nodes are incomplete')
+    }
+    const leftInPage = (element: Element): number =>
+      Math.round(element.getBoundingClientRect().left - pageBox.left)
     return {
       headerHeight: Math.round(header.getBoundingClientRect().height),
       sidebarWidth: Math.round(sidebar.getBoundingClientRect().width),
@@ -228,9 +248,26 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
       toolbarHeight: Math.round(toolbar.getBoundingClientRect().height),
       toolbarTop: Math.round(toolbarBox.top - pageBox.top),
       tableTop: Math.round(tableBox.top - pageBox.top),
+      tableWidth: Math.round(tableBox.width),
+      tableHeight: Math.round(tableBox.height),
       iconContainerSize: Math.round(metricIcon.getBoundingClientRect().width),
       iconSize: Math.round(metricImage.getBoundingClientRect().width),
       iconBackground: getComputedStyle(metricIcon).backgroundColor,
+      metricLabelOffsets: [
+        ...document.querySelectorAll<HTMLElement>('.metric-label'),
+      ].map(leftInPage),
+      toolbarOffsets: {
+        scope: leftInPage(scope),
+        keyword: leftInPage(keyword),
+        search: leftInPage(searchButton),
+        create: leftInPage(createButton),
+      },
+      toolbarWidths: {
+        scope: Math.round(scope.getBoundingClientRect().width),
+        keyword: Math.round(keyword.getBoundingClientRect().width),
+        search: Math.round(searchButton.getBoundingClientRect().width),
+        create: Math.round(createButton.getBoundingClientRect().width),
+      },
     }
   })
 
@@ -245,9 +282,14 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
     toolbarHeight: 32,
     toolbarTop: 125,
     tableTop: 169,
+    tableWidth: 1208,
+    tableHeight: 602,
     iconContainerSize: 48,
     iconSize: 28,
     iconBackground: 'rgba(0, 0, 0, 0)',
+    metricLabelOffsets: [89, 347, 605, 863, 1121],
+    toolbarOffsets: { scope: 13, keyword: 121, search: 371, create: 1139 },
+    toolbarWidths: { scope: 100, keyword: 242, search: 82, create: 82 },
   })
 
   const expectedSummaryLabels = [
@@ -267,18 +309,19 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
       .locator('.search-button')
       .evaluate((button) => getComputedStyle(button).backgroundColor),
   ).toBe('rgb(37, 99, 235)')
-  const refreshButton = page.locator('.project-toolbar .page-toolbar__actions .arco-btn').first()
-  await expect(refreshButton).toBeEnabled()
-  expect(await refreshButton.evaluate((button) => getComputedStyle(button).backgroundColor)).toBe(
-    'rgb(242, 243, 245)',
-  )
+  const actionButtons = page.locator('.project-toolbar .page-toolbar__actions .arco-btn')
+  await expect(actionButtons).toHaveCount(1)
+  await expect(actionButtons.first()).toHaveAccessibleName('新建')
+  expect(
+    await actionButtons.first().evaluate((button) => getComputedStyle(button).backgroundColor),
+  ).toBe('rgb(37, 99, 235)')
 
   const tableHeaders = await page
     .locator('.project-list-panel thead .arco-table-th')
     .allTextContents()
   expect(tableHeaders.slice(0, 13).map((value) => value.trim())).toEqual([
     '项目名称',
-    '项目经理',
+    '项目经理 ↕',
     '项目地点',
     '当前阶段',
     '项目进度',
@@ -286,7 +329,7 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
     '验收时间',
     '合同币种',
     '合同金额',
-    '折算人民币金额',
+    '折算人民币',
     '客户类型',
     '合同类型',
     '销售',
@@ -298,7 +341,7 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
       headers.slice(0, 13).map((header) => Math.round(header.getBoundingClientRect().width)),
     )
   expect(columnWidths).toEqual([
-    120, 110, 160, 200, 180, 120, 120, 115, 160, 160, 120, 110, 100,
+    240, 110, 160, 200, 180, 120, 120, 80, 160, 160, 120, 110, 100,
   ])
 
   const leftAlignedOffsets = await page
@@ -323,6 +366,9 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
   expect(leftAlignedOffsets).toEqual([12, 12, 12, 12, 12])
 
   await expect(page.locator('.arco-message')).toHaveCount(0, { timeout: 10_000 })
+  expect(consoleErrors).toEqual([])
+  expect(pageErrors).toEqual([])
+  expect(requestFailures).toEqual([])
   await page.screenshot({ path: acceptanceScreenshot, animations: 'disabled' })
 })
 
@@ -542,8 +588,8 @@ test('project overview uses wheel loading, large rows and a fixed project-name c
   await expect(page.getByText('2,888,888.13', { exact: true })).toBeVisible()
   await expect(
     page.locator('.project-list-panel tbody .arco-table-tr').first().locator('.arco-table-td').nth(7),
-  ).toContainText('越南盾')
-  await expect(page.getByText('越南 · 胡志明市', { exact: true })).toBeVisible()
+  ).toContainText('VND')
+  await expect(page.getByText('越南·胡志明市', { exact: true })).toBeVisible()
 
   const metrics = await projectTableMetrics(page)
   expect(metrics).toMatchObject({

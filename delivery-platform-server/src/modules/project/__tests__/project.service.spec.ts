@@ -1131,16 +1131,12 @@ describe('ProjectService', () => {
     prisma.project.count
       .mockResolvedValueOnce(8)
       .mockResolvedValueOnce(4)
-      .mockResolvedValueOnce(2)
-      .mockResolvedValueOnce(2)
-      .mockResolvedValueOnce(1);
+      .mockResolvedValueOnce(2);
 
     await expect(service.getSummary(publicActor, { scope: 'all' })).resolves.toEqual({
       total: 8,
       active: 4,
-      accepted: 2,
       acceptedThisYear: 2,
-      highRisk: 1,
       totalConvertedAmount: null,
       acceptedConvertedAmount: null,
     });
@@ -1159,9 +1155,7 @@ describe('ProjectService', () => {
     prisma.project.count
       .mockResolvedValueOnce(8)
       .mockResolvedValueOnce(4)
-      .mockResolvedValueOnce(3)
-      .mockResolvedValueOnce(2)
-      .mockResolvedValueOnce(1);
+      .mockResolvedValueOnce(2);
     prisma.project.aggregate
       .mockResolvedValueOnce({
         _sum: { convertedAmount: new Prisma.Decimal('28565000') },

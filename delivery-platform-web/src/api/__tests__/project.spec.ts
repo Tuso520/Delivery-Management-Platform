@@ -21,10 +21,9 @@ describe('projectApi refactored contract', () => {
   it('loads summary and the overview list with the documented query contract', () => {
     const params = {
       keyword: '上海',
-      summaryFilter: 'ACTIVE' as const,
       page: 2,
       pageSize: 20,
-      sort: 'updatedAt:desc' as const,
+      sort: 'projectManager:asc' as const,
     }
 
     projectApi.getSummary(params)

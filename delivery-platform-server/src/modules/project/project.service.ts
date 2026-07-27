@@ -37,7 +37,6 @@ import {
 import {
   type ProjectDeliveryStage,
   type ProjectLifecycleStatus,
-  type ProjectSummaryFilter,
   type ProjectScope,
 } from './project.constants';
 
@@ -260,7 +259,6 @@ export class ProjectService {
         countryCode: query.countryCode ?? null,
         customerType: query.customerType ?? null,
         projectType: query.projectType ?? null,
-        summaryFilter: query.summaryFilter ?? null,
         resultCount: projectList.length,
       },
     );
@@ -342,9 +340,7 @@ export class ProjectService {
   ): Promise<{
     total: number;
     active: number;
-    accepted: number;
     acceptedThisYear: number;
-    highRisk: number;
     totalConvertedAmount: number | null;
     acceptedConvertedAmount: number | null;
   }> {
@@ -368,25 +364,15 @@ export class ProjectService {
         lte: now,
       },
     };
-    const [total, active, accepted, acceptedThisYear, highRisk, totalAmount, acceptedAmount] =
+    const [total, active, acceptedThisYear, totalAmount, acceptedAmount] =
       await Promise.all([
         this.prisma.project.count({ where: filteredScope }),
         this.prisma.project.count({
           where: {
-            AND: [filteredScope, this.buildSummaryFilterWhere('ACTIVE')],
-          },
-        }),
-        this.prisma.project.count({
-          where: {
-            AND: [filteredScope, this.buildSummaryFilterWhere('ACCEPTED')],
+            AND: [filteredScope, { status: 'ACTIVE', archivedAt: null }],
           },
         }),
         this.prisma.project.count({ where: { AND: [filteredScope, acceptedThisYearWhere] } }),
-        this.prisma.project.count({
-          where: {
-            AND: [filteredScope, this.buildSummaryFilterWhere('HIGH_RISK')],
-          },
-        }),
         this.prisma.project.aggregate({
           where: filteredScope,
           _sum: { convertedAmount: true },
@@ -400,9 +386,7 @@ export class ProjectService {
     return {
       total,
       active,
-      accepted,
       acceptedThisYear,
-      highRisk,
       totalConvertedAmount: canViewFinancial
         ? (totalAmount._sum.convertedAmount?.toNumber() ?? 0)
         : null,
@@ -1615,32 +1599,7 @@ export class ProjectService {
     if (query.countryCode) filters.push({ countryCode: query.countryCode });
     if (query.projectType) filters.push({ projectType: query.projectType });
     if (query.customerType) filters.push({ customerType: query.customerType });
-    if (query.summaryFilter && query.summaryFilter !== 'ALL') {
-      filters.push(this.buildSummaryFilterWhere(query.summaryFilter));
-    }
     return filters;
-  }
-
-  private buildSummaryFilterWhere(
-    filter: Exclude<ProjectSummaryFilter, 'ALL'>,
-  ): Prisma.ProjectWhereInput {
-    if (filter === 'ACTIVE') {
-      return { status: 'ACTIVE', archivedAt: null };
-    }
-    if (filter === 'ACCEPTED') {
-      return { actualAcceptanceAt: { not: null } };
-    }
-    if (filter === 'ACCEPTED_THIS_YEAR') {
-      const now = new Date();
-      const year = now.getUTCFullYear();
-      return {
-        actualAcceptanceAt: {
-          gte: new Date(Date.UTC(year, 0, 1)),
-          lte: now,
-        },
-      };
-    }
-    return { riskLevel: { in: [RiskLevel.High, RiskLevel.Critical] } };
   }
 
   private resolveProjectOrderBy(sort?: string): Prisma.ProjectOrderByWithRelationInput {

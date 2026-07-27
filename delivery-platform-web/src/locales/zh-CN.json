@@ -687,18 +687,14 @@
     "summaryAria": "项目概览统计",
     "stats": {
       "total": "项目总数",
-      "active": "进行中",
       "activeProjects": "进行中的项目",
-      "accepted": "已验收",
       "acceptedThisYear": "今年验收项目",
-      "highRisk": "高风险",
-      "totalAmount": "项目金额（CNY）",
-      "acceptedAmount": "确收金额（CNY）",
+      "totalAmount": "项目金额（{currency}）",
+      "acceptedAmount": "确收金额（{currency}）",
       "tenThousands": "万",
       "items": "个"
     },
     "searchPlaceholder": "搜索项目名称",
-    "refresh": "刷新",
     "query": "查询",
     "create": "新建",
     "edit": "编辑项目",
@@ -721,7 +717,6 @@
       "contractCurrency": "合同币种",
       "convertedCny": "折算人民币",
       "convertedCurrency": "折算{currency}",
-      "convertedAmount": "折算{currency}金额",
       "sales": "销售",
       "manager": "项目经理"
     },

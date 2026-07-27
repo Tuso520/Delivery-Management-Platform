@@ -95,19 +95,24 @@ function collectBrowserErrors(page: Page): string[] {
   return errors
 }
 
-async function login(page: Page, username: string | undefined, password: string | undefined) {
+async function login(
+  page: Page,
+  username: string | undefined,
+  password: string | undefined,
+): Promise<string> {
   const [resolvedUsername, resolvedPassword] = requireCredentials(username, password)
   await page.goto('/#/login')
   await page.getByPlaceholder('用户名').fill(resolvedUsername)
   await page.getByPlaceholder('密码').fill(resolvedPassword)
+  const loginResponse = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/v1/auth/login' &&
+      response.request().method() === 'POST' &&
+      response.status() === 200,
+  )
   await page.getByRole('button', { name: /登\s*录/u }).click()
+  const session = (await (await loginResponse).json()) as SessionEnvelope
   await page.waitForURL((url) => !url.hash.startsWith('#/login'))
-}
-
-async function getAccessToken(page: Page): Promise<string> {
-  const refreshResponse = await page.request.post('/api/v1/auth/refresh', { timeout: 60_000 })
-  expect(refreshResponse.status()).toBe(200)
-  const session = (await refreshResponse.json()) as SessionEnvelope
   return session.data.accessToken
 }
 
@@ -134,9 +139,8 @@ async function expectProjectResponse(
 
 test('administrator can use the target architecture navigation', async ({ page }) => {
   const browserErrors = collectBrowserErrors(page)
-  await login(page, adminUsername, adminPassword)
+  const accessToken = await login(page, adminUsername, adminPassword)
   browserErrors.length = 0
-  const accessToken = await getAccessToken(page)
   const projects = await fetchProjectList(
     page,
     accessToken,
@@ -167,7 +171,7 @@ test('administrator can use the target architecture navigation', async ({ page }
   })
 
   await page.goto('/#/projects')
-  await expect(page.getByRole('button', { name: /项目总数\s*9/u })).toBeVisible({
+  await expect(page.locator('.summary-metric').filter({ hasText: /项目总数\s*9/u })).toBeVisible({
     timeout: 60_000,
   })
   await expect(page.getByText('示例项目 1', { exact: true })).toBeVisible({ timeout: 60_000 })
@@ -200,9 +204,8 @@ test('administrator can create, edit, inspect, progress, archive and restore a p
   page,
 }) => {
   const browserErrors = collectBrowserErrors(page)
-  await login(page, adminUsername, adminPassword)
+  const accessToken = await login(page, adminUsername, adminPassword)
   browserErrors.length = 0
-  const accessToken = await getAccessToken(page)
   const authorization = { authorization: `Bearer ${accessToken}` }
   const projects = await fetchProjectList(
     page,
@@ -376,8 +379,7 @@ test('administrator can create, edit, inspect, progress, archive and restore a p
 })
 
 test('administrator round-trips a private MinIO file and File Worker output', async ({ page }) => {
-  await login(page, adminUsername, adminPassword)
-  const accessToken = await getAccessToken(page)
+  const accessToken = await login(page, adminUsername, adminPassword)
   const authorization = { authorization: `Bearer ${accessToken}` }
   const projects = await fetchProjectList(
     page,
@@ -478,9 +480,8 @@ test('project manager is restricted by data scope, field permissions and setting
   page,
 }) => {
   const browserErrors = collectBrowserErrors(page)
-  await login(page, limitedUsername, limitedPassword)
+  const accessToken = await login(page, limitedUsername, limitedPassword)
   browserErrors.length = 0
-  const accessToken = await getAccessToken(page)
   const projects = await fetchProjectList(page, accessToken)
 
   expect(projects.data.total).toBe(6)
@@ -489,7 +490,7 @@ test('project manager is restricted by data scope, field permissions and setting
     expect(project.convertedCnyAmount ?? null).toBeNull()
   }
   await page.goto('/#/projects')
-  await expect(page.getByRole('button', { name: /项目总数\s*6/u })).toBeVisible({
+  await expect(page.locator('.summary-metric').filter({ hasText: /项目总数\s*6/u })).toBeVisible({
     timeout: 60_000,
   })
   await expect(page.getByRole('button', { name: '永久删除' })).toHaveCount(0)

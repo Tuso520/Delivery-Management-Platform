@@ -478,15 +478,13 @@ GET /dashboard/recent-activities
 {
   total: number
   active: number
-  accepted: number
   acceptedThisYear: number
-  highRisk: number
   totalConvertedAmount: number | null
   acceptedConvertedAmount: number | null
 }
 ```
 
-所有统计必须按数据范围计算。两个折算金额字段仅向具有 `project:view_financial` 的用户返回；今年验收按当前 UTC 自然年统计，不改变历史 `accepted` 与 `highRisk` 字段的兼容语义。
+所有统计必须按数据范围计算。两个折算金额字段仅向具有 `project:view_financial` 的用户返回；今年验收按当前 UTC 自然年统计。项目概览响应不再返回 Figma 未使用的 `accepted` 与 `highRisk` 旧字段。
 
 ### 我的待办
 
@@ -608,7 +606,8 @@ GET /projects/summary
 查询参数：
 
 ```text
-scope=mine|all
+scope=mine|all|archived
+keyword=<已提交关键词>
 ```
 
 返回：
@@ -617,9 +616,7 @@ scope=mine|all
 {
   total
   active
-  accepted
   acceptedThisYear
-  highRisk
   totalConvertedAmount
   acceptedConvertedAmount
 }
@@ -636,13 +633,14 @@ GET /projects
 前端参数：
 
 ```text
-scope=mine|all
+scope=mine|all|archived
 keyword
-summaryFilter
 page
 pageSize
-sort
+sort=projectManager:asc|projectManager:desc
 ```
+
+项目概览只暴露项目经理升降序；通用项目 API 为其他内部调用继续兼容 `updatedAt` 与 `projectName` 升降序，默认仍按更新时间倒序。
 
 关键词搜索：
 

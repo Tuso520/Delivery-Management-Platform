@@ -687,18 +687,14 @@
     "summaryAria": "Project overview statistics",
     "stats": {
       "total": "Total Projects",
-      "active": "Active",
       "activeProjects": "Active Projects",
-      "accepted": "Accepted",
       "acceptedThisYear": "Accepted This Year",
-      "highRisk": "High Risk",
-      "totalAmount": "Project Amount (CNY)",
-      "acceptedAmount": "Accepted Amount (CNY)",
+      "totalAmount": "Project Amount ({currency})",
+      "acceptedAmount": "Accepted Amount ({currency})",
       "tenThousands": "×10k",
       "items": ""
     },
     "searchPlaceholder": "Search project name",
-    "refresh": "Refresh",
     "query": "Query",
     "create": "New",
     "edit": "Edit Project",
@@ -721,7 +717,6 @@
       "contractCurrency": "Contract Currency",
       "convertedCny": "Converted CNY",
       "convertedCurrency": "Converted {currency}",
-      "convertedAmount": "Converted {currency} Amount",
       "sales": "Sales",
       "manager": "Project Manager"
     },
