@@ -66,8 +66,7 @@ export interface ProjectArchiveTargetItem {
   owner?: { id: string; realName: string; username: string } | null
   updatedAt: string
   canUpload: boolean
-  canArchive: boolean
-  canRestore: boolean
+  canDeleteFile: boolean
   pendingReviewSummary: {
     count: number
     tasks: ProjectArchiveReviewTaskSummary[]
@@ -103,34 +102,6 @@ export interface ProjectArchiveTargetTree {
     hasDiff: boolean
   }
   folders: ProjectArchiveTargetFolder[]
-}
-
-export interface ProjectArchiveTemplateDiff {
-  sourceVersion: { id: string | null; version: string | null }
-  latestVersion: { id: string; version: string } | null
-  hasDiff: boolean
-  canSync: boolean
-  syncMode: 'ADD_ONLY'
-  requiresMigration: boolean
-  reason?: string
-  additions: {
-    folders: Array<{ stableKey: string; name: string; sortOrder: number }>
-    items: Array<{
-      stableKey: string
-      folderStableKey: string
-      name: string
-      required: boolean
-      reviewRequired: boolean
-    }>
-  }
-  changes: {
-    folders: Array<{ stableKey: string; name: string; fields: string[] }>
-    items: Array<{ stableKey: string; name: string; fields: string[] }>
-  }
-  projectOnly: {
-    folders: Array<{ stableKey: string; name: string }>
-    items: Array<{ stableKey: string; name: string }>
-  }
 }
 
 export interface ArchiveTemplateVersionItem {

@@ -17,6 +17,7 @@ const expectedCounts: Record<string, number> = {
   KNOWLEDGE_CATEGORY: 6,
   JOB_POSITION: 6,
   PROJECT_TYPE: 7,
+  FILE_TYPE: 14,
 };
 
 async function snapshot() {
@@ -45,7 +46,7 @@ async function main(): Promise<void> {
     throw new Error('字段初始化重复执行后数据发生变化');
   }
   if (second.length !== Object.keys(expectedCounts).length) {
-    throw new Error(`字段分类数量错误：期望 12，实际 ${second.length}`);
+    throw new Error(`字段分类数量错误：期望 ${Object.keys(expectedCounts).length}，实际 ${second.length}`);
   }
   for (const category of second) {
     const expected = expectedCounts[category.categoryCode];

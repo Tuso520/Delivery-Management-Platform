@@ -170,7 +170,7 @@ export class ProjectArchiveTargetService {
     }
 
     const canUpload = this.hasPermission(actor, 'archive:upload');
-    const canArchive = this.hasPermission(actor, 'archive:item:archive');
+    const canDeleteFile = this.hasPermission(actor, 'file:archive');
     const folders = project.archiveFolders.map((folder) => {
       const items = folder.items.map((item) => {
         const currentFile = item.files[0] ?? null;
@@ -260,8 +260,11 @@ export class ProjectArchiveTargetService {
           owner: item.ownerUser,
           updatedAt: presentedVersion?.uploadedAt ?? item.updatedAt,
           canUpload: canUpload && !item.archivedAt && !folder.archivedAt,
-          canArchive: canArchive && !item.archivedAt,
-          canRestore: canArchive && Boolean(item.archivedAt),
+          canDeleteFile:
+            canDeleteFile &&
+            !item.archivedAt &&
+            !folder.archivedAt &&
+            Boolean(presentedFile?.logicalFile.id),
           pendingReviewSummary: {
             count: pendingTasks.length,
             tasks: pendingTasks.map((task) => ({

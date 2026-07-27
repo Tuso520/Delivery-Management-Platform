@@ -236,6 +236,10 @@ export const fileApi = {
     })
   },
 
+  archive(id: string) {
+    return request.post<{ id: string; archivedAt: string }>(`/files/${id}/archive`)
+  },
+
   async createPreviewSession(id: string) {
     const session = await request.get<UnifiedFilePreviewSession>(`/files/${id}/preview-session`, {
       timeout: 120000,

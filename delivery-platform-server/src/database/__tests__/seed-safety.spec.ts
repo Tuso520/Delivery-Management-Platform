@@ -537,6 +537,7 @@ describe('deployment seed safety', () => {
         'KNOWLEDGE_CATEGORY',
         'JOB_POSITION',
         'PROJECT_TYPE',
+        'FILE_TYPE',
         'archive_file_type',
         'standard_type',
         'knowledge_content_type',

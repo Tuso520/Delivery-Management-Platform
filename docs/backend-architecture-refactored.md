@@ -906,8 +906,7 @@ GET /projects/:projectId/archive-tree
           owner
           updatedAt
           canUpload
-          canArchive
-          canRestore
+          canDeleteFile
           pendingReviewSummary
         }
       ]
@@ -916,7 +915,7 @@ GET /projects/:projectId/archive-tree
 }
 ```
 
-`allowedExtensions`、`maxFileSize` 和 `namingRule` 来自项目档案快照，是上传时不可变策略的公开契约。客户端使用 `currentVersion.logicalFileId` 判断应创建独立文件还是提交现有文件的新版本；服务端始终执行最终格式、大小、命名与多文件约束校验。
+`allowedExtensions`、`maxFileSize` 和 `namingRule` 来自项目档案快照，是上传时不可变策略的公开契约。客户端使用 `currentVersion.logicalFileId` 判断应创建独立文件还是提交现有文件的新版本；服务端同时校验启用的 `FILE_TYPE` 字段配置以及快照格式、大小、命名与多文件约束。字段类型停用只阻止新上传，不改写历史文件或版本。
 
 ## 7.4 文件上传
 
@@ -951,14 +950,15 @@ changeDescription
 - `MAJOR` 递增主版本。
 - 审核失败版本不成为当前正式版本。
 
-## 7.5 档案项归档
+## 7.5 文件删除与档案项归档
 
 ```http
+POST /files/:logicalFileId/archive
 POST /projects/:projectId/archive-items/:itemId/archive
 POST /projects/:projectId/archive-items/:itemId/restore
 ```
 
-不能直接删除有文件历史的档案项。
+项目档案页面“删除”只调用统一文件归档接口：软归档 `LogicalFile` 和 `ProjectArchiveFile` 关联，保留全部 `FileVersion`、MinIO 对象与审计记录。档案项归档/恢复是受控后台能力，不是 Figma `43:317` 的页面入口；不能直接物理删除有文件历史的档案项。
 
 ## 7.6 模版差异同步
 

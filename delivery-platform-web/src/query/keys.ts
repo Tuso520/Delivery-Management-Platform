@@ -33,7 +33,6 @@ export const queryKeys = {
     all: ['archive'] as const,
     projectOptions: () => ['archive', 'project-options'] as const,
     tree: (projectId: string) => ['archive', 'tree', projectId] as const,
-    templateDiff: (projectId: string) => ['archive', 'template-diff', projectId] as const,
     userOptions: () => ['archive', 'user-options'] as const,
   },
   archiveTemplates: {

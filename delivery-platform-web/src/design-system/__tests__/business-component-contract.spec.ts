@@ -34,7 +34,9 @@ describe('business component adoption contract', () => {
     expect(source('src/domains/project/pages/ProjectOverviewPage.vue')).toContain(
       'class="summary-band"',
     )
-    expect(source('src/domains/archive/pages/ArchiveWorkspacePage.vue')).toContain('<StatCard')
+    expect(source('src/domains/archive/pages/ArchiveWorkspacePage.vue')).toContain(
+      'class="archive-metrics"',
+    )
   })
 
   it('forwards named table slots and keeps modal and drawer behaviors explicit', () => {
@@ -76,6 +78,21 @@ describe('business component adoption contract', () => {
     expect(archiveTemplate).toContain('preserve-column-widths')
     expect(archiveTemplate).toContain(':scroll="{ x: 1080 }"')
     expect(archiveTemplate).toContain('grid-template-columns: minmax(0, 1fr)')
+  })
+
+  it('keeps the project archive workspace aligned to the Figma 43:317 grid', () => {
+    const archive = source('src/domains/archive/pages/ArchiveWorkspacePage.vue')
+
+    expect(archive).toContain('grid-template-columns: 270px minmax(937px, 1fr)')
+    expect(archive).toContain(':scroll="{ x: 937, y: 471 }"')
+    expect(archive).toContain(":title=\"t('archive.columns.fileName')\" :width=\"340\"")
+    expect(archive).toContain(":title=\"t('archive.columns.version')\" :width=\"80\"")
+    expect(archive).toContain(":title=\"t('archive.columns.fileSize')\" :width=\"100\"")
+    expect(archive).toContain(":title=\"t('archive.columns.uploader')\" :width=\"113\"")
+    expect(archive).toContain(":title=\"t('archive.columns.uploadedAt')\" :width=\"122\"")
+    expect(archive).toContain(":title=\"t('common.action')\" :width=\"182\"")
+    expect(archive).not.toContain('archive.syncTemplate')
+    expect(archive).not.toContain('record.canRestore')
   })
 
   it('removes the global page and Arco compatibility layer', () => {
