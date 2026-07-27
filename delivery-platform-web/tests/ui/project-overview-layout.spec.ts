@@ -76,6 +76,13 @@ function createProjectScenario() {
   }
 }
 
+interface FieldOptionsEnvelope {
+  data: Array<{
+    fieldCode: string
+    options: Array<{ label: string; value: string }>
+  }>
+}
+
 async function projectTableMetrics(page: Page) {
   return page.locator('.project-list-panel').evaluate((panel) => {
     const viewport = panel.querySelector<HTMLElement>('.business-table__viewport')
@@ -315,13 +322,25 @@ test('project overview uses wheel loading, large rows and a fixed project-name c
     (route) => scenario.fulfill(route),
   )
 
+  const fieldOptionsResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'GET' &&
+      response.url().includes('/api/v1/field-options/module/project'),
+  )
   await page.goto('/#/projects')
+  const fieldOptions = (await (await fieldOptionsResponse).json()) as FieldOptionsEnvelope
+  const currencyOptions =
+    fieldOptions.data.find((field) => field.fieldCode === 'CURRENCY')?.options ?? []
+  const vndLabel = currencyOptions.find((option) => option.value === 'VND')?.label
+  const cnyLabel = currencyOptions.find((option) => option.value === 'CNY')?.label
+  expect(vndLabel).toEqual(expect.any(String))
+  expect(cnyLabel).toEqual(expect.any(String))
   const viewport = page.locator('.project-list-panel .business-table__viewport')
   await expect(page.locator('.project-link')).toHaveCount(20, { timeout: 60_000 })
   await expect(page.locator('.business-table__pagination')).toHaveCount(0)
   await expect(page.locator('.project-list-panel .arco-pagination')).toHaveCount(0)
-  await expect(page.getByText('VND 987,654,321,012.00', { exact: true })).toBeVisible()
-  await expect(page.getByText('CNY 2,888,888.13', { exact: true })).toBeVisible()
+  await expect(page.getByText(`${vndLabel} 987,654,321,012.00`, { exact: true })).toBeVisible()
+  await expect(page.getByText(`${cnyLabel} 2,888,888.13`, { exact: true })).toBeVisible()
   await expect(page.getByText('越南 · 胡志明市', { exact: true })).toBeVisible()
 
   const metrics = await projectTableMetrics(page)
@@ -381,5 +400,5 @@ test('archive template table keeps its declared column widths stable', async ({ 
     hasPreservedWidthClass: true,
     tableLayout: 'fixed',
   })
-  expect(metrics.scrollWidth).toBeGreaterThanOrEqual(1250)
+  expect(metrics.scrollWidth).toBeGreaterThanOrEqual(1080)
 })

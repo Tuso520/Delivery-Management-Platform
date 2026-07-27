@@ -4,24 +4,24 @@ import { createHash } from 'node:crypto';
 
 import { Prisma, PrismaClient } from '@prisma/client';
 
+import { TARGET_APPROVAL_BUSINESS_TYPES } from '../src/modules/platform/dto/approval-template.dto';
+
 import { testDatasetManifest } from './test-data-manifest';
 
 const prisma = new PrismaClient();
 
-const countries = ['CN', 'VN', 'TH', 'SG', 'ID', 'MY', 'AE', 'OM'];
-const currencies = ['CNY', 'USD', 'VND', 'THB', 'SGD', 'MYR'];
-const stages = [
-  'STARTUP',
-  'DEEPENING',
-  'PROCUREMENT',
-  'CONSTRUCTION',
-  'COMMISSIONING',
-  'TESTING',
-  'INTERNAL_ACCEPTANCE',
-  'EXTERNAL_ACCEPTANCE',
-  'WARRANTY',
-];
-const projectTypes = ['FACTORY', 'DATA_CENTER', 'COMMERCIAL', 'MEDICAL', 'RAIL_TRANSIT'];
+interface TestFieldValues {
+  contractTypes: string[];
+  countries: string[];
+  currencies: string[];
+  customerTypes: string[];
+  products: string[];
+  projectKeywords: string[];
+  projectTypes: string[];
+  stages: string[];
+  standardCategories: string[];
+}
+
 const seed = process.env.TEST_DATA_SEED?.trim() || 'test-release';
 let randomState = Number.parseInt(createHash('sha256').update(seed).digest('hex').slice(0, 8), 16);
 
@@ -59,6 +59,55 @@ function dateAt(index: number, offsetDays = 0): Date {
   return new Date(Date.UTC(2026, index % 12, ((index * 7 + offsetDays) % 27) + 1, 8));
 }
 
+async function loadTestFieldValues(): Promise<TestFieldValues> {
+  const categoryCodes = [
+    'CONTRACT_TYPE',
+    'COUNTRY',
+    'CURRENCY',
+    'CUSTOMER_TYPE',
+    'PRODUCT_TYPE',
+    'PROJECT_KEYWORD',
+    'PROJECT_STAGE',
+    'PROJECT_TYPE',
+    'STANDARD_CATEGORY',
+  ] as const;
+  const categories = await prisma.dictionaryCategory.findMany({
+    where: { categoryCode: { in: [...categoryCodes] }, status: 'Active' },
+    select: {
+      categoryCode: true,
+      items: {
+        where: { deletedAt: null, status: 'Active' },
+        orderBy: [{ sortOrder: 'asc' }, { itemValue: 'asc' }],
+        select: { itemValue: true },
+      },
+    },
+  });
+  const valuesByCode = new Map(
+    categories.map((category) => [
+      category.categoryCode,
+      category.items.map((item) => item.itemValue),
+    ]),
+  );
+  const required = (categoryCode: (typeof categoryCodes)[number]): string[] => {
+    const values = valuesByCode.get(categoryCode) ?? [];
+    if (values.length === 0) {
+      throw new Error(`active field configuration ${categoryCode} is required for test data`);
+    }
+    return values;
+  };
+  return {
+    contractTypes: required('CONTRACT_TYPE'),
+    countries: required('COUNTRY'),
+    currencies: required('CURRENCY'),
+    customerTypes: required('CUSTOMER_TYPE'),
+    products: required('PRODUCT_TYPE'),
+    projectKeywords: required('PROJECT_KEYWORD'),
+    projectTypes: required('PROJECT_TYPE'),
+    stages: required('PROJECT_STAGE'),
+    standardCategories: required('STANDARD_CATEGORY'),
+  };
+}
+
 async function seedUsers(minimum: number, adminPassword: string, roleId: string): Promise<void> {
   const missing = topUpCount(await prisma.user.count({ where: { deletedAt: null } }), minimum);
   if (missing === 0) return;
@@ -87,7 +136,11 @@ async function seedUsers(minimum: number, adminPassword: string, roleId: string)
   });
 }
 
-async function seedProjects(minimum: number, adminId: string): Promise<void> {
+async function seedProjects(
+  minimum: number,
+  adminId: string,
+  fields: TestFieldValues,
+): Promise<void> {
   const missing = topUpCount(await prisma.project.count({ where: { deletedAt: null } }), minimum);
   if (missing === 0) return;
   const exchangeRates: Record<string, number> = {
@@ -100,8 +153,10 @@ async function seedProjects(minimum: number, adminId: string): Promise<void> {
   };
 
   const data: Prisma.ProjectCreateManyInput[] = Array.from({ length: missing }, (_, index) => {
-    const currency = pick(currencies);
+    const currency = pick(fields.currencies);
     const rate = exchangeRates[currency] ?? 1;
+    const baseCurrency = fields.currencies.includes('CNY') ? 'CNY' : fields.currencies[0];
+    if (!baseCurrency) throw new Error('base currency field configuration is required');
     const amount = currency === 'VND'
       ? 8_000_000_000 + Math.floor(random() * 90_000_000_000)
       : 100_000 + Math.floor(random() * 5_000_000);
@@ -109,15 +164,16 @@ async function seedProjects(minimum: number, adminId: string): Promise<void> {
       projectCode: `TEST-${suffix(index)}`.slice(0, 30),
       projectName: `随机测试项目 ${suffix(index)}`,
       shortName: `测试项目 ${index + 1}`,
-      countryCode: pick(countries),
+      countryCode: pick(fields.countries),
       city: `测试城市 ${Math.floor(random() * 30) + 1}`,
       customerName: `测试客户 ${Math.floor(random() * 100) + 1}`,
-      projectType: pick(projectTypes),
-      contractType: pick(['EPC', 'EMC', 'POC']),
-      product: pick(['DEEPSIGHT', 'DEEPBOT']),
-      keywords: [pick(['NEW_BUILD', 'RENOVATION']), pick(['CONSTRUCTION', 'COMMISSIONING'])],
+      customerType: pick(fields.customerTypes),
+      projectType: pick(fields.projectTypes),
+      contractType: pick(fields.contractTypes),
+      product: pick(fields.products),
+      keywords: [pick(fields.projectKeywords), pick(fields.projectKeywords)],
       contractCurrency: currency,
-      baseCurrency: 'CNY',
+      baseCurrency,
       contractAmount: new Prisma.Decimal(amount),
       exchangeRate: new Prisma.Decimal(rate),
       convertedAmount: new Prisma.Decimal(amount * rate),
@@ -125,7 +181,7 @@ async function seedProjects(minimum: number, adminId: string): Promise<void> {
       exchangeRateSource: 'test-data',
       projectLanguage: 'zh-CN',
       status: pick(['DRAFT', 'ACTIVE', 'PAUSED', 'COMPLETED']),
-      currentStage: pick(stages),
+      currentStage: pick(fields.stages),
       progressPercent: new Prisma.Decimal(Math.floor(random() * 101)),
       riskLevel: pick(['Low', 'Medium', 'High', 'Critical']),
       contractNo: `TC-${suffix(index)}`.slice(0, 100),
@@ -139,7 +195,11 @@ async function seedProjects(minimum: number, adminId: string): Promise<void> {
   await prisma.project.createMany({ data, skipDuplicates: true });
 }
 
-async function seedProjectDetails(minimum: number, adminId: string): Promise<void> {
+async function seedProjectDetails(
+  minimum: number,
+  adminId: string,
+  fields: TestFieldValues,
+): Promise<void> {
   const projects = await prisma.project.findMany({
     where: { deletedAt: null },
     orderBy: { projectCode: 'asc' },
@@ -154,7 +214,7 @@ async function seedProjectDetails(minimum: number, adminId: string): Promise<voi
       projectId: pick(projects).id,
       title: `测试过程记录 ${suffix(index)}`,
       recordType: pick(['Progress', 'Meeting', 'Risk']),
-      stageCode: pick(stages),
+      stageCode: pick(fields.stages),
       recordDate: dateAt(index),
       description: `自动生成的项目过程数据 ${suffix(index)}`,
       status: 'Recorded',
@@ -166,6 +226,7 @@ async function seedProjectDetails(minimum: number, adminId: string): Promise<voi
   await prisma.projectPayment.createMany({
     data: Array.from({ length: paymentMissing }, (_, index) => {
       const amount = 10_000 + Math.floor(random() * 900_000);
+      const currency = fields.currencies.includes('CNY') ? 'CNY' : pick(fields.currencies);
       return {
         projectId: pick(projects).id,
         paymentName: `测试付款节点 ${suffix(index)}`,
@@ -173,9 +234,9 @@ async function seedProjectDetails(minimum: number, adminId: string): Promise<voi
         dueDate: dateAt(index, 5),
         status: pick(['Planned', 'Due', 'Received']),
         originalAmount: new Prisma.Decimal(amount),
-        originalCurrency: 'CNY',
+        originalCurrency: currency,
         exchangeRate: new Prisma.Decimal(1),
-        convertedCurrency: 'CNY',
+        convertedCurrency: currency,
         convertedAmount: new Prisma.Decimal(amount),
         receivedOriginalAmount: new Prisma.Decimal(0),
         receivedConvertedAmount: new Prisma.Decimal(0),
@@ -187,14 +248,18 @@ async function seedProjectDetails(minimum: number, adminId: string): Promise<voi
   });
 }
 
-async function seedContentLibraries(minimum: number, adminId: string): Promise<void> {
+async function seedContentLibraries(
+  minimum: number,
+  adminId: string,
+  fields: TestFieldValues,
+): Promise<void> {
   const standardMissing = topUpCount(await prisma.standard.count(), minimum);
   await prisma.standard.createMany({
     data: Array.from({ length: standardMissing }, (_, index) => ({
       code: `TS-${suffix(index)}`.slice(0, 50),
       name: `随机测试标准 ${index + 1}`,
       type: pick(['PROCESS', 'CHECKLIST', 'DOCUMENT_TEMPLATE']),
-      category: pick(['项目启动', '施工安装', '测试验收']),
+      category: pick(fields.standardCategories),
       status: 'DRAFT',
       createdBy: adminId,
       updatedBy: adminId,
@@ -221,16 +286,16 @@ async function seedContentLibraries(minimum: number, adminId: string): Promise<v
   });
 }
 
-async function seedChecklistAndTools(minimum: number): Promise<void> {
+async function seedChecklistAndTools(minimum: number, fields: TestFieldValues): Promise<void> {
   const checklistMissing = topUpCount(await prisma.checklistTemplate.count(), minimum);
   for (let index = 0; index < checklistMissing; index += 1) {
     await prisma.checklistTemplate.create({
       data: {
         templateCode: `TCL-${suffix(index)}`.slice(0, 50),
         templateName: `随机检查模板 ${index + 1}`,
-        countryCode: pick(countries),
-        projectType: pick(projectTypes),
-        stageCode: pick(stages),
+        countryCode: pick(fields.countries),
+        projectType: pick(fields.projectTypes),
+        stageCode: pick(fields.stages),
         items: {
           create: {
             itemName: `随机检查项 ${index + 1}`,
@@ -398,7 +463,11 @@ async function seedIntegrationsAndRates(minimum: number, adminId: string): Promi
   });
 }
 
-async function seedPeopleOperations(minimum: number, adminId: string): Promise<void> {
+async function seedPeopleOperations(
+  minimum: number,
+  adminId: string,
+  fields: TestFieldValues,
+): Promise<void> {
   const projects = await prisma.project.findMany({
     where: { deletedAt: null },
     orderBy: { projectCode: 'asc' },
@@ -475,7 +544,7 @@ async function seedPeopleOperations(minimum: number, adminId: string): Promise<v
     });
   }
 
-  await seedApprovals(minimum, adminId, users);
+  await seedApprovals(minimum, adminId, users, fields);
   await seedSkillsAndTraining(minimum, adminId, users);
   await seedRetrospectivesAndBackups(minimum, adminId, projects);
 }
@@ -484,6 +553,7 @@ async function seedApprovals(
   minimum: number,
   adminId: string,
   users: Array<{ id: string }>,
+  fields: TestFieldValues,
 ): Promise<void> {
   const templateMissing = topUpCount(await prisma.approvalTemplate.count(), minimum);
   for (let index = 0; index < templateMissing; index += 1) {
@@ -491,8 +561,8 @@ async function seedApprovals(
       data: {
         templateCode: `TAP-${suffix(index)}`.slice(0, 50),
         templateName: `随机审批模板 ${index + 1}`,
-        businessType: pick(['PROJECT_CREATE', 'FILE_REVIEW', 'STANDARD_PUBLISH']),
-        countryCode: pick(countries),
+        businessType: pick(TARGET_APPROVAL_BUSINESS_TYPES),
+        countryCode: pick(fields.countries),
         steps: {
           create: {
             stepOrder: 1,
@@ -663,15 +733,16 @@ async function main(): Promise<void> {
     select: { id: true },
   });
   if (!admin || !role) throw new Error('base seed must create admin and at least one active role');
+  const fields = await loadTestFieldValues();
 
   await seedUsers(minimum, admin.password, role.id);
-  await seedProjects(minimum, admin.id);
-  await seedProjectDetails(minimum, admin.id);
-  await seedContentLibraries(minimum, admin.id);
-  await seedChecklistAndTools(minimum);
+  await seedProjects(minimum, admin.id, fields);
+  await seedProjectDetails(minimum, admin.id, fields);
+  await seedContentLibraries(minimum, admin.id, fields);
+  await seedChecklistAndTools(minimum, fields);
   await seedAdministration(minimum, admin.id);
   await seedIntegrationsAndRates(minimum, admin.id);
-  await seedPeopleOperations(minimum, admin.id);
+  await seedPeopleOperations(minimum, admin.id, fields);
 
   for (const dataset of testDatasetManifest(prisma)) {
     console.log(`${dataset.name}: ${await dataset.count()}`);

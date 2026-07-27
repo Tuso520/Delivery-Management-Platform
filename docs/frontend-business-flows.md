@@ -173,7 +173,7 @@ stateDiagram-v2
 
 ### 4.4 项目详情与编辑
 
-入口：`/projects/:projectId` 打开 800px 居中详情弹窗，`/projects/:projectId/edit` 打开编辑抽屉；两者保留项目概览的筛选、分页和范围 query。
+入口：`/projects/:projectId` 打开 944px 居中详情弹窗，`/projects/:projectId/edit` 打开编辑抽屉；两者保留项目概览的筛选、分页和范围 query。
 
 详情按权限提供：
 
@@ -211,7 +211,7 @@ stateDiagram-v2
 
 入口：`/archive-template`；路由权限 `archive_template:view`。
 
-档案模版列表使用合计 1250px 的固定列宽和固定表格布局，可用宽度不足时仅在表格容器内横向滚动；数据刷新、权限按钮变化和容器尺寸变化不触发列宽重新分配。
+档案模版列表使用 1080px 的固定横向滚动宽度和固定表格布局，可用宽度不足时仅在表格容器内横向滚动；数据刷新、权限按钮变化和容器尺寸变化不触发列宽重新分配。
 
 ### 5.1 模版版本流程
 

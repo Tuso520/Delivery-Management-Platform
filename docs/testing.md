@@ -138,7 +138,7 @@ UI E2E 默认使用 Playwright 锁定版本的 Chromium，CI 通过 `playwright 
    `DEPLOY_ENV=test`、40 位 commit 或显式确认时必须失败。
 3. 重置后不得残留该 Compose 项目的 MySQL、Redis、MinIO 命名卷或
    `backups/git-deploy*` 历史备份。
-4. migration、基础 seed、API、Worker 和前端健康后，才运行随机测试数据生成器。
+4. migration、基础 seed、API、Worker 和前端健康后，才运行随机测试数据生成器；生成器必须从当前启用的字段配置选择平台字段值。
 5. `prisma/verify-test-data.ts` 必须输出清单中全部数据集的实际数量，且每项均
    不少于 `TEST_DATA_MIN_COUNT`（默认 20）。
 6. `bash scripts/test-test-server-release.sh` 必须通过，证明生产环境、错误 Compose

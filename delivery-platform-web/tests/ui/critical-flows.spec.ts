@@ -175,15 +175,9 @@ test('administrator can use the target architecture navigation', async ({ page }
   await expect(page.getByRole('button', { name: '新建' })).toBeVisible()
 
   await page.locator('.scope-field .arco-select-view').click()
-  await page.locator('.arco-select-option').filter({ hasText: '归档项目' }).click()
-  await expect(page.getByText('示例项目 10', { exact: true })).toBeVisible({ timeout: 60_000 })
-  const seededArchivedProjectRow = page.locator('tr').filter({ hasText: '示例项目 10' })
-  await expect(seededArchivedProjectRow.getByRole('button', { name: '恢复' })).toBeVisible({
-    timeout: 60_000,
-  })
-  await expect(seededArchivedProjectRow.getByRole('button', { name: '永久删除' })).toBeVisible({
-    timeout: 60_000,
-  })
+  await expect(page.locator('.arco-select-option').filter({ hasText: '归档项目' })).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await expect(page.getByText('示例项目 10', { exact: true })).toHaveCount(0)
 
   await page.goto('/#/archive')
   await expect(page).toHaveURL(/#\/archive(?:\?.*)?$/u)
@@ -217,6 +211,14 @@ test('administrator can create, edit, inspect, progress, archive and restore a p
   )
   const templateSource = projects.data.items[0]
   expect(templateSource).toBeDefined()
+  if (
+    !templateSource.contractType ||
+    !templateSource.product ||
+    !templateSource.projectType ||
+    !templateSource.keywords?.length
+  ) {
+    throw new Error('Seeded project configuration values are required for project creation E2E')
+  }
 
   const templateDetail = await expectProjectResponse(
     await page.request.get(`/api/v1/projects/${templateSource.id}`, {
@@ -232,13 +234,13 @@ test('administrator can create, edit, inspect, progress, archive and restore a p
       data: {
         archiveTemplateId: templateDetail.data.archiveTemplateId,
         city: '上海',
-        contractType: 'EPC',
+        contractType: templateSource.contractType,
         countryCode: 'CN',
         customerName: 'E2E 客户',
-        keywords: ['NEW_BUILD', 'SOFTWARE_COMMISSIONING'],
-        product: 'DEEPSIGHT',
+        keywords: templateSource.keywords,
+        product: templateSource.product,
         projectName: `端到端项目 ${marker}`,
-        projectType: 'DATA_CENTER',
+        projectType: templateSource.projectType,
         saveAsDraft: false,
         shortName,
       },
@@ -258,10 +260,10 @@ test('administrator can create, edit, inspect, progress, archive and restore a p
     canArchive: false,
     canEdit: true,
     canUpdateProgress: true,
-    contractType: 'EPC',
-    keywords: ['NEW_BUILD', 'SOFTWARE_COMMISSIONING'],
-    product: 'DEEPSIGHT',
-    projectType: 'DATA_CENTER',
+    contractType: templateSource.contractType,
+    keywords: templateSource.keywords,
+    product: templateSource.product,
+    projectType: templateSource.projectType,
     shortName,
   })
 
@@ -365,13 +367,6 @@ test('administrator can create, edit, inspect, progress, archive and restore a p
     canPermanentDelete: true,
     canRestore: true,
   })
-  await page.goto(
-    `/#/projects?view=archived&keyword=${encodeURIComponent(`${shortName} 已编辑`)}`,
-  )
-  await expect(page.getByText(`${shortName} 已编辑`, { exact: true })).toBeVisible({
-    timeout: 60_000,
-  })
-
   const blockedPurge = await page.request.delete(
     `/api/v1/projects/${rearchived.data.id}/permanent`,
     { headers: authorization, timeout: 60_000 },

@@ -123,7 +123,7 @@ flowchart TD
 | --------------------------- | --------------- | ---------------------------------------- | --------------------------------------------------- | ----------------- |
 | `/projects/create`          | `ProjectCreate` | `src/views/project/index.vue`            | 自动打开 80vw 创建抽屉，内部为 `project/ProjectDrawer.vue` | `project:create`  |
 | `/projects/:projectId/edit` | `ProjectEdit`   | `src/views/project/index.vue`            | 自动打开编辑抽屉，内部为 `project/ProjectDrawer.vue`       | `project:update`  |
-| `/projects/:projectId`      | `ProjectDetail` | `src/views/project/index.vue`            | 自动打开 800px 居中详情弹窗，内部为 `project/detail.vue` | `project:view`    |
+| `/projects/:projectId`      | `ProjectDetail` | `src/views/project/index.vue`            | 自动打开 944px 居中详情弹窗，内部为 `project/detail.vue` | `project:view`    |
 | `/review/:taskId`           | `ReviewDetail`  | `src/views/review/pending.vue`           | 保留列表 query 并自动打开审核详情抽屉               | 登录即可进入      |
 | `/archive-templates/:templateId` | `ArchiveTemplateDetail` | `src/views/archive/template.vue` | 自动打开模版版本详情抽屉                       | `archive_template:view` |
 | `/standards/:id`            | `StandardDetail` | `src/views/standard/index.vue`          | 自动打开标准详情抽屉                                | `standard:view`   |

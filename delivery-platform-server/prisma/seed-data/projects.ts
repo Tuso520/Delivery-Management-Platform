@@ -265,14 +265,34 @@ export async function seedProjects(prisma: PrismaClient) {
     'VN-HN-2026-002': 'pm_li',
     'ID-JK-2026-002': 'pm_wang',
   };
-  const contractTypes = ['EPC', 'EMC', 'POC'] as const;
-  const products = ['DEEPSIGHT', 'DEEPBOT'] as const;
-  const keywordSets = [
-    ['NEW_BUILD', 'CONSTRUCTION', 'MAIN_MATERIAL'],
-    ['RENOVATION', 'SOFTWARE_COMMISSIONING', 'EMCS_SYSTEM'],
-    ['NEW_BUILD', 'HARDWARE_COMMISSIONING', 'ENERGY_MANAGEMENT_SYSTEM'],
-    ['RENOVATION', 'CHILLER_ENERGY_SAVING', 'CHILLER_PLANT_CONTROL'],
-  ] as const;
+  const configuredValues = async (categoryCode: string): Promise<string[]> => {
+    const category = await prisma.dictionaryCategory.findUnique({
+      where: { categoryCode },
+      select: {
+        items: {
+          where: { deletedAt: null, status: 'Active' },
+          orderBy: [{ sortOrder: 'asc' }, { itemValue: 'asc' }],
+          select: { itemValue: true },
+        },
+      },
+    });
+    const values = category?.items.map((item) => item.itemValue) ?? [];
+    if (values.length === 0) {
+      throw new Error(`示例项目依赖启用的字段配置 ${categoryCode}`);
+    }
+    return values;
+  };
+  const [contractTypes, products, projectTypes, projectKeywords] = await Promise.all([
+    configuredValues('CONTRACT_TYPE'),
+    configuredValues('PRODUCT_TYPE'),
+    configuredValues('PROJECT_TYPE'),
+    configuredValues('PROJECT_KEYWORD'),
+  ]);
+  const configuredValueAt = (values: string[], index: number): string => {
+    const value = values[index % values.length];
+    if (!value) throw new Error('字段配置选项不能为空');
+    return value;
+  };
 
   // ── Upsert each project ───────────────────────────────────────────
   const createdProjects: Array<{ id: string; projectCode: string }> = [];
@@ -287,9 +307,13 @@ export async function seedProjects(prisma: PrismaClient) {
       create: {
         ...data,
         shortName: `示例项目 ${index + 1}`,
-        contractType: contractTypes[index % contractTypes.length],
-        product: products[index % products.length],
-        keywords: [...keywordSets[index % keywordSets.length]],
+        contractType: configuredValueAt(contractTypes, index),
+        product: configuredValueAt(products, index),
+        projectType: configuredValueAt(projectTypes, index),
+        keywords: [
+          configuredValueAt(projectKeywords, index),
+          configuredValueAt(projectKeywords, index + 3),
+        ],
         progressPercent: new Decimal(isAccepted ? 100 : Math.min(95, 10 + index * 9)),
         contractSignedAt: new Date(`202${index < 6 ? '6' : '5'}-0${(index % 8) + 1}-15`),
         expectedAcceptanceAt: new Date(`2026-${String((index % 6) + 7).padStart(2, '0')}-28`),

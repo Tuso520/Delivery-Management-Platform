@@ -40,6 +40,7 @@ test('管理员可以完成字段配置全流程并保持 Figma 桌面布局', a
   await expect(fieldPage.getByRole('columnheader', { name: '操作' })).toBeVisible()
   await fieldPage.getByRole('tab', { name: '项目类型' }).click()
   await expect(page.locator('.arco-message')).toHaveCount(0, { timeout: 5_000 })
+  const fieldCode = `E2E_FIELD_${Date.now().toString(36).toUpperCase()}`
 
   const visualDir = process.env.FIELD_VISUAL_DIR
   if (visualDir) {
@@ -59,7 +60,7 @@ test('管理员可以完成字段配置全流程并保持 Figma 桌面布局', a
 
   const dialogInputs = fieldDialog.locator('input')
   await dialogInputs.nth(0).fill('端到端验收类型')
-  await dialogInputs.nth(1).fill('E2E_FIELD_ACCEPTANCE')
+  await dialogInputs.nth(1).fill(fieldCode)
   await dialogInputs.nth(2).fill('998')
   if (visualDir) {
     await page.screenshot({ path: join(visualDir, 'field-settings-modal-1440x900.png'), fullPage: true })
@@ -68,10 +69,7 @@ test('管理员可以完成字段配置全流程并保持 Figma 桌面布局', a
   await expect(fieldDialog).toBeHidden()
   await expect(fieldPage.getByText('端到端验收类型', { exact: true })).toBeVisible()
 
-  const searchInput = fieldPage.getByPlaceholder('搜索名称或编码')
-  await searchInput.fill('E2E_FIELD_ACCEPTANCE')
-  await fieldPage.getByRole('button', { name: '查询' }).click()
-  const acceptanceRow = fieldPage.locator('tr', { hasText: 'E2E_FIELD_ACCEPTANCE' })
+  const acceptanceRow = fieldPage.locator('tr', { hasText: fieldCode })
   await expect(acceptanceRow).toHaveCount(1)
   await acceptanceRow.getByRole('button', { name: '编辑' }).click()
   await dialogInputs.nth(0).fill('端到端验收类型（已编辑）')
@@ -89,8 +87,6 @@ test('管理员可以完成字段配置全流程并保持 Figma 桌面布局', a
   await confirmDialog.getByRole('button', { name: '删除' }).click()
   await expect(acceptanceRow).toHaveCount(0)
 
-  await searchInput.clear()
-  await fieldPage.getByRole('button', { name: '查询' }).click()
   await fieldPage.getByRole('tab', { name: '国家' }).click()
   await expect(fieldPage.getByText('中国', { exact: true })).toBeVisible()
   await fieldPage.getByRole('button', { name: '刷新' }).click()

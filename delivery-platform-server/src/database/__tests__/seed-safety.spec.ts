@@ -154,6 +154,11 @@ describe('deployment seed safety', () => {
         }),
       },
       role: { findMany: jest.fn().mockResolvedValue([]) },
+      dictionaryCategory: {
+        findUnique: jest.fn().mockResolvedValue({
+          items: [{ itemValue: 'CONFIGURED_VALUE' }],
+        }),
+      },
       projectArchiveItem: {
         create: legacyProjectArchiveCreate,
         findFirst: jest.fn().mockResolvedValue(null),
@@ -168,6 +173,7 @@ describe('deployment seed safety', () => {
 
     for (const call of projectUpsert.mock.calls) {
       expect(call[0].update).toEqual({});
+      expect(call[0].create.projectType).toEqual(expect.any(String));
     }
     expect(legacyProjectArchiveCreate).not.toHaveBeenCalled();
   });
@@ -231,6 +237,11 @@ describe('deployment seed safety', () => {
         }),
       },
       role: { findMany: jest.fn().mockResolvedValue([]) },
+      dictionaryCategory: {
+        findUnique: jest.fn().mockResolvedValue({
+          items: [{ itemValue: 'CONFIGURED_VALUE' }],
+        }),
+      },
       projectArchiveItem: {
         findFirst: jest.fn().mockResolvedValue({ id: 'legacy-archive-item-1' }),
       },
