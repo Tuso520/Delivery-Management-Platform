@@ -247,6 +247,8 @@ prepare-migrate → prisma migrate deploy → bootstrap seed → Archive audit E
 
 首次空库需要 bootstrap seed 创建迁移审计账号；第二次 seed 用于验证幂等性且不得重建已退役的数据库 UI 翻译或无文件标准。档案预审先输出完整报告并按 finding fail closed：所有 ERROR 都阻断；`STORED_LEVEL_MISMATCH` 可由父子关系确定性重建层级，`FOLDER_WITH_DIRECT_FILES` 可确定性拆分为目录和同名合成档案项，因此这两个 REVIEW 只报告；任何其他或未来新增的 REVIEW 默认阻断。三个 migrator 都先只读报告、再以同一个启用账号写入；内容与 foundation 的 dry-run 均使用 strict 门禁，foundation apply 也使用 strict，确定性拆分只计入计划数量，其余仍需人工判断的 ERROR/REVIEW 都会在 apply 前阻断，apply 期间新出现的 finding 也只能记录失败审计并中止。内容迁移把旧标准结构化正文和知识内容收敛为 FILE/MARKDOWN/LINK 单主内容源，foundation 迁移再收敛项目档案、文件和审核关联。Secret apply 会先验证所有既有密文都能由同一密钥解密，再把配置更新和成功审计放在同一个事务内。最后三组 verify 均为只读门禁，拒绝待迁移内容、开放迁移异常、旧审核残留、目标关联不完整、明文 Secret 或待重写密文。`backend`、`file-worker` 和 `outbox-worker` 都等待该容器成功；任何一步失败都不得启动业务流量。API、Outbox Worker 和迁移容器必须使用同一个 `INTEGRATION_SECRET_ENCRYPTION_KEY`，迁移审计账号由 `INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME` 指定且必须处于启用状态。File Worker 不持有集成 Secret。
 
+项目档案文件类型通过幂等 seed 中的 `FILE_TYPE` 字段配置发布，不新增 schema migration。部署必须保持既定二次 seed：第一次补齐配置，第二次验证类别、稳定值和系统默认项不发生漂移；缺少启用文件类型时档案模板 seed 必须 fail fast。
+
 从旧架构升级时，bootstrap seed 发现项目仍有 `ProjectArchiveItem` 就不会绑定新版档案模板或生成目标快照。对于此前版本已经生成的目标快照，foundation 只在模板版本、文件夹、条目、来源 ID、稳定键和目录关系全部匹配且项目档案文件为零时，才在事务内二次核验、软归档该空快照并清除项目模板指针；任何已有文件或结构差异都会继续 fail closed。旧档案项的状态、截止和完成时间在旧只读表中保留并进入迁移计数，不伪造目标字段。历史 demo 项目审批仅按精确白名单迁为 `PROJECT_CREATE` 审核历史；不再可执行的 Pending 项迁为已归档 `CANCELLED` 记录。精确命中且能证明来源附件不存在的已退役知识文件更新审批不生成目标任务，而是写入带处理人和处理时间的 `RESOLVED` `MigrationException`；其他未知审批结构仍阻断发布。
 
 ### 整体重构既有库升级

@@ -27,29 +27,18 @@ export interface Level2Def {
   usageDescription?: string;
 }
 
-const DEFAULT_FILE_TYPES = [
-  'pdf',
-  'doc',
-  'docx',
-  'xls',
-  'xlsx',
-  'ppt',
-  'pptx',
-  'jpg',
-  'jpeg',
-  'png',
-  'dwg',
-  'cad',
-  'zip',
-  'rar',
-] as const;
-
-function allowedExtensions(definition: Level1Def): string[] {
+function allowedExtensions(definition: Level1Def, configuredFileTypes: readonly string[]): string[] {
   const configured = definition.allowedFileTypes
     ?.split(',')
     .map((extension) => extension.trim().toLowerCase())
     .filter(Boolean);
-  return configured?.length ? Array.from(new Set(configured)) : [...DEFAULT_FILE_TYPES];
+  const candidates = configured?.length ? Array.from(new Set(configured)) : [...configuredFileTypes];
+  const enabled = new Set(configuredFileTypes);
+  const allowed = candidates.filter((extension) => enabled.has(extension));
+  if (!allowed.length) {
+    throw new Error(`档案模板“${definition.name}”没有可用的 FILE_TYPE 字段配置`);
+  }
+  return allowed;
 }
 
 function uploadGuide(definition: Level1Def | Level2Def): string {
@@ -79,6 +68,21 @@ export async function seedArchiveTemplates(prisma: PrismaClient): Promise<void> 
   });
   if (!reviewTemplate) {
     throw new Error('目标档案模板种子依赖 TARGET_PROJECT_ARCHIVE_REVIEW 审核配置');
+  }
+
+  const configuredFileTypes = (
+    await prisma.dictionaryItem.findMany({
+      where: {
+        status: 'Active',
+        deletedAt: null,
+        category: { categoryCode: 'FILE_TYPE', status: 'Active' },
+      },
+      select: { itemValue: true },
+      orderBy: [{ sortOrder: 'asc' }, { itemValue: 'asc' }],
+    })
+  ).map((item) => item.itemValue.toLowerCase());
+  if (!configuredFileTypes.length) {
+    throw new Error('目标档案模板种子依赖已启用的 FILE_TYPE 字段配置');
   }
 
   const allLevel1 = [...earlyLevel1Defs, ...lateLevel1Defs];
@@ -176,7 +180,7 @@ export async function seedArchiveTemplates(prisma: PrismaClient): Promise<void> 
                 ? (roleIdByCode.get(parent.responsibleRole) ?? null)
                 : null,
               allowMultipleFiles: false,
-              allowedExtensions: allowedExtensions(parent),
+              allowedExtensions: allowedExtensions(parent, configuredFileTypes),
               maxFileSize: BigInt(100 * 1024 * 1024),
               namingRule: `${parent.name}-{version}`,
               sortOrder: (itemIndex + 1) * 10,

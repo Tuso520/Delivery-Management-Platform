@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MulterModule } from '@nestjs/platform-express';
 
 import { FILE_UPLOAD_MAX_BYTES } from '../../config/file-processing.config';
+import { FieldConfigurationModule } from '../field-configuration/field-configuration.module';
 import { OperationLogModule } from '../operation-log/operation-log.module';
 import { ProjectAccessModule } from '../project/project-access.module';
 import { ReviewModule } from '../review/review.module';
@@ -18,6 +19,7 @@ import { UnifiedFileService } from './unified-file.service';
 @Module({
   imports: [
     ProjectAccessModule,
+    FieldConfigurationModule,
     ReviewModule,
     OperationLogModule,
     SystemConfigModule,

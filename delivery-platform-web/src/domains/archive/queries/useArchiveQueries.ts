@@ -7,10 +7,19 @@ import { languageApi } from '@/api/language'
 import { projectApi } from '@/domains/project/api/project.api'
 import { queryKeys } from '@/query/keys'
 
-export function useArchiveProjectOptionsQuery() {
+export function useArchiveProjectOptionsQuery(keyword: MaybeRefOrGetter<string> = '') {
   return useQuery({
-    queryKey: queryKeys.archive.projectOptions(),
-    queryFn: () => projectApi.getList({ page: 1, pageSize: 100, sort: 'updatedAt:desc' }),
+    queryKey: computed(() => [
+      ...queryKeys.archive.projectOptions(),
+      toValue(keyword).trim(),
+    ]),
+    queryFn: () =>
+      projectApi.getList({
+        page: 1,
+        pageSize: 100,
+        keyword: toValue(keyword).trim() || undefined,
+        sort: 'updatedAt:desc',
+      }),
   })
 }
 
@@ -19,17 +28,6 @@ export function useArchiveTreeQuery(projectId: MaybeRefOrGetter<string>) {
     queryKey: computed(() => queryKeys.archive.tree(toValue(projectId))),
     queryFn: () => archiveApi.getTree(toValue(projectId)),
     enabled: computed(() => Boolean(toValue(projectId))),
-  })
-}
-
-export function useArchiveTemplateDiffQuery(
-  projectId: MaybeRefOrGetter<string>,
-  enabled: MaybeRefOrGetter<boolean>,
-) {
-  return useQuery({
-    queryKey: computed(() => queryKeys.archive.templateDiff(toValue(projectId))),
-    queryFn: () => archiveApi.getTemplateDiff(toValue(projectId)),
-    enabled: computed(() => Boolean(toValue(projectId)) && toValue(enabled)),
   })
 }
 

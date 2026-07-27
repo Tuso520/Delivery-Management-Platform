@@ -109,7 +109,10 @@ describe('ProjectArchiveTargetService', () => {
       maxFileSize: BigInt(10_000),
       namingRule: 'Drawing-{version}',
       canUpload: true,
+      canDeleteFile: false,
     });
+    expect(result.folders[0].items[0]).not.toHaveProperty('canArchive');
+    expect(result.folders[0].items[0]).not.toHaveProperty('canRestore');
   });
 
   it('returns 404 for an archive item that belongs to another project', async () => {

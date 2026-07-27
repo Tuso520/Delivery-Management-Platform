@@ -1046,6 +1046,8 @@
     "required": "必填",
     "restore": "恢复",
     "selectAccessibleProject": "请选择一个可访问的项目",
+    "metricsAria": "项目档案统计",
+    "projectDirectory": "项目目录",
     "uploadTitle": "上传档案文件",
     "archiveItemLabel": "档案项",
     "file": "文件",
@@ -1110,16 +1112,23 @@
       "ARCHIVED": "已归档"
     },
     "validation": {
-      "uploadFileRequired": "请选择需要上传的文件"
+      "uploadFileRequired": "请选择需要上传的文件",
+      "fileTypeDisabled": "当前文件类型已停用，请选择字段配置中启用的文件类型"
     },
     "messages": {
       "previewRestricted": "文件正在审核中，仅上传人、当前审核人或获授权人员可预览内容",
       "noPreviewFile": "当前档案项暂无可预览文件",
       "uploadedForReview": "上传成功，文件已进入审核",
       "uploaded": "上传成功",
+      "noUploadTarget": "当前项目没有可上传的档案项",
+      "fileDeleted": "文件已删除，历史版本记录已保留",
       "templateSynced": "模板新增项已同步，现有档案内容未被修改",
       "archived": "档案项已归档",
       "restored": "档案项已恢复"
+    },
+    "deleteFile": {
+      "title": "删除文件",
+      "confirm": "确认删除当前文件？历史版本记录将保留。"
     },
     "archiveItem": {
       "title": "归档档案项",
@@ -1290,12 +1299,24 @@
     "summary": {
       "aria": "标准库统计",
       "total": "标准总数",
-      "inReview": "待审核"
+      "inReview": "待审核",
+      "views": "查看次数",
+      "downloads": "下载次数"
+    },
+    "units": {
+      "items": "个",
+      "times": "次"
     },
     "fields": {
       "code": "标准编号",
       "name": "标准名称",
+      "title": "资料标题",
       "type": "标准类型",
+      "deliveryStage": "交付阶段",
+      "managementDomain": "管理领域",
+      "businessType": "业务类型",
+      "countries": "适用国家",
+      "enabledStatus": "启用状态",
       "currentVersion": "当前版本",
       "effectiveAt": "生效日期",
       "creator": "创建人",
@@ -1333,6 +1354,7 @@
     },
     "validation": {
       "masterRequired": "请填写标准编号、名称和类型",
+      "configuredMasterRequired": "请填写标准编号、资料标题、标准类型和交付阶段",
       "fileRequired": "请选择标准文件",
       "nameRequired": "请填写标准编号和名称",
       "versionFileRequired": "请选择新版本文件",

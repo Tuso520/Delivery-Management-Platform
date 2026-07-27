@@ -8,6 +8,7 @@ const request = vi.hoisted(() => ({
 vi.mock('@/api/request', () => ({ default: request }))
 
 import { archiveApi } from '@/domains/archive/api/archive.api'
+import { fileApi } from '@/platform/file/file.api'
 
 describe('project archive upload contract', () => {
   beforeEach(() => {
@@ -34,5 +35,13 @@ describe('project archive upload contract', () => {
     expect(options.headers).toEqual(
       expect.objectContaining({ 'Idempotency-Key': expect.any(String) }),
     )
+  })
+
+  it('deletes a displayed archive row through logical-file archival', async () => {
+    request.post.mockResolvedValue({ id: 'logical-1', archivedAt: '2026-07-28T00:00:00.000Z' })
+
+    await fileApi.archive('logical-1')
+
+    expect(request.post).toHaveBeenCalledWith('/files/logical-1/archive')
   })
 })

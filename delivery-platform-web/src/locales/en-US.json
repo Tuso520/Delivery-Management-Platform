@@ -1046,6 +1046,8 @@
     "required": "Required",
     "restore": "Restore",
     "selectAccessibleProject": "Select an accessible project",
+    "metricsAria": "Project archive metrics",
+    "projectDirectory": "Project directory",
     "uploadTitle": "Upload Archive File",
     "archiveItemLabel": "Archive Item",
     "file": "File",
@@ -1110,16 +1112,23 @@
       "ARCHIVED": "Archived"
     },
     "validation": {
-      "uploadFileRequired": "Select a file to upload"
+      "uploadFileRequired": "Select a file to upload",
+      "fileTypeDisabled": "This file type is disabled. Select a file type enabled in Field Configuration."
     },
     "messages": {
       "previewRestricted": "This file is under review. Only the uploader, current reviewer, or an authorized user can preview it.",
       "noPreviewFile": "This archive item has no previewable file",
       "uploadedForReview": "Upload complete. The file has entered review.",
       "uploaded": "Upload complete",
+      "noUploadTarget": "This project has no archive item available for upload",
+      "fileDeleted": "The file was deleted and its version history was retained",
       "templateSynced": "Template additions synchronized without changing existing archive content",
       "archived": "Archive item archived",
       "restored": "Archive item restored"
+    },
+    "deleteFile": {
+      "title": "Delete file",
+      "confirm": "Delete the current file? Its version history will be retained."
     },
     "archiveItem": {
       "title": "Archive Item",
@@ -1290,12 +1299,24 @@
     "summary": {
       "aria": "Standards library summary",
       "total": "Total Standards",
-      "inReview": "Pending Review"
+      "inReview": "Pending Review",
+      "views": "Views",
+      "downloads": "Downloads"
+    },
+    "units": {
+      "items": "",
+      "times": ""
     },
     "fields": {
       "code": "Standard Code",
       "name": "Standard Name",
+      "title": "Document Title",
       "type": "Standard Type",
+      "deliveryStage": "Delivery Stage",
+      "managementDomain": "Management Domain",
+      "businessType": "Business Type",
+      "countries": "Applicable Countries",
+      "enabledStatus": "Enabled Status",
       "currentVersion": "Current Version",
       "effectiveAt": "Effective Date",
       "creator": "Created By",
@@ -1333,6 +1354,7 @@
     },
     "validation": {
       "masterRequired": "Enter the standard code, name, and type",
+      "configuredMasterRequired": "Enter the standard code, title, type, and delivery stage",
       "fileRequired": "Select a standard file",
       "nameRequired": "Enter the standard code and name",
       "versionFileRequired": "Select a file for the new version",

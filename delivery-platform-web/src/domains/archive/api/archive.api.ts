@@ -4,7 +4,6 @@ import request from '@/api/request'
 import { runIdempotentUpload } from '@/platform/file/upload-idempotency'
 import type {
   ProjectArchiveTargetTree,
-  ProjectArchiveTemplateDiff,
 } from '@/domains/archive/types/archive'
 
 export interface UploadProjectArchiveFilePayload {
@@ -35,32 +34,6 @@ export interface UnifiedLogicalFile {
 export const archiveApi = {
   getTree(projectId: string) {
     return request.get<ProjectArchiveTargetTree>(`/projects/${projectId}/archive-tree`)
-  },
-
-  getTemplateDiff(projectId: string) {
-    return request.get<ProjectArchiveTemplateDiff>(`/projects/${projectId}/archive-template-diff`)
-  },
-
-  syncTemplateAdditions(
-    projectId: string,
-    data: {
-      confirmAdditions: true
-      folderStableKeys?: string[]
-      itemStableKeys?: string[]
-    },
-  ) {
-    return request.post<ProjectArchiveTemplateDiff>(
-      `/projects/${projectId}/archive-template-sync`,
-      data,
-    )
-  },
-
-  archiveItem(projectId: string, itemId: string, reason?: string) {
-    return request.post(`/projects/${projectId}/archive-items/${itemId}/archive`, { reason })
-  },
-
-  restoreItem(projectId: string, itemId: string, reason?: string) {
-    return request.post(`/projects/${projectId}/archive-items/${itemId}/restore`, { reason })
   },
 
   uploadFile(

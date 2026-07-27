@@ -19,6 +19,7 @@ import { getCurrentTraceId } from '../../common/utils/request-trace.util';
 import { resolveDocumentConfig } from '../../config/document.config';
 import { PrismaService } from '../../database/prisma.service';
 import type { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { FieldConfigurationService } from '../field-configuration/field-configuration.service';
 import {
   OperationLogService,
   writeOperationLog,
@@ -128,6 +129,7 @@ export class UnifiedFileService {
     private readonly operationLog: OperationLogService,
     @Optional() private readonly systemConfig?: SystemConfigService,
     @Optional() private readonly configService?: ConfigService,
+    @Optional() private readonly fieldConfiguration?: FieldConfigurationService,
   ) {}
 
   async exists(identifier: string): Promise<boolean> {
@@ -309,6 +311,7 @@ export class UnifiedFileService {
     const file = withNormalizedUploadFileName(rawFile);
     const extension = this.extensionOf(file.originalname);
     await this.assertSystemUploadPolicy(file, extension);
+    await this.fieldConfiguration?.assertConfiguredValue('FILE_TYPE', extension);
     this.assertUploadPolicy(file, extension, archiveItem);
     const checksum = this.checksum(file);
     if (idempotencyKey) {

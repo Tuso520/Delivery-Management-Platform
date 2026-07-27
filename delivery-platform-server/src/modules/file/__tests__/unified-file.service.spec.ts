@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 
 import type { PrismaService } from '../../../database/prisma.service';
+import type { FieldConfigurationService } from '../../field-configuration/field-configuration.service';
 import type { OperationLogService } from '../../operation-log/operation-log.service';
 import type { ProjectAccessService } from '../../project/project-access.service';
 import type { ReviewConfigurationService } from '../../review/review-configuration.service';
@@ -169,6 +170,9 @@ describe('UnifiedFileService', () => {
       getBucketName: jest.fn().mockReturnValue('delivery-platform'),
       deleteFrom: jest.fn(),
     } as unknown as FileStorageService;
+    const fieldConfiguration = {
+      assertConfiguredValue: jest.fn().mockResolvedValue(undefined),
+    } as unknown as FieldConfigurationService;
     const service = new UnifiedFileService(
       prisma,
       storage,
@@ -176,6 +180,9 @@ describe('UnifiedFileService', () => {
       reviewConfiguration,
       reviewTasks,
       operationLog,
+      undefined,
+      undefined,
+      fieldConfiguration,
     );
 
     await service.uploadProjectArchiveFile(
@@ -197,6 +204,7 @@ describe('UnifiedFileService', () => {
         checksum: expect.stringMatching(/^[a-f0-9]{64}$/),
       }),
     });
+    expect(fieldConfiguration.assertConfiguredValue).toHaveBeenCalledWith('FILE_TYPE', 'pdf');
     expect(transaction.fileVersion.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         version: 'V1.0',
