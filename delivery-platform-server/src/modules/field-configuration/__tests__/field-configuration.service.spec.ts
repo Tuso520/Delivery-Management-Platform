@@ -21,6 +21,8 @@ function createPrismaMock() {
     checklistTemplate: { count: jest.fn().mockResolvedValue(0) },
     documentTemplate: { count: jest.fn().mockResolvedValue(0) },
     standard: { count: jest.fn().mockResolvedValue(0) },
+    archiveTemplateVersionItem: { count: jest.fn().mockResolvedValue(0) },
+    projectArchiveEntry: { count: jest.fn().mockResolvedValue(0) },
     $transaction: jest.fn(async (values: unknown[]) => Promise.all(values)),
   };
 }
@@ -124,6 +126,26 @@ describe('FieldConfigurationService', () => {
     const service = new FieldConfigurationService(prisma as unknown as PrismaService);
     await expect(service.remove('item-id', 'admin-id')).rejects.toThrow('该字段值已被业务引用，不能删除');
     expect(prisma.dictionaryItem.delete).not.toHaveBeenCalled();
+  });
+
+  it('preserves a FILE_TYPE value referenced by an archive template or project snapshot', async () => {
+    const prisma = createPrismaMock();
+    prisma.dictionaryItem.findUnique.mockResolvedValue(
+      item({
+        itemValue: 'pdf',
+        category: { ...category, categoryCode: 'FILE_TYPE' },
+      }),
+    );
+    prisma.archiveTemplateVersionItem.count.mockResolvedValue(1);
+    const service = new FieldConfigurationService(prisma as unknown as PrismaService);
+
+    await expect(service.remove('item-id', 'admin-id')).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.archiveTemplateVersionItem.count).toHaveBeenCalledWith({
+      where: { allowedExtensions: { array_contains: 'pdf' } },
+    });
+    expect(prisma.projectArchiveEntry.count).toHaveBeenCalledWith({
+      where: { allowedExtensions: { array_contains: 'pdf' } },
+    });
   });
 
   it('rejects deleting a system default even when it has no references', async () => {

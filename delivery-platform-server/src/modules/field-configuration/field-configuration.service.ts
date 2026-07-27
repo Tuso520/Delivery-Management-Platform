@@ -19,6 +19,7 @@ import type {
 export const FIELD_CATEGORY_CODES = [
   'COUNTRY', 'CUSTOMER_TYPE', 'CONTRACT_TYPE', 'PRODUCT_TYPE', 'PROJECT_KEYWORD',
   'CURRENCY', 'PROJECT_STAGE', 'PROJECT_STATUS', 'JOB_POSITION', 'PROJECT_TYPE',
+  'FILE_TYPE',
 ] as const;
 
 const CODE_REQUIRED = new Set(['COUNTRY', 'CURRENCY']);
@@ -524,6 +525,19 @@ export class FieldConfigurationService {
       add('知识库', this.prisma.knowledgeItem.count({
         where: { category: { fieldOptionId: item.id } },
       }));
+    } else if (code === 'FILE_TYPE') {
+      add(
+        '档案模板',
+        this.prisma.archiveTemplateVersionItem.count({
+          where: { allowedExtensions: { array_contains: value } },
+        }),
+      );
+      add(
+        '项目档案',
+        this.prisma.projectArchiveEntry.count({
+          where: { allowedExtensions: { array_contains: value } },
+        }),
+      );
     }
     const sources = (await Promise.all(checks)).filter((source) => source.count > 0);
     const total = sources.reduce((sum, source) => sum + source.count, 0);

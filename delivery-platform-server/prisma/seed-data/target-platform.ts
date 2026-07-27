@@ -19,7 +19,7 @@ interface FieldConfigurationSeed {
 const fieldConfigurationCodes = new Set([
   'COUNTRY', 'CUSTOMER_TYPE', 'CONTRACT_TYPE', 'PRODUCT_TYPE', 'PROJECT_KEYWORD',
   'CURRENCY', 'PROJECT_STAGE', 'PROJECT_STATUS', 'STANDARD_CATEGORY',
-  'KNOWLEDGE_CATEGORY', 'JOB_POSITION', 'PROJECT_TYPE',
+  'KNOWLEDGE_CATEGORY', 'JOB_POSITION', 'PROJECT_TYPE', 'FILE_TYPE',
 ]);
 
 const fieldConfigurationMeta: Readonly<Record<string, FieldConfigurationSeed>> = {
@@ -35,6 +35,7 @@ const fieldConfigurationMeta: Readonly<Record<string, FieldConfigurationSeed>> =
   KNOWLEDGE_CATEGORY: { fieldType: 'SINGLE_SELECT', required: true, visibleScopes: ['knowledge'] },
   JOB_POSITION: { fieldType: 'SINGLE_SELECT', required: false, visibleScopes: ['identity', 'project'] },
   PROJECT_TYPE: { fieldType: 'SINGLE_SELECT', required: false, visibleScopes: ['project', 'archive-template'] },
+  FILE_TYPE: { fieldType: 'MULTI_SELECT', required: true, visibleScopes: ['project-archive', 'archive-template'] },
 };
 
 const legacyTargetDictionaries: readonly DictionarySeed[] = [
@@ -174,6 +175,12 @@ const fieldConfigurationDictionaries: readonly DictionarySeed[] = [
   { code: 'KNOWLEDGE_CATEGORY', name: '知识分类', items: [['PROJECT_CASE_REVIEW', '项目案例与复盘'], ['BEST_PRACTICE', '最佳实践与经验'], ['FAQ_TROUBLESHOOTING', '常见问题与故障'], ['TRAINING_TUTORIAL', '培训与教程'], ['EXTERNAL_STANDARD', '外部标准与资料'], ['RESOURCE_TOOL', '资源与工具']].map(([value, label]) => ({ value, label })) },
   { code: 'JOB_POSITION', name: '岗位', items: [['PROJECT_MANAGER', '项目经理'], ['ELECTRICAL_ENGINEER', '电气工程师'], ['SOFTWARE_ENGINEER', '软件工程师'], ['OPERATIONS_ENGINEER', '运维工程师'], ['SALES', '销售'], ['PRESALES', '售前']].map(([value, label]) => ({ value, label })) },
   { code: 'PROJECT_TYPE', name: '项目类型', items: [['EPC_INTEGRATED', 'EPC综合'], ['SYSTEM_INTEGRATION', '系统集成'], ['EQUIPMENT_SUPPLY', '设备供货'], ['CONSTRUCTION_IMPLEMENTATION', '施工实施'], ['SOFTWARE_ONLY', '纯软件'], ['TECHNICAL_SERVICE', '技术服务'], ['GENERAL', '通用']].map(([value, label]) => ({ value, label })) },
+  { code: 'FILE_TYPE', name: '文件类型', items: [
+    ['pdf', 'PDF'], ['doc', 'Word 97-2003'], ['docx', 'Word'], ['xls', 'Excel 97-2003'],
+    ['xlsx', 'Excel'], ['ppt', 'PowerPoint 97-2003'], ['pptx', 'PowerPoint'],
+    ['jpg', 'JPG 图片'], ['jpeg', 'JPEG 图片'], ['png', 'PNG 图片'],
+    ['dwg', 'DWG 图纸'], ['cad', 'CAD 图纸'], ['zip', 'ZIP 压缩包'], ['rar', 'RAR 压缩包'],
+  ].map(([value, label]) => ({ value, label })) },
 ] as const;
 
 const replacedLegacyCodes = new Set([
