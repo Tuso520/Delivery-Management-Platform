@@ -82,6 +82,11 @@ test('unified project dialog creates, edits and renders a persisted project read
   await expect(projectDialog).toBeVisible({ timeout: 60_000 })
   await expect(projectDialog.getByRole('heading', { name: '项目详情' })).toBeVisible()
   await expect(projectDialog.getByRole('button', { name: '保存' })).toBeVisible()
+  await expect(projectDialog.getByRole('button', { name: '关闭' })).toHaveCSS(
+    'border-radius',
+    '0px',
+  )
+  await expect(projectDialog.getByRole('button', { name: '关闭' })).toHaveCSS('width', '32px')
   await expect
     .poll(async () => Math.round((await projectDialog.boundingBox())?.width ?? 0))
     .toBe(944)
@@ -118,6 +123,18 @@ test('unified project dialog creates, edits and renders a persisted project read
     .locator('input')
     .fill('9007199254740991.99')
   await chooseFirst(projectDialog, page, '档案模版')
+  const stageSelect = formItem(projectDialog, '当前阶段').locator('.arco-select-view')
+  await expect(stageSelect).toHaveClass(/arco-select-view-multiple/u)
+  await stageSelect.click()
+  const additionalStage = page
+    .locator(
+      '.arco-select-option:visible:not(.arco-select-option-disabled):not(.arco-select-option-selected)',
+    )
+    .first()
+  await expect(additionalStage).toBeVisible()
+  await additionalStage.click()
+  await page.keyboard.press('Escape')
+  await expect(stageSelect.locator('.arco-tag')).toHaveCount(2)
 
   await addPayment(
     page,
@@ -139,15 +156,17 @@ test('unified project dialog creates, edits and renders a persisted project read
   const createResponse = await createResponsePromise
   expect(createResponse.status()).toBe(201)
   const createEnvelope = (await createResponse.json()) as {
-    data: { id: string; projectCode: string }
+    data: { id: string; projectCode: string; currentStages: string[] }
   }
   expect(createEnvelope.data.projectCode).toMatch(/-\d{3}$/u)
+  expect(createEnvelope.data.currentStages).toHaveLength(2)
   const projectId = createEnvelope.data.id
   await expect(projectDialog).toBeHidden()
 
   await page.goto(`/#/projects/${projectId}/edit`)
   await expect(projectDialog).toBeVisible({ timeout: 60_000 })
   await expect(formItem(projectDialog, '合同名称').locator('input')).toHaveValue(contractName)
+  await expect(formItem(projectDialog, '当前阶段').locator('.arco-tag')).toHaveCount(2)
   await expect(projectDialog.locator('.payment-table-scroll tbody tr')).toHaveCount(2)
 
   await projectDialog
@@ -211,6 +230,17 @@ test('dirty edit requires confirmation and view mode remains safe at a smaller v
   await projectDialog.getByRole('button', { name: '关闭' }).click()
   const confirmation = page.locator('.arco-modal:visible').last()
   await expect(confirmation.getByText('未保存修改', { exact: true })).toBeVisible()
+  await expect(confirmation).toHaveClass(/business-confirm-dialog/u)
+  await expect(confirmation).toHaveCSS('border-radius', '0px')
+  await expect(confirmation.locator('.arco-modal-title-icon')).toBeHidden()
+  await expect(confirmation.getByRole('button', { name: '放弃修改' })).toHaveCSS(
+    'background-color',
+    'rgb(22, 93, 255)',
+  )
+  await expect(confirmation.getByRole('button', { name: '放弃修改' })).toHaveCSS(
+    'border-radius',
+    '2px',
+  )
   await confirmation.getByRole('button', { name: '继续编辑' }).click()
   await expect(projectDialog).toBeVisible()
 })

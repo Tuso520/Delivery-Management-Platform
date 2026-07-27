@@ -49,9 +49,23 @@ export class QueryProjectDto extends PaginationDto {
 
   @ApiPropertyOptional({
     description: '排序规则',
-    enum: ['updatedAt:desc', 'updatedAt:asc', 'projectName:asc', 'projectName:desc'],
+    enum: [
+      'updatedAt:desc',
+      'updatedAt:asc',
+      'projectName:asc',
+      'projectName:desc',
+      'projectManager:asc',
+      'projectManager:desc',
+    ],
   })
   @IsOptional()
-  @IsIn(['updatedAt:desc', 'updatedAt:asc', 'projectName:asc', 'projectName:desc'])
+  @IsIn([
+    'updatedAt:desc',
+    'updatedAt:asc',
+    'projectName:asc',
+    'projectName:desc',
+    'projectManager:asc',
+    'projectManager:desc',
+  ])
   sort?: string;
 }

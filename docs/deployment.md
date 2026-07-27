@@ -274,7 +274,7 @@ pnpm --dir delivery-platform-server prisma:migrate-integration-secrets -- --veri
 
 迁移 `20260715110000_expand_project_overview_and_archive` 增加合同类型、产品、关键词和归档操作人，统一电气/软件负责人列，并移除采购、财务负责人列。发布前必须确认目标提交的 Prisma Client 已重新生成；迁移和二次幂等 seed 由既有 `backend-migrate` 门禁按固定顺序执行，不得单独使用 `db push` 替代。部署后除通用就绪检查外，还要验证项目概览的 mine/all 查询、项目详情和统一进度命令；归档、恢复和受限物理删除只作为后端生命周期能力验收，不再出现在当前 Figma 正常列表。
 
-本轮 `20260727090000` 至 `20260727095000` 六个迁移依次扩展字段配置契约、拆分字段配置权限、增加项目客户类型、关联知识分类、退役临时档案项权限并导入国家/币种选项。源码共 41 个 migration，Compose 与 CI 的 `EXPECTED_MIGRATION_COUNT` 必须保持 41；应用后必须重复 seed，并执行字段种子幂等、三个 migrator 和运行时一致性只读校验。
+本轮 `20260727090000` 至 `20260727110000` 七个迁移依次扩展字段配置契约、拆分字段配置权限、增加项目客户类型、关联知识分类、退役临时档案项权限、导入国家/币种选项，并增加项目多阶段存储及项目经理关系索引。源码共 42 个 migration，Compose 与 CI 的 `EXPECTED_MIGRATION_COUNT` 必须保持 42；应用后必须重复 seed，并执行字段种子幂等、三个 migrator 和运行时一致性只读校验。
 
 ## 健康与就绪检查
 

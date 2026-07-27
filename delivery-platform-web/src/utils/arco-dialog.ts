@@ -17,7 +17,7 @@ interface LegacyDialogOptions {
 
 function statusFromType(type?: LegacyMessageType): 'normal' | 'success' | 'warning' | 'danger' {
   if (type === 'error') return 'danger'
-  if (type === 'success' || type === 'warning') return type
+  if (type === 'success') return type
   return 'normal'
 }
 
@@ -30,6 +30,10 @@ export function arcoConfirm(
     let settled = false
 
     Modal.confirm({
+      simple: false,
+      alignCenter: true,
+      titleAlign: 'start',
+      modalClass: 'business-confirm-dialog',
       title,
       content,
       okText: options.confirmButtonText ?? '确定',
@@ -65,6 +69,10 @@ export function arcoPrompt(
     const isTextarea = options.inputType === 'textarea'
 
     Modal.confirm({
+      simple: false,
+      alignCenter: true,
+      titleAlign: 'start',
+      modalClass: 'business-confirm-dialog',
       title,
       okText: options.confirmButtonText ?? '确定',
       cancelText: options.cancelButtonText ?? '取消',

@@ -7,7 +7,7 @@ import { archiveTemplateApi } from '@/domains/archive/api/archive-template.api'
 import { projectApi } from '@/domains/project/api/project.api'
 import { projectPaymentApi } from '@/domains/project/api/project-payment.api'
 import { queryKeys } from '@/query/keys'
-import type { ProjectScope, QueryProjectDto } from '@/domains/project/types/project'
+import type { QueryProjectDto } from '@/domains/project/types/project'
 
 export function useProjectListQuery(params: MaybeRefOrGetter<QueryProjectDto>) {
   return useQuery({
@@ -16,10 +16,10 @@ export function useProjectListQuery(params: MaybeRefOrGetter<QueryProjectDto>) {
   })
 }
 
-export function useProjectSummaryQuery(scope: MaybeRefOrGetter<ProjectScope> = 'mine') {
+export function useProjectSummaryQuery(params: MaybeRefOrGetter<QueryProjectDto>) {
   return useQuery({
-    queryKey: computed(() => [...queryKeys.projects.summary(), toValue(scope)]),
-    queryFn: () => projectApi.getSummaryByScope(toValue(scope)),
+    queryKey: computed(() => [...queryKeys.projects.summary(), toValue(params)]),
+    queryFn: () => projectApi.getSummary({ ...toValue(params) }),
   })
 }
 

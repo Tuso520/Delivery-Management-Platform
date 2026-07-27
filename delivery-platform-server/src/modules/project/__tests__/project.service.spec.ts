@@ -327,6 +327,25 @@ describe('ProjectService', () => {
     );
   });
 
+  it('loads archived projects and sorts them by the configured project manager name', async () => {
+    prisma.project.count.mockResolvedValue(0);
+    prisma.project.findMany.mockResolvedValue([]);
+
+    await service.findAll(
+      { scope: 'archived', sort: 'projectManager:asc' },
+      publicActor,
+    );
+
+    expect(prisma.project.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          AND: [{ deletedAt: null }, { archivedAt: { not: null } }],
+        },
+        orderBy: { projectManager: { realName: 'asc' } },
+      }),
+    );
+  });
+
   it('checks data scope and nulls finance in project detail', async () => {
     prisma.project.findFirst.mockResolvedValue(mockProject);
 
@@ -862,6 +881,38 @@ describe('ProjectService', () => {
     });
   });
 
+  it('persists multiple configured current stages and derives the primary stage', async () => {
+    const updatedProject = {
+      ...mockProject,
+      currentStage: 'CONSTRUCTION',
+      currentStages: ['PROCUREMENT', 'CONSTRUCTION'],
+      revision: 2,
+    };
+    prisma.project.findFirst
+      .mockResolvedValueOnce({ ...mockProject, currentStages: ['CONSTRUCTION'] })
+      .mockResolvedValueOnce(updatedProject);
+    prisma.project.findUniqueOrThrow.mockResolvedValue(updatedProject);
+
+    const result = await service.update(
+      'project-1',
+      {
+        revision: 1,
+        deliveryStages: ['CONSTRUCTION', 'PROCUREMENT'],
+      },
+      sensitiveActor,
+    );
+
+    expect(prisma.project.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          currentStage: 'CONSTRUCTION',
+          currentStages: ['PROCUREMENT', 'CONSTRUCTION'],
+        }),
+      }),
+    );
+    expect(result.currentStages).toEqual(['PROCUREMENT', 'CONSTRUCTION']);
+  });
+
   it('updates, creates and soft-deletes the complete payment plan in the project transaction', async () => {
     const updatedProject = {
       ...mockProject,
@@ -1084,7 +1135,7 @@ describe('ProjectService', () => {
       .mockResolvedValueOnce(2)
       .mockResolvedValueOnce(1);
 
-    await expect(service.getSummary(publicActor, 'all')).resolves.toEqual({
+    await expect(service.getSummary(publicActor, { scope: 'all' })).resolves.toEqual({
       total: 8,
       active: 4,
       accepted: 2,
@@ -1111,24 +1162,32 @@ describe('ProjectService', () => {
       .mockResolvedValueOnce(3)
       .mockResolvedValueOnce(2)
       .mockResolvedValueOnce(1);
-    prisma.project.aggregate.mockResolvedValueOnce({
-      _sum: { convertedAmount: new Prisma.Decimal('28565000') },
-    });
-    prisma.projectPayment.aggregate.mockResolvedValueOnce({
-      _sum: { receivedConvertedAmount: new Prisma.Decimal('15683000') },
-    });
+    prisma.project.aggregate
+      .mockResolvedValueOnce({
+        _sum: { convertedAmount: new Prisma.Decimal('28565000') },
+      })
+      .mockResolvedValueOnce({
+        _sum: { convertedAmount: new Prisma.Decimal('15683000') },
+      });
 
-    await expect(service.getSummary(financialActor, 'mine')).resolves.toMatchObject({
+    await expect(service.getSummary(financialActor, { scope: 'mine' })).resolves.toMatchObject({
       totalConvertedAmount: 28565000,
       acceptedConvertedAmount: 15683000,
       acceptedThisYear: 2,
     });
-    expect(prisma.projectPayment.aggregate).toHaveBeenCalledWith({
+    expect(prisma.project.aggregate).toHaveBeenNthCalledWith(2, {
       where: {
-        deletedAt: null,
-        project: expect.objectContaining({ AND: expect.any(Array) }),
+        AND: [
+          expect.objectContaining({ AND: expect.any(Array) }),
+          {
+            actualAcceptanceAt: {
+              gte: expect.any(Date),
+              lte: expect.any(Date),
+            },
+          },
+        ],
       },
-      _sum: { receivedConvertedAmount: true },
+      _sum: { convertedAmount: true },
     });
   });
 
@@ -1185,6 +1244,7 @@ describe('ProjectService', () => {
       },
       data: {
         currentStage: 'CUSTOM_VERIFICATION',
+        currentStages: ['CUSTOM_VERIFICATION'],
         progressPercent: new Prisma.Decimal(70),
         expectedAcceptanceAt: null,
         actualAcceptanceAt: null,
@@ -1356,6 +1416,7 @@ describe('ProjectService', () => {
       },
       data: {
         currentStage: 'EXTERNAL_ACCEPTANCE',
+        currentStages: ['EXTERNAL_ACCEPTANCE'],
         progressPercent: new Prisma.Decimal(100),
         expectedAcceptanceAt: new Date('2026-12-20'),
         actualAcceptanceAt: new Date('2026-12-18T00:00:00.000Z'),

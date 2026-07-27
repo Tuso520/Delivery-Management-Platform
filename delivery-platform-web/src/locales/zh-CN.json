@@ -663,7 +663,7 @@
   "projects": {
     "title": "项目台账",
     "description": "按数据权限查看项目状态、阶段、金额和负责人。",
-    "scope": { "mine": "我的项目", "all": "全部项目" },
+    "scope": { "mine": "我的项目", "all": "全部项目", "archived": "归档项目" },
     "archiveView": { "normal": "返回正常项目", "archived": "归档项目" },
     "archiveHint": "归档后项目将从正常列表移入归档列表。",
     "sections": {
@@ -705,6 +705,7 @@
     "detail": "项目详情",
     "empty": "暂无符合条件的项目",
     "archived": "已归档",
+    "managerSort": "切换项目经理排序",
     "columns": {
       "name": "项目名称",
       "region": "项目地点",
@@ -717,8 +718,10 @@
       "signedAt": "签约时间",
       "acceptanceAt": "验收时间",
       "contractAmount": "合同金额",
+      "contractCurrency": "合同币种",
       "convertedCny": "折算人民币",
       "convertedCurrency": "折算{currency}",
+      "convertedAmount": "折算{currency}金额",
       "sales": "销售",
       "manager": "项目经理"
     },

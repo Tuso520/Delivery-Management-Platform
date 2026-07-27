@@ -2,6 +2,11 @@
 import { computed, ref, type CSSProperties } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import {
+  IconSort,
+  IconSortAscending,
+  IconSortDescending,
+} from '@arco-design/web-vue/es/icon'
 
 import { BusinessTable, PageContainer, PageToolbar } from '@/design-system'
 import {
@@ -13,6 +18,7 @@ import { useFieldConfig } from '@/platform/field-configuration'
 import type {
   Project,
   ProjectScope,
+  ProjectSort,
   ProjectSummaryFilter,
   QueryProjectDto,
 } from '@/domains/project/types/project'
@@ -37,17 +43,39 @@ const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const permissionStore = usePermissionStore()
-const scope = ref<ProjectScope>((route.query.scope as ProjectScope) || 'mine')
+const requestedScope = String(route.query.scope ?? '')
+const scope = ref<ProjectScope>(
+  ['mine', 'all', 'archived'].includes(requestedScope)
+    ? (requestedScope as ProjectScope)
+    : 'mine',
+)
+const requestedSort = String(route.query.sort ?? '')
+const initialSort: ProjectSort = [
+  'updatedAt:desc',
+  'updatedAt:asc',
+  'projectName:asc',
+  'projectName:desc',
+  'projectManager:asc',
+  'projectManager:desc',
+].includes(requestedSort)
+  ? (requestedSort as ProjectSort)
+  : 'updatedAt:desc'
 const filters = ref<QueryProjectDto>({
   page: Number(route.query.page) || 1,
   pageSize: Number(route.query.pageSize) || 20,
   keyword: typeof route.query.keyword === 'string' ? route.query.keyword : '',
   scope: scope.value,
   summaryFilter: (route.query.summaryFilter as ProjectSummaryFilter) || 'ALL',
-  sort: 'updatedAt:desc',
+  sort: initialSort,
 })
 const listQuery = useProjectListQuery(filters)
-const summaryQuery = useProjectSummaryQuery(scope)
+const summaryFilters = computed<QueryProjectDto>(() => ({
+  ...filters.value,
+  page: 1,
+  pageSize: 1,
+  sort: undefined,
+}))
+const summaryQuery = useProjectSummaryQuery(summaryFilters)
 const fieldConfig = useFieldConfig('project')
 const configuredBaseCurrency = computed(() =>
   String(fieldConfig.getField('CURRENCY')?.defaultValue ?? ''),
@@ -59,7 +87,7 @@ const configuredBaseCurrencyLabel = computed(
 )
 const convertedCurrencyTitle = computed(() =>
   configuredBaseCurrencyLabel.value
-    ? t('projects.columns.convertedCurrency', {
+    ? t('projects.columns.convertedAmount', {
         currency: configuredBaseCurrencyLabel.value,
       })
     : t('projects.columns.convertedCny'),
@@ -125,6 +153,11 @@ const summaryMetrics = computed(() => [
   },
 ])
 const canCreateProject = computed(() => permissionStore.hasPermission('project:create'))
+const managerSort = computed(() =>
+  filters.value.sort === 'projectManager:asc' || filters.value.sort === 'projectManager:desc'
+    ? filters.value.sort
+    : null,
+)
 
 const drawerMode = computed<'create' | 'edit' | 'view' | null>(() => {
   if (route.path === '/projects/create') return 'create'
@@ -151,6 +184,7 @@ async function syncUrl(): Promise<void> {
         filters.value.summaryFilter === 'ALL' ? undefined : filters.value.summaryFilter,
       page: filters.value.page === 1 ? undefined : String(filters.value.page),
       pageSize: filters.value.pageSize === 20 ? undefined : String(filters.value.pageSize),
+      sort: filters.value.sort === 'updatedAt:desc' ? undefined : filters.value.sort,
     },
   })
 }
@@ -171,6 +205,12 @@ function selectSummary(key: ProjectSummaryFilter): void {
 }
 function changePage(page: number): void {
   filters.value.page = page
+  void syncUrl()
+}
+function toggleManagerSort(): void {
+  filters.value.sort =
+    filters.value.sort === 'projectManager:asc' ? 'projectManager:desc' : 'projectManager:asc'
+  filters.value.page = 1
   void syncUrl()
 }
 async function refresh(): Promise<void> {
@@ -206,14 +246,9 @@ function acceptance(project: Project): string {
 function amount(value?: number | string | null): string {
   return formatAdaptiveNumber(value, { placeholder: '—', fractionDigits: 2 })
 }
-function amountWithCurrency(
-  value: number | string | null | undefined,
-  currencyCode?: string | null,
-): string {
-  const formatted = amount(value)
-  if (formatted === '—') return formatted
-  const code = currencyCode?.trim().toUpperCase()
-  return code ? `${code} ${formatted}` : formatted
+function currencyLabel(currencyCode?: string | null): string {
+  if (!currencyCode) return '—'
+  return configuredOption('CURRENCY', currencyCode)?.label || currencyCode
 }
 function amountInTenThousands(value?: number | null): string {
   if (value === null || value === undefined) return '—'
@@ -227,8 +262,12 @@ function memberName(project: Project, role: string): string {
   return project.members?.find((item) => item.projectRole === role)?.user?.realName || '—'
 }
 
-function stageStyle(project: Project): CSSProperties {
-  const palette = projectDictionaryColor('projectStage', project.currentStage)
+function projectStages(project: Project): string[] {
+  return project.currentStages?.length ? project.currentStages : [project.currentStage]
+}
+
+function stageStyle(stage: string): CSSProperties {
+  const palette = projectDictionaryColor('projectStage', stage)
   if (palette === 'green' || palette === 'lime') {
     return { color: '#10b981', backgroundColor: '#d1fae5', borderColor: '#a7f3d0' }
   }
@@ -297,6 +336,7 @@ function dictionaryStyle(
             <a-select :model-value="scope" @change="changeView($event as ProjectScope)">
               <a-option value="mine" :label="t('projects.scope.mine')" />
               <a-option value="all" :label="t('projects.scope.all')" />
+              <a-option value="archived" :label="t('projects.scope.archived')" />
               <template #arrow-icon>
                 <span class="select-arrow-box">
                   <img class="select-down-icon" :src="selectDownIcon" alt="" />
@@ -369,7 +409,17 @@ function dictionaryStyle(
           </a-table-column>
           <a-table-column :title="t('projects.columns.manager')" :width="110" align="center">
             <template #title>
-              <span class="manager-heading">{{ t('projects.columns.manager') }} <i>↕</i></span>
+              <button
+                type="button"
+                class="manager-sort-button"
+                :aria-label="t('projects.managerSort')"
+                @click="toggleManagerSort"
+              >
+                {{ t('projects.columns.manager') }}
+                <IconSortAscending v-if="managerSort === 'projectManager:asc'" />
+                <IconSortDescending v-else-if="managerSort === 'projectManager:desc'" />
+                <IconSort v-else />
+              </button>
             </template>
             <template #cell="{ record: row }">
               {{ row.projectManager?.realName || memberName(row, 'PROJECT_MANAGER') }}
@@ -383,8 +433,13 @@ function dictionaryStyle(
           <a-table-column :title="t('projects.columns.currentStage')" :width="200" align="center">
             <template #cell="{ record: row }">
               <span class="stage-cell">
-                <span class="stage-tag" :style="stageStyle(row)">
-                  {{ fieldConfig.getFieldLabel('PROJECT_STAGE', row.currentStage) }}
+                <span
+                  v-for="stage in projectStages(row)"
+                  :key="stage"
+                  class="stage-tag"
+                  :style="stageStyle(stage)"
+                >
+                  {{ fieldConfig.getFieldLabel('PROJECT_STAGE', stage) }}
                 </span>
               </span>
             </template>
@@ -413,17 +468,22 @@ function dictionaryStyle(
               {{ acceptance(row) }}
             </template>
           </a-table-column>
+          <a-table-column :title="t('projects.columns.contractCurrency')" :width="110" align="center">
+            <template #cell="{ record: row }">
+              {{ currencyLabel(row.contractCurrency) }}
+            </template>
+          </a-table-column>
           <a-table-column :title="t('projects.columns.contractAmount')" :width="160" align="center">
             <template #cell="{ record: row }">
               <span class="cell-left money-cell">
-                {{ amountWithCurrency(row.contractAmount, row.contractCurrency) }}
+                {{ amount(row.contractAmount) }}
               </span>
             </template>
           </a-table-column>
           <a-table-column :title="convertedCurrencyTitle" :width="160" align="center">
             <template #cell="{ record: row }">
               <span class="cell-left money-cell">
-                {{ amountWithCurrency(row.convertedAmount, row.baseCurrency) }}
+                {{ amount(row.convertedAmount) }}
               </span>
             </template>
           </a-table-column>
@@ -779,6 +839,7 @@ function dictionaryStyle(
   align-items: center;
   justify-content: flex-start;
   gap: 6px;
+  overflow: hidden;
 }
 .stage-tag {
   height: 18px;
@@ -803,18 +864,26 @@ function dictionaryStyle(
   font-size: 12px;
   font-weight: 500;
   line-height: 18px;
+  flex: 0 0 auto;
   white-space: nowrap;
 }
-.manager-heading {
+.manager-sort-button {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
 }
-.manager-heading i {
+.manager-sort-button :deep(svg) {
   color: #999;
   font-size: 13px;
-  font-style: normal;
-  font-weight: 400;
+}
+.manager-sort-button:hover,
+.manager-sort-button:focus-visible {
+  color: var(--project-action);
 }
 
 .project-table-frame {

@@ -107,6 +107,7 @@ interface ProjectListItem {
   revision: number;
   status: ProjectLifecycleStatus;
   currentStage: ProjectDeliveryStage;
+  currentStages: ProjectDeliveryStage[];
   progressPercent: number | null;
   riskLevel: string;
   riskDescription: string | null;
@@ -153,13 +154,7 @@ export class ProjectService {
     const {
       page = 1,
       pageSize: requestedPageSize,
-      keyword,
       scope: requestedScope = 'mine',
-      lifecycleStatus,
-      countryCode,
-      customerType,
-      projectType,
-      summaryFilter,
       sort,
     } = query;
     const pageSize = requestedPageSize ?? (await this.systemConfig.getDefaultProjectPageSize());
@@ -168,41 +163,12 @@ export class ProjectService {
       ? await this.projectAccess.buildProjectWhere(userId)
       : { deletedAt: null };
     const scope = this.buildRequestedScope(allowedScope, requestedScope, userId);
-    const filters: Prisma.ProjectWhereInput[] = [];
-
-    if (keyword) {
-      filters.push({
-        OR: [
-          { projectName: { contains: keyword } },
-          { shortName: { contains: keyword } },
-          { projectCode: { contains: keyword } },
-          { customerName: { contains: keyword } },
-        ],
-      });
-    }
-
-    if (lifecycleStatus) {
-      filters.push({ status: lifecycleStatus });
-    }
-
-    if (countryCode) {
-      filters.push({ countryCode });
-    }
-
-    if (projectType) {
-      filters.push({ projectType });
-    }
-
-    if (customerType) {
-      filters.push({ customerType });
-    }
-
-    if (summaryFilter && summaryFilter !== 'ALL') {
-      filters.push(this.buildSummaryFilterWhere(summaryFilter));
-    }
+    const filters = this.buildProjectFilters(query);
+    const archiveFilter: Prisma.ProjectWhereInput =
+      requestedScope === 'archived' ? { archivedAt: { not: null } } : { archivedAt: null };
 
     const where: Prisma.ProjectWhereInput = {
-      AND: [scope, { archivedAt: null }, ...filters],
+      AND: [scope, archiveFilter, ...filters],
     };
 
     const [total, list] = await Promise.all([
@@ -237,6 +203,7 @@ export class ProjectService {
           revision: true,
           status: true,
           currentStage: true,
+          currentStages: true,
           progressPercent: true,
           riskLevel: true,
           riskDescription: true,
@@ -287,13 +254,13 @@ export class ProjectService {
       'view_financial_list',
       this.getUserId(actor),
       {
-        keyword: keyword ?? null,
+        keyword: query.keyword ?? null,
         scope: requestedScope,
-        lifecycleStatus: lifecycleStatus ?? null,
-        countryCode: countryCode ?? null,
-        customerType: customerType ?? null,
-        projectType: projectType ?? null,
-        summaryFilter: summaryFilter ?? null,
+        lifecycleStatus: query.lifecycleStatus ?? null,
+        countryCode: query.countryCode ?? null,
+        customerType: query.customerType ?? null,
+        projectType: query.projectType ?? null,
+        summaryFilter: query.summaryFilter ?? null,
         resultCount: projectList.length,
       },
     );
@@ -371,7 +338,7 @@ export class ProjectService {
 
   async getSummary(
     actor: ProjectActor,
-    requestedScope: ProjectScope = 'mine',
+    query: QueryProjectDto = {},
   ): Promise<{
     total: number;
     active: number;
@@ -386,44 +353,47 @@ export class ProjectService {
       throw new ForbiddenException('缺少用户上下文');
     }
     const allowedScope = await this.projectAccess.buildProjectWhere(userId);
+    const requestedScope = query.scope ?? 'mine';
     const scope = this.buildRequestedScope(allowedScope, requestedScope, userId);
-    const activeScope: Prisma.ProjectWhereInput = { AND: [scope, { archivedAt: null }] };
-    const currentYear = new Date().getUTCFullYear();
+    const archiveFilter: Prisma.ProjectWhereInput =
+      requestedScope === 'archived' ? { archivedAt: { not: null } } : { archivedAt: null };
+    const filteredScope: Prisma.ProjectWhereInput = {
+      AND: [scope, archiveFilter, ...this.buildProjectFilters(query)],
+    };
+    const now = new Date();
+    const currentYear = now.getUTCFullYear();
     const acceptedThisYearWhere: Prisma.ProjectWhereInput = {
       actualAcceptanceAt: {
         gte: new Date(Date.UTC(currentYear, 0, 1)),
-        lt: new Date(Date.UTC(currentYear + 1, 0, 1)),
+        lte: now,
       },
     };
     const [total, active, accepted, acceptedThisYear, highRisk, totalAmount, acceptedAmount] =
       await Promise.all([
-        this.prisma.project.count({ where: activeScope }),
+        this.prisma.project.count({ where: filteredScope }),
         this.prisma.project.count({
           where: {
-            AND: [activeScope, this.buildSummaryFilterWhere('ACTIVE')],
+            AND: [filteredScope, this.buildSummaryFilterWhere('ACTIVE')],
           },
         }),
         this.prisma.project.count({
           where: {
-            AND: [activeScope, this.buildSummaryFilterWhere('ACCEPTED')],
+            AND: [filteredScope, this.buildSummaryFilterWhere('ACCEPTED')],
           },
         }),
-        this.prisma.project.count({ where: { AND: [activeScope, acceptedThisYearWhere] } }),
+        this.prisma.project.count({ where: { AND: [filteredScope, acceptedThisYearWhere] } }),
         this.prisma.project.count({
           where: {
-            AND: [activeScope, this.buildSummaryFilterWhere('HIGH_RISK')],
+            AND: [filteredScope, this.buildSummaryFilterWhere('HIGH_RISK')],
           },
         }),
         this.prisma.project.aggregate({
-          where: activeScope,
+          where: filteredScope,
           _sum: { convertedAmount: true },
         }),
-        this.prisma.projectPayment.aggregate({
-          where: {
-            deletedAt: null,
-            project: activeScope,
-          },
-          _sum: { receivedConvertedAmount: true },
+        this.prisma.project.aggregate({
+          where: { AND: [filteredScope, acceptedThisYearWhere] },
+          _sum: { convertedAmount: true },
         }),
       ]);
     const canViewFinancial = this.canViewFinancial(actor);
@@ -437,7 +407,7 @@ export class ProjectService {
         ? (totalAmount._sum.convertedAmount?.toNumber() ?? 0)
         : null,
       acceptedConvertedAmount: canViewFinancial
-        ? (acceptedAmount._sum.receivedConvertedAmount?.toNumber() ?? 0)
+        ? (acceptedAmount._sum.convertedAmount?.toNumber() ?? 0)
         : null,
     };
   }
@@ -549,12 +519,12 @@ export class ProjectService {
       dto.expectedAcceptanceAt,
     );
     await this.projectConfiguration.validate(dto);
-    const deliveryStage = await this.resolveDeliveryStage(dto.deliveryStage);
+    const deliveryStages = await this.resolveDeliveryStages(dto.deliveryStages);
+    const deliveryStage = await this.resolvePrimaryDeliveryStage(deliveryStages);
     await Promise.all([
       this.fieldConfiguration?.assertConfiguredValue('COUNTRY', dto.countryCode),
       this.fieldConfiguration?.assertConfiguredValue('CURRENCY', dto.contractCurrency),
       this.fieldConfiguration?.assertConfiguredValue('CURRENCY', dto.baseCurrency),
-      this.fieldConfiguration?.assertConfiguredValue('PROJECT_STAGE', deliveryStage),
     ]);
     await this.validateLeadershipAssignments(dto);
     const customerCode = dto.customerName ? dto.customerName.substring(0, 2).toUpperCase() : 'XX';
@@ -612,6 +582,7 @@ export class ProjectService {
             softwareOwnerId: dto.softwareOwnerId,
             status: initialLifecycleStatus,
             currentStage: deliveryStage,
+            currentStages: deliveryStages,
             progressPercent:
               dto.progressPercent !== undefined
                 ? new Prisma.Decimal(dto.progressPercent)
@@ -656,6 +627,7 @@ export class ProjectService {
               projectCode: created.projectCode,
               lifecycleStatus: initialLifecycleStatus,
               deliveryStage,
+              deliveryStages,
               archiveTemplateId: archiveSnapshot.templateId,
               archiveTemplateVersionId: archiveSnapshot.templateVersionId,
               archiveSnapshotSource: archiveSnapshot.source,
@@ -778,7 +750,7 @@ export class ProjectService {
       dto.expectedAcceptanceAt ?? project.expectedAcceptanceAt,
     );
     if (
-      dto.deliveryStage !== undefined ||
+      dto.deliveryStages !== undefined ||
       dto.progressPercent !== undefined ||
       dto.expectedAcceptanceAt !== undefined
     ) {
@@ -809,15 +781,20 @@ export class ProjectService {
         dto.baseCurrency,
         project.baseCurrency,
       ),
-      this.fieldConfiguration?.assertConfiguredValue(
-        'PROJECT_STAGE',
-        dto.deliveryStage,
-        project.currentStage,
-      ),
     ]);
+    const deliveryStages =
+      dto.deliveryStages === undefined
+        ? undefined
+        : await this.resolveDeliveryStages(
+            dto.deliveryStages,
+            this.normalizeDeliveryStages(project.currentStages, project.currentStage),
+          );
+    const deliveryStage = deliveryStages
+      ? await this.resolvePrimaryDeliveryStage(deliveryStages)
+      : undefined;
     await this.validateLeadershipAssignments(dto);
 
-    const updateData: Prisma.ProjectUpdateInput = {};
+    const updateData: Prisma.ProjectUncheckedUpdateInput = {};
 
     if (dto.projectName !== undefined) updateData.projectName = dto.projectName;
     if (dto.shortName !== undefined) updateData.shortName = dto.shortName;
@@ -875,7 +852,10 @@ export class ProjectService {
       updateData.startDate = dto.startDate ? new Date(dto.startDate) : null;
     if (dto.plannedEndDate !== undefined)
       updateData.plannedEndDate = dto.plannedEndDate ? new Date(dto.plannedEndDate) : null;
-    if (dto.deliveryStage !== undefined) updateData.currentStage = dto.deliveryStage;
+    if (deliveryStages !== undefined) {
+      updateData.currentStages = deliveryStages;
+      updateData.currentStage = deliveryStage;
+    }
     if (dto.progressPercent !== undefined) {
       updateData.progressPercent = new Prisma.Decimal(dto.progressPercent).toDecimalPlaces(2);
     }
@@ -900,7 +880,7 @@ export class ProjectService {
       await this.syncLeadershipMembers(tx, id, dto);
       await this.syncPaymentPlans(tx, id, preparedPayments, userId);
       if (
-        dto.deliveryStage !== undefined ||
+        dto.deliveryStages !== undefined ||
         dto.progressPercent !== undefined ||
         dto.expectedAcceptanceAt !== undefined
       ) {
@@ -909,7 +889,7 @@ export class ProjectService {
             projectId: id,
             title: '项目进度更新',
             recordType: 'Progress',
-            stageCode: dto.deliveryStage ?? project.currentStage,
+            stageCode: deliveryStage ?? project.currentStage,
             recordDate: new Date(),
             description: `进度更新为 ${dto.progressPercent ?? project.progressPercent?.toNumber() ?? 0}%`,
             createdBy: userId,
@@ -981,6 +961,7 @@ export class ProjectService {
         where: { id, revision: dto.revision, archivedAt: null },
         data: {
           currentStage: dto.targetStage,
+          currentStages: [dto.targetStage],
           progressPercent: new Prisma.Decimal(dto.progressPercent),
           expectedAcceptanceAt,
           actualAcceptanceAt,
@@ -1199,6 +1180,7 @@ export class ProjectService {
       projectManagerId: project.projectManagerId,
       electricalOwnerId: project.electricalOwnerId,
       softwareOwnerId: project.softwareOwnerId,
+      currentStages: this.normalizeDeliveryStages(project.currentStages, project.currentStage),
       progressPercent: project.progressPercent?.toString() ?? null,
       riskLevel: project.riskLevel,
       riskDescription: project.riskDescription,
@@ -1543,7 +1525,7 @@ export class ProjectService {
     requestedScope: ProjectScope,
     userId?: string,
   ): Prisma.ProjectWhereInput {
-    if (requestedScope === 'all') return allowedScope;
+    if (requestedScope === 'all' || requestedScope === 'archived') return allowedScope;
     if (!userId) return { AND: [allowedScope, { id: { in: [] } }] };
     return {
       AND: [
@@ -1617,6 +1599,28 @@ export class ProjectService {
     return userId;
   }
 
+  private buildProjectFilters(query: QueryProjectDto): Prisma.ProjectWhereInput[] {
+    const filters: Prisma.ProjectWhereInput[] = [];
+    if (query.keyword) {
+      filters.push({
+        OR: [
+          { projectName: { contains: query.keyword } },
+          { shortName: { contains: query.keyword } },
+          { projectCode: { contains: query.keyword } },
+          { customerName: { contains: query.keyword } },
+        ],
+      });
+    }
+    if (query.lifecycleStatus) filters.push({ status: query.lifecycleStatus });
+    if (query.countryCode) filters.push({ countryCode: query.countryCode });
+    if (query.projectType) filters.push({ projectType: query.projectType });
+    if (query.customerType) filters.push({ customerType: query.customerType });
+    if (query.summaryFilter && query.summaryFilter !== 'ALL') {
+      filters.push(this.buildSummaryFilterWhere(query.summaryFilter));
+    }
+    return filters;
+  }
+
   private buildSummaryFilterWhere(
     filter: Exclude<ProjectSummaryFilter, 'ALL'>,
   ): Prisma.ProjectWhereInput {
@@ -1627,11 +1631,12 @@ export class ProjectService {
       return { actualAcceptanceAt: { not: null } };
     }
     if (filter === 'ACCEPTED_THIS_YEAR') {
-      const year = new Date().getUTCFullYear();
+      const now = new Date();
+      const year = now.getUTCFullYear();
       return {
         actualAcceptanceAt: {
           gte: new Date(Date.UTC(year, 0, 1)),
-          lt: new Date(Date.UTC(year + 1, 0, 1)),
+          lte: now,
         },
       };
     }
@@ -1646,6 +1651,10 @@ export class ProjectService {
         return { projectName: 'asc' };
       case 'projectName:desc':
         return { projectName: 'desc' };
+      case 'projectManager:asc':
+        return { projectManager: { realName: 'asc' } };
+      case 'projectManager:desc':
+        return { projectManager: { realName: 'desc' } };
       default:
         return { updatedAt: 'desc' };
     }
@@ -1684,18 +1693,64 @@ export class ProjectService {
     return configuration;
   }
 
-  private async resolveDeliveryStage(value?: string): Promise<ProjectDeliveryStage> {
-    if (value) return value;
+  private async resolveDeliveryStages(
+    values?: string[],
+    existingValues: string[] = [],
+  ): Promise<ProjectDeliveryStage[]> {
     const configuration = await this.getProjectStageConfiguration();
+    if (values !== undefined) {
+      const uniqueValues = [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+      if (uniqueValues.length === 0) {
+        throw new BadRequestException('当前阶段至少选择一项');
+      }
+      const existing = new Set(existingValues);
+      for (const value of uniqueValues) {
+        const option = configuration.values.find((item) => item.value === value);
+        if (!option || (!option.enabled && !existing.has(value))) {
+          throw new BadRequestException(`项目阶段 ${value} 不是当前启用的字段配置项`);
+        }
+      }
+      const order = new Map(configuration.values.map((option, index) => [option.value, index]));
+      return uniqueValues.sort(
+        (left, right) =>
+          (order.get(left) ?? Number.MAX_SAFE_INTEGER) -
+          (order.get(right) ?? Number.MAX_SAFE_INTEGER),
+      );
+    }
     const defaultValue =
       typeof configuration.defaultValue === 'string' ? configuration.defaultValue : '';
     if (
       defaultValue &&
       configuration.values.some((option) => option.value === defaultValue && option.enabled)
     ) {
-      return defaultValue;
+      return [defaultValue];
     }
     throw new BadRequestException('项目阶段字段配置缺少有效默认值');
+  }
+
+  private async resolvePrimaryDeliveryStage(
+    values: ProjectDeliveryStage[],
+  ): Promise<ProjectDeliveryStage> {
+    const configuration = await this.getProjectStageConfiguration();
+    const selected = new Set(values);
+    const primary = [...configuration.values]
+      .reverse()
+      .find((option) => selected.has(option.value))?.value;
+    if (primary) return primary;
+    throw new BadRequestException('当前阶段未匹配项目阶段字段配置');
+  }
+
+  private normalizeDeliveryStages(
+    value: Prisma.JsonValue | null | undefined,
+    fallback: string | null,
+  ): ProjectDeliveryStage[] {
+    const stages = Array.isArray(value)
+      ? value.filter(
+          (stage): stage is string => typeof stage === 'string' && Boolean(stage.trim()),
+        )
+      : [];
+    if (stages.length > 0) return [...new Set(stages)];
+    return fallback?.trim() ? [fallback] : [];
   }
 
   private requireLifecycleStatus(value: string | null, projectId: string): ProjectLifecycleStatus {
@@ -1812,6 +1867,7 @@ export class ProjectService {
       id: string;
       status: string | null;
       currentStage: string | null;
+      currentStages?: Prisma.JsonValue | null;
       contractCurrency: string | null;
       baseCurrency: string | null;
       contractAmount: Prisma.Decimal | null;
@@ -1853,6 +1909,7 @@ export class ProjectService {
       keywords,
       status,
       currentStage,
+      currentStages,
       ...publicFields
     } = project;
 
@@ -1874,6 +1931,7 @@ export class ProjectService {
       ...publicFields,
       status: this.requireLifecycleStatus(status, project.id),
       currentStage: this.requireDeliveryStage(currentStage, project.id),
+      currentStages: this.normalizeDeliveryStages(currentStages, currentStage),
       progressPercent: progressPercent?.toNumber() ?? null,
       contractCurrency: canViewFinancial ? contractCurrency : null,
       baseCurrency: canViewFinancial ? baseCurrency : null,

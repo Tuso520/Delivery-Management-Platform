@@ -8,6 +8,8 @@ import {
   IsDecimal,
   IsDateString,
   IsArray,
+  ArrayMinSize,
+  ArrayMaxSize,
   ArrayUnique,
   IsBoolean,
   Max,
@@ -199,11 +201,18 @@ export class CreateProjectDto {
   @IsString()
   softwareOwnerId?: string | null;
 
-  @ApiPropertyOptional({ description: '目标交付阶段，取值来自 PROJECT_STAGE 字段配置' })
+  @ApiPropertyOptional({
+    description: '当前交付阶段集合，取值来自 PROJECT_STAGE 字段配置',
+    isArray: true,
+  })
   @IsOptional()
-  @IsString()
-  @Matches(/^[A-Z][A-Z0-9_-]{0,99}$/u)
-  deliveryStage?: ProjectDeliveryStage;
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(20)
+  @ArrayUnique()
+  @IsString({ each: true })
+  @Matches(/^[A-Z][A-Z0-9_-]{0,99}$/u, { each: true })
+  deliveryStages?: ProjectDeliveryStage[];
 
   @ApiPropertyOptional({ description: '项目进度百分比' })
   @IsOptional()

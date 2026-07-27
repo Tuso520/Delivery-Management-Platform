@@ -112,7 +112,7 @@ const formData = reactive({
   projectManagerId: '',
   electricalOwnerId: '',
   softwareOwnerId: '',
-  deliveryStage: '' as ProjectDeliveryStage,
+  deliveryStages: [] as ProjectDeliveryStage[],
   progressPercent: 0,
 })
 const rules = computed(() => ({
@@ -122,6 +122,7 @@ const rules = computed(() => ({
   contractType: [{ required: fieldConfig.isFieldRequired('CONTRACT_TYPE'), message: '请选择合同类型' }],
   product: [{ required: fieldConfig.isFieldRequired('PRODUCT_TYPE'), message: '请选择产品类型' }],
   archiveTemplateId: [{ required: true, message: '请选择档案模版' }],
+  deliveryStages: [{ required: true, message: '请至少选择一个当前阶段' }],
 }))
 const idempotencyKey = ref('')
 
@@ -169,7 +170,7 @@ const stageOptions = computed(() =>
   configuredOptions<ProjectDeliveryStage>(
     'PROJECT_STAGE',
     'projectType',
-    [formData.deliveryStage],
+    formData.deliveryStages,
   ),
 )
 const salesOptions = computed<ProjectUserReferenceOption[]>(() => optionQueries.value[2].data ?? [])
@@ -220,10 +221,9 @@ function applyFieldDefaults(): void {
   if (!formData.contractCurrency) {
     formData.contractCurrency = baseCurrencyCode.value
   }
-  if (!formData.deliveryStage) {
-    formData.deliveryStage = String(
-      fieldConfig.getField('PROJECT_STAGE')?.defaultValue ?? '',
-    ) as ProjectDeliveryStage
+  if (formData.deliveryStages.length === 0) {
+    const defaultStage = String(fieldConfig.getField('PROJECT_STAGE')?.defaultValue ?? '')
+    formData.deliveryStages = defaultStage ? [defaultStage as ProjectDeliveryStage] : []
   }
 }
 
@@ -251,9 +251,10 @@ function blankForm(): void {
     projectManagerId: '',
     electricalOwnerId: '',
     softwareOwnerId: '',
-    deliveryStage: String(
-      fieldConfig.getField('PROJECT_STAGE')?.defaultValue ?? '',
-    ) as ProjectDeliveryStage,
+    deliveryStages: (() => {
+      const defaultStage = String(fieldConfig.getField('PROJECT_STAGE')?.defaultValue ?? '')
+      return defaultStage ? [defaultStage as ProjectDeliveryStage] : []
+    })(),
     progressPercent: 0,
   })
   applyFieldDefaults()
@@ -292,7 +293,7 @@ function assignProject(): void {
     projectManagerId: value.projectManagerId || '',
     electricalOwnerId: value.electricalOwnerId || '',
     softwareOwnerId: value.softwareOwnerId || '',
-    deliveryStage: value.currentStage,
+    deliveryStages: value.currentStages?.length ? [...value.currentStages] : [value.currentStage],
     progressPercent: value.progressPercent ?? 0,
   })
 }
@@ -456,7 +457,7 @@ async function save(): Promise<void> {
           projectName: formData.projectName.trim(),
           countryCode: formData.countryCode,
           archiveTemplateId: formData.archiveTemplateId,
-          deliveryStage: formData.deliveryStage || undefined,
+          deliveryStages: formData.deliveryStages.length ? [...formData.deliveryStages] : undefined,
           progressPercent: formData.progressPercent,
           expectedAcceptanceAt: canEditAcceptance.value
             ? formData.expectedAcceptanceAt || undefined
@@ -468,7 +469,7 @@ async function save(): Promise<void> {
       if (!project.value) return
       const progressPayload = canUpdateProgress.value
         ? {
-            deliveryStage: formData.deliveryStage,
+            deliveryStages: [...formData.deliveryStages],
             progressPercent: formData.progressPercent,
             expectedAcceptanceAt: canEditAcceptance.value
               ? formData.expectedAcceptanceAt || null
@@ -751,8 +752,13 @@ function beforeCancel(): boolean {
               :operate-allowed="canOperatePayments"
             >
               <template #project-progress>
-                <a-form-item class="progress-field" label="当前阶段">
-                  <a-select v-model="formData.deliveryStage" :disabled="!canUpdateProgress">
+                <a-form-item class="progress-field" label="当前阶段" field="deliveryStages">
+                  <a-select
+                    v-model="formData.deliveryStages"
+                    multiple
+                    allow-clear
+                    :disabled="!canUpdateProgress"
+                  >
                     <a-option
                       v-for="item in stageOptions"
                       :key="item.value"
@@ -788,7 +794,7 @@ function beforeCancel(): boolean {
 .dialog-header h2 { margin: 0; font-size: 16px; font-weight: 700; line-height: 24px; }
 .dialog-actions { display: flex; align-items: center; gap: 12px; }
 .dialog-actions :deep(.arco-btn) { height: 32px; padding: 0 16px; border-radius: 2px; }
-.dialog-close { width: 54px; height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 100px; background: transparent; color: #165dff; cursor: pointer; }
+.dialog-close { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 0; background: transparent; color: #165dff; cursor: pointer; }
 .dialog-close:hover { background: #f2f3f5; }
 .dialog-body { min-height: 0; flex: 1; overflow-x: hidden; overflow-y: auto; scrollbar-color: #c9cdd4 #f2f3f5; scrollbar-width: thin; }
 .dialog-body :deep(.arco-spin), .dialog-body :deep(.arco-spin-mask) { width: 100%; }

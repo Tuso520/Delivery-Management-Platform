@@ -130,7 +130,7 @@ jobs:
       MINIO_BUCKET: delivery-platform
       INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME: admin
       SEED_RESET_EXISTING_USER_PASSWORDS: "true"
-      EXPECTED_MIGRATION_COUNT: "41"
+      EXPECTED_MIGRATION_COUNT: "42"
     steps:
       - uses: actions/checkout@v4
         with:

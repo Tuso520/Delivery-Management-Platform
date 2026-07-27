@@ -276,16 +276,17 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
   const tableHeaders = await page
     .locator('.project-list-panel thead .arco-table-th')
     .allTextContents()
-  expect(tableHeaders.slice(0, 12).map((value) => value.trim())).toEqual([
+  expect(tableHeaders.slice(0, 13).map((value) => value.trim())).toEqual([
     '项目名称',
-    '项目经理 ↕',
+    '项目经理',
     '项目地点',
     '当前阶段',
     '项目进度',
     '签约时间',
     '验收时间',
+    '合同币种',
     '合同金额',
-    '折算人民币',
+    '折算人民币金额',
     '客户类型',
     '合同类型',
     '销售',
@@ -294,9 +295,11 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
   const columnWidths = await page
     .locator('.project-list-panel thead .arco-table-th')
     .evaluateAll((headers) =>
-      headers.slice(0, 12).map((header) => Math.round(header.getBoundingClientRect().width)),
+      headers.slice(0, 13).map((header) => Math.round(header.getBoundingClientRect().width)),
     )
-  expect(columnWidths).toEqual([120, 110, 160, 200, 180, 120, 120, 160, 160, 120, 110, 100])
+  expect(columnWidths).toEqual([
+    120, 110, 160, 200, 180, 120, 120, 115, 160, 160, 120, 110, 100,
+  ])
 
   const leftAlignedOffsets = await page
     .locator('.project-list-panel tbody .arco-table-tr')
@@ -308,7 +311,7 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
         [2, '.cell-left'],
         [3, '.stage-cell'],
         [4, '.progress'],
-        [7, '.money-cell'],
+        [8, '.money-cell'],
       ])
       return [...selectors].map(([index, selector]) => {
         const cell = cells[index]
@@ -378,6 +381,51 @@ test('project overview keeps loading, empty and error states inside the Figma ta
   )
   await expect(page.getByRole('button', { name: '重新加载', exact: true })).toBeVisible()
   await expect(page.locator('.project-table-frame')).toHaveCSS('height', '602px')
+})
+
+test('project scope exposes archived projects and project manager sorting cycles both directions', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await login(page)
+  await page.goto('/#/projects')
+  await expect(page.locator('.scope-field .arco-select-view')).toBeVisible()
+
+  await page.locator('.scope-field .arco-select-view').click()
+  const archivedOption = page
+    .locator('.arco-select-option:visible')
+    .filter({ hasText: '归档项目' })
+  await expect(archivedOption).toBeVisible()
+  const archivedRequest = page.waitForRequest((request) => {
+    const url = new URL(request.url())
+    return url.pathname === '/api/v1/projects' && url.searchParams.get('scope') === 'archived'
+  })
+  await archivedOption.click()
+  await archivedRequest
+  await expect(page).toHaveURL(/scope=archived/u)
+
+  const sortButton = page.getByRole('button', { name: '切换项目经理排序' })
+  const ascendingRequest = page.waitForRequest((request) => {
+    const url = new URL(request.url())
+    return (
+      url.pathname === '/api/v1/projects' &&
+      url.searchParams.get('sort') === 'projectManager:asc'
+    )
+  })
+  await sortButton.click()
+  await ascendingRequest
+  await expect(page).toHaveURL(/sort=projectManager:asc/u)
+
+  const descendingRequest = page.waitForRequest((request) => {
+    const url = new URL(request.url())
+    return (
+      url.pathname === '/api/v1/projects' &&
+      url.searchParams.get('sort') === 'projectManager:desc'
+    )
+  })
+  await sortButton.click()
+  await descendingRequest
+  await expect(page).toHaveURL(/sort=projectManager:desc/u)
 })
 
 test('project overview stays inside the App Shell at common desktop widths', async ({ page }) => {
@@ -490,8 +538,11 @@ test('project overview uses wheel loading, large rows and a fixed project-name c
   await expect(page.locator('.project-link')).toHaveCount(20, { timeout: 60_000 })
   await expect(page.locator('.business-table__pagination')).toHaveCount(0)
   await expect(page.locator('.project-list-panel .arco-pagination')).toHaveCount(0)
-  await expect(page.getByText('VND 987,654,321,012.00', { exact: true })).toBeVisible()
-  await expect(page.getByText('CNY 2,888,888.13', { exact: true })).toBeVisible()
+  await expect(page.getByText('987,654,321,012.00', { exact: true })).toBeVisible()
+  await expect(page.getByText('2,888,888.13', { exact: true })).toBeVisible()
+  await expect(
+    page.locator('.project-list-panel tbody .arco-table-tr').first().locator('.arco-table-td').nth(7),
+  ).toContainText('越南盾')
   await expect(page.getByText('越南 · 胡志明市', { exact: true })).toBeVisible()
 
   const metrics = await projectTableMetrics(page)

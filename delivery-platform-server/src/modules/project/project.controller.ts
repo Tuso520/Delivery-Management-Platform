@@ -107,7 +107,7 @@ export class ProjectController {
   @RequirePermissions({ all: ['project:view'] })
   @ApiOperation({ summary: '获取当前数据范围内的项目概览统计' })
   getSummary(@Query() query: QueryProjectDto, @CurrentUser() user: JwtPayload) {
-    return this.projectService.getSummary(user, query.scope);
+    return this.projectService.getSummary(user, query);
   }
 
   @Get('archived')

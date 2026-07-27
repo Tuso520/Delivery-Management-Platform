@@ -27,9 +27,11 @@ export type ProjectSort =
   | 'updatedAt:asc'
   | 'projectName:asc'
   | 'projectName:desc'
+  | 'projectManager:asc'
+  | 'projectManager:desc'
 
 export type AcceptanceTimeType = 'ACTUAL' | 'EXPECTED' | 'NONE'
-export type ProjectScope = 'mine' | 'all'
+export type ProjectScope = 'mine' | 'all' | 'archived'
 export type CustomerType = string
 export type ProjectType = string
 export type ContractType = string
@@ -70,6 +72,7 @@ export interface Project {
   electricalOwnerId?: string | null
   softwareOwnerId?: string | null
   currentStage: ProjectDeliveryStage
+  currentStages: ProjectDeliveryStage[]
   status: ProjectLifecycleStatus
   progressPercent?: number | null
   riskLevel: string
@@ -188,7 +191,7 @@ export interface CreateProjectDto extends ProjectCommonWriteFields {
   projectName: string
   countryCode: string
   archiveTemplateId: string
-  deliveryStage?: ProjectDeliveryStage
+  deliveryStages?: ProjectDeliveryStage[]
   progressPercent?: number
   expectedAcceptanceAt?: string | null
   archiveTemplateVersionId?: string
@@ -201,7 +204,7 @@ export interface CreateProjectDto extends ProjectCommonWriteFields {
  */
 export interface UpdateProjectDto extends ProjectCommonWriteFields {
   revision: number
-  deliveryStage?: ProjectDeliveryStage
+  deliveryStages?: ProjectDeliveryStage[]
   progressPercent?: number
   expectedAcceptanceAt?: string | null
 }

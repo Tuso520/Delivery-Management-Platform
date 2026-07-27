@@ -20,5 +20,5 @@ export const PROJECT_SUMMARY_FILTERS = [
 
 export type ProjectSummaryFilter = (typeof PROJECT_SUMMARY_FILTERS)[number];
 
-export const PROJECT_SCOPES = ['mine', 'all'] as const;
+export const PROJECT_SCOPES = ['mine', 'all', 'archived'] as const;
 export type ProjectScope = (typeof PROJECT_SCOPES)[number];

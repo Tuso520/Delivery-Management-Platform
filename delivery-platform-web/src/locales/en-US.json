@@ -663,7 +663,7 @@
   "projects": {
     "title": "Project Register",
     "description": "View project status, stage, amounts and owners within your data scope.",
-    "scope": { "mine": "My Projects", "all": "All Projects" },
+    "scope": { "mine": "My Projects", "all": "All Projects", "archived": "Archived Projects" },
     "archiveView": { "normal": "Active Projects", "archived": "Archived Projects" },
     "archiveHint": "Archived projects move from the active list to the archive list.",
     "sections": {
@@ -705,6 +705,7 @@
     "detail": "Project Details",
     "empty": "No matching projects",
     "archived": "Archived",
+    "managerSort": "Toggle project manager sorting",
     "columns": {
       "name": "Project Name",
       "region": "Project Location",
@@ -717,8 +718,10 @@
       "signedAt": "Signed At",
       "acceptanceAt": "Acceptance Date",
       "contractAmount": "Contract Amount",
+      "contractCurrency": "Contract Currency",
       "convertedCny": "Converted CNY",
       "convertedCurrency": "Converted {currency}",
+      "convertedAmount": "Converted {currency} Amount",
       "sales": "Sales",
       "manager": "Project Manager"
     },

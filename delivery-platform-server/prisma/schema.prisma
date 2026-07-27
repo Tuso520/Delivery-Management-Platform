@@ -34,6 +34,7 @@ model User {
 
   userRoles                  UserRole[]
   projectMembers             ProjectMember[]
+  managedProjects            Project[]                  @relation("ProjectManager")
   archiveItems               ProjectArchiveItem[]       @relation("ArchiveResponsibleUser")
   reviewItems                ProjectArchiveItem[]       @relation("ArchiveReviewUser")
   ownedArchiveEntries        ProjectArchiveEntry[]      @relation("ProjectArchiveEntryOwner")
@@ -222,6 +223,7 @@ model Project {
   softwareOwnerId          String?   @map("software_owner_id") @db.VarChar(36)
   status                   String    @default("DRAFT") @db.VarChar(20)
   currentStage             String    @default("STARTUP") @map("current_stage") @db.VarChar(30)
+  currentStages            Json?     @map("current_stages")
   progressPercent          Decimal?  @map("progress_percent") @db.Decimal(5, 2)
   riskLevel                RiskLevel @default(Low) @map("risk_level")
   riskDescription          String?   @map("risk_description") @db.Text
@@ -257,11 +259,13 @@ model Project {
   retrospectives         ProjectRetrospective[]
   processRecords         ProjectProcessRecord[]
   payments               ProjectPayment[]
+  projectManager         User?                    @relation("ProjectManager", fields: [projectManagerId], references: [id], onDelete: SetNull)
   archiveTemplate        ArchiveTemplate?        @relation("ProjectArchiveTemplateSnapshot", fields: [archiveTemplateId], references: [id], onDelete: SetNull)
   archiveTemplateVersion ArchiveTemplateVersion? @relation("ProjectArchiveTemplateVersionSnapshot", fields: [archiveTemplateVersionId], references: [id], onDelete: SetNull)
 
   @@index([status, deletedAt], map: "projects_status_deleted_at_idx")
   @@index([currentStage], map: "projects_current_stage_idx")
+  @@index([projectManagerId], map: "projects_project_manager_id_idx")
   @@index([expectedAcceptanceAt], map: "projects_expected_acceptance_at_idx")
   @@index([archivedAt], map: "projects_archived_at_idx")
   @@index([archivedBy], map: "projects_archived_by_idx")

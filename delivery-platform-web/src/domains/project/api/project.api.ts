@@ -19,12 +19,10 @@ export const projectApi = {
     return request.get<PaginatedData<Project>>('/projects', { params })
   },
 
-  getSummary() {
-    return request.get<ProjectSummary>('/projects/summary')
-  },
-
-  getSummaryByScope(scope: 'mine' | 'all') {
-    return request.get<ProjectSummary>('/projects/summary', { params: { scope } })
+  getSummary(params?: QueryProjectDto) {
+    return params
+      ? request.get<ProjectSummary>('/projects/summary', { params })
+      : request.get<ProjectSummary>('/projects/summary')
   },
 
   getUserOptions(purpose: ProjectUserReferencePurpose) {

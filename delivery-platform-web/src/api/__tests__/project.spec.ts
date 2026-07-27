@@ -27,10 +27,10 @@ describe('projectApi refactored contract', () => {
       sort: 'updatedAt:desc' as const,
     }
 
-    projectApi.getSummary()
+    projectApi.getSummary(params)
     projectApi.getList(params)
 
-    expect(mocks.get).toHaveBeenNthCalledWith(1, '/projects/summary')
+    expect(mocks.get).toHaveBeenNthCalledWith(1, '/projects/summary', { params })
     expect(mocks.get).toHaveBeenNthCalledWith(2, '/projects', { params })
   })
 
