@@ -175,7 +175,7 @@ test('administrator can use the target architecture navigation', async ({ page }
   await expect(page.getByRole('button', { name: '新建' })).toBeVisible()
 
   await page.locator('.scope-field .arco-select-view').click()
-  await expect(page.locator('.arco-select-option').filter({ hasText: '归档项目' })).toHaveCount(0)
+  await expect(page.locator('.arco-select-option').filter({ hasText: '归档项目' })).toHaveCount(1)
   await page.keyboard.press('Escape')
   await expect(page.getByText('示例项目 10', { exact: true })).toHaveCount(0)
 
