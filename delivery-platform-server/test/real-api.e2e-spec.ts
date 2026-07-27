@@ -552,13 +552,15 @@ describe('running Delivery Platform API', () => {
       }
 
       const limited = await login(limitedUsername, limitedPassword);
-      for (const path of ['/notification-rules?page=1&pageSize=5']) {
+      for (const path of [
+        '/standards?page=1&pageSize=5',
+        '/knowledge?page=1&pageSize=5',
+        '/notification-rules?page=1&pageSize=5',
+      ]) {
         const body = await expectAuthenticatedGet(path, limited.accessToken, 403);
         expect(body.code).not.toBe(0);
       }
       for (const path of [
-        '/standards?page=1&pageSize=5',
-        '/knowledge?page=1&pageSize=5',
         '/file-reviews?page=1&pageSize=5',
         '/notifications?page=1&pageSize=5',
         '/notifications/unread-count',
