@@ -41,6 +41,7 @@ test('管理员可以完成字段配置全流程并保持 Figma 桌面布局', a
   await fieldPage.getByRole('tab', { name: '项目类型' }).click()
   await expect(page.locator('.arco-message')).toHaveCount(0, { timeout: 5_000 })
   const fieldCode = `E2E_FIELD_${Date.now().toString(36).toUpperCase()}`
+  const fieldName = `端到端验收类型 ${fieldCode.slice(-6)}`
 
   const visualDir = process.env.FIELD_VISUAL_DIR
   if (visualDir) {
@@ -59,37 +60,62 @@ test('管理员可以完成字段配置全流程并保持 Figma 桌面布局', a
     .toBeLessThanOrEqual(586)
 
   const dialogInputs = fieldDialog.locator('input')
-  await dialogInputs.nth(0).fill('端到端验收类型')
+  await dialogInputs.nth(0).fill(fieldName)
   await dialogInputs.nth(1).fill(fieldCode)
   await dialogInputs.nth(2).fill('998')
   if (visualDir) {
     await page.screenshot({ path: join(visualDir, 'field-settings-modal-1440x900.png'), fullPage: true })
   }
+  const createResponse = page.waitForResponse((response) =>
+    response.request().method() === 'POST'
+    && /\/field-config\/categories\/[^/]+\/values$/u.test(new URL(response.url()).pathname)
+    && response.ok(),
+  )
   await fieldDialog.getByRole('button', { name: '保存' }).click()
+  await createResponse
   await expect(fieldDialog).toBeHidden()
-  await expect(fieldPage.getByText('端到端验收类型', { exact: true })).toBeVisible()
+  await expect(fieldPage.getByText(fieldName, { exact: true })).toBeVisible()
 
-  const acceptanceRow = fieldPage.locator('tr', { hasText: fieldCode })
+  const acceptanceRow = fieldPage.locator('tr').filter({ hasText: fieldCode })
   await expect(acceptanceRow).toHaveCount(1)
   await acceptanceRow.getByRole('button', { name: '编辑' }).click()
-  await dialogInputs.nth(0).fill('端到端验收类型（已编辑）')
+  await dialogInputs.nth(0).fill(`${fieldName}（已编辑）`)
   await fieldDialog.locator('.arco-switch').click()
+  const disableResponse = page.waitForResponse((response) =>
+    response.request().method() === 'PATCH'
+    && /\/field-config\/values\/[^/]+\/status$/u.test(new URL(response.url()).pathname)
+    && response.ok(),
+  )
   await fieldDialog.getByRole('button', { name: '保存' }).click()
+  await disableResponse
+  await expect(fieldDialog).toBeHidden()
   await expect(acceptanceRow.getByText('停用', { exact: true })).toBeVisible()
 
   await acceptanceRow.getByRole('button', { name: '编辑' }).click()
   await fieldDialog.locator('.arco-switch').click()
+  const enableResponse = page.waitForResponse((response) =>
+    response.request().method() === 'PATCH'
+    && /\/field-config\/values\/[^/]+\/status$/u.test(new URL(response.url()).pathname)
+    && response.ok(),
+  )
   await fieldDialog.getByRole('button', { name: '保存' }).click()
+  await enableResponse
+  await expect(fieldDialog).toBeHidden()
   await expect(acceptanceRow.getByText('启用', { exact: true })).toBeVisible()
 
   await acceptanceRow.getByRole('button', { name: '删除' }).click()
   const confirmDialog = page.locator('.arco-modal').filter({ hasText: '确认删除字段值' })
+  const deleteResponse = page.waitForResponse((response) =>
+    response.request().method() === 'DELETE'
+    && /\/field-config\/values\/[^/]+$/u.test(new URL(response.url()).pathname)
+    && response.ok(),
+  )
   await confirmDialog.getByRole('button', { name: '删除' }).click()
+  await deleteResponse
   await expect(acceptanceRow).toHaveCount(0)
 
   await fieldPage.getByRole('tab', { name: '国家' }).click()
   await expect(fieldPage.getByText('中国', { exact: true })).toBeVisible()
-  await fieldPage.getByRole('button', { name: '刷新' }).click()
   await expect(page.locator('.arco-message')).toHaveCount(0, { timeout: 5_000 })
 
   if (visualDir) {
