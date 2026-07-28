@@ -109,6 +109,17 @@ interface StandardDetailData extends StandardListItem {
   versions: StandardVersionData[];
 }
 
+interface ArchiveTemplateListItem {
+  id: string;
+  templateCode: string;
+  templateName: string;
+  projectType: string | null;
+  currentPublishedVersion: {
+    versionNo: string;
+    status: string;
+  } | null;
+}
+
 const AUTHENTICATED_E2E_TIMEOUT_MS = 90_000;
 
 describe('running Delivery Platform API', () => {
@@ -343,16 +354,13 @@ describe('running Delivery Platform API', () => {
           )
         ).data;
       const removeValue = async (id: string): Promise<void> => {
-        await expectAuthenticatedRequest<null>(
-          `/field-config/values/${id}`,
-          admin.accessToken,
-          { method: 'DELETE' },
-        );
+        await expectAuthenticatedRequest<null>(`/field-config/values/${id}`, admin.accessToken, {
+          method: 'DELETE',
+        });
       };
       const getProjectFields = async (): Promise<FieldConfigurationData[]> =>
-        (
-          await expectAuthenticatedGet('/field-options/module/project', admin.accessToken)
-        ).data as FieldConfigurationData[];
+        (await expectAuthenticatedGet('/field-options/module/project', admin.accessToken))
+          .data as FieldConfigurationData[];
 
       for (const categoryCode of ['PROJECT_TYPE', 'CUSTOMER_TYPE', 'PROJECT_STAGE']) {
         const staleValues = (await getValues(categoryCode)).filter(
@@ -401,17 +409,14 @@ describe('running Delivery Platform API', () => {
           sortOrder: currency.sortOrder,
         });
         currencyChanged = true;
-        const currenciesResponse = await expectAuthenticatedGet(
-          '/currencies',
-          admin.accessToken,
-        );
+        const currenciesResponse = await expectAuthenticatedGet('/currencies', admin.accessToken);
         const currencies = currenciesResponse.data as Array<{
           currencyCode: string;
           currencyName: string;
         }>;
-        expect(
-          currencies.find((item) => item.currencyCode === 'CNY')?.currencyName,
-        ).toBe(currencyTestName);
+        expect(currencies.find((item) => item.currencyCode === 'CNY')?.currencyName).toBe(
+          currencyTestName,
+        );
 
         const projectTypeFirst = await createValue('PROJECT_TYPE', {
           name: `端到端项目类型甲-${suffix}`,
@@ -461,9 +466,7 @@ describe('running Delivery Platform API', () => {
         expect(renamedProjectType.value).toBe(projectTypeFirst.value);
 
         let projectFields = await getProjectFields();
-        const projectTypeField = projectFields.find(
-          (field) => field.fieldCode === 'PROJECT_TYPE',
-        );
+        const projectTypeField = projectFields.find((field) => field.fieldCode === 'PROJECT_TYPE');
         const firstOption = projectTypeField?.options.find(
           (option) => option.id === projectTypeFirst.id,
         );
@@ -554,9 +557,7 @@ describe('running Delivery Platform API', () => {
           'STANDARD_EFFECTIVE_DATE',
         ]),
       );
-      const stageField = fields.find(
-        (field) => field.fieldCode === 'STANDARD_DELIVERY_STAGE',
-      );
+      const stageField = fields.find((field) => field.fieldCode === 'STANDARD_DELIVERY_STAGE');
       expect(stageField?.options[0]).toEqual(
         expect.objectContaining({
           value: expect.any(String),
@@ -566,9 +567,8 @@ describe('running Delivery Platform API', () => {
         }),
       );
 
-      const summary = (
-        await expectAuthenticatedGet('/standards/summary', admin.accessToken)
-      ).data as StandardSummaryData;
+      const summary = (await expectAuthenticatedGet('/standards/summary', admin.accessToken))
+        .data as StandardSummaryData;
       expect(summary).toEqual({
         total: expect.any(Number),
         viewCount: expect.any(Number),
@@ -648,7 +648,9 @@ describe('running Delivery Platform API', () => {
     'creates, reviews, publishes, enables, downloads and archives a real standard version',
     async () => {
       if (!username || !password || !process.env.SEED_DEFAULT_PASSWORD) {
-        throw new Error('Admin and seeded reviewer credentials are required for standard lifecycle E2E');
+        throw new Error(
+          'Admin and seeded reviewer credentials are required for standard lifecycle E2E',
+        );
       }
 
       const admin = await login(username, password);
@@ -729,9 +731,8 @@ describe('running Delivery Platform API', () => {
           201,
         );
 
-        let detail = (
-          await expectAuthenticatedGet(`/standards/${standardId}`, admin.accessToken)
-        ).data as StandardDetailData;
+        let detail = (await expectAuthenticatedGet(`/standards/${standardId}`, admin.accessToken))
+          .data as StandardDetailData;
         expect(detail.status).toBe('PUBLISHED');
         expect(detail.currentPublishedVersionId).toBe(draft.id);
         expect(detail.currentPublishedVersion).toEqual(
@@ -773,11 +774,9 @@ describe('running Delivery Platform API', () => {
         expect((await downloadResponse.arrayBuffer()).byteLength).toBeGreaterThan(0);
       } finally {
         if (standardId) {
-          await expectAuthenticatedRequest(
-            `/standards/${standardId}/archive`,
-            admin.accessToken,
-            { method: 'POST' },
-          );
+          await expectAuthenticatedRequest(`/standards/${standardId}/archive`, admin.accessToken, {
+            method: 'POST',
+          });
         }
       }
     },
@@ -788,16 +787,16 @@ describe('running Delivery Platform API', () => {
     'propagates standard field names, defaults, option ordering and disabled history by stable code',
     async () => {
       if (!username || !password) {
-        throw new Error('E2E_USERNAME and E2E_PASSWORD are required for standard field linkage E2E');
+        throw new Error(
+          'E2E_USERNAME and E2E_PASSWORD are required for standard field linkage E2E',
+        );
       }
 
       const admin = await login(username, password);
       const fields = (
         await expectAuthenticatedGet('/field-options/module/standard', admin.accessToken)
       ).data as FieldConfigurationData[];
-      const stageField = fields.find(
-        (field) => field.fieldCode === 'STANDARD_DELIVERY_STAGE',
-      );
+      const stageField = fields.find((field) => field.fieldCode === 'STANDARD_DELIVERY_STAGE');
       if (!stageField) throw new Error('Missing STANDARD_DELIVERY_STAGE field configuration');
       const projectStartup = stageField.options.find(
         (option) => option.value === 'PROJECT_STARTUP',
@@ -812,9 +811,7 @@ describe('running Delivery Platform API', () => {
       const categories = (
         await expectAuthenticatedGet('/field-config/categories', admin.accessToken)
       ).data as FieldCategoryData[];
-      const category = categories.find(
-        (item) => item.categoryCode === 'STANDARD_DELIVERY_STAGE',
-      );
+      const category = categories.find((item) => item.categoryCode === 'STANDARD_DELIVERY_STAGE');
       if (!category) throw new Error('Missing standard delivery stage category');
       const values = (
         await expectAuthenticatedGet(
@@ -832,17 +829,13 @@ describe('running Delivery Platform API', () => {
       let valueChanged = false;
       let statusChanged = false;
       try {
-        await expectAuthenticatedRequest(
-          `/field-config/${stageField.id}`,
-          admin.accessToken,
-          {
-            method: 'PATCH',
-            body: JSON.stringify({
-              fieldName: changedFieldName,
-              defaultValue: alternateDefault.value,
-            }),
-          },
-        );
+        await expectAuthenticatedRequest(`/field-config/${stageField.id}`, admin.accessToken, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            fieldName: changedFieldName,
+            defaultValue: alternateDefault.value,
+          }),
+        });
         fieldChanged = true;
         await expectAuthenticatedRequest(
           `/field-config/values/${startupValue.id}`,
@@ -871,9 +864,7 @@ describe('running Delivery Platform API', () => {
             defaultValue: alternateDefault.value,
           }),
         );
-        expect(
-          linkedStage?.options.find((option) => option.value === startupValue.value),
-        ).toEqual(
+        expect(linkedStage?.options.find((option) => option.value === startupValue.value)).toEqual(
           expect.objectContaining({
             label: changedOptionName,
             sort: startupValue.sortOrder + 1,
@@ -890,12 +881,10 @@ describe('running Delivery Platform API', () => {
         linkedFields = (
           await expectAuthenticatedGet('/field-options/module/standard', admin.accessToken)
         ).data as FieldConfigurationData[];
-        linkedStage = linkedFields.find(
-          (field) => field.fieldCode === 'STANDARD_DELIVERY_STAGE',
+        linkedStage = linkedFields.find((field) => field.fieldCode === 'STANDARD_DELIVERY_STAGE');
+        expect(linkedStage?.options.find((option) => option.value === startupValue.value)).toEqual(
+          expect.objectContaining({ enabled: false, value: 'PROJECT_STARTUP' }),
         );
-        expect(
-          linkedStage?.options.find((option) => option.value === startupValue.value),
-        ).toEqual(expect.objectContaining({ enabled: false, value: 'PROJECT_STARTUP' }));
 
         const historical = (
           await expectAuthenticatedGet(
@@ -904,9 +893,9 @@ describe('running Delivery Platform API', () => {
           )
         ).data as StandardListData;
         expect(historical.items.length).toBeGreaterThan(0);
-        expect(
-          historical.items.every((item) => item.deliveryStageCode === 'PROJECT_STARTUP'),
-        ).toBe(true);
+        expect(historical.items.every((item) => item.deliveryStageCode === 'PROJECT_STARTUP')).toBe(
+          true,
+        );
       } finally {
         if (statusChanged) {
           await expectAuthenticatedRequest(
@@ -931,19 +920,62 @@ describe('running Delivery Platform API', () => {
           );
         }
         if (fieldChanged) {
-          await expectAuthenticatedRequest(
-            `/field-config/${stageField.id}`,
-            admin.accessToken,
-            {
-              method: 'PATCH',
-              body: JSON.stringify({
-                fieldName: stageField.fieldName,
-                defaultValue: stageField.defaultValue,
-              }),
-            },
-          );
+          await expectAuthenticatedRequest(`/field-config/${stageField.id}`, admin.accessToken, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              fieldName: stageField.fieldName,
+              defaultValue: stageField.defaultValue,
+            }),
+          });
         }
       }
+    },
+    AUTHENTICATED_E2E_TIMEOUT_MS,
+  );
+
+  it(
+    'queries and sorts archive templates through the real database with permission enforcement',
+    async () => {
+      if (!username || !password || !limitedUsername || !limitedPassword) {
+        throw new Error('Admin and limited E2E credentials are required for archive template E2E');
+      }
+
+      const admin = await login(username, password);
+      const sortedResponse = await expectAuthenticatedGet(
+        '/archive-templates?sortBy=templateName&sortOrder=asc',
+        admin.accessToken,
+      );
+      const sorted = sortedResponse.data as ArchiveTemplateListItem[];
+      expect(sorted.length).toBeGreaterThan(0);
+      const reverseResponse = await expectAuthenticatedGet(
+        '/archive-templates?sortBy=templateName&sortOrder=desc',
+        admin.accessToken,
+      );
+      const reverse = reverseResponse.data as ArchiveTemplateListItem[];
+      expect(reverse.map((item) => item.id)).toEqual([...sorted.map((item) => item.id)].reverse());
+
+      const target = sorted[0];
+      const searchResponse = await expectAuthenticatedGet(
+        `/archive-templates?keyword=${encodeURIComponent(target.templateCode)}`,
+        admin.accessToken,
+      );
+      const search = searchResponse.data as ArchiveTemplateListItem[];
+      expect(search).toEqual([expect.objectContaining({ id: target.id })]);
+
+      const invalidSort = await expectAuthenticatedGet(
+        '/archive-templates?sortBy=updatedAt&sortOrder=asc',
+        admin.accessToken,
+        400,
+      );
+      expect(invalidSort.code).not.toBe(0);
+
+      const limited = await login(limitedUsername, limitedPassword);
+      const forbidden = await expectAuthenticatedGet(
+        '/archive-templates',
+        limited.accessToken,
+        403,
+      );
+      expect(forbidden.code).not.toBe(0);
     },
     AUTHENTICATED_E2E_TIMEOUT_MS,
   );
