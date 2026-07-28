@@ -7,7 +7,7 @@
 - 人工部署：在服务器应用目录执行脚本，适用于首次接入、故障处理和受控发布。
 - GitHub 自动部署：推送 `main` 后，由 GitHub Actions 先完成质量门禁和部署配置校验，再把固定到具体提交的 Git bundle 与部署脚本上传到测试服务器并执行。
 
-当前 `.github/workflows/deploy.yml` 只部署 GitHub Environment `test`。手动触发也只允许选择 `main` 历史中的提交或标签，并仍然部署到 `test`；生产发布不复用该测试 Environment，必须另行建立隔离的审批、凭据和环境变量。
+当前 `.github/workflows/deploy.yml` 只部署 GitHub Environment `test`。推送触发仍只接受 `main`；手动触发允许显式选择一个 workflow ref，并且只能部署该 ref 历史中的提交或标签，仍然部署到 `test`。生产发布不复用该测试 Environment，必须另行建立隔离的审批、凭据和环境变量。
 
 ## 人工部署命令
 
@@ -20,7 +20,7 @@ BRANCH=main bash deploy-git.sh deploy
 
 推送 `main` 或手动触发工作流后，执行顺序如下：
 
-1. `resolve`：仅解析一次 push SHA 或手动 ref，将其固定为 main 历史中的完整 40 位 commit SHA；后续作业只接收该不可变输出，移动分支或标签不能让门禁与发布运行不同代码。
+1. `resolve`：仅解析一次 push SHA 或手动 ref，将其固定为本次显式选择的 workflow ref 历史中的完整 40 位 commit SHA；后续作业只接收该不可变输出，移动分支或标签不能让门禁与发布运行不同代码。
 2. `quality`：安装前后端依赖，执行后端类型检查、测试、构建，以及前端类型检查、测试、构建。
 3. `validate`：对同一个已固定 commit 校验本地、默认和生产 Compose 组合，并对 `deploy-git.sh` 执行 shell 语法检查和部署契约测试。
 4. `integration`：以同一个已固定 commit 标记本次验收镜像，生成仅供本次 runner 使用并立即遮罩的临时凭据，启动真实 NestJS、MySQL、Redis、MinIO、File Worker、Outbox Worker 与前端；两个 Worker 必须保持 running 且容器 ID、重启次数稳定，之后才执行登录/Refresh Token API E2E、依赖就绪冒烟，以及管理员和受限项目经理的浏览器权限与数据范围 E2E。
@@ -37,7 +37,7 @@ BRANCH=main bash deploy-git.sh deploy
 
 GitHub Environment `test` 的自动发布采用“重置后部署”流程，固定顺序如下：
 
-1. `resolve` 将本次发布固定为 `main` 历史中的完整 40 位 commit。
+1. `resolve` 将本次发布固定为本次显式选择的 workflow ref 历史中的完整 40 位 commit；push 触发的 ref 仍固定为 `main`。
 2. `quality`、`validate` 和 `integration` 全部通过后，才允许连接测试服务器。
 3. SSH 使用离线核验的 host key，并要求服务器
    `$DEPLOY_APP_DIR/.deploy/target-id` 与 Environment Variable

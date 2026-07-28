@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 可选 main 上的 Git ref、tag 或 commit SHA；留空时部署 main
+        description: 可选当前显式选择的 workflow ref 历史中的 Git ref、tag 或 commit SHA；留空时部署该 ref 的事件提交
         required: false
         default: ""
 
@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.ref }}
           fetch-depth: 0
       - name: 解析并限制发布提交
         id: resolve
@@ -41,7 +41,7 @@ jobs:
             exit 1
           }
           git merge-base --is-ancestor "$resolved" HEAD || {
-            echo "::error::仅允许部署本次解析时 main 历史中的提交或标签"
+            echo "::error::仅允许部署当前显式选择的 workflow ref 历史中的提交或标签"
             exit 1
           }
           printf 'commit=%s\n' "$resolved" >> "$GITHUB_OUTPUT"
