@@ -38,6 +38,8 @@ export interface ProjectPaymentPlanItem {
   completed: boolean
   receivedDate?: string | null
   originalAmount: string
+  receivedOriginalAmount?: string
+  receivedConvertedAmount?: string
   remark: string
 }
 

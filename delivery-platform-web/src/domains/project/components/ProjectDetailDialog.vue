@@ -34,7 +34,9 @@ import type {
 } from '@/domains/project/types/project-payment'
 import { arcoConfirm } from '@/utils/arco-dialog'
 import {
+  formatMoneyString,
   isMoney,
+  minorToMoney,
   moneyToMinor,
   multiplyMoneyByRate,
   normalizeMoneyInput,
@@ -64,6 +66,7 @@ const initialSnapshot = ref('')
 const payments = ref<ProjectPaymentPlanItem[]>([])
 const isCreate = computed(() => props.mode === 'create')
 const isView = computed(() => props.mode === 'view')
+const isEdit = computed(() => props.mode === 'edit')
 const projectId = computed(() => props.projectId || '')
 const canViewPayments = computed(() => hasPermission('payment:view'))
 const projectQuery = useProjectDetailQuery(projectId)
@@ -74,13 +77,24 @@ const optionQueries = useProjectFormOptionsQueries(true)
 const fieldConfig = useFieldConfig('project')
 const project = computed(() => projectQuery.data.value)
 const readonly = computed(() => isView.value || (props.mode === 'edit' && project.value?.canEdit === false))
+const renderView = computed(() => isView.value || readonly.value)
 const canEditFinancial = computed(() => !readonly.value && hasAnyPermission(['project:view_financial']))
 const canEditContract = computed(() => !readonly.value && hasAnyPermission(['project:view_contract']))
 const canUpdateProgress = computed(() =>
-  !readonly.value && (isCreate.value || project.value?.canUpdateProgress === true),
+  !readonly.value &&
+  hasPermission('project:progress:update') &&
+  (isCreate.value || project.value?.canUpdateProgress === true),
 )
 const canEditAcceptance = computed(() =>
-  canUpdateProgress.value && hasAnyPermission(['project:view_acceptance']),
+  isEdit.value &&
+  canUpdateProgress.value &&
+  hasAnyPermission(['project:view_acceptance']) &&
+  !project.value?.actualAcceptanceAt,
+)
+const canEditAcceptanceDate = computed(() =>
+  canUpdateProgress.value &&
+  hasAnyPermission(['project:view_acceptance']) &&
+  (isCreate.value || !project.value?.actualAcceptanceAt),
 )
 const canOperatePayments = computed(() =>
   !readonly.value &&
@@ -114,6 +128,7 @@ const formData = reactive({
   softwareOwnerId: '',
   deliveryStages: [] as ProjectDeliveryStage[],
   progressPercent: 0,
+  acceptanceCompleted: false,
 })
 const rules = computed(() => ({
   projectName: [{ required: true, message: '请输入合同名称' }],
@@ -121,8 +136,17 @@ const rules = computed(() => ({
   customerType: [{ required: fieldConfig.isFieldRequired('CUSTOMER_TYPE'), message: '请选择客户类型' }],
   contractType: [{ required: fieldConfig.isFieldRequired('CONTRACT_TYPE'), message: '请选择合同类型' }],
   product: [{ required: fieldConfig.isFieldRequired('PRODUCT_TYPE'), message: '请选择产品类型' }],
+  keywords: [{ required: fieldConfig.isFieldRequired('PROJECT_KEYWORD'), message: '请选择项目关键词' }],
+  contractCurrency: [{ required: fieldConfig.isFieldRequired('CURRENCY'), message: '请选择合同币种' }],
   archiveTemplateId: [{ required: true, message: '请选择档案模版' }],
-  deliveryStages: [{ required: true, message: '请至少选择一个当前阶段' }],
+  deliveryStages: [{
+    required: fieldConfig.isFieldRequired('PROJECT_STAGE'),
+    message: '请至少选择一个当前阶段',
+  }],
+  expectedAcceptanceAt: [{
+    required: formData.acceptanceCompleted,
+    message: '完成验收时请选择验收时间',
+  }],
 }))
 const idempotencyKey = ref('')
 
@@ -141,18 +165,41 @@ function configuredOptions<T extends string>(
       disabled: !item.enabled,
     }))
 }
+function configuredSelectOptions(
+  fieldCode: string,
+  currentValue: string | undefined,
+  formatLabel: (label: string, value: string) => string,
+) {
+  return fieldConfig.getFieldOptions(fieldCode, true)
+    .filter((item) => item.enabled || item.value === currentValue)
+    .map((item) => ({
+      value: item.value,
+      label: formatLabel(item.label, item.value),
+      disabled: !item.enabled,
+    }))
+}
+function configuredDefault(fieldCode: string): string {
+  const defaultValue = String(fieldConfig.getField(fieldCode)?.defaultValue ?? '')
+  return fieldConfig
+    .getFieldOptions(fieldCode)
+    .some((option) => option.value === defaultValue)
+    ? defaultValue
+    : ''
+}
 const countryOptions = computed(() =>
-  fieldConfig.getFieldOptions('COUNTRY').map((item) => ({
-    value: item.value,
-    label: `${item.label} (${item.value})`,
-  })),
+  configuredSelectOptions(
+    'COUNTRY',
+    formData.countryCode,
+    (label, value) => `${label} (${value})`,
+  ),
 )
 const currencies = computed<Currency[]>(() => optionQueries.value[0].data ?? [])
 const currencyOptions = computed(() =>
-  fieldConfig.getFieldOptions('CURRENCY').map((item) => ({
-    value: item.value,
-    label: `${item.label} (${item.value})`,
-  })),
+  configuredSelectOptions(
+    'CURRENCY',
+    formData.contractCurrency,
+    (label, value) => `${label} (${value})`,
+  ),
 )
 const customerTypeOptions = computed(() =>
   configuredOptions<CustomerType>('CUSTOMER_TYPE', 'customerType', [formData.customerType]),
@@ -187,8 +234,18 @@ const loading = computed(() =>
   (!isCreate.value && projectQuery.isFetching.value) ||
   (!isCreate.value && canViewPayments.value && paymentQuery.isFetching.value),
 )
+const loadError = computed(() => {
+  if (!isCreate.value && projectQuery.isError.value) return '项目详情加载失败'
+  if (fieldConfig.error.value || optionQueries.value.some((query) => query.isError)) {
+    return '项目字段配置加载失败'
+  }
+  if (!isCreate.value && canViewPayments.value && paymentQuery.isError.value) {
+    return '款项计划加载失败'
+  }
+  return ''
+})
 const baseCurrencyCode = computed(() =>
-  String(fieldConfig.getField('CURRENCY')?.defaultValue ?? ''),
+  configuredDefault('CURRENCY'),
 )
 const baseCurrencyLabel = computed(
   () => fieldConfig.getFieldLabel('CURRENCY', baseCurrencyCode.value) || '折算币种',
@@ -201,6 +258,14 @@ const convertedAmount = computed(() => {
   if (formData.contractCurrency === baseCurrencyCode.value) return formData.contractAmount
   const currency = currencies.value.find((item) => item.currencyCode === formData.contractCurrency)
   return multiplyMoneyByRate(formData.contractAmount, currency?.cnyRate)
+})
+const confirmedAmount = computed(() => {
+  if (payments.value.length === 0) return ''
+  const total = payments.value.reduce(
+    (sum, item) => sum + moneyToMinor(item.receivedConvertedAmount ?? '0'),
+    0n,
+  )
+  return formatMoneyString(minorToMoney(total))
 })
 const snapshot = computed(() => JSON.stringify({ formData, payments: payments.value }))
 const dirty = computed(() => !readonly.value && Boolean(initialSnapshot.value) && snapshot.value !== initialSnapshot.value)
@@ -216,13 +281,26 @@ const paymentRatioValid = computed(() => {
 
 function applyFieldDefaults(): void {
   if (!formData.countryCode) {
-    formData.countryCode = String(fieldConfig.getField('COUNTRY')?.defaultValue ?? '')
+    formData.countryCode = configuredDefault('COUNTRY')
   }
   if (!formData.contractCurrency) {
     formData.contractCurrency = baseCurrencyCode.value
   }
+  if (!formData.customerType) {
+    formData.customerType = (configuredDefault('CUSTOMER_TYPE') as CustomerType) || undefined
+  }
+  if (!formData.contractType) {
+    formData.contractType = (configuredDefault('CONTRACT_TYPE') as ContractType) || undefined
+  }
+  if (!formData.product) {
+    formData.product = (configuredDefault('PRODUCT_TYPE') as ProductType) || undefined
+  }
+  if (formData.keywords.length === 0) {
+    const defaultKeyword = configuredDefault('PROJECT_KEYWORD')
+    formData.keywords = defaultKeyword ? [defaultKeyword as ProjectKeyword] : []
+  }
   if (formData.deliveryStages.length === 0) {
-    const defaultStage = String(fieldConfig.getField('PROJECT_STAGE')?.defaultValue ?? '')
+    const defaultStage = configuredDefault('PROJECT_STAGE')
     formData.deliveryStages = defaultStage ? [defaultStage as ProjectDeliveryStage] : []
   }
 }
@@ -233,12 +311,15 @@ function blankForm(): void {
     shortName: '',
     projectCode: '',
     customerName: '',
-    countryCode: String(fieldConfig.getField('COUNTRY')?.defaultValue ?? ''),
+    countryCode: configuredDefault('COUNTRY'),
     city: '',
-    customerType: undefined,
-    contractType: undefined,
-    product: undefined,
-    keywords: [],
+    customerType: (configuredDefault('CUSTOMER_TYPE') as CustomerType) || undefined,
+    contractType: (configuredDefault('CONTRACT_TYPE') as ContractType) || undefined,
+    product: (configuredDefault('PRODUCT_TYPE') as ProductType) || undefined,
+    keywords: (() => {
+      const defaultKeyword = configuredDefault('PROJECT_KEYWORD')
+      return defaultKeyword ? [defaultKeyword as ProjectKeyword] : []
+    })(),
     contractCurrency: baseCurrencyCode.value,
     contractAmount: '',
     convertedAmount: '',
@@ -252,10 +333,11 @@ function blankForm(): void {
     electricalOwnerId: '',
     softwareOwnerId: '',
     deliveryStages: (() => {
-      const defaultStage = String(fieldConfig.getField('PROJECT_STAGE')?.defaultValue ?? '')
+      const defaultStage = configuredDefault('PROJECT_STAGE')
       return defaultStage ? [defaultStage as ProjectDeliveryStage] : []
     })(),
     progressPercent: 0,
+    acceptanceCompleted: false,
   })
   applyFieldDefaults()
   payments.value = []
@@ -288,13 +370,17 @@ function assignProject(): void {
     contractNo: value.contractNo || '',
     contractSignedAt: value.contractSignedAt?.slice(0, 10) || '',
     startDate: value.startDate?.slice(0, 10) || '',
-    expectedAcceptanceAt: value.expectedAcceptanceAt?.slice(0, 10) || '',
+    expectedAcceptanceAt:
+      value.actualAcceptanceAt?.slice(0, 10) ||
+      value.expectedAcceptanceAt?.slice(0, 10) ||
+      '',
     salesOwnerId: value.salesOwnerId || '',
     projectManagerId: value.projectManagerId || '',
     electricalOwnerId: value.electricalOwnerId || '',
     softwareOwnerId: value.softwareOwnerId || '',
     deliveryStages: value.currentStages?.length ? [...value.currentStages] : [value.currentStage],
     progressPercent: value.progressPercent ?? 0,
+    acceptanceCompleted: Boolean(value.actualAcceptanceAt),
   })
 }
 function assignPayments(items: ProjectPayment[]): void {
@@ -305,6 +391,8 @@ function assignPayments(items: ProjectPayment[]): void {
     completed: item.status === 'Received',
     receivedDate: item.receivedDate,
     originalAmount: item.originalAmount,
+    receivedOriginalAmount: item.receivedOriginalAmount,
+    receivedConvertedAmount: item.receivedConvertedAmount,
     remark: item.remark || '',
   }))
 }
@@ -355,6 +443,34 @@ watch(() => paymentQuery.isError.value, (isError) => {
 function personLabel(option: ProjectUserReferenceOption): string {
   return `${option.displayName} (${option.name})${option.departmentName ? ` · ${option.departmentName}` : ''}`
 }
+function displayText(value: unknown): string {
+  if (value === null || value === undefined || String(value).trim() === '') return '—'
+  return String(value)
+}
+function configuredLabel(fieldCode: string, value?: string | null): string {
+  return displayText(fieldConfig.getFieldLabel(fieldCode, value))
+}
+function configuredCodeLabel(fieldCode: string, value?: string | null): string {
+  if (!value) return '—'
+  return `${fieldConfig.getFieldLabel(fieldCode, value)} (${value})`
+}
+function userReferenceLabel(
+  value: string,
+  options: ProjectUserReferenceOption[],
+): string {
+  if (!value) return '—'
+  const option = options.find((item) => item.id === value)
+  return option ? personLabel(option) : value
+}
+function archiveLabel(value: string): string {
+  return archiveOptions.value.find((item) => item.value === value)?.label ?? displayText(value)
+}
+function dateLabel(value: string): string {
+  return value ? value.slice(0, 10) : '—'
+}
+function moneyLabel(value?: string | null): string {
+  return value ? formatMoneyString(value) : '—'
+}
 function paymentPayload(): ProjectPaymentPlanWriteItem[] | undefined {
   if (!canOperatePayments.value) return undefined
   return payments.value.map((item) => ({
@@ -365,7 +481,9 @@ function paymentPayload(): ProjectPaymentPlanWriteItem[] | undefined {
     originalAmount: item.originalAmount,
     originalCurrency: formData.contractCurrency,
     convertedCurrency: baseCurrencyCode.value,
-    receivedOriginalAmount: item.completed ? item.originalAmount : '0',
+    receivedOriginalAmount: item.completed
+      ? item.receivedOriginalAmount || item.originalAmount
+      : '0',
     receivedDate: item.completed ? item.receivedDate || new Date().toISOString() : null,
     remark: item.remark || undefined,
   }))
@@ -459,7 +577,7 @@ async function save(): Promise<void> {
           archiveTemplateId: formData.archiveTemplateId,
           deliveryStages: formData.deliveryStages.length ? [...formData.deliveryStages] : undefined,
           progressPercent: formData.progressPercent,
-          expectedAcceptanceAt: canEditAcceptance.value
+          expectedAcceptanceAt: canEditAcceptanceDate.value
             ? formData.expectedAcceptanceAt || undefined
             : undefined,
         },
@@ -471,8 +589,13 @@ async function save(): Promise<void> {
         ? {
             deliveryStages: [...formData.deliveryStages],
             progressPercent: formData.progressPercent,
-            expectedAcceptanceAt: canEditAcceptance.value
+            expectedAcceptanceAt: canEditAcceptanceDate.value
               ? formData.expectedAcceptanceAt || null
+              : undefined,
+            actualAcceptanceAt: canEditAcceptance.value
+              ? formData.acceptanceCompleted
+                ? formData.expectedAcceptanceAt
+                : null
               : undefined,
           }
         : {}
@@ -531,13 +654,22 @@ function beforeCancel(): boolean {
   void close()
   return false
 }
+async function retryLoad(): Promise<void> {
+  const requests: Array<Promise<unknown>> = [
+    fieldConfig.refresh(),
+    ...optionQueries.value.map((query) => query.refetch()),
+  ]
+  if (!isCreate.value) requests.push(projectQuery.refetch())
+  if (!isCreate.value && canViewPayments.value) requests.push(paymentQuery.refetch())
+  await Promise.allSettled(requests)
+}
 </script>
 
 <template>
   <a-modal
     class="project-detail-dialog"
     :visible="visible"
-    :width="944"
+    :width="1040"
     :footer="false"
     :closable="false"
     :mask-closable="true"
@@ -574,16 +706,223 @@ function beforeCancel(): boolean {
       <div class="dialog-body">
         <a-spin :loading="loading">
           <a-result
-            v-if="!isCreate && projectQuery.isError.value"
+            v-if="loadError"
             status="error"
-            title="项目详情加载失败"
+            :title="loadError"
           >
             <template #extra>
-              <a-button @click="projectQuery.refetch()">
+              <a-button @click="retryLoad">
                 重新加载
               </a-button>
             </template>
           </a-result>
+
+          <div
+            v-else-if="renderView"
+            class="project-detail-view"
+          >
+            <section class="basic-section">
+              <div class="section-heading">
+                <h3>基础信息</h3>
+              </div>
+
+              <div class="form-row form-row-wide">
+                <div class="view-field">
+                  <span>合同名称</span>
+                  <div :title="displayText(formData.projectName)">
+                    {{ displayText(formData.projectName) }}
+                  </div>
+                </div>
+                <div class="view-field">
+                  <span>项目简称</span>
+                  <div :title="displayText(formData.shortName)">
+                    {{ displayText(formData.shortName) }}
+                  </div>
+                </div>
+                <div class="view-field">
+                  <span>项目编号</span>
+                  <div :title="displayText(formData.projectCode)">
+                    {{ displayText(formData.projectCode) }}
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-row form-row-wide">
+                <div class="view-field">
+                  <span>客户名称</span>
+                  <div :title="displayText(formData.customerName)">
+                    {{ displayText(formData.customerName) }}
+                  </div>
+                </div>
+                <div class="view-field">
+                  <span>国家</span>
+                  <div :title="configuredCodeLabel('COUNTRY', formData.countryCode)">
+                    {{ configuredCodeLabel('COUNTRY', formData.countryCode) }}
+                  </div>
+                </div>
+                <div class="view-field">
+                  <span>城市</span>
+                  <div :title="displayText(formData.city)">
+                    {{ displayText(formData.city) }}
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="view-field">
+                  <span>客户类型</span>
+                  <div :title="configuredLabel('CUSTOMER_TYPE', formData.customerType)">
+                    {{ configuredLabel('CUSTOMER_TYPE', formData.customerType) }}
+                  </div>
+                </div>
+                <div class="view-field">
+                  <span>合同类型</span>
+                  <div :title="configuredLabel('CONTRACT_TYPE', formData.contractType)">
+                    {{ configuredLabel('CONTRACT_TYPE', formData.contractType) }}
+                  </div>
+                </div>
+                <div class="view-field">
+                  <span>产品类型</span>
+                  <div :title="configuredLabel('PRODUCT_TYPE', formData.product)">
+                    {{ configuredLabel('PRODUCT_TYPE', formData.product) }}
+                  </div>
+                </div>
+                <div class="view-field">
+                  <span>项目关键词</span>
+                  <div class="view-tags">
+                    <a-tag
+                      v-for="keyword in formData.keywords"
+                      :key="keyword"
+                      size="small"
+                    >
+                      {{ configuredLabel('PROJECT_KEYWORD', keyword) }}
+                    </a-tag>
+                    <template v-if="formData.keywords.length === 0">
+                      —
+                    </template>
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="view-field">
+                  <span>合同币种</span>
+                  <div :title="configuredCodeLabel('CURRENCY', formData.contractCurrency)">
+                    {{ configuredCodeLabel('CURRENCY', formData.contractCurrency) }}
+                  </div>
+                </div>
+                <div class="view-field">
+                  <span>合同金额</span>
+                  <div :title="moneyLabel(formData.contractAmount)">
+                    {{ moneyLabel(formData.contractAmount) }}
+                  </div>
+                </div>
+                <div class="view-field">
+                  <span>折算{{ baseCurrencyLabel }}金额</span>
+                  <div :title="moneyLabel(convertedAmount)">
+                    {{ moneyLabel(convertedAmount) }}
+                  </div>
+                </div>
+                <div class="view-field">
+                  <span>档案模版</span>
+                  <div :title="archiveLabel(formData.archiveTemplateId)">
+                    {{ archiveLabel(formData.archiveTemplateId) }}
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="view-field">
+                  <span>合同编号</span>
+                  <div :title="displayText(formData.contractNo)">
+                    {{ displayText(formData.contractNo) }}
+                  </div>
+                </div>
+                <div class="view-field">
+                  <span>签约时间</span>
+                  <div>{{ dateLabel(formData.contractSignedAt) }}</div>
+                </div>
+                <div class="view-field">
+                  <span>开始时间</span>
+                  <div>{{ dateLabel(formData.startDate) }}</div>
+                </div>
+                <div class="view-field">
+                  <span>验收时间</span>
+                  <div>{{ dateLabel(formData.expectedAcceptanceAt) }}</div>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="view-field">
+                  <span>销售负责人</span>
+                  <div :title="userReferenceLabel(formData.salesOwnerId, salesOptions)">
+                    {{ userReferenceLabel(formData.salesOwnerId, salesOptions) }}
+                  </div>
+                </div>
+                <div class="view-field">
+                  <span>项目经理</span>
+                  <div :title="userReferenceLabel(formData.projectManagerId, managerOptions)">
+                    {{ userReferenceLabel(formData.projectManagerId, managerOptions) }}
+                  </div>
+                </div>
+                <div class="view-field">
+                  <span>电气工程师</span>
+                  <div :title="userReferenceLabel(formData.electricalOwnerId, memberOptions)">
+                    {{ userReferenceLabel(formData.electricalOwnerId, memberOptions) }}
+                  </div>
+                </div>
+                <div class="view-field">
+                  <span>软件工程师</span>
+                  <div :title="userReferenceLabel(formData.softwareOwnerId, memberOptions)">
+                    {{ userReferenceLabel(formData.softwareOwnerId, memberOptions) }}
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-row form-row-compact">
+                <div class="view-field">
+                  <span>当前阶段</span>
+                  <div class="view-tags">
+                    <a-tag
+                      v-for="stage in formData.deliveryStages"
+                      :key="stage"
+                      size="small"
+                    >
+                      {{ configuredLabel('PROJECT_STAGE', stage) }}
+                    </a-tag>
+                    <template v-if="formData.deliveryStages.length === 0">
+                      —
+                    </template>
+                  </div>
+                </div>
+                <div class="view-field">
+                  <span>项目进度（%）</span>
+                  <div>{{ formData.progressPercent }}%</div>
+                </div>
+                <div class="view-field">
+                  <span>确收金额（{{ baseCurrencyLabel }}）</span>
+                  <div>{{ moneyLabel(confirmedAmount) }}</div>
+                </div>
+                <div class="view-field">
+                  <span>是否完成验收</span>
+                  <div>{{ formData.acceptanceCompleted ? '是' : '否' }}</div>
+                </div>
+              </div>
+            </section>
+
+            <ProjectPaymentPlan
+              :model-value="payments"
+              readonly
+              :loading="paymentQuery.isFetching.value"
+              :contract-amount="formData.contractAmount"
+              :contract-currency="formData.contractCurrency"
+              :base-currency="baseCurrencyCode"
+              :base-currency-label="baseCurrencyLabel"
+              :converted-amount="convertedAmount"
+              :operate-allowed="false"
+            />
+          </div>
+
           <a-form
             v-else
             ref="formRef"
@@ -591,7 +930,6 @@ function beforeCancel(): boolean {
             :rules="rules"
             layout="vertical"
             class="project-detail-form"
-            :disabled="readonly"
           >
             <section class="basic-section">
               <div class="section-heading">
@@ -640,7 +978,7 @@ function beforeCancel(): boolean {
                     <a-option v-for="item in productTypeOptions" :key="item.value" v-bind="item" />
                   </a-select>
                 </a-form-item>
-                <a-form-item label="项目关键词">
+                <a-form-item label="项目关键词" field="keywords">
                   <a-select
                     v-model="formData.keywords"
                     multiple
@@ -653,7 +991,7 @@ function beforeCancel(): boolean {
               </div>
 
               <div class="form-row">
-                <a-form-item label="合同币种">
+                <a-form-item label="合同币种" field="contractCurrency">
                   <a-select v-model="formData.contractCurrency" allow-search :disabled="!canEditFinancial">
                     <a-option v-for="item in currencyOptions" :key="item.value" v-bind="item" />
                   </a-select>
@@ -692,7 +1030,7 @@ function beforeCancel(): boolean {
                   <a-date-picker v-model="formData.startDate" format="YYYY-MM-DD" />
                 </a-form-item>
                 <a-form-item label="验收时间">
-                  <a-date-picker v-model="formData.expectedAcceptanceAt" format="YYYY-MM-DD" :disabled="!canEditAcceptance" />
+                  <a-date-picker v-model="formData.expectedAcceptanceAt" format="YYYY-MM-DD" :disabled="!canEditAcceptanceDate" />
                 </a-form-item>
               </div>
 
@@ -738,21 +1076,9 @@ function beforeCancel(): boolean {
                   </a-select>
                 </a-form-item>
               </div>
-            </section>
 
-            <ProjectPaymentPlan
-              v-model="payments"
-              :readonly="readonly"
-              :loading="paymentQuery.isFetching.value"
-              :contract-amount="formData.contractAmount"
-              :contract-currency="formData.contractCurrency"
-              :base-currency="baseCurrencyCode"
-              :base-currency-label="baseCurrencyLabel"
-              :converted-amount="convertedAmount"
-              :operate-allowed="canOperatePayments"
-            >
-              <template #project-progress>
-                <a-form-item class="progress-field" label="当前阶段" field="deliveryStages">
+              <div class="form-row form-row-compact">
+                <a-form-item label="当前阶段" field="deliveryStages">
                   <a-select
                     v-model="formData.deliveryStages"
                     multiple
@@ -762,12 +1088,11 @@ function beforeCancel(): boolean {
                     <a-option
                       v-for="item in stageOptions"
                       :key="item.value"
-                      :value="item.value"
-                      :label="item.label"
+                      v-bind="item"
                     />
                   </a-select>
                 </a-form-item>
-                <a-form-item class="progress-field" label="项目进度（%）">
+                <a-form-item label="项目进度（%）">
                   <a-input-number
                     v-model="formData.progressPercent"
                     :min="0"
@@ -779,8 +1104,36 @@ function beforeCancel(): boolean {
                     </template>
                   </a-input-number>
                 </a-form-item>
-              </template>
-            </ProjectPaymentPlan>
+                <a-form-item :label="`确收金额（${baseCurrencyLabel}）`">
+                  <a-input
+                    :model-value="confirmedAmount"
+                    placeholder="自动汇总"
+                    disabled
+                  />
+                </a-form-item>
+                <a-form-item class="acceptance-field" label="是否完成验收">
+                  <a-select
+                    v-model="formData.acceptanceCompleted"
+                    :disabled="!canEditAcceptance"
+                  >
+                    <a-option :value="false" label="否" />
+                    <a-option :value="true" label="是" />
+                  </a-select>
+                </a-form-item>
+              </div>
+            </section>
+
+            <ProjectPaymentPlan
+              v-model="payments"
+              :readonly="false"
+              :loading="paymentQuery.isFetching.value"
+              :contract-amount="formData.contractAmount"
+              :contract-currency="formData.contractCurrency"
+              :base-currency="baseCurrencyCode"
+              :base-currency-label="baseCurrencyLabel"
+              :converted-amount="convertedAmount"
+              :operate-allowed="canOperatePayments"
+            />
           </a-form>
         </a-spin>
       </div>
@@ -789,31 +1142,38 @@ function beforeCancel(): boolean {
 </template>
 
 <style scoped>
-.dialog-shell { height: min(608px, calc(100vh - 40px)); display: flex; flex-direction: column; overflow: hidden; background: #fff; color: #1d2129; }
+.dialog-shell { height: min(760px, calc(100vh - 32px)); display: flex; flex-direction: column; overflow: hidden; background: #fff; color: #1d2129; }
 .dialog-header { height: 48px; display: flex; flex: 0 0 48px; align-items: center; justify-content: space-between; padding: 0 16px 0 24px; border-bottom: 1px solid #e5e6eb; background: #fff; }
 .dialog-header h2 { margin: 0; font-size: 16px; font-weight: 700; line-height: 24px; }
 .dialog-actions { display: flex; align-items: center; gap: 12px; }
-.dialog-actions :deep(.arco-btn) { height: 32px; padding: 0 16px; border-radius: 2px; }
-.dialog-close { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 0; background: transparent; color: #165dff; cursor: pointer; }
+.dialog-actions :deep(.arco-btn) { width: 82px; height: 32px; padding: 0; border-radius: 0; }
+.dialog-close { width: 54px; height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0 16px; border: 0; border-radius: 100px; background: transparent; color: #165dff; cursor: pointer; }
 .dialog-close:hover { background: #f2f3f5; }
 .dialog-body { min-height: 0; flex: 1; overflow-x: hidden; overflow-y: auto; scrollbar-color: #c9cdd4 #f2f3f5; scrollbar-width: thin; }
-.dialog-body :deep(.arco-spin), .dialog-body :deep(.arco-spin-mask) { width: 100%; }
+.dialog-body::-webkit-scrollbar { width: 4px; height: 4px; }
+.dialog-body::-webkit-scrollbar-track { background: #f2f3f5; }
+.dialog-body::-webkit-scrollbar-thumb { border-radius: 2px; background: #c9cdd4; }
+.dialog-body :deep(.arco-spin) { width: 100%; min-height: 100%; }
+.dialog-body :deep(.arco-spin-mask) { width: 100%; }
+.project-detail-form,
+.project-detail-view { width: min(1021px, calc(100% - 10px)); margin-left: 9px; }
 .basic-section { padding: 20px 24px 0; }
 .section-heading { height: 32px; border-bottom: 1px solid #e5e6eb; }
 .section-heading h3 { margin: 0; color: #1d2129; font-size: 14px; font-weight: 700; line-height: 22px; }
 .form-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; padding-top: 16px; }
-.form-row-wide { grid-template-columns: minmax(260px, 1.33fr) repeat(2, minmax(190px, 1fr)); }
+.form-row-wide { grid-template-columns: minmax(0, 427fr) minmax(0, 249fr) minmax(0, 249fr); }
 .project-detail-form :deep(.arco-form-item) { margin-bottom: 0; }
 .project-detail-form :deep(.arco-form-item-label-col) { height: 20px; margin-bottom: 4px; color: #86909c; font-size: 12px; line-height: 20px; }
+.project-detail-form .form-row-compact :deep(.arco-form-item-label-col) { height: 14px; margin-bottom: 4px; line-height: 14px; }
 .project-detail-form :deep(.arco-form-item-label-required-symbol) { display: none; }
 .project-detail-form :deep(.arco-input-wrapper),
 .project-detail-form :deep(.arco-select-view),
 .project-detail-form :deep(.arco-picker),
-.project-detail-form :deep(.arco-input-number) { width: 100%; min-height: 32px; border: 0; border-radius: 0; background: #f2f3f5; box-shadow: none; color: #1d2129; }
+.project-detail-form :deep(.arco-input-number) { width: 100%; min-height: 32px; border: 0; border-radius: 0; background: #e5e6eb; box-shadow: none; color: #1d2129; }
 .project-detail-form :deep(.arco-input-wrapper:not(.arco-input-disabled):hover),
 .project-detail-form :deep(.arco-select-view:not(.arco-select-view-disabled):hover),
 .project-detail-form :deep(.arco-picker:not(.arco-picker-disabled):hover),
-.project-detail-form :deep(.arco-input-number:not(.arco-input-number-disabled):hover) { background: #e5e6eb; }
+.project-detail-form :deep(.arco-input-number:not(.arco-input-number-disabled):hover) { background: #c9cdd4; }
 .project-detail-form :deep(.arco-input-disabled),
 .project-detail-form :deep(.arco-select-view-disabled),
 .project-detail-form :deep(.arco-picker-disabled),
@@ -826,21 +1186,31 @@ function beforeCancel(): boolean {
 .project-detail-form :deep(.arco-select-view-placeholder),
 .project-detail-form :deep(.arco-picker input::placeholder) { color: #86909c; opacity: 1; }
 .project-detail-form :deep(.arco-select-view-multiple) { max-height: 32px; overflow: hidden; padding-block: 3px; }
-.project-detail-form :deep(.arco-tag) { border-radius: 2px; }
-.progress-field :deep(.arco-form-item-label-col) { line-height: 14px; }
-.progress-field :deep(.arco-input-number) { width: 100%; }
-@media (max-width: 900px) {
+.project-detail-form :deep(.arco-tag) { border-radius: 0; }
+.acceptance-field :deep(.arco-select-view:not(.arco-select-view-disabled)) { border: 1px solid #e5e6eb; background: #fff; }
+.view-field { min-width: 0; }
+.view-field > span { display: block; height: 20px; margin-bottom: 4px; overflow: hidden; color: #86909c; font-size: 12px; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.form-row-compact .view-field > span { height: 14px; line-height: 14px; }
+.view-field > div { width: 100%; height: 32px; padding: 5px 12px; overflow: hidden; background: #e5e6eb; color: #1d2129; font-size: 14px; line-height: 22px; text-overflow: ellipsis; white-space: nowrap; }
+.view-field > .view-tags { display: flex; align-items: center; gap: 4px; }
+.view-tags :deep(.arco-tag) { flex: 0 0 auto; max-width: 100%; overflow: hidden; border-radius: 0; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 800px) {
   .dialog-shell { height: calc(100vh - 24px); }
   .form-row, .form-row-wide { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 560px) {
   .dialog-header { padding-left: 16px; }
+  .project-detail-form,
+  .project-detail-view { width: 100%; margin-left: 0; }
   .basic-section { padding-inline: 16px; }
   .form-row, .form-row-wide { grid-template-columns: 1fr; gap: 12px; }
 }
 </style>
 
 <style>
+.project-detail-dialog .arco-modal-wrapper {
+  overflow: hidden;
+}
 .project-detail-dialog .arco-modal {
   max-width: calc(100vw - 32px);
   overflow: hidden;

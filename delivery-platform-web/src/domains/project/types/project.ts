@@ -195,6 +195,7 @@ export interface UpdateProjectDto extends ProjectCommonWriteFields {
   deliveryStages?: ProjectDeliveryStage[]
   progressPercent?: number
   expectedAcceptanceAt?: string | null
+  actualAcceptanceAt?: string | null
 }
 
 export interface QueryProjectDto {

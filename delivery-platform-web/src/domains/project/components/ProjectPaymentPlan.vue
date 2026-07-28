@@ -46,17 +46,17 @@ const form = reactive<ProjectPaymentPlanItem>({
   remark: '',
 })
 const columns = computed<TableColumnData[]>(() => [
-  { title: '付款项', dataIndex: 'paymentName', minWidth: 82 },
-  { title: '付款日期', dataIndex: 'dueDate', slotName: 'dueDate', width: 170 },
+  { title: '付款项', dataIndex: 'paymentName', width: 98 },
+  { title: '付款日期', dataIndex: 'dueDate', slotName: 'dueDate', width: 204 },
   { title: '是否完成', dataIndex: 'completed', slotName: 'completed', width: 88 },
-  { title: '付款比例', slotName: 'ratio', width: 96 },
-  { title: '付款金额', slotName: 'originalAmount', width: 110 },
+  { title: '付款比例', slotName: 'ratio', width: 115 },
+  { title: '付款金额', slotName: 'originalAmount', width: 115 },
   {
     title: `折算${props.baseCurrencyLabel || '币种'}`,
     slotName: 'convertedAmount',
-    width: 120,
+    width: 132,
   },
-  { title: '付款条件', dataIndex: 'remark', slotName: 'remark', minWidth: 195 },
+  { title: '付款条件', dataIndex: 'remark', slotName: 'remark', width: 291 },
 ])
 const keyedRows = computed(() =>
   props.modelValue.map((item, index) => ({ ...item, rowKey: item.id || `new-${index}` })),
@@ -77,15 +77,17 @@ function ratio(item: ProjectPaymentPlanItem): string {
   if (!props.contractAmount) return '—'
   return ratioPercent(item.originalAmount, props.contractAmount)
 }
-function converted(item: ProjectPaymentPlanItem): string {
+function convertedValue(item: ProjectPaymentPlanItem): string {
   if (!props.contractAmount || props.convertedAmount == null) {
     return props.baseCurrency && props.contractCurrency === props.baseCurrency
-      ? formatMoneyString(item.originalAmount)
-      : '—'
+      ? item.originalAmount
+      : ''
   }
-  return formatMoneyString(
-    proportionalMoney(item.originalAmount, props.contractAmount, props.convertedAmount),
-  )
+  return proportionalMoney(item.originalAmount, props.contractAmount, props.convertedAmount) ?? ''
+}
+function converted(item: ProjectPaymentPlanItem): string {
+  const value = convertedValue(item)
+  return value ? formatMoneyString(value) : '—'
 }
 function selectedIndex(): number {
   const key = selectedKeys.value[0]
@@ -100,6 +102,8 @@ function openCreate(): void {
     completed: false,
     receivedDate: null,
     originalAmount: '',
+    receivedOriginalAmount: '',
+    receivedConvertedAmount: '',
     remark: '',
   })
   visible.value = true
@@ -128,7 +132,16 @@ function save(): boolean {
     return false
   }
   const next = props.modelValue.map((item) => ({ ...item }))
-  const value = { ...form, paymentName: form.paymentName.trim(), remark: form.remark.trim() }
+  const value = {
+    ...form,
+    paymentName: form.paymentName.trim(),
+    remark: form.remark.trim(),
+    receivedDate: form.completed ? form.receivedDate || new Date().toISOString() : null,
+    receivedOriginalAmount: form.completed ? form.receivedOriginalAmount || form.originalAmount : '0',
+    receivedConvertedAmount: form.completed
+      ? form.receivedConvertedAmount || convertedValue(form)
+      : '0',
+  }
   if (editingIndex.value == null) next.push(value)
   else next.splice(editingIndex.value, 1, value)
   emit('update:modelValue', next)
@@ -147,6 +160,15 @@ function updateCompleted(rowKey: string, completed: boolean): void {
   next[index].receivedDate = completed
     ? next[index].receivedDate || new Date().toISOString()
     : null
+  next[index].receivedOriginalAmount = completed ? next[index].originalAmount : '0'
+  next[index].receivedConvertedAmount = completed ? convertedValue(next[index]) : '0'
+  emit('update:modelValue', next)
+}
+function updateDueDate(rowKey: string, dueDate: string): void {
+  const index = keyedRows.value.findIndex((item) => item.rowKey === rowKey)
+  if (index < 0 || !canOperate.value) return
+  const next = props.modelValue.map((item) => ({ ...item }))
+  next[index].dueDate = dueDate ? dueDate.slice(0, 10) : ''
   emit('update:modelValue', next)
 }
 function remove(): void {
@@ -177,9 +199,6 @@ function remove(): void {
       <h3 id="payment-plan-title">
         款项计划
       </h3>
-    </div>
-
-    <div class="payment-toolbar">
       <div v-if="canOperate" class="payment-actions">
         <a-button type="primary" @click="remove">
           <template #icon>
@@ -197,8 +216,6 @@ function remove(): void {
           </template>添加
         </a-button>
       </div>
-      <div v-else class="payment-actions-placeholder" />
-      <slot name="project-progress" />
     </div>
 
     <div v-if="contractAmount && modelValue.length && !ratioMatchesContract" class="ratio-warning">
@@ -215,13 +232,22 @@ function remove(): void {
         row-key="rowKey"
         size="small"
         :pagination="false"
-        :scroll="{ x: 877 }"
+        :scroll="{ x: 1083 }"
       >
         <template #dueDate="{ record }">
-          {{ record.dueDate || '—' }}
+          <a-date-picker
+            v-if="canOperate"
+            class="payment-date-picker"
+            :model-value="record.dueDate"
+            format="YYYY-MM-DD"
+            @change="updateDueDate(record.rowKey, String($event || ''))"
+          />
+          <template v-else>
+            {{ record.dueDate || '—' }}
+          </template>
         </template>
         <template #completed="{ record }">
-          <a-checkbox
+          <a-radio
             :model-value="record.completed"
             :disabled="!canOperate"
             @change="updateCompleted(record.rowKey, Boolean($event))"
@@ -237,9 +263,9 @@ function remove(): void {
           {{ converted(record) }}
         </template>
         <template #remark="{ record }">
-          <a-tooltip :content="record.remark || '—'">
-            <span class="payment-condition">{{ record.remark || '—' }}</span>
-          </a-tooltip>
+          <span class="payment-condition" :title="record.remark || '—'">
+            {{ record.remark || '—' }}
+          </span>
         </template>
         <template #empty>
           <a-empty description="暂无款项计划" />
@@ -286,24 +312,30 @@ function remove(): void {
 
 <style scoped>
 .payment-plan { padding: 32px 24px 24px; }
-.section-heading { height: 32px; border-bottom: 1px solid #e5e6eb; }
-.section-heading h3 { margin: 0; color: #1d2129; font-size: 14px; font-weight: 600; line-height: 22px; }
-.payment-toolbar { display: grid; grid-template-columns: minmax(262px, 331px) repeat(2, minmax(180px, 249px)); gap: 24px; align-items: end; padding-top: 12px; }
+.section-heading { height: 32px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e5e6eb; }
+.section-heading h3 { margin: 0; color: #1d2129; font-size: 14px; font-weight: 700; line-height: 22px; }
 .payment-actions { display: flex; gap: 8px; }
-.payment-actions :deep(.arco-btn) { height: 32px; padding: 0 16px; border-radius: 2px; }
-.payment-actions-placeholder { min-height: 32px; }
+.payment-actions :deep(.arco-btn) { width: 82px; height: 32px; padding: 0; border-radius: 0; }
 .ratio-warning { margin-top: 10px; color: rgb(var(--warning-6)); font-size: 12px; }
 .payment-table-scroll { width: 100%; margin-top: 12px; overflow-x: auto; }
-.payment-plan :deep(.arco-table) { min-width: 877px; }
+.payment-table-scroll::-webkit-scrollbar { width: 4px; height: 4px; }
+.payment-table-scroll::-webkit-scrollbar-track { border-radius: 2px; background: #f0f0f0; }
+.payment-table-scroll::-webkit-scrollbar-thumb { border-radius: 2px; background: #bfbfbf; }
+.payment-plan :deep(.arco-table) { min-width: 1083px; }
 .payment-plan :deep(.arco-table-th) { height: 36px; padding: 0 16px; background: #f2f3f5; color: #1d2129; font-size: 14px; font-weight: 400; text-align: center; }
 .payment-plan :deep(.arco-table-td) { height: 60px; padding: 0 16px; color: #1d2129; font-size: 14px; text-align: center; }
-.payment-plan :deep(.arco-table-cell) { white-space: nowrap; }
+.payment-plan :deep(.arco-table-cell) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.payment-plan :deep(.arco-table-td-content) { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.payment-date-picker { width: 130px; }
+.payment-plan :deep(.payment-date-picker.arco-picker) { height: 32px; border: 0; border-radius: 0; background: #e5e6eb; }
 .payment-condition { display: block; max-width: 100%; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 .payment-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; }
 .payment-form-grid :deep(.arco-picker), .payment-form-grid :deep(.arco-input-number) { width: 100%; }
 .span-full { grid-column: 1 / -1; }
 @media (max-width: 640px) {
-  .payment-toolbar { grid-template-columns: 1fr; }
+  .payment-plan { padding-inline: 16px; }
+  .section-heading { height: auto; min-height: 32px; align-items: flex-start; gap: 8px; }
+  .payment-actions { flex-wrap: wrap; justify-content: flex-end; }
   .payment-form-grid { grid-template-columns: 1fr; }
   .span-full { grid-column: auto; }
 }
