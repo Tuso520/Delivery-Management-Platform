@@ -25,9 +25,29 @@ describe('ArchiveTemplateService target aggregate', () => {
           currentPublishedVersion: expect.any(Object),
           _count: { select: { versions: true, projectSnapshots: true } },
         }),
+        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
       }),
     );
     expect(findMany.mock.calls[0][0].select).not.toHaveProperty('items');
+  });
+
+  it.each([
+    ['templateName', 'desc', [{ templateName: 'desc' }, { id: 'asc' }]],
+    [
+      'currentVersion',
+      'asc',
+      [{ currentPublishedVersion: { versionNo: 'asc' } }, { templateName: 'asc' }, { id: 'asc' }],
+    ],
+  ] as const)('sorts %s in the database', async (sortBy, sortOrder, orderBy) => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const prisma = {
+      archiveTemplate: { findMany },
+    } as unknown as PrismaService;
+    const service = new ArchiveTemplateService(prisma);
+
+    await service.findAll({ sortBy, sortOrder });
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy }));
   });
 
   it('creates a template and its initial editable version atomically', async () => {

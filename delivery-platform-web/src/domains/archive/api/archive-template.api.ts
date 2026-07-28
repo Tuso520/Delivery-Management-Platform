@@ -15,6 +15,18 @@ export interface CreateArchiveTemplatePayload {
   description?: string
 }
 
+export type ArchiveTemplateSortField = 'templateName' | 'currentVersion'
+export type ArchiveTemplateSortOrder = 'asc' | 'desc'
+
+export interface ArchiveTemplateListParams {
+  keyword?: string
+  projectType?: string
+  countryCode?: string
+  languageCode?: string
+  sortBy?: ArchiveTemplateSortField
+  sortOrder?: ArchiveTemplateSortOrder
+}
+
 export interface ArchiveTemplateDraftStructurePayload {
   revision: number
   folders: Array<{
@@ -40,12 +52,7 @@ export interface ArchiveTemplateDraftStructurePayload {
 }
 
 export const archiveTemplateApi = {
-  getList(params?: {
-    keyword?: string
-    projectType?: string
-    countryCode?: string
-    languageCode?: string
-  }) {
+  getList(params?: ArchiveTemplateListParams) {
     return request.get<ArchiveTemplate[]>('/archive-templates', { params })
   },
 

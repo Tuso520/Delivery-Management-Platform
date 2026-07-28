@@ -1,5 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+
+export const ARCHIVE_TEMPLATE_SORT_FIELDS = ['templateName', 'currentVersion'] as const;
 
 export class CreateArchiveTemplateDto {
   @ApiProperty({ description: '模板编码' })
@@ -65,4 +67,14 @@ export class QueryArchiveTemplateDto {
   @IsOptional()
   @IsString()
   languageCode?: string;
+
+  @ApiPropertyOptional({ enum: ARCHIVE_TEMPLATE_SORT_FIELDS })
+  @IsOptional()
+  @IsIn([...ARCHIVE_TEMPLATE_SORT_FIELDS])
+  sortBy?: (typeof ARCHIVE_TEMPLATE_SORT_FIELDS)[number];
+
+  @ApiPropertyOptional({ enum: ['asc', 'desc'] })
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  sortOrder?: 'asc' | 'desc';
 }

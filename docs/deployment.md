@@ -249,6 +249,8 @@ prepare-migrate → prisma migrate deploy → bootstrap seed → Archive audit E
 
 项目档案文件类型通过幂等 seed 中的 `FILE_TYPE` 字段配置发布，不新增 schema migration。部署必须保持既定二次 seed：第一次补齐配置，第二次验证类别、稳定值和系统默认项不发生漂移；缺少启用文件类型时档案模板 seed 必须 fail fast。
 
+档案模板 Figma `69:305` 列表重构不改变 Prisma schema。发布时仍必须执行完整 migration 状态校验、三个数据 migrator 的 dry-run/apply/只读 verify 和二次幂等 seed，并在真实 API 上验证模板关键字查询、服务端排序、字段配置启停、版本读取和权限。应用回滚到上一镜像/提交即可；该改动没有需要反向迁移的数据库或 MinIO 数据。
+
 从旧架构升级时，bootstrap seed 发现项目仍有 `ProjectArchiveItem` 就不会绑定新版档案模板或生成目标快照。对于此前版本已经生成的目标快照，foundation 只在模板版本、文件夹、条目、来源 ID、稳定键和目录关系全部匹配且项目档案文件为零时，才在事务内二次核验、软归档该空快照并清除项目模板指针；任何已有文件或结构差异都会继续 fail closed。旧档案项的状态、截止和完成时间在旧只读表中保留并进入迁移计数，不伪造目标字段。历史 demo 项目审批仅按精确白名单迁为 `PROJECT_CREATE` 审核历史；不再可执行的 Pending 项迁为已归档 `CANCELLED` 记录。精确命中且能证明来源附件不存在的已退役知识文件更新审批不生成目标任务，而是写入带处理人和处理时间的 `RESOLVED` `MigrationException`；其他未知审批结构仍阻断发布。
 
 ### 整体重构既有库升级

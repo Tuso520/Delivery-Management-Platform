@@ -4,16 +4,16 @@
 
 本轮只读取 Figma 文件 `IZMfwVd0NPQM5mm4v84dxM` 中目标明确指定的 8 个节点，没有读取其他页面、组件库或相邻画板。
 
-| 页面 | Figma 节点 | 路由 | 代码入口 | 读取结论 |
-|---|---|---|---|---|
-| App Shell | `23:14747` | 全局 | `src/layouts/BasicLayout.vue` | 60px 顶栏、180px 侧栏、分组导航和工作台式内容区 |
-| 项目概览 | `23:15329` | `/projects` | `src/domains/project/pages/ProjectOverviewPage.vue` | 5 项指标、项目范围、关键词查询、刷新、新建和宽表格 |
-| 项目档案 | `43:317` | `/archive` | `src/domains/archive/pages/ArchiveWorkspacePage.vue` | 5 项指标、270px 项目目录、上传和 `340/80/100/113/122/182px` 固定列宽文件表 |
-| 档案模板 | `69:305` | `/archive-template` | `src/domains/archive/pages/ArchiveTemplatePage.vue` | 右侧刷新/创建和模板扁平表格；目标正常态没有搜索区和页面标题 |
-| 标准库 | `70:322` | `/standards` | `src/views/standard/index.vue` | 4 项指标、分类、关键词、查询、刷新、新增和标准表格 |
-| 知识库 | `71:303` | `/knowledge` | `src/domains/knowledge/pages/KnowledgePage.vue` | 4 项指标、分类、关键词、查询、刷新、新增和知识表格 |
-| 审批规则 | `81:376` | `/settings/approvals` | `src/views/system/approvals.vue` | 流程名称、关键词、查询、重置、新增和审批规则表格 |
-| 字段配置 | `80:381` | `/settings/fields` | `src/views/system/FieldSettings.vue` | 10 个固定页签、名称/编码/排序/状态/操作表格、底部新增与分页 |
+| 页面      | Figma 节点 | 路由                  | 代码入口                                             | 读取结论                                                                                 |
+| --------- | ---------- | --------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| App Shell | `23:14747` | 全局                  | `src/layouts/BasicLayout.vue`                        | 60px 顶栏、180px 侧栏、分组导航和工作台式内容区                                          |
+| 项目概览  | `23:15329` | `/projects`           | `src/domains/project/pages/ProjectOverviewPage.vue`  | 5 项指标、项目范围、关键词查询、刷新、新建和宽表格                                       |
+| 项目档案  | `43:317`   | `/archive`            | `src/domains/archive/pages/ArchiveWorkspacePage.vue` | 5 项指标、270px 项目目录、上传和 `340/80/100/113/122/182px` 固定列宽文件表               |
+| 档案模板  | `69:305`   | `/archive-template`   | `src/domains/archive/pages/ArchiveTemplatePage.vue`  | 左侧 280px 模板名称搜索/查询、右侧创建和 `280/120/111/111/95/160/149/182px` 固定列宽表格 |
+| 标准库    | `70:322`   | `/standards`          | `src/views/standard/index.vue`                       | 4 项指标、分类、关键词、查询、刷新、新增和标准表格                                       |
+| 知识库    | `71:303`   | `/knowledge`          | `src/domains/knowledge/pages/KnowledgePage.vue`      | 4 项指标、分类、关键词、查询、刷新、新增和知识表格                                       |
+| 审批规则  | `81:376`   | `/settings/approvals` | `src/views/system/approvals.vue`                     | 流程名称、关键词、查询、重置、新增和审批规则表格                                         |
+| 字段配置  | `80:381`   | `/settings/fields`    | `src/views/system/FieldSettings.vue`                 | 10 个固定页签、名称/编码/排序/状态/操作表格、底部新增与分页                              |
 
 节点均可独立读取。目标说明中关于部分节点重复或重叠的描述与实际文件不一致，因此实现以节点实际内容为准，没有把任一页面当作另一页面的副本。
 
@@ -32,7 +32,7 @@
 
 - 项目概览正常列表不显示归档视图、恢复、物理删除或操作列；后端生命周期能力没有因此放松权限或审计。
 - 项目档案只展示项目选择、模板版本、上传、文件夹和文件表；节点中不存在模板同步、临时项、恢复、分页或额外筛选入口。
-- 档案模板正常列表只保留刷新和创建模板，不增加搜索、筛选或营销式标题区。
+- 档案模板正常列表使用模板名称搜索、查询和创建，不增加状态列、刷新、额外筛选或营销式标题区；模板名称与当前版本排序由后台执行。
 - 标准库和知识库使用相同的 4 指标 + 分类/关键词查询骨架，但保持各自业务列和操作。
 - 审批规则没有额外统计区或说明头；筛选和创建操作位于同一工具栏。
 - 字段配置页面保持目标节点定义的页签和交互；`FILE_TYPE` 由同一字段配置服务管理并供项目档案上传使用，不在项目档案页硬编码扩展名。

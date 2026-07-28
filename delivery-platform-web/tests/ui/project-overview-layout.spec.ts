@@ -195,7 +195,9 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
   })
   page.on('pageerror', (error) => pageErrors.push(error.message))
   page.on('requestfailed', (request) => {
-    requestFailures.push(`${request.method()} ${request.url()} ${request.failure()?.errorText || ''}`)
+    requestFailures.push(
+      `${request.method()} ${request.url()} ${request.failure()?.errorText || ''}`,
+    )
   })
 
   const listResponse = page.waitForResponse(
@@ -253,9 +255,9 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
       iconContainerSize: Math.round(metricIcon.getBoundingClientRect().width),
       iconSize: Math.round(metricImage.getBoundingClientRect().width),
       iconBackground: getComputedStyle(metricIcon).backgroundColor,
-      metricLabelOffsets: [
-        ...document.querySelectorAll<HTMLElement>('.metric-label'),
-      ].map(leftInPage),
+      metricLabelOffsets: [...document.querySelectorAll<HTMLElement>('.metric-label')].map(
+        leftInPage,
+      ),
       toolbarOffsets: {
         scope: leftInPage(scope),
         keyword: leftInPage(keyword),
@@ -340,9 +342,7 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
     .evaluateAll((headers) =>
       headers.slice(0, 13).map((header) => Math.round(header.getBoundingClientRect().width)),
     )
-  expect(columnWidths).toEqual([
-    240, 110, 160, 200, 180, 120, 120, 80, 160, 160, 120, 110, 100,
-  ])
+  expect(columnWidths).toEqual([240, 110, 160, 200, 180, 120, 120, 80, 160, 160, 120, 110, 100])
 
   const leftAlignedOffsets = await page
     .locator('.project-list-panel tbody .arco-table-tr')
@@ -438,9 +438,7 @@ test('project scope exposes archived projects and project manager sorting cycles
   await expect(page.locator('.scope-field .arco-select-view')).toBeVisible()
 
   await page.locator('.scope-field .arco-select-view').click()
-  const archivedOption = page
-    .locator('.arco-select-option:visible')
-    .filter({ hasText: '归档项目' })
+  const archivedOption = page.locator('.arco-select-option:visible').filter({ hasText: '归档项目' })
   await expect(archivedOption).toBeVisible()
   const archivedRequest = page.waitForRequest((request) => {
     const url = new URL(request.url())
@@ -454,8 +452,7 @@ test('project scope exposes archived projects and project manager sorting cycles
   const ascendingRequest = page.waitForRequest((request) => {
     const url = new URL(request.url())
     return (
-      url.pathname === '/api/v1/projects' &&
-      url.searchParams.get('sort') === 'projectManager:asc'
+      url.pathname === '/api/v1/projects' && url.searchParams.get('sort') === 'projectManager:asc'
     )
   })
   await sortButton.click()
@@ -465,8 +462,7 @@ test('project scope exposes archived projects and project manager sorting cycles
   const descendingRequest = page.waitForRequest((request) => {
     const url = new URL(request.url())
     return (
-      url.pathname === '/api/v1/projects' &&
-      url.searchParams.get('sort') === 'projectManager:desc'
+      url.pathname === '/api/v1/projects' && url.searchParams.get('sort') === 'projectManager:desc'
     )
   })
   await sortButton.click()
@@ -587,7 +583,11 @@ test('project overview uses wheel loading, large rows and a fixed project-name c
   await expect(page.getByText('987,654,321,012.00', { exact: true })).toBeVisible()
   await expect(page.getByText('2,888,888.13', { exact: true })).toBeVisible()
   await expect(
-    page.locator('.project-list-panel tbody .arco-table-tr').first().locator('.arco-table-td').nth(7),
+    page
+      .locator('.project-list-panel tbody .arco-table-tr')
+      .first()
+      .locator('.arco-table-td')
+      .nth(7),
   ).toContainText('VND')
   await expect(page.getByText('越南·胡志明市', { exact: true })).toBeVisible()
 
@@ -614,10 +614,16 @@ test('project overview uses wheel loading, large rows and a fixed project-name c
   expect(scenario.requestCount).toBe(completedRequestCount)
 })
 
-test('archive template table keeps its declared column widths stable', async ({ page }) => {
+test('archive template matches Figma 69:305 geometry and server query behavior', async ({
+  page,
+}) => {
   await login(page)
   await page.goto('/#/archive-template')
   await expect(page.locator('.template-link').first()).toBeVisible({ timeout: 60_000 })
+  await expect(page.locator('.template-search')).toHaveCSS('width', '280px')
+  await expect(page.getByRole('button', { name: '查询' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '创建', exact: true })).toBeVisible()
+  await expect(page.locator('thead')).not.toContainText('状态')
 
   const metrics = await page.locator('.table-card').evaluate(async (card) => {
     const table = card.querySelector<HTMLElement>('.arco-table-element')
@@ -635,6 +641,17 @@ test('archive template table keeps its declared column widths stable', async ({ 
 
     return {
       distinctWidthSnapshots: new Set(snapshots).size,
+      headerHeight: Math.round(
+        table.querySelector<HTMLElement>('thead .arco-table-th')?.getBoundingClientRect().height ??
+          0,
+      ),
+      headerWidths: [...table.querySelectorAll<HTMLElement>('thead .arco-table-th')].map((header) =>
+        Math.round(header.getBoundingClientRect().width),
+      ),
+      rowHeight: Math.round(
+        card.querySelector<HTMLElement>('tbody .arco-table-tr')?.getBoundingClientRect().height ??
+          0,
+      ),
       hasPreservedWidthClass: Boolean(
         card.querySelector('.business-table--preserve-column-widths'),
       ),
@@ -645,8 +662,44 @@ test('archive template table keeps its declared column widths stable', async ({ 
 
   expect(metrics).toMatchObject({
     distinctWidthSnapshots: 1,
+    headerHeight: 44,
+    headerWidths: [280, 120, 111, 111, 95, 160, 149, 182],
+    rowHeight: 44,
     hasPreservedWidthClass: true,
     tableLayout: 'fixed',
   })
-  expect(metrics.scrollWidth).toBeGreaterThanOrEqual(1080)
+  expect(metrics.scrollWidth).toBeGreaterThanOrEqual(1208)
+  const publishedRow = page
+    .locator('tbody .arco-table-tr')
+    .filter({ hasText: '标准项目档案模板' })
+  await expect(publishedRow).toHaveCount(1)
+  await expect(publishedRow.locator('.arco-table-td').nth(3)).toContainText(
+    /^\s*\d+\s*\/\s*\d+\s*$/,
+  )
+  await expect(publishedRow.locator('.arco-table-td').nth(6)).toContainText(
+    /^\s*\d{4}-\d{2}-\d{2}\s*$/,
+  )
+
+  const searchRequest = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return (
+      url.pathname === '/api/v1/archive-templates' &&
+      url.searchParams.get('keyword') === '标准项目档案模板'
+    )
+  })
+  await page.getByPlaceholder('搜索模板名称').fill('标准项目档案模板')
+  await page.getByRole('button', { name: '查询' }).click()
+  expect((await searchRequest).status()).toBe(200)
+  await expect(page.locator('.template-link')).toHaveCount(1)
+
+  const sortRequest = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return (
+      url.pathname === '/api/v1/archive-templates' &&
+      url.searchParams.get('sortBy') === 'templateName' &&
+      url.searchParams.get('sortOrder') === 'asc'
+    )
+  })
+  await page.getByRole('button', { name: '按模板名称排序' }).click()
+  expect((await sortRequest).status()).toBe(200)
 })

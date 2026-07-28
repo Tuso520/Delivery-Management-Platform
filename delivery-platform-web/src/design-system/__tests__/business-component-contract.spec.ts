@@ -76,7 +76,8 @@ describe('business component adoption contract', () => {
   it('keeps archive template columns stable at their declared total width', () => {
     const archiveTemplate = source('src/domains/archive/pages/ArchiveTemplatePage.vue')
     expect(archiveTemplate).toContain('preserve-column-widths')
-    expect(archiveTemplate).toContain(':scroll="{ x: 1080 }"')
+    expect(archiveTemplate).toContain(':scroll="{ x: 1208, y: 670 }"')
+    expect(archiveTemplate).toContain('width: 1208px')
     expect(archiveTemplate).toContain('grid-template-columns: minmax(0, 1fr)')
   })
 

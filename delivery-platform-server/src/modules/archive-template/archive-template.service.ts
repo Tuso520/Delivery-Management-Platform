@@ -51,7 +51,7 @@ export class ArchiveTemplateService {
         },
         _count: { select: { versions: true, projectSnapshots: true } },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: this.resolveOrderBy(query),
     });
   }
 
@@ -122,5 +122,23 @@ export class ArchiveTemplateService {
       });
       return { ...template, draftVersion };
     });
+  }
+
+  private resolveOrderBy(
+    query: QueryArchiveTemplateDto,
+  ): Prisma.ArchiveTemplateOrderByWithRelationInput[] {
+    const direction = query.sortOrder ?? 'asc';
+    switch (query.sortBy) {
+      case 'templateName':
+        return [{ templateName: direction }, { id: 'asc' }];
+      case 'currentVersion':
+        return [
+          { currentPublishedVersion: { versionNo: direction } },
+          { templateName: 'asc' },
+          { id: 'asc' },
+        ];
+      default:
+        return [{ createdAt: 'desc' }, { id: 'asc' }];
+    }
   }
 }

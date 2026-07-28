@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import Message from '@arco-design/web-vue/es/message'
+import { IconPlus, IconSearch } from '@arco-design/web-vue/es/icon'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
@@ -9,6 +10,8 @@ import { BusinessTable } from '@/design-system'
 import {
   archiveTemplateApi,
   type ArchiveTemplateDraftStructurePayload,
+  type ArchiveTemplateSortField,
+  type ArchiveTemplateSortOrder,
 } from '@/domains/archive/api/archive-template.api'
 import {
   useArchiveTemplateDetailQuery,
@@ -91,10 +94,14 @@ const standardFolderNames = [
 const permissionStore = usePermissionStore()
 const route = useRoute()
 const router = useRouter()
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const queryClient = useQueryClient()
 const fieldConfig = useFieldConfig('archive-template')
 
+const searchInput = ref('')
+const submittedKeyword = ref('')
+const sortBy = ref<ArchiveTemplateSortField>()
+const sortOrder = ref<ArchiveTemplateSortOrder>()
 const createVisible = ref(false)
 const createForm = reactive({
   templateCode: '',
@@ -122,12 +129,14 @@ function listRouteQuery() {
   return preservedRouteQuery(route.query, ['versionId'])
 }
 
-const templateListQuery = useArchiveTemplateListQuery({})
+const templateListParams = computed(() => ({
+  keyword: submittedKeyword.value || undefined,
+  sortBy: sortBy.value,
+  sortOrder: sortOrder.value,
+}))
+const templateListQuery = useArchiveTemplateListQuery(templateListParams)
 const templateDetailQuery = useArchiveTemplateDetailQuery(selectedTemplateId, drawerVisible)
-const templateVersionsQuery = useArchiveTemplateVersionsQuery(
-  selectedTemplateId,
-  drawerVisible,
-)
+const templateVersionsQuery = useArchiveTemplateVersionsQuery(selectedTemplateId, drawerVisible)
 const templateVersionQuery = useArchiveTemplateVersionQuery(selectedVersionId, drawerVisible)
 const formOptionQueries = useArchiveTemplateFormOptionsQueries()
 const records = computed(() => templateListQuery.data.value ?? [])
@@ -144,6 +153,7 @@ const countries = computed(() => fieldConfig.getFieldOptions('COUNTRY'))
 const languages = computed<Language[]>(() => formOptionQueries.value[0].data ?? [])
 const projectTypes = computed(() => fieldConfig.getFieldOptions('PROJECT_TYPE'))
 const loading = computed(() => templateListQuery.isFetching.value)
+const listError = computed(() => templateListQuery.error.value)
 const detailLoading = computed(
   () =>
     templateDetailQuery.isFetching.value ||
@@ -188,15 +198,33 @@ function formatDate(value?: string | null): string {
   if (!value) return '—'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '—'
-  return new Intl.DateTimeFormat(locale.value, {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(date)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
-async function fetchRecords(): Promise<void> {
-  await templateListQuery.refetch()
+function runSearch(): void {
+  submittedKeyword.value = searchInput.value.trim()
+}
+
+function toggleSort(field: ArchiveTemplateSortField): void {
+  if (sortBy.value !== field) {
+    sortBy.value = field
+    sortOrder.value = 'asc'
+    return
+  }
+  if (sortOrder.value === 'asc') {
+    sortOrder.value = 'desc'
+    return
+  }
+  sortBy.value = undefined
+  sortOrder.value = undefined
+}
+
+function sortIndicator(field: ArchiveTemplateSortField): string {
+  if (sortBy.value !== field) return '↕'
+  return sortOrder.value === 'desc' ? '↓' : '↑'
 }
 
 function projectTypeLabel(value?: string | null): string {
@@ -593,119 +621,167 @@ watch(
 <template>
   <section class="template-page">
     <header class="page-header">
-      <a-space>
-        <a-button @click="fetchRecords">
-          {{ t('archiveTemplate.refresh') }}
+      <div class="search-group">
+        <a-input
+          v-model="searchInput"
+          class="template-search"
+          :placeholder="t('archiveTemplate.searchPlaceholder')"
+          @press-enter="runSearch"
+        />
+        <a-button type="primary" class="query-button" @click="runSearch">
+          <template #icon>
+            <IconSearch />
+          </template>
+          {{ t('archiveTemplate.query') }}
         </a-button>
-        <a-button
-          v-if="permissionStore.hasPermission('archive_template:create')"
-          type="primary"
-          @click="openCreate"
-        >
-          {{ t('archiveTemplate.create') }}
-        </a-button>
-      </a-space>
+      </div>
+      <a-button
+        v-if="permissionStore.hasPermission('archive_template:create')"
+        type="primary"
+        class="create-button"
+        @click="openCreate"
+      >
+        <template #icon>
+          <IconPlus />
+        </template>
+        {{ t('archiveTemplate.create') }}
+      </a-button>
     </header>
 
-    <a-card :bordered="false" class="table-card">
+    <section class="table-card">
       <BusinessTable
+        class="template-table"
         :data="records"
         :loading="loading"
+        :error="listError"
         row-key="id"
-        :scroll="{ x: 1080 }"
+        size="small"
+        bordered
+        stripe
         preserve-column-widths
+        :batch-size="Math.max(20, records.length)"
+        :scroll="{ x: 1208, y: 670 }"
+        :empty-title="t('common.noData')"
+        :retry-label="t('common.retry')"
+        @retry="templateListQuery.refetch()"
       >
-        <a-table-column :title="t('archiveTemplate.columns.name')" :width="220">
+        <a-table-column :width="280" align="left">
+          <template #title>
+            <button
+              class="column-sort"
+              type="button"
+              :aria-label="t('archiveTemplate.sortByName')"
+              @click="toggleSort('templateName')"
+            >
+              <span>{{ t('archiveTemplate.columns.name') }}</span>
+              <span class="column-sort__indicator" aria-hidden="true">
+                {{ sortIndicator('templateName') }}
+              </span>
+            </button>
+          </template>
           <template #cell="{ record }">
-            <button class="template-link" type="button" @click="openDetail(record)">
-              <strong>{{ record.templateName }}</strong>
+            <button
+              class="template-link"
+              type="button"
+              :title="record.templateName"
+              @click="openDetail(record)"
+            >
+              {{ record.templateName }}
             </button>
           </template>
         </a-table-column>
-        <a-table-column :title="t('archiveTemplate.columns.projectType')" :width="130">
+        <a-table-column
+          :title="t('archiveTemplate.columns.projectType')"
+          :width="120"
+          align="center"
+        >
           <template #cell="{ record }">
-            {{
-              projectTypeLabel(record.projectType)
-            }}
+            <span class="single-line-cell" :title="projectTypeLabel(record.projectType)">
+              {{ projectTypeLabel(record.projectType) }}
+            </span>
           </template>
         </a-table-column>
-        <a-table-column :title="t('archiveTemplate.columns.currentVersion')" :width="100">
+        <a-table-column :width="111" align="center">
+          <template #title>
+            <button
+              class="column-sort"
+              type="button"
+              :aria-label="t('archiveTemplate.sortByVersion')"
+              @click="toggleSort('currentVersion')"
+            >
+              <span>{{ t('archiveTemplate.columns.currentVersion') }}</span>
+              <span class="column-sort__indicator" aria-hidden="true">
+                {{ sortIndicator('currentVersion') }}
+              </span>
+            </button>
+          </template>
           <template #cell="{ record }">
             {{ record.currentPublishedVersion?.versionNo || t('archiveTemplate.notPublished') }}
           </template>
         </a-table-column>
-        <a-table-column :title="t('archiveTemplate.columns.scale')" :width="110">
+        <a-table-column :title="t('archiveTemplate.columns.scale')" :width="111" align="center">
           <template #cell="{ record }">
             <span v-if="record.currentPublishedVersion?._count">
-              {{
-                t('archiveTemplate.scale', {
-                  folders: record.currentPublishedVersion._count.folders,
-                  items: record.currentPublishedVersion._count.versionItems,
-                })
-              }}
+              {{ record.currentPublishedVersion._count.folders }} /
+              {{ record.currentPublishedVersion._count.versionItems }}
             </span>
             <span v-else>—</span>
           </template>
         </a-table-column>
-        <a-table-column :title="t('archiveTemplate.columns.projects')" :width="90">
+        <a-table-column :title="t('archiveTemplate.columns.projects')" :width="95" align="center">
           <template #cell="{ record }">
             {{ record._count?.projectSnapshots || 0 }}
           </template>
         </a-table-column>
-        <a-table-column :title="t('common.status')" :width="100">
+        <a-table-column :title="t('archiveTemplate.columns.updatedBy')" :width="160" align="center">
           <template #cell="{ record }">
-            <a-tag :color="statusMeta(record.status).color">
-              {{ statusMeta(record.status).label }}
-            </a-tag>
+            <span
+              class="single-line-cell"
+              :title="record.updater?.realName || t('archiveTemplate.system')"
+            >
+              {{ record.updater?.realName || t('archiveTemplate.system') }}
+            </span>
           </template>
         </a-table-column>
-        <a-table-column :title="t('archiveTemplate.columns.updatedBy')" :width="90">
-          <template #cell="{ record }">
-            {{ record.updater?.realName || t('archiveTemplate.system') }}
-          </template>
-        </a-table-column>
-        <a-table-column :title="t('common.updatedAt')" :width="110">
+        <a-table-column :title="t('archiveTemplate.columns.time')" :width="149" align="center">
           <template #cell="{ record }">
             {{ formatDate(record.updatedAt) }}
           </template>
         </a-table-column>
-        <a-table-column :title="t('common.action')" :width="160" fixed="right">
+        <a-table-column :title="t('common.action')" :width="182" align="center">
           <template #cell="{ record }">
-            <a-space size="mini">
-              <a-button type="text" size="mini" @click="openDetail(record)">
-                {{
-                  t('common.view')
-                }}
-              </a-button>
-              <a-button
+            <span class="table-actions">
+              <button class="table-action" type="button" @click="openDetail(record)">
+                {{ t('common.view') }}
+              </button>
+              <button
                 v-if="
                   record.status !== 'DISABLED' &&
                     permissionStore.hasPermission('archive_template:update_draft')
                 "
-                type="text"
-                size="mini"
-                :loading="creatingVersionFor === record.id"
+                class="table-action"
+                type="button"
+                :disabled="creatingVersionFor === record.id"
                 @click="createNewVersion(record)"
               >
                 {{ t('archiveTemplate.createVersion') }}
-              </a-button>
-              <a-button
+              </button>
+              <button
                 v-if="
                   record.status !== 'DISABLED' &&
                     permissionStore.hasPermission('archive_template:disable')
                 "
-                type="text"
-                size="mini"
-                status="danger"
+                class="table-action table-action--danger"
+                type="button"
                 @click="disableTemplate(record)"
               >
                 {{ t('archiveTemplate.disable.action') }}
-              </a-button>
-            </a-space>
+              </button>
+            </span>
           </template>
         </a-table-column>
       </BusinessTable>
-    </a-card>
+    </section>
 
     <a-modal
       v-model:visible="createVisible"
@@ -745,11 +821,7 @@ watch(
           <a-grid-item>
             <a-form-item :label="t('common.country')">
               <a-select v-model="createForm.countryCode" allow-search allow-clear>
-                <a-option
-                  v-for="item in countries"
-                  :key="item.value"
-                  :value="item.value"
-                >
+                <a-option v-for="item in countries" :key="item.value" :value="item.value">
                   {{ item.label }}
                 </a-option>
               </a-select>
@@ -774,14 +846,10 @@ watch(
         </a-form-item>
         <div class="modal-actions">
           <a-button :disabled="creating" @click="createVisible = false">
-            {{
-              t('common.cancel')
-            }}
+            {{ t('common.cancel') }}
           </a-button>
           <a-button type="primary" :loading="creating" @click="createTemplate">
-            {{
-              t('archiveTemplate.createAndEdit')
-            }}
+            {{ t('archiveTemplate.createAndEdit') }}
           </a-button>
         </div>
       </a-form>
@@ -816,9 +884,7 @@ watch(
                 {{ t('archiveTemplate.addStandardFolders') }}
               </a-button>
               <a-button v-if="canEditVersion" @click="addFolder">
-                {{
-                  t('archiveTemplate.addFolder')
-                }}
+                {{ t('archiveTemplate.addFolder') }}
               </a-button>
               <a-button v-if="canEditVersion" :loading="savingStructure" @click="saveStructure()">
                 {{ t('archiveTemplate.saveDraft') }}
@@ -878,9 +944,7 @@ watch(
                   </div>
                   <a-space v-if="canEditVersion">
                     <a-button type="text" size="mini" @click="addItem(folder)">
-                      {{
-                        t('archiveTemplate.addItem')
-                      }}
+                      {{ t('archiveTemplate.addItem') }}
                     </a-button>
                     <a-button
                       type="text"
@@ -925,19 +989,13 @@ watch(
                     </div>
                     <div class="item-policies">
                       <a-checkbox v-model="item.required">
-                        {{
-                          t('archiveTemplate.required')
-                        }}
+                        {{ t('archiveTemplate.required') }}
                       </a-checkbox>
                       <a-checkbox v-model="item.reviewRequired">
-                        {{
-                          t('archiveTemplate.reviewRequired')
-                        }}
+                        {{ t('archiveTemplate.reviewRequired') }}
                       </a-checkbox>
                       <a-checkbox v-model="item.allowMultipleFiles">
-                        {{
-                          t('archiveTemplate.allowMultipleFiles')
-                        }}
+                        {{ t('archiveTemplate.allowMultipleFiles') }}
                       </a-checkbox>
                       <a-input-number
                         v-model="item.maxFileSizeMb"
@@ -962,19 +1020,13 @@ watch(
                       </div>
                       <a-space>
                         <a-tag v-if="item.required" color="red">
-                          {{
-                            t('archiveTemplate.required')
-                          }}
+                          {{ t('archiveTemplate.required') }}
                         </a-tag>
                         <a-tag v-if="item.reviewRequired" color="orange">
-                          {{
-                            t('archiveTemplate.reviewRequiredShort')
-                          }}
+                          {{ t('archiveTemplate.reviewRequiredShort') }}
                         </a-tag>
                         <a-tag v-if="item.allowMultipleFiles">
-                          {{
-                            t('archiveTemplate.allowMultipleFilesShort')
-                          }}
+                          {{ t('archiveTemplate.allowMultipleFilesShort') }}
                         </a-tag>
                       </a-space>
                     </div>
@@ -993,15 +1045,16 @@ watch(
 .template-page {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: 32px minmax(0, 1fr);
   gap: 12px;
   height: 100%;
   min-width: 0;
   padding: 13px;
   background: #fff;
+  color: #1d2129;
+  font-family: 'Noto Sans SC', sans-serif;
 }
 
-.page-header,
 .detail-toolbar,
 .folder-editor-title,
 .readonly-item,
@@ -1014,31 +1067,222 @@ watch(
 }
 
 .page-header {
+  display: flex;
+  height: 32px;
+  min-height: 32px;
   min-width: 0;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  overflow: hidden;
 }
 
 .table-card {
+  display: flex;
+  height: 100%;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
-.table-card :deep(.arco-card-body) {
+.search-group {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.template-search {
+  width: 280px;
+  height: 32px;
+  flex: 0 0 280px;
+}
+
+.template-search :deep(.arco-input-wrapper) {
+  height: 32px;
+  padding: 0 12px;
+  background: #f2f3f5;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.template-search :deep(.arco-input) {
+  height: 22px;
   padding: 0;
+  color: #1d2129;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 22px;
+}
+
+.template-search :deep(.arco-input::placeholder) {
+  color: #86909c;
+}
+
+.query-button,
+.create-button {
+  height: 32px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 0;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 22px;
+}
+
+.query-button {
+  background: #2563eb;
+}
+
+.create-button {
+  background: #165dff;
+}
+
+.query-button :deep(.arco-btn-icon),
+.create-button :deep(.arco-btn-icon) {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  margin-right: 8px;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+.table-card :deep(.business-table) {
+  height: 100%;
+}
+
+.table-card :deep(.business-table__viewport) {
+  height: 100%;
+  max-height: none;
+  overflow: auto;
+  scrollbar-gutter: auto;
+}
+
+.table-card :deep(.template-table),
+.table-card :deep(.template-table .arco-table-container),
+.table-card :deep(.template-table .arco-table-content) {
+  height: 100%;
+}
+
+.table-card :deep(.template-table .arco-table-element) {
+  width: 1208px;
+  min-width: 1208px;
+  table-layout: fixed;
+}
+
+.table-card :deep(.template-table .arco-table-th),
+.table-card :deep(.template-table .arco-table-td) {
+  box-sizing: border-box;
+  height: 44px;
+  padding: 0;
+  border-color: #e0e0e0;
+  font-size: 13px;
+  line-height: normal;
+}
+
+.table-card :deep(.template-table .arco-table-th) {
+  background: #f2f3f5;
+  color: #1d2129;
+  font-weight: 500;
+}
+
+.table-card :deep(.template-table .arco-table-td) {
+  background: #fff;
+  color: #1d2129;
+  font-weight: 400;
+}
+
+.table-card :deep(.template-table .arco-table-tr-stripe .arco-table-td),
+.table-card :deep(.template-table tbody .arco-table-tr:nth-child(even) .arco-table-td) {
+  background: #f7f8fa;
+}
+
+.table-card :deep(.template-table .arco-table-cell) {
+  display: flex;
+  height: 43px;
+  min-width: 0;
+  padding: 0 12px;
+  align-items: center;
+  overflow: hidden;
+  line-height: normal;
+  text-overflow: ellipsis;
+}
+
+.column-sort {
+  display: inline-flex;
+  padding: 0;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: #1d2129;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.column-sort__indicator {
+  color: #999;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.single-line-cell {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .template-link {
-  display: grid;
-  gap: 3px;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: #165dff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 400;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  white-space: nowrap;
+}
+
+.table-action {
   padding: 0;
   border: 0;
   background: transparent;
-  color: rgb(var(--primary-6));
+  color: #165dff;
   cursor: pointer;
   font: inherit;
-  text-align: left;
+  white-space: nowrap;
 }
 
-.update-cell small,
+.table-action:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.table-action--danger {
+  color: #f53f3f;
+}
+
 .folder-editor-title span {
   color: var(--color-text-3);
   font-size: 12px;
@@ -1150,8 +1394,7 @@ watch(
 
 @media (max-width: 1100px) {
   .detail-toolbar,
-  .folder-editor-title,
-  .page-header {
+  .folder-editor-title {
     align-items: flex-start;
     flex-direction: column;
   }
