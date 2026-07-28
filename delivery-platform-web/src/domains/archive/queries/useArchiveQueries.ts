@@ -2,17 +2,17 @@ import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 import { useQueries, useQuery } from '@tanstack/vue-query'
 
 import { archiveApi } from '@/domains/archive/api/archive.api'
-import { archiveTemplateApi } from '@/domains/archive/api/archive-template.api'
+import {
+  archiveTemplateApi,
+  type ArchiveTemplateListParams,
+} from '@/domains/archive/api/archive-template.api'
 import { languageApi } from '@/api/language'
 import { projectApi } from '@/domains/project/api/project.api'
 import { queryKeys } from '@/query/keys'
 
 export function useArchiveProjectOptionsQuery(keyword: MaybeRefOrGetter<string> = '') {
   return useQuery({
-    queryKey: computed(() => [
-      ...queryKeys.archive.projectOptions(),
-      toValue(keyword).trim(),
-    ]),
+    queryKey: computed(() => [...queryKeys.archive.projectOptions(), toValue(keyword).trim()]),
     queryFn: () =>
       projectApi.getList({
         page: 1,
@@ -31,14 +31,7 @@ export function useArchiveTreeQuery(projectId: MaybeRefOrGetter<string>) {
   })
 }
 
-export function useArchiveTemplateListQuery(
-  params: MaybeRefOrGetter<{
-    keyword?: string
-    projectType?: string
-    countryCode?: string
-    languageCode?: string
-  }>,
-) {
+export function useArchiveTemplateListQuery(params: MaybeRefOrGetter<ArchiveTemplateListParams>) {
   return useQuery({
     queryKey: computed(() => queryKeys.archiveTemplates.list(toValue(params))),
     queryFn: () => archiveTemplateApi.getList({ ...toValue(params) }),
