@@ -913,6 +913,70 @@ describe('ProjectService', () => {
     expect(result.currentStages).toEqual(['PROCUREMENT', 'CONSTRUCTION']);
   });
 
+  it('records project acceptance atomically through the modal update command', async () => {
+    const acceptedProject = {
+      ...mockProject,
+      status: 'COMPLETED',
+      currentStage: 'EXTERNAL_ACCEPTANCE',
+      currentStages: ['EXTERNAL_ACCEPTANCE'],
+      progressPercent: new Prisma.Decimal(100),
+      actualAcceptanceAt: new Date('2026-12-18T00:00:00.000Z'),
+      revision: 2,
+    };
+    prisma.project.findFirst
+      .mockResolvedValueOnce(mockProject)
+      .mockResolvedValueOnce(acceptedProject);
+    prisma.project.findUniqueOrThrow.mockResolvedValue(acceptedProject);
+
+    await service.update(
+      'project-1',
+      {
+        revision: 1,
+        deliveryStages: ['EXTERNAL_ACCEPTANCE'],
+        progressPercent: 100,
+        expectedAcceptanceAt: '2026-12-18T00:00:00.000Z',
+        actualAcceptanceAt: '2026-12-18T00:00:00.000Z',
+      },
+      sensitiveActor,
+    );
+
+    expect(prisma.project.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          currentStage: 'EXTERNAL_ACCEPTANCE',
+          currentStages: ['EXTERNAL_ACCEPTANCE'],
+          progressPercent: new Prisma.Decimal(100),
+          actualAcceptanceAt: new Date('2026-12-18T00:00:00.000Z'),
+          status: 'COMPLETED',
+        }),
+      }),
+    );
+    expect(prisma.projectProcessRecord.create).toHaveBeenCalledTimes(1);
+    expect(prisma.outboxEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        eventType: 'ProjectAccepted',
+        aggregateId: 'project-1',
+      }),
+    });
+  });
+
+  it('rejects acceptance changes from an actor without progress permission', async () => {
+    prisma.project.findFirst.mockResolvedValue(mockProject);
+
+    await expect(
+      service.update(
+        'project-1',
+        {
+          revision: 1,
+          actualAcceptanceAt: '2026-12-18T00:00:00.000Z',
+        },
+        publicActor,
+      ),
+    ).rejects.toThrow(ForbiddenException);
+
+    expect(prisma.project.updateMany).not.toHaveBeenCalled();
+  });
+
   it('updates, creates and soft-deletes the complete payment plan in the project transaction', async () => {
     const updatedProject = {
       ...mockProject,

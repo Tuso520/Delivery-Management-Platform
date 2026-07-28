@@ -1,9 +1,75 @@
 import { ConflictException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 import type { PrismaService } from '../../../database/prisma.service';
 import { CurrencyService } from '../currency.service';
 
 describe('CurrencyService target rate workflow', () => {
+  it('returns the same latest CNY exchange rate used by project amount conversion', async () => {
+    const currentRate = {
+      fromCurrency: 'VND',
+      toCurrency: 'CNY',
+      rate: new Prisma.Decimal('0.00028100'),
+      rateDate: new Date('2026-07-28T00:00:00.000Z'),
+      source: 'seed',
+    };
+    const prisma = {
+      dictionaryItem: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'currency-vnd',
+            itemValue: 'VND',
+            itemLabel: '越南盾',
+            status: 'Active',
+            createdAt: new Date('2026-01-01T00:00:00.000Z'),
+            updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+          },
+        ]),
+      },
+      currency: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            currencyCode: 'VND',
+            currencySymbol: '₫',
+            decimalPlaces: 2,
+            cnyRate: null,
+            rateDate: null,
+            rateLocked: false,
+            lockedBy: null,
+            lockedAt: null,
+            rateSource: null,
+            updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+          },
+        ]),
+      },
+      exchangeRate: {
+        findMany: jest.fn().mockResolvedValue([currentRate]),
+      },
+    } as unknown as PrismaService;
+    const service = new CurrencyService(prisma);
+
+    const result = await service.findAll();
+
+    expect(prisma.exchangeRate.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          fromCurrency: { in: ['VND'] },
+          toCurrency: 'CNY',
+        }),
+        orderBy: { rateDate: 'desc' },
+        distinct: ['fromCurrency'],
+      }),
+    );
+    expect(result[0]).toEqual(
+      expect.objectContaining({
+        currencyCode: 'VND',
+        cnyRate: currentRate.rate,
+        rateDate: currentRate.rateDate,
+        rateSource: 'seed',
+      }),
+    );
+  });
+
   it('does not lock a currency before a CNY rate exists', async () => {
     const prisma = {
       dictionaryItem: {

@@ -68,7 +68,7 @@ describe('project overview and overlay contract', () => {
     expect(login).toContain('IconEyeInvisible')
   })
 
-  it('uses one Figma-aligned project detail dialog for create, edit and view', () => {
+  it('uses one Figma-aligned shell with distinct form and read-only project detail structures', () => {
     const overview = source('src/domains/project/pages/ProjectOverviewPage.vue')
     const dialog = source('src/domains/project/components/ProjectDetailDialog.vue')
     expect(overview).toContain(
@@ -77,9 +77,12 @@ describe('project overview and overlay contract', () => {
     expect(overview).toContain(':mode="drawerMode"')
     expect(overview).toContain('v-model:visible="projectDialogVisible"')
     expect(dialog).toContain('class="project-detail-dialog"')
-    expect(dialog).toContain(':width="944"')
+    expect(dialog).toContain(':width="1040"')
     expect(dialog).toContain('<h2>项目详情</h2>')
     expect(dialog).toContain("export type ProjectDetailDialogMode = 'create' | 'edit' | 'view'")
+    expect(dialog).toContain('v-else-if="renderView"')
+    expect(dialog).toContain('class="project-detail-view"')
+    expect(dialog).toContain('class="project-detail-form"')
     expect(dialog).toContain('<ProjectPaymentPlan')
     expect(dialog).toContain('paymentPlans: plans')
     expect(dialog).toContain('合同名称')
@@ -98,8 +101,13 @@ describe('project overview and overlay contract', () => {
     expect(dialog).toContain('v-model="formData.deliveryStages"')
     expect(dialog).toContain('multiple')
     expect(dialog).toContain('progressPercent: formData.progressPercent')
+    expect(dialog).toContain('actualAcceptanceAt: canEditAcceptance.value')
     expect(dialog).toContain('paymentPlans: plans')
     expect(dialog).toContain('readonly = computed')
+    expect(dialog).toContain('.filter((item) => item.enabled || item.value === currentValue)')
+    expect(dialog).toContain('disabled: !item.enabled')
+    expect(dialog).toContain('fieldConfig.isFieldRequired')
+    expect(dialog).toContain('项目字段配置加载失败')
     expect(dialog).toContain(':on-before-cancel="beforeCancel"')
     expect(dialog).toContain('baseCurrencyCode')
     expect(overview).toContain("configuredOption('CURRENCY'")

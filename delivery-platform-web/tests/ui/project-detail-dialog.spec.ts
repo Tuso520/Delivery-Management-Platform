@@ -3,10 +3,15 @@ import { resolve } from 'node:path'
 
 const adminUsername = process.env.E2E_ADMIN_USERNAME
 const adminPassword = process.env.E2E_ADMIN_PASSWORD
-const screenshotPath = resolve(
+const screenshotDirectory = resolve(
   process.cwd(),
-  '../.ai-work/project-detail-dialog-1440x900.png',
+  '../.ai-work/project-modal',
 )
+const screenshotPaths = {
+  create: resolve(screenshotDirectory, 'local-create-1440x900.png'),
+  edit: resolve(screenshotDirectory, 'local-edit-1440x900.png'),
+  view: resolve(screenshotDirectory, 'local-view-1440x900.png'),
+}
 
 function requireCredentials(): [string, string] {
   if (!adminUsername || !adminPassword) {
@@ -65,17 +70,33 @@ async function addPayment(
     .last()
   await expect(editor.getByText('添加款项计划', { exact: true })).toBeVisible()
   await formItem(editor, '付款项').locator('input').fill(name)
-  await formItem(editor, '付款金额').locator('input').fill(amount)
+  const paymentDateInput = formItem(editor, '付款日期').locator('input')
+  await paymentDateInput.fill('2026-12-12')
+  const paymentAmountInput = formItem(editor, '付款金额').locator('input')
+  await paymentAmountInput.click({ force: true })
+  await paymentAmountInput.fill(amount)
   await formItem(editor, '付款条件').locator('textarea').fill(condition)
   await editor.getByRole('button', { name: '保存' }).click()
   await expect(editor).toBeHidden()
 }
 
-test('unified project dialog creates, edits and renders a persisted project read-only', async ({
+test('distinct create, edit and view dialogs match the Figma project-detail shell', async ({
   page,
 }) => {
+  const browserErrors: string[] = []
+  const failedResponses: string[] = []
+  page.on('console', (message) => {
+    if (message.type() === 'error') browserErrors.push(message.text())
+  })
+  page.on('pageerror', (error) => browserErrors.push(error.message))
   await page.setViewportSize({ width: 1440, height: 900 })
   await login(page)
+  page.on('response', (response) => {
+    if (response.status() >= 400) {
+      failedResponses.push(`${response.status()} ${response.request().method()} ${response.url()}`)
+    }
+  })
+  browserErrors.length = 0
   await page.goto('/#/projects/create')
 
   const projectDialog = dialog(page)
@@ -84,12 +105,12 @@ test('unified project dialog creates, edits and renders a persisted project read
   await expect(projectDialog.getByRole('button', { name: '保存' })).toBeVisible()
   await expect(projectDialog.getByRole('button', { name: '关闭' })).toHaveCSS(
     'border-radius',
-    '0px',
+    '100px',
   )
-  await expect(projectDialog.getByRole('button', { name: '关闭' })).toHaveCSS('width', '32px')
+  await expect(projectDialog.getByRole('button', { name: '关闭' })).toHaveCSS('width', '54px')
   await expect
     .poll(async () => Math.round((await projectDialog.boundingBox())?.width ?? 0))
-    .toBe(944)
+    .toBe(1040)
 
   const metrics = await projectDialog.evaluate((element) => {
     const shell = element.querySelector<HTMLElement>('.dialog-shell')
@@ -104,11 +125,23 @@ test('unified project dialog creates, edits and renders a persisted project read
     }
   })
   expect(metrics).toEqual({
-    width: 944,
-    height: 608,
+    width: 1040,
+    height: 760,
     headerHeight: 48,
     bodyOverflowY: 'auto',
   })
+  await expect(projectDialog.locator('.project-detail-form')).toHaveCount(1)
+  await expect(projectDialog.locator('.project-detail-view')).toHaveCount(0)
+  await expect(projectDialog.locator('.basic-section .form-row')).toHaveCount(7)
+  for (const label of [
+    '合同名称', '项目简称', '项目编号', '客户名称', '国家', '城市',
+    '客户类型', '合同类型', '产品类型', '项目关键词', '合同币种', '合同金额', '折算',
+    '档案模版', '合同编号', '签约时间', '开始时间', '验收时间', '销售负责人',
+    '项目经理', '电气工程师', '软件工程师', '当前阶段', '项目进度（%）',
+    '确收金额', '是否完成验收',
+  ]) {
+    await expect(formItem(projectDialog, label)).toHaveCount(1)
+  }
 
   const contractName = `项目详情弹窗验收-${Date.now()}`
   await formItem(projectDialog, '合同名称').locator('input').fill(contractName)
@@ -146,6 +179,7 @@ test('unified project dialog creates, edits and renders a persisted project read
   await expect(projectDialog.getByText('44.49%', { exact: true })).toBeVisible()
   await expect(projectDialog.getByText('55.51%', { exact: true })).toBeVisible()
   await expect(projectDialog.locator('.ratio-warning')).toHaveCount(0)
+  await projectDialog.screenshot({ path: screenshotPaths.create, animations: 'disabled' })
 
   const createResponsePromise = page.waitForResponse(
     (response) =>
@@ -172,6 +206,8 @@ test('unified project dialog creates, edits and renders a persisted project read
   await projectDialog
     .locator('.payment-table-scroll tbody tr')
     .filter({ hasText: '尾款' })
+    .locator('td')
+    .first()
     .locator('.arco-radio')
     .click()
   await projectDialog.getByRole('button', { name: '删除' }).click()
@@ -184,7 +220,22 @@ test('unified project dialog creates, edits and renders a persisted project read
   await expect(projectDialog.locator('.payment-table-scroll tbody tr')).toHaveCount(1)
   await expect(projectDialog.getByText('首付款', { exact: true })).toBeVisible()
   await addPayment(page, '验收尾款', '5000000000000000.00', '最终验收完成后支付')
+  const firstPaymentRow = projectDialog
+    .locator('.payment-table-scroll tbody tr')
+    .filter({ hasText: '首付款' })
+  await firstPaymentRow.locator('td').nth(3).locator('.arco-radio').click()
+  await expect(formItem(projectDialog, '确收金额').locator('input')).not.toHaveValue('0.00')
   await formItem(projectDialog, '项目简称').locator('input').fill('弹窗验收-已编辑')
+  await formItem(projectDialog, '验收时间').locator('input').fill('2026-12-12')
+  await formItem(projectDialog, '是否完成验收').locator('.arco-select-view').click()
+  await page
+    .locator('.arco-select-option:visible')
+    .filter({ hasText: /^是$/u })
+    .click()
+  await projectDialog.locator('.dialog-body').evaluate((element) => {
+    element.scrollTop = 0
+  })
+  await projectDialog.screenshot({ path: screenshotPaths.edit, animations: 'disabled' })
 
   const updateResponsePromise = page.waitForResponse(
     (response) =>
@@ -192,20 +243,44 @@ test('unified project dialog creates, edits and renders a persisted project read
       response.request().method() === 'PATCH',
   )
   await projectDialog.getByRole('button', { name: '保存' }).click()
-  expect((await updateResponsePromise).status()).toBe(200)
+  const updateResponse = await updateResponsePromise
+  expect(updateResponse.status()).toBe(200)
+  const updateEnvelope = (await updateResponse.json()) as {
+    data: { actualAcceptanceAt: string | null }
+  }
+  expect(updateEnvelope.data.actualAcceptanceAt?.slice(0, 10)).toBe('2026-12-12')
   await expect(projectDialog).toBeHidden()
 
   await page.goto(`/#/projects/${projectId}`)
   await expect(projectDialog).toBeVisible({ timeout: 60_000 })
   await expect(projectDialog.getByRole('button', { name: '保存' })).toHaveCount(0)
   await expect(projectDialog.getByRole('button', { name: /添加|编辑|删除/u })).toHaveCount(0)
-  await expect(formItem(projectDialog, '项目简称').locator('input')).toHaveValue('弹窗验收-已编辑')
+  await expect(projectDialog.locator('.project-detail-form')).toHaveCount(0)
+  await expect(projectDialog.locator('.project-detail-view')).toHaveCount(1)
+  await expect(
+    projectDialog.locator('.view-field').filter({ hasText: /项目简称\s*弹窗验收-已编辑/u }),
+  ).toHaveCount(1)
   await expect(projectDialog.getByText('验收尾款', { exact: true })).toBeVisible()
+  await expect(projectDialog.getByText('2026-12-12', { exact: true }).first()).toBeVisible()
+  await expect(
+    projectDialog.locator('.view-field').filter({ hasText: /是否完成验收\s*是/u }),
+  ).toHaveCount(1)
+  const confirmedViewField = projectDialog
+    .locator('.view-field')
+    .filter({ hasText: '确收金额（人民币）' })
+  await expect(confirmedViewField).toHaveCount(1)
+  expect(await confirmedViewField.textContent()).not.toContain('0.00')
+  await expect(projectDialog.locator('.basic-section input')).toHaveCount(0)
   await expect(projectDialog.locator('input:not([disabled])')).toHaveCount(0)
-  await expect(projectDialog.locator('.payment-table-scroll .arco-checkbox:not(.arco-checkbox-disabled)'))
+  await expect(projectDialog.locator('.payment-table-scroll .arco-radio:not(.arco-radio-disabled)'))
     .toHaveCount(0)
+  await expect(page.locator('.arco-message')).toHaveCount(0, { timeout: 6_000 })
 
-  await projectDialog.screenshot({ path: screenshotPath, animations: 'disabled' })
+  await projectDialog.screenshot({ path: screenshotPaths.view, animations: 'disabled' })
+  expect({ browserErrors, failedResponses }).toEqual({
+    browserErrors: [],
+    failedResponses: [],
+  })
 })
 
 test('dirty edit requires confirmation and view mode remains safe at a smaller viewport', async ({
