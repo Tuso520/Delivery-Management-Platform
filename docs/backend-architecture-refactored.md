@@ -212,8 +212,6 @@ archive:view
 archive:upload
 archive:replace
 archive:version:view
-archive:item:archive
-archive:template:sync
 ```
 
 ### 文件
@@ -950,29 +948,13 @@ changeDescription
 - `MAJOR` 递增主版本。
 - 审核失败版本不成为当前正式版本。
 
-## 7.5 文件删除与档案项归档
+## 7.5 文件删除
 
 ```http
 POST /files/:logicalFileId/archive
-POST /projects/:projectId/archive-items/:itemId/archive
-POST /projects/:projectId/archive-items/:itemId/restore
 ```
 
-项目档案页面“删除”只调用统一文件归档接口：软归档 `LogicalFile` 和 `ProjectArchiveFile` 关联，保留全部 `FileVersion`、MinIO 对象与审计记录。档案项归档/恢复是受控后台能力，不是 Figma `43:317` 的页面入口；不能直接物理删除有文件历史的档案项。
-
-## 7.6 模版差异同步
-
-```http
-GET  /projects/:projectId/archive-template-diff
-POST /projects/:projectId/archive-template-sync
-```
-
-同步原则：
-
-- 默认只新增文件夹和文件项。
-- 不自动删除项目已有档案项。
-- 名称、必填、审核规则变更逐项确认。
-- 记录同步来源版本和变更明细。
+项目档案页面“删除”只调用统一文件归档接口：软归档 `LogicalFile` 和 `ProjectArchiveFile` 关联，保留全部 `FileVersion`、MinIO 对象与审计记录。新版页面不提供档案项归档/恢复或模板差异同步入口，相应旧路由不再注册。
 
 ---
 
@@ -2211,12 +2193,7 @@ DELETE /projects/:id/permanent
 
 ```text
 /projects/:id/archive-tree
-/projects/:id/archive-template-diff
-/projects/:id/archive-template-sync
-/projects/:id/archive-folders/:folderId/items
 /projects/:id/archive-items/:itemId/files
-/projects/:id/archive-items/:itemId/archive
-/projects/:id/archive-items/:itemId/restore
 ```
 
 ## 档案模版

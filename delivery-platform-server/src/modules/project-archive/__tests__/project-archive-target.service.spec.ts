@@ -1,5 +1,3 @@
-import { NotFoundException } from '@nestjs/common';
-
 import type { PrismaService } from '../../../database/prisma.service';
 import type { ProjectAccessService } from '../../project/project-access.service';
 import { ProjectArchiveTargetService } from '../project-archive-target.service';
@@ -8,7 +6,7 @@ describe('ProjectArchiveTargetService', () => {
   const actor = {
     sub: 'user-1',
     roles: ['PROJECT_MANAGER'],
-    permissions: ['archive:view', 'archive:template:sync', 'archive:item:archive'],
+    permissions: ['archive:view'],
   };
 
   let service: ProjectArchiveTargetService;
@@ -115,145 +113,11 @@ describe('ProjectArchiveTargetService', () => {
     expect(result.folders[0].items[0]).not.toHaveProperty('canRestore');
   });
 
-  it('returns 404 for an archive item that belongs to another project', async () => {
-    prisma.project.findFirst.mockResolvedValue({ id: 'project-1' });
-    prisma.projectArchiveEntry.findFirst.mockResolvedValue(null);
-
-    await expect(service.archiveItem('project-1', 'other-project-item', {}, actor)).rejects.toThrow(
-      NotFoundException,
-    );
-    expect(prisma.projectArchiveEntry.findFirst).toHaveBeenCalledWith({
-      where: { id: 'other-project-item', projectId: 'project-1' },
-    });
-    expect(prisma.projectArchiveEntry.update).not.toHaveBeenCalled();
+  it('does not expose commands retired by Figma 43:317', () => {
+    expect(service).not.toHaveProperty('getTemplateDiff');
+    expect(service).not.toHaveProperty('syncTemplateAdditions');
+    expect(service).not.toHaveProperty('archiveItem');
+    expect(service).not.toHaveProperty('restoreItem');
   });
 
-  it('syncs only missing additions and never deletes existing project entries', async () => {
-    prisma.project.findFirst.mockResolvedValue({
-      id: 'project-1',
-      archiveTemplateId: 'template-1',
-      archiveTemplateVersionId: 'version-1',
-      archiveFolders: [
-        {
-          id: 'project-folder-a',
-          sourceStableKey: 'folder-a',
-          items: [{ sourceStableKey: 'item-existing' }, { sourceStableKey: 'item-project-only' }],
-        },
-      ],
-      archiveTemplate: {
-        currentPublishedVersion: {
-          id: 'version-2',
-          versionNo: 'V2.0',
-          status: 'PUBLISHED',
-          folders: [
-            {
-              id: 'template-folder-a',
-              stableKey: 'folder-a',
-              name: '文件夹A',
-              description: null,
-              sortOrder: 10,
-              items: [
-                {
-                  id: 'template-item-existing',
-                  stableKey: 'item-existing',
-                  name: '已有项',
-                  description: null,
-                  required: true,
-                  reviewRequired: false,
-                  approvalTemplateId: null,
-                  ownerRoleId: null,
-                  allowMultipleFiles: false,
-                  allowedExtensions: null,
-                  maxFileSize: null,
-                  namingRule: null,
-                  sortOrder: 10,
-                },
-                {
-                  id: 'template-item-new',
-                  stableKey: 'item-new',
-                  name: '新增项',
-                  description: null,
-                  required: true,
-                  reviewRequired: false,
-                  approvalTemplateId: null,
-                  ownerRoleId: null,
-                  allowMultipleFiles: false,
-                  allowedExtensions: null,
-                  maxFileSize: null,
-                  namingRule: null,
-                  sortOrder: 20,
-                },
-              ],
-            },
-            {
-              id: 'template-folder-b',
-              stableKey: 'folder-b',
-              name: '文件夹B',
-              description: null,
-              sortOrder: 20,
-              items: [
-                {
-                  id: 'template-item-b',
-                  stableKey: 'item-b',
-                  name: '文件项B',
-                  description: null,
-                  required: false,
-                  reviewRequired: false,
-                  approvalTemplateId: null,
-                  ownerRoleId: null,
-                  allowMultipleFiles: false,
-                  allowedExtensions: null,
-                  maxFileSize: null,
-                  namingRule: null,
-                  sortOrder: 10,
-                },
-              ],
-            },
-          ],
-        },
-      },
-    });
-    prisma.projectArchiveFolder.create.mockResolvedValue({ id: 'project-folder-b' });
-    jest.spyOn(service, 'getTemplateDiff').mockResolvedValue({
-      sourceVersion: { id: 'version-1', version: 'V1.0' },
-      latestVersion: null,
-      hasDiff: false,
-      canSync: false,
-      syncMode: 'ADD_ONLY',
-      requiresMigration: false,
-      reason: 'test',
-      additions: { folders: [], items: [] },
-      changes: { folders: [], items: [] },
-      projectOnly: { folders: [], items: [] },
-    });
-
-    const result = await service.syncTemplateAdditions(
-      'project-1',
-      { confirmAdditions: true },
-      actor,
-    );
-
-    expect(prisma.projectArchiveFolder.create).toHaveBeenCalledTimes(1);
-    expect(prisma.projectArchiveFolder.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        sourceStableKey: 'folder-b',
-        sourceTemplateFolderId: 'template-folder-b',
-      }),
-      select: { id: true },
-    });
-    const createdEntries = prisma.projectArchiveEntry.createMany.mock.calls
-      .flatMap(([call]) => call.data)
-      .map((entry: { sourceStableKey: string }) => entry.sourceStableKey);
-    expect(createdEntries).toEqual(['item-new', 'item-b']);
-    expect(createdEntries).not.toContain('item-existing');
-    expect(createdEntries).not.toContain('item-project-only');
-    expect(prisma.projectArchiveEntry).not.toHaveProperty('deleteMany');
-    expect(result).toEqual(
-      expect.objectContaining({
-        syncMode: 'ADD_ONLY',
-        addedFolderKeys: ['folder-b'],
-        addedItemKeys: ['item-new', 'item-b'],
-      }),
-    );
-  });
 });

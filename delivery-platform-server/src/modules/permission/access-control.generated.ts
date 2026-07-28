@@ -54,8 +54,6 @@ export const PERMISSION_CODES = [
   "project:view_acceptance",
   "archive:replace",
   "archive:version:view",
-  "archive:item:archive",
-  "archive:template:sync",
   "file:preview_pending",
   "file:preview_history",
   "file:archive",

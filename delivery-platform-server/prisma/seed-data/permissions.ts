@@ -285,18 +285,6 @@ export const permissionDefs = [
     action: 'version_view',
   },
   {
-    permissionCode: 'archive:item:archive',
-    permissionName: '归档档案项',
-    resource: 'archive',
-    action: 'item_archive',
-  },
-  {
-    permissionCode: 'archive:template:sync',
-    permissionName: '同步档案模板差异',
-    resource: 'archive',
-    action: 'template_sync',
-  },
-  {
     permissionCode: 'file:preview_pending',
     permissionName: '预览审核中文件',
     resource: 'file',
