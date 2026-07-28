@@ -103,15 +103,25 @@ describe('knowledge target API contract', () => {
   beforeEach(() => Object.values(mocks).forEach((mock) => mock.mockReset()))
 
   it('keeps the target item endpoints separate from legacy articles', () => {
-    const params = { page: 1, pageSize: 20, keyword: '调试' }
+    const params = {
+      page: 1,
+      pageSize: 20,
+      keyword: '调试',
+      sortBy: 'updatedAt' as const,
+      sortOrder: 'desc' as const,
+    }
 
     knowledgeApi.getSummary()
+    knowledgeApi.getCategoryCounts(' 调试 ')
     knowledgeApi.getList(params)
     knowledgeApi.getById('knowledge-1')
 
     expect(mocks.get).toHaveBeenNthCalledWith(1, '/knowledge/summary')
-    expect(mocks.get).toHaveBeenNthCalledWith(2, '/knowledge', { params })
-    expect(mocks.get).toHaveBeenNthCalledWith(3, '/knowledge/knowledge-1')
+    expect(mocks.get).toHaveBeenNthCalledWith(2, '/knowledge/category-counts', {
+      params: { keyword: '调试' },
+    })
+    expect(mocks.get).toHaveBeenNthCalledWith(3, '/knowledge', { params })
+    expect(mocks.get).toHaveBeenNthCalledWith(4, '/knowledge/knowledge-1')
   })
 
   it('omits empty optional filters before validating the list request', () => {
@@ -132,6 +142,8 @@ describe('knowledge target API contract', () => {
         categoryId: undefined,
         contentType: undefined,
         status: undefined,
+        sortBy: undefined,
+        sortOrder: undefined,
       },
     })
   })

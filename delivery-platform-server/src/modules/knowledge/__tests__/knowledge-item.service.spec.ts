@@ -25,6 +25,138 @@ describe('KnowledgeItemService', () => {
     jest.clearAllMocks();
   });
 
+  it('returns real visible totals, views and downloads for the Figma metrics', async () => {
+    const operationLogCount = jest.fn().mockResolvedValueOnce(9).mockResolvedValueOnce(4);
+    const prisma = {
+      knowledgeItem: {
+        groupBy: jest.fn().mockResolvedValue([
+          { status: 'DRAFT', _count: { _all: 2 } },
+          { status: 'PUBLISHED', _count: { _all: 5 } },
+          { status: 'ARCHIVED', _count: { _all: 1 } },
+        ]),
+        findMany: jest.fn().mockResolvedValue([{ id: 'knowledge-1' }, { id: 'knowledge-2' }]),
+      },
+      logicalFile: {
+        findMany: jest.fn().mockResolvedValue([{ id: 'logical-1' }]),
+      },
+      operationLog: { count: operationLogCount },
+    } as unknown as PrismaService;
+    const service = new KnowledgeItemService(prisma, reviewConfiguration, reviewTasks);
+
+    await expect(
+      service.getSummary({
+        sub: 'manager-1',
+        permissions: ['knowledge:archive'],
+      }),
+    ).resolves.toEqual({
+      total: 8,
+      viewCount: 9,
+      downloadCount: 4,
+      draft: 2,
+      inReview: 0,
+      rejected: 0,
+      published: 5,
+      archived: 1,
+    });
+    expect(operationLogCount).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          result: 'success',
+          OR: expect.arrayContaining([
+            expect.objectContaining({
+              module: 'knowledge',
+              action: 'view',
+              targetId: { in: ['knowledge-1', 'knowledge-2'] },
+            }),
+            expect.objectContaining({
+              module: 'file',
+              action: 'preview',
+              targetId: { in: ['logical-1'] },
+            }),
+          ]),
+        }),
+      }),
+    );
+    expect(operationLogCount).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          module: 'file',
+          action: 'download',
+          targetId: { in: ['logical-1'] },
+        }),
+      }),
+    );
+  });
+
+  it('counts visible non-archived records by stable knowledge-category id', async () => {
+    const groupBy = jest.fn().mockResolvedValue([
+      { categoryId: 'category-1', _count: { _all: 3 } },
+      { categoryId: 'category-2', _count: { _all: 1 } },
+    ]);
+    const prisma = {
+      knowledgeItem: { groupBy },
+    } as unknown as PrismaService;
+    const service = new KnowledgeItemService(prisma, reviewConfiguration, reviewTasks);
+
+    await expect(
+      service.getCategoryCounts(
+        { keyword: '调试' },
+        { sub: 'manager-1', permissions: ['knowledge:archive'] },
+      ),
+    ).resolves.toEqual([
+      { categoryId: 'category-1', count: 3 },
+      { categoryId: 'category-2', count: 1 },
+    ]);
+    expect(groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        by: ['categoryId'],
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            expect.objectContaining({
+              archivedAt: null,
+              OR: expect.arrayContaining([
+                { title: { contains: '调试' } },
+                { summary: { contains: '调试' } },
+              ]),
+            }),
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('applies the requested server-side sort and pagination to the real list query', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const prisma = {
+      knowledgeItem: {
+        count: jest.fn().mockResolvedValue(0),
+        findMany,
+      },
+    } as unknown as PrismaService;
+    const service = new KnowledgeItemService(prisma, reviewConfiguration, reviewTasks);
+
+    await expect(
+      service.findAll(
+        {
+          page: 2,
+          pageSize: 5,
+          sortBy: 'effectiveAt',
+          sortOrder: 'asc',
+        },
+        { sub: 'manager-1', permissions: ['knowledge:archive'] },
+      ),
+    ).resolves.toEqual({ items: [], page: 2, pageSize: 5, total: 0 });
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skip: 5,
+        take: 5,
+        orderBy: [{ effectiveAt: 'asc' }, { id: 'asc' }],
+      }),
+    );
+  });
+
   it('enforces mutually exclusive FILE, MARKDOWN and LINK primary content', async () => {
     const prisma = {
       knowledgeCategory: {
@@ -637,6 +769,7 @@ describe('KnowledgeItemService', () => {
         ),
       },
       knowledgeVersion: { findMany: versionFindMany },
+      operationLog: { create: jest.fn().mockResolvedValue({ id: 'view-log-1' }) },
     } as unknown as PrismaService;
     const service = new KnowledgeItemService(prisma, reviewConfiguration, reviewTasks);
 
@@ -721,6 +854,7 @@ describe('KnowledgeItemService', () => {
         }),
       },
       knowledgeVersion: { findMany: versionFindMany },
+      operationLog: { create: jest.fn().mockResolvedValue({ id: 'view-log-1' }) },
     } as unknown as PrismaService;
     const service = new KnowledgeItemService(prisma, reviewConfiguration, reviewTasks);
 

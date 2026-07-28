@@ -117,7 +117,7 @@ describe('standard and knowledge target flows', () => {
     expect(source).toContain("name: 'KnowledgeDetail'")
     expect(source).toContain("kind: 'create'")
     expect(source).toContain("kind: 'update'")
-    expect(source).toContain("['DRAFT', 'REJECTED'].includes(detail.value.status)")
+    expect(source).toContain("['DRAFT', 'REJECTED'].includes(source.status)")
     expect(api).toContain('export type KnowledgePrimaryContentPayload')
     expect(api).toContain('supportingFileVersionIds: string[]')
     expect(api).toContain('UpdateKnowledgeVersionPayload')
@@ -135,7 +135,7 @@ describe('standard and knowledge target flows', () => {
     expect(knowledge).not.toContain("query: { mode: 'view', id:")
   })
 
-  it('uses the Figma standard-library frame without changing the knowledge-library frame', () => {
+  it('uses the dedicated Figma frames for both standard and knowledge libraries', () => {
     const standard = readSource('src/views/standard/index.vue')
     const knowledge = readSource('src/domains/knowledge/pages/KnowledgePage.vue')
 
@@ -152,9 +152,18 @@ describe('standard and knowledge target flows', () => {
     expect(standard).toContain('height: 44px')
     expect(standard).not.toContain('<PageToolbar')
     expect(standard).not.toContain('<BusinessTable')
-    expect(knowledge).toContain(
-      '<PageContainer class="domain-page" gap="compact" :scrollable="false">',
-    )
+    expect(knowledge).toContain('<section class="knowledge-library">')
+    expect(knowledge).toContain('<section class="knowledge-metrics"')
+    expect(knowledge).toContain('<section class="knowledge-toolbar"')
+    expect(knowledge).toContain('<aside class="knowledge-categories"')
+    expect(knowledge).toContain('<table class="knowledge-table">')
+    expect(knowledge).toContain('width: 365')
+    expect(knowledge).toContain('width: 90')
+    expect(knowledge).toContain('width: 130')
+    expect(knowledge).toContain('width: 170')
+    expect(knowledge).toContain('width: 182')
+    expect(knowledge).toContain('height: 44px')
+    expect(knowledge).not.toContain('<PageToolbar')
     expect(knowledge).toContain('<BusinessTable')
   })
 
