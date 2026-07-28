@@ -311,17 +311,14 @@ test('administrator can create, edit, inspect, progress, archive and restore a p
   await expect(detailDialog.getByRole('heading', { name: '项目详情' })).toBeVisible()
   await expect(
     detailDialog
-      .locator('.arco-form-item')
+      .locator('.view-field')
       .filter({ hasText: /^\s*项目编号/u })
       .first()
-      .locator('input'),
-  ).toHaveValue(progressed.data.projectCode)
+      .locator('div'),
+  ).toHaveText(progressed.data.projectCode)
   await expect
     .poll(async () => (await detailDialog.boundingBox())?.width ?? Number.POSITIVE_INFINITY)
-    .toBeGreaterThanOrEqual(942)
-  await expect
-    .poll(async () => (await detailDialog.boundingBox())?.width ?? 0)
-    .toBeLessThanOrEqual(946)
+    .toBe(1040)
   const detailBox = await detailDialog.boundingBox()
   const viewport = page.viewportSize()
   expect(detailBox).not.toBeNull()
