@@ -195,6 +195,11 @@ export class UpdateProjectDto {
   @IsDateString()
   expectedAcceptanceAt?: string | null;
 
+  @ApiPropertyOptional({ description: '实际验收时间；仅具备进度更新权限时可写入' })
+  @IsOptional()
+  @IsDateString()
+  actualAcceptanceAt?: string | null;
+
   @ApiPropertyOptional({ description: '随项目统一保存的完整款项计划集合', type: [ProjectPaymentPlanWriteDto] })
   @IsOptional()
   @IsArray()

@@ -763,7 +763,7 @@ EXPECTED：未验收时显示预计验收时间
 NONE：显示 —
 ```
 
-项目创建时可写入预计验收时间。创建完成后，`expectedAcceptanceAt` 和 `actualAcceptanceAt` 只通过 `PATCH /projects/:id/progress` 在同一事务中维护；普通项目编辑 DTO 不接收验收字段。
+项目创建时可写入预计验收时间。创建完成后，独立进度流程可通过 `PATCH /projects/:id/progress` 维护验收时间；项目详情弹窗的统一保存可通过 `PATCH /projects/:id` 同时提交进度、预计验收时间和实际验收时间。两条入口均执行 `project:progress:update` 最终权限校验、日期顺序校验、CAS 版本校验和 `ProjectAccepted` 领域事件写入；已验收项目不允许通过普通编辑撤销验收。
 
 ---
 

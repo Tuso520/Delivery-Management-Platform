@@ -731,14 +731,21 @@ export class ProjectService {
     this.assertProjectDateOrder(
       dto.contractSignedAt ?? project.contractSignedAt,
       dto.startDate ?? project.startDate,
-      dto.expectedAcceptanceAt ?? project.expectedAcceptanceAt,
+      dto.actualAcceptanceAt ??
+        dto.expectedAcceptanceAt ??
+        project.actualAcceptanceAt ??
+        project.expectedAcceptanceAt,
     );
     if (
       dto.deliveryStages !== undefined ||
       dto.progressPercent !== undefined ||
-      dto.expectedAcceptanceAt !== undefined
+      dto.expectedAcceptanceAt !== undefined ||
+      dto.actualAcceptanceAt !== undefined
     ) {
       this.assertProgressPermission(actor);
+    }
+    if (project.actualAcceptanceAt && dto.actualAcceptanceAt === null) {
+      throw new BadRequestException('已完成验收的项目不允许撤销验收');
     }
     await this.projectConfiguration.validateUpdate(dto, {
       customerType: project.customerType ?? undefined,
@@ -848,6 +855,17 @@ export class ProjectService {
         ? new Date(dto.expectedAcceptanceAt)
         : null;
     }
+    const actualAcceptanceAt =
+      dto.actualAcceptanceAt === undefined
+        ? undefined
+        : dto.actualAcceptanceAt
+          ? new Date(dto.actualAcceptanceAt)
+          : null;
+    const becameAccepted = Boolean(actualAcceptanceAt && !project.actualAcceptanceAt);
+    if (actualAcceptanceAt !== undefined) {
+      updateData.actualAcceptanceAt = actualAcceptanceAt;
+      if (actualAcceptanceAt) updateData.status = 'COMPLETED';
+    }
     updateData.revision = { increment: 1 };
 
     await this.prisma.$transaction(async (tx) => {
@@ -866,7 +884,8 @@ export class ProjectService {
       if (
         dto.deliveryStages !== undefined ||
         dto.progressPercent !== undefined ||
-        dto.expectedAcceptanceAt !== undefined
+        dto.expectedAcceptanceAt !== undefined ||
+        dto.actualAcceptanceAt !== undefined
       ) {
         await tx.projectProcessRecord.create({
           data: {
@@ -877,6 +896,20 @@ export class ProjectService {
             recordDate: new Date(),
             description: `进度更新为 ${dto.progressPercent ?? project.progressPercent?.toNumber() ?? 0}%`,
             createdBy: userId,
+          },
+        });
+      }
+      if (becameAccepted && actualAcceptanceAt) {
+        await enqueueDomainEvent(tx, {
+          eventType: 'ProjectAccepted',
+          aggregateType: 'project',
+          aggregateId: id,
+          deduplicationKey: `ProjectAccepted:${id}:${actualAcceptanceAt.toISOString()}`,
+          payload: {
+            projectId: id,
+            actualAcceptanceAt: actualAcceptanceAt.toISOString(),
+            acceptedBy: userId,
+            revision: dto.revision + 1,
           },
         });
       }

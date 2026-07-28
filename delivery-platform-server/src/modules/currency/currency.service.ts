@@ -32,9 +32,22 @@ export class CurrencyService {
     const metadata = await this.prisma.currency.findMany({
       where: { currencyCode: { in: options.map((option) => option.itemValue) } },
     });
+    const currentCnyRates = await this.prisma.exchangeRate.findMany({
+      where: {
+        fromCurrency: { in: options.map((option) => option.itemValue) },
+        toCurrency: 'CNY',
+        rateDate: { lte: new Date() },
+      },
+      orderBy: { rateDate: 'desc' },
+      distinct: ['fromCurrency'],
+    });
     const metadataByCode = new Map(metadata.map((currency) => [currency.currencyCode, currency]));
+    const cnyRateByCode = new Map(
+      currentCnyRates.map((rate) => [rate.fromCurrency, rate]),
+    );
     return options.map((option) => {
       const currency = metadataByCode.get(option.itemValue);
+      const currentCnyRate = cnyRateByCode.get(option.itemValue);
       return {
         id: option.id,
         currencyCode: option.itemValue,
@@ -42,12 +55,18 @@ export class CurrencyService {
         currencySymbol: currency?.currencySymbol ?? null,
         decimalPlaces: currency?.decimalPlaces ?? 2,
         status: option.status,
-        cnyRate: currency?.cnyRate ?? null,
-        rateDate: currency?.rateDate ?? null,
+        cnyRate:
+          currency?.cnyRate ??
+          currentCnyRate?.rate ??
+          (option.itemValue === 'CNY' ? new Prisma.Decimal(1) : null),
+        rateDate: currency?.rateDate ?? currentCnyRate?.rateDate ?? null,
         rateLocked: currency?.rateLocked ?? false,
         lockedBy: currency?.lockedBy ?? null,
         lockedAt: currency?.lockedAt ?? null,
-        rateSource: currency?.rateSource ?? null,
+        rateSource:
+          currency?.rateSource ??
+          currentCnyRate?.source ??
+          (option.itemValue === 'CNY' ? 'identity' : null),
         createdAt: option.createdAt,
         updatedAt: currency?.updatedAt ?? option.updatedAt,
       };
