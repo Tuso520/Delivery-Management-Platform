@@ -6,6 +6,20 @@ import { v5 as uuidv5 } from 'uuid';
 
 const TARGET_SEED_NAMESPACE = 'a34a65f4-287f-4d0c-8bda-2960aa8e31de';
 const publishedAt = new Date('2026-07-11T00:00:00.000Z');
+const categoryValueByModuleId: Readonly<Record<string, string>> = {
+  'project-manager': 'JOB_RESPONSIBILITY_CAPABILITY',
+  'electrical-engineer': 'ELECTRICAL_AUTOMATION',
+  'software-engineer': 'SOFTWARE_PLATFORM',
+  'operations-management': 'OPERATIONS_REMOTE_SUPPORT',
+  'general-requirements': 'TECHNICAL_DOCUMENT_DELIVERABLE',
+  'technical-standard': 'PROJECT_MANAGEMENT_STANDARD',
+  'debug-management': 'COMMISSIONING_ACCEPTANCE',
+  'safety-civilized-construction': 'CONSTRUCTION_SAFETY',
+  'customer-management': 'PROJECT_MANAGEMENT_STANDARD',
+  'cross-cultural-communication': 'OVERSEAS_DELIVERY_SUPPORT',
+  'logistics-management': 'TECHNICAL_RESOURCE_SUPPLY_CHAIN',
+  'supplier-management': 'TECHNICAL_RESOURCE_SUPPLY_CHAIN',
+};
 
 interface KnowledgeCatalogFile {
   name: string;
@@ -108,72 +122,44 @@ export async function seedTargetKnowledge(prisma: PrismaClient): Promise<void> {
       if (!field) {
         throw new Error('目标知识种子依赖 KNOWLEDGE_CATEGORY 字段配置');
       }
-      for (const [moduleIndex, module] of catalog.modules.entries()) {
-        const existingCategory = await tx.knowledgeCategory.findFirst({
-          where: { name: module.name, parentId: null },
-          select: { id: true, fieldOptionId: true },
-        });
-        const categoryId =
-          existingCategory?.id ?? uuidv5(`knowledge-category:${module.id}`, TARGET_SEED_NAMESPACE);
-        const existingFieldOption = existingCategory?.fieldOptionId
-          ? await tx.dictionaryItem.findUnique({
-              where: { id: existingCategory.fieldOptionId },
-              select: { id: true },
-            })
-          : await tx.dictionaryItem.findFirst({
-              where: {
-                categoryId: field.id,
-                itemLabel: module.name,
-                deletedAt: null,
-              },
-              select: { id: true },
-            });
-        const fieldOptionId =
-          existingFieldOption?.id ??
-          uuidv5(`knowledge-category-option:${module.id}`, TARGET_SEED_NAMESPACE);
-        await tx.dictionaryItem.upsert({
-          where: { id: fieldOptionId },
-          create: {
-            id: fieldOptionId,
-            categoryId: field.id,
-            itemValue: `LEGACY_${module.id.toUpperCase().replaceAll('-', '_')}`,
-            itemLabel: module.name,
-            itemCode: `LEGACY_${module.id.toUpperCase().replaceAll('-', '_')}`,
-            description: module.description,
-            sortOrder: 1000 + (moduleIndex + 1) * 10,
-            status: 'Inactive',
-            isSystemDefault: false,
-          },
-          update: {},
-        });
-        await tx.knowledgeCategory.upsert({
-          where: { id: categoryId },
-          create: {
-            id: categoryId,
-            name: module.name,
-            description: module.description,
-            fieldOptionId,
-            sortOrder: (moduleIndex + 1) * 10,
-            status: 'Active',
-          },
-          update: {
-            fieldOptionId,
-          },
-        });
+      const configuredCategories = await tx.dictionaryItem.findMany({
+        where: {
+          categoryId: field.id,
+          status: 'Active',
+          deletedAt: null,
+        },
+        select: { id: true, itemValue: true },
+      });
+      const configuredCategoryByValue = new Map(
+        configuredCategories.map((option) => [option.itemValue, option.id] as const),
+      );
+      for (const module of catalog.modules) {
+        const categoryValue = categoryValueByModuleId[module.id];
+        const categoryId = categoryValue
+          ? configuredCategoryByValue.get(categoryValue)
+          : undefined;
+        if (!categoryId) {
+          throw new Error(`知识目录 ${module.id} 缺少启用的字段配置分类`);
+        }
 
         for (const content of module.contents) {
           const deterministicItemId = uuidv5(
             `knowledge-item:${module.id}:${content.id}`,
             TARGET_SEED_NAMESPACE,
           );
-          const existingItem = await tx.knowledgeItem.findFirst({
-            where: {
-              categoryId,
-              title: content.title,
-              archivedAt: null,
-            },
-            select: { id: true },
-          });
+          const existingItem =
+            (await tx.knowledgeItem.findUnique({
+              where: { id: deterministicItemId },
+              select: { id: true },
+            })) ??
+            (await tx.knowledgeItem.findFirst({
+              where: {
+                categoryId,
+                title: content.title,
+                archivedAt: null,
+              },
+              select: { id: true },
+            }));
           const itemId = existingItem?.id ?? deterministicItemId;
           const item = await tx.knowledgeItem.upsert({
             where: { id: itemId },

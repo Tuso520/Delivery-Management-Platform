@@ -18,6 +18,7 @@ import { SystemConfigService } from '../system-config/system-config.service';
 import {
   CreateKnowledgeItemDto,
   CreateKnowledgeVersionDto,
+  QueryKnowledgeCategoryCountsDto,
   QueryKnowledgeItemDto,
   SubmitKnowledgeReviewDto,
   UpdateKnowledgeItemDto,
@@ -241,16 +242,15 @@ export class KnowledgeItemService {
 
   async getSummary(actor: KnowledgeActor) {
     const visibility = await this.buildVisibilityWhere(actor);
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const [groups, thisMonthNew] = await Promise.all([
+    const [groups, visibleItems] = await Promise.all([
       this.prisma.knowledgeItem.groupBy({
         by: ['status'],
         where: visibility,
         _count: { _all: true },
       }),
-      this.prisma.knowledgeItem.count({
-        where: { AND: [visibility, { createdAt: { gte: monthStart } }] },
+      this.prisma.knowledgeItem.findMany({
+        where: visibility,
+        select: { id: true },
       }),
     ]);
     const counts = new Map(groups.map((group) => [group.status, group._count._all]));
@@ -259,15 +259,120 @@ export class KnowledgeItemService {
     const rejected = counts.get('REJECTED') ?? 0;
     const published = counts.get('PUBLISHED') ?? 0;
     const archived = counts.get('ARCHIVED') ?? 0;
+    const knowledgeItemIds = visibleItems.map((item) => item.id);
+    const logicalFiles = knowledgeItemIds.length
+      ? await this.prisma.logicalFile.findMany({
+          where: {
+            ownerType: 'KNOWLEDGE',
+            ownerId: { in: knowledgeItemIds },
+            archivedAt: null,
+          },
+          select: { id: true },
+        })
+      : [];
+    const logicalFileIds = logicalFiles.map((file) => file.id);
+    const [viewCount, downloadCount] = await Promise.all([
+      knowledgeItemIds.length || logicalFileIds.length
+        ? this.prisma.operationLog.count({
+            where: {
+              result: 'success',
+              OR: [
+                ...(knowledgeItemIds.length
+                  ? [
+                      {
+                        module: 'knowledge',
+                        action: 'view',
+                        targetType: 'knowledge_item',
+                        targetId: { in: knowledgeItemIds },
+                      },
+                    ]
+                  : []),
+                ...(logicalFileIds.length
+                  ? [
+                      {
+                        module: 'file',
+                        action: 'preview',
+                        targetType: 'logical_file',
+                        targetId: { in: logicalFileIds },
+                      },
+                    ]
+                  : []),
+              ],
+            },
+          })
+        : 0,
+      logicalFileIds.length
+        ? this.prisma.operationLog.count({
+            where: {
+              module: 'file',
+              action: 'download',
+              targetType: 'logical_file',
+              targetId: { in: logicalFileIds },
+              result: 'success',
+            },
+          })
+        : 0,
+    ]);
     return {
       total: draft + inReview + rejected + published + archived,
+      viewCount,
+      downloadCount,
       draft,
       inReview,
       rejected,
       published,
       archived,
-      thisMonthNew,
     };
+  }
+
+  async getCategoryCounts(query: QueryKnowledgeCategoryCountsDto, actor: KnowledgeActor) {
+    const visibility = await this.buildVisibilityWhere(actor);
+    const groups = await this.prisma.knowledgeItem.groupBy({
+      by: ['categoryId'],
+      where: {
+        AND: [
+          visibility,
+          {
+            archivedAt: null,
+            ...(query.keyword
+              ? {
+                  OR: [
+                    { title: { contains: query.keyword } },
+                    { summary: { contains: query.keyword } },
+                    {
+                      versions: {
+                        some: {
+                          OR: [
+                            {
+                              fileVersion: {
+                                asset: { originalName: { contains: query.keyword } },
+                              },
+                            },
+                            {
+                              supportingFiles: {
+                                some: {
+                                  fileVersion: {
+                                    asset: { originalName: { contains: query.keyword } },
+                                  },
+                                },
+                              },
+                            },
+                          ],
+                        },
+                      },
+                    },
+                  ],
+                }
+              : {}),
+          },
+        ],
+      },
+      _count: { _all: true },
+    });
+    return groups.map((group) => ({
+      categoryId: group.categoryId,
+      count: group._count._all,
+    }));
   }
 
   async findAll(query: QueryKnowledgeItemDto, actor: KnowledgeActor) {
@@ -324,7 +429,7 @@ export class KnowledgeItemService {
         select: publicKnowledgeItemSelect,
         skip: (page - 1) * pageSize,
         take: pageSize,
-        orderBy: { updatedAt: 'desc' },
+        orderBy: this.knowledgeOrderBy(query),
       }),
     ]);
     return {
@@ -395,10 +500,22 @@ export class KnowledgeItemService {
       );
       return item.id;
     });
-    return this.findById(itemId, actor);
+    return this.loadById(itemId, actor);
   }
 
   async findById(id: string, actor: KnowledgeActor) {
+    const item = await this.loadById(id, actor);
+    await writeOperationLog(this.prisma, {
+      userId: actor.sub,
+      module: 'knowledge',
+      action: 'view',
+      targetType: 'knowledge_item',
+      targetId: id,
+    });
+    return item;
+  }
+
+  private async loadById(id: string, actor: KnowledgeActor) {
     const visibility = await this.buildVisibilityWhere(actor);
     const item = await this.prisma.knowledgeItem.findFirst({
       where: { AND: [{ id }, visibility] },
@@ -446,7 +563,7 @@ export class KnowledgeItemService {
           : {}),
       },
     });
-    return this.findById(id, actor);
+    return this.loadById(id, actor);
   }
 
   async createVersion(itemId: string, dto: CreateKnowledgeVersionDto, actor: KnowledgeActor) {
@@ -1089,6 +1206,21 @@ export class KnowledgeItemService {
       }
     }
     return minor < 0 ? 'V1.0' : `V${major}.${minor + 1}`;
+  }
+
+  private knowledgeOrderBy(
+    query: QueryKnowledgeItemDto,
+  ): Prisma.KnowledgeItemOrderByWithRelationInput[] {
+    const direction = query.sortOrder ?? 'desc';
+    switch (query.sortBy) {
+      case 'title':
+        return [{ title: direction }, { id: direction }];
+      case 'effectiveAt':
+        return [{ effectiveAt: direction }, { id: direction }];
+      case 'updatedAt':
+      default:
+        return [{ updatedAt: direction }, { id: direction }];
+    }
   }
 
   private isManager(actor: KnowledgeActor): boolean {

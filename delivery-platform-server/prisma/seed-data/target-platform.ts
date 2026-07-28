@@ -6,7 +6,7 @@ import { seedTemplatesAndTools } from './templates-tools';
 interface DictionarySeed {
   code: string;
   name: string;
-  items: ReadonlyArray<{ value: string; label: string }>;
+  items: ReadonlyArray<{ value: string; label: string; description?: string }>;
 }
 
 interface FieldConfigurationSeed {
@@ -171,7 +171,26 @@ const fieldConfigurationDictionaries: readonly DictionarySeed[] = [
   { code: 'CURRENCY', name: '合同币种', items: [['CNY', '人民币'], ['USD', '美元'], ['VND', '越南盾'], ['THB', '泰铢'], ['IDR', '印尼盾'], ['MYR', '马来西亚林吉特'], ['OMR', '阿曼里亚尔'], ['SGD', '新加坡元']].map(([value, label]) => ({ value, label })) },
   { code: 'PROJECT_STAGE', name: '项目阶段', items: [['STARTUP', '启动'], ['DEEPENING', '深化'], ['PROCUREMENT', '采购'], ['CONSTRUCTION', '施工'], ['COMMISSIONING', '调试'], ['TESTING', '测试'], ['INTERNAL_ACCEPTANCE', '内验'], ['EXTERNAL_ACCEPTANCE', '外验'], ['WARRANTY', '维保']].map(([value, label]) => ({ value, label })) },
   { code: 'PROJECT_STATUS', name: '项目状态', items: [['DRAFT', '草稿'], ['ACTIVE', '进行中'], ['PAUSED', '已暂停'], ['COMPLETED', '已验收'], ['CANCELLED', '已取消']].map(([value, label]) => ({ value, label })) },
-  { code: 'KNOWLEDGE_CATEGORY', name: '知识分类', items: [['PROJECT_CASE_REVIEW', '项目案例与复盘'], ['BEST_PRACTICE', '最佳实践与经验'], ['FAQ_TROUBLESHOOTING', '常见问题与故障'], ['TRAINING_TUTORIAL', '培训与教程'], ['EXTERNAL_STANDARD', '外部标准与资料'], ['RESOURCE_TOOL', '资源与工具']].map(([value, label]) => ({ value, label })) },
+  {
+    code: 'KNOWLEDGE_CATEGORY',
+    name: '知识分类',
+    items: [
+      {
+        value: 'JOB_RESPONSIBILITY_CAPABILITY',
+        label: '岗位职责与能力',
+        description: '项目经理、电气、软件、运维等岗位职责、能力模型及技能评估要求。',
+      },
+      { value: 'PROJECT_MANAGEMENT_STANDARD', label: '项目管理规范' },
+      { value: 'ELECTRICAL_AUTOMATION', label: '电气与自动化' },
+      { value: 'SOFTWARE_PLATFORM', label: '软件与平台' },
+      { value: 'CONSTRUCTION_SAFETY', label: '施工与安全' },
+      { value: 'COMMISSIONING_ACCEPTANCE', label: '调试与验收' },
+      { value: 'OPERATIONS_REMOTE_SUPPORT', label: '运维与远程支持' },
+      { value: 'TECHNICAL_DOCUMENT_DELIVERABLE', label: '技术文档与成果物' },
+      { value: 'TECHNICAL_RESOURCE_SUPPLY_CHAIN', label: '技术资源与供应链' },
+      { value: 'OVERSEAS_DELIVERY_SUPPORT', label: '海外交付支持' },
+    ],
+  },
   { code: 'JOB_POSITION', name: '岗位', items: [['PROJECT_MANAGER', '项目经理'], ['ELECTRICAL_ENGINEER', '电气工程师'], ['SOFTWARE_ENGINEER', '软件工程师'], ['OPERATIONS_ENGINEER', '运维工程师'], ['SALES', '销售'], ['PRESALES', '售前']].map(([value, label]) => ({ value, label })) },
   { code: 'PROJECT_TYPE', name: '项目类型', items: [['EPC_INTEGRATED', 'EPC综合'], ['SYSTEM_INTEGRATION', '系统集成'], ['EQUIPMENT_SUPPLY', '设备供货'], ['CONSTRUCTION_IMPLEMENTATION', '施工实施'], ['SOFTWARE_ONLY', '纯软件'], ['TECHNICAL_SERVICE', '技术服务'], ['GENERAL', '通用']].map(([value, label]) => ({ value, label })) },
   { code: 'STANDARD_TYPE', name: '标准类型', items: [['SOP', 'SOP'], ['MANAGEMENT_POLICY', '管理制度'], ['DELIVERY_WORKFLOW', '交付流程'], ['CHECK_STANDARD', '检查标准'], ['DOCUMENT_TEMPLATE', '文档模板'], ['FORM_TEMPLATE', '表单模板'], ['TECHNICAL_STANDARD', '技术标准'], ['WORK_INSTRUCTION', '作业指导书']].map(([value, label]) => ({ value, label })) },
@@ -276,6 +295,7 @@ export async function seedTargetDictionaries(prisma: PrismaClient, actorId?: str
           itemValue: item.value,
           itemLabel: item.label,
           itemCode: fieldConfigurationCodes.has(definition.code) ? item.value : null,
+          description: item.description,
           sortOrder: (itemIndex + 1) * 10,
           isSystemDefault: fieldConfigurationCodes.has(definition.code),
           createdBy: actorId,
@@ -290,7 +310,7 @@ export async function seedTargetDictionaries(prisma: PrismaClient, actorId?: str
           create: {
             id: fieldOption.id,
             name: item.label,
-            description: null,
+            description: item.description,
             fieldOptionId: fieldOption.id,
             sortOrder: (itemIndex + 1) * 10,
             status: 'Active',

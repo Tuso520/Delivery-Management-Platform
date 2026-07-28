@@ -22,6 +22,7 @@ import type { JwtPayload } from '../auth/strategies/jwt.strategy';
 import {
   CreateKnowledgeItemDto,
   CreateKnowledgeVersionDto,
+  QueryKnowledgeCategoryCountsDto,
   QueryKnowledgeItemDto,
   SubmitKnowledgeReviewDto,
   UpdateKnowledgeItemDto,
@@ -41,6 +42,16 @@ export class KnowledgeItemController {
   @ApiOperation({ summary: '查询可见知识条目统计' })
   getSummary(@CurrentUser() actor: JwtPayload) {
     return this.knowledgeItems.getSummary(actor);
+  }
+
+  @Get('knowledge/category-counts')
+  @RequirePermissions({ all: ['knowledge:view'] })
+  @ApiOperation({ summary: '按字段配置知识分类统计可见资料' })
+  getCategoryCounts(
+    @Query() query: QueryKnowledgeCategoryCountsDto,
+    @CurrentUser() actor: JwtPayload,
+  ) {
+    return this.knowledgeItems.getCategoryCounts(query, actor);
   }
 
   @Get('knowledge')
