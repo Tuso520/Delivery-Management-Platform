@@ -3,21 +3,74 @@ import { resolve } from 'node:path'
 
 const adminUsername = process.env.E2E_ADMIN_USERNAME
 const adminPassword = process.env.E2E_ADMIN_PASSWORD
+const limitedUsername = process.env.E2E_LIMITED_USERNAME
+const limitedPassword = process.env.E2E_LIMITED_PASSWORD
 const acceptanceScreenshot = resolve(
   process.cwd(),
   '../.ai-work/acceptance-standard-library-1440x900.png',
 )
 
-async function login(page: Page): Promise<void> {
-  if (!adminUsername || !adminPassword) throw new Error('UI E2E credentials are required')
+interface SessionEnvelope {
+  data: { accessToken: string }
+}
+
+interface FieldOption {
+  enabled: boolean
+  value: string
+}
+
+interface FieldConfiguration {
+  defaultValue: unknown
+  fieldCode: string
+  options: FieldOption[]
+}
+
+interface FieldConfigurationEnvelope {
+  data: FieldConfiguration[]
+}
+
+interface StandardListEnvelope {
+  data: {
+    items: Array<{ id: string; name: string }>
+    page: number
+    pageSize: number
+    total: number
+  }
+}
+
+interface DraftUploadEnvelope {
+  data: {
+    fileVersionId: string
+    logicalFileId: string
+  }
+}
+
+interface StandardEnvelope {
+  data: { id: string }
+}
+
+async function login(
+  page: Page,
+  username = adminUsername,
+  password = adminPassword,
+): Promise<string> {
+  if (!username || !password) throw new Error('UI E2E credentials are required')
 
   await page.goto('/#/login')
   const fields = page.locator('.login-form input')
   await expect(fields).toHaveCount(2)
-  await fields.nth(0).fill(adminUsername)
-  await fields.nth(1).fill(adminPassword)
+  await fields.nth(0).fill(username)
+  await fields.nth(1).fill(password)
+  const loginResponse = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/v1/auth/login' &&
+      response.request().method() === 'POST' &&
+      response.status() === 200,
+  )
   await page.locator('.login-button').click()
+  const session = (await (await loginResponse).json()) as SessionEnvelope
   await page.waitForURL((url) => !url.hash.startsWith('#/login'))
+  return session.data.accessToken
 }
 
 test('standard library matches Figma node 70:322 geometry and real configured content', async ({
@@ -139,4 +192,219 @@ test('standard library matches Figma node 70:322 geometry and real configured co
   await expect(createModal).toBeVisible()
   await createModal.locator('.arco-modal-close-btn').click()
   expect(browserErrors).toEqual([])
+})
+
+test('standard library keeps real loading, empty and validation errors inside the Figma frame', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const accessToken = await login(page)
+  const authorization = { authorization: `Bearer ${accessToken}` }
+  let delayedRealList = false
+
+  await page.route('**/api/v1/standards?**', async (route) => {
+    const url = new URL(route.request().url())
+    if (url.pathname !== '/api/v1/standards') {
+      await route.continue()
+      return
+    }
+
+    const response = await route.fetch()
+    if (!delayedRealList) {
+      delayedRealList = true
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 750))
+    }
+    await route.fulfill({ response })
+  })
+
+  const emptyKeyword = `standard-library-empty-${Date.now()}`
+  await page.goto(`/#/standards?keyword=${emptyKeyword}`)
+  await expect(page.locator('.table-loading')).toBeVisible()
+  await expect(page.locator('.standard-table .empty-cell')).toContainText('暂无标准')
+  await expect(page.locator('.library-panel')).toHaveCSS('height', '625px')
+
+  const firstPageResponse = await page.request.get(
+    '/api/v1/standards?page=1&pageSize=3&sortBy=name&sortOrder=asc',
+    { headers: authorization },
+  )
+  const secondPageResponse = await page.request.get(
+    '/api/v1/standards?page=2&pageSize=3&sortBy=name&sortOrder=asc',
+    { headers: authorization },
+  )
+  const ascendingResponse = await page.request.get(
+    '/api/v1/standards?page=1&pageSize=100&sortBy=name&sortOrder=asc',
+    { headers: authorization },
+  )
+  const descendingResponse = await page.request.get(
+    '/api/v1/standards?page=1&pageSize=100&sortBy=name&sortOrder=desc',
+    { headers: authorization },
+  )
+  expect(firstPageResponse.status()).toBe(200)
+  expect(secondPageResponse.status()).toBe(200)
+  expect(ascendingResponse.status()).toBe(200)
+  expect(descendingResponse.status()).toBe(200)
+  const firstPage = (await firstPageResponse.json()) as StandardListEnvelope
+  const secondPage = (await secondPageResponse.json()) as StandardListEnvelope
+  const ascending = (await ascendingResponse.json()) as StandardListEnvelope
+  const descending = (await descendingResponse.json()) as StandardListEnvelope
+  expect(firstPage.data).toMatchObject({ page: 1, pageSize: 3 })
+  expect(secondPage.data).toMatchObject({ page: 2, pageSize: 3 })
+  expect(firstPage.data.total).toBeGreaterThan(3)
+  expect(
+    firstPage.data.items.every(
+      (firstItem) => !secondPage.data.items.some((secondItem) => secondItem.id === firstItem.id),
+    ),
+  ).toBe(true)
+  expect(
+    descending.data.items.map((item) => item.id),
+  ).toEqual(
+    [...ascending.data.items].reverse().map((item) => item.id),
+  )
+
+  const invalidKeyword = 'x'.repeat(101)
+  const validationResponse = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return url.pathname === '/api/v1/standards' && response.status() === 400
+  })
+  await page.locator('.keyword-input input').fill(invalidKeyword)
+  await page.getByRole('button', { name: '查询', exact: true }).click()
+  await validationResponse
+  await expect(
+    page
+      .locator('.arco-message-error')
+      .filter({ hasText: 'Request failed with status code 400' })
+      .first(),
+  ).toBeVisible()
+  await expect(page.locator('.library-panel')).toHaveCSS('height', '625px')
+})
+
+test('standard library renders a real long draft, published actions and minimum-width scrolling', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const accessToken = await login(page)
+  const authorization = { authorization: `Bearer ${accessToken}` }
+  const marker = Date.now().toString(36).toUpperCase()
+  const standardCode = `UI-LONG-${marker}`
+  const longName = `标准库长文本视觉验收-${'超长标准名称'.repeat(28)}-${marker}`.slice(0, 190)
+  let standardId = ''
+
+  try {
+    const fieldsResponse = await page.request.get('/api/v1/field-options/module/standard', {
+      headers: authorization,
+    })
+    expect(fieldsResponse.status()).toBe(200)
+    const fields = (await fieldsResponse.json()) as FieldConfigurationEnvelope
+    const field = (code: string) => {
+      const configuration = fields.data.find((candidate) => candidate.fieldCode === code)
+      if (!configuration) throw new Error(`Missing standard field configuration ${code}`)
+      return configuration
+    }
+    const activeValue = (code: string): string => {
+      const configuration = field(code)
+      const configuredDefault = String(configuration.defaultValue ?? '')
+      return (
+        configuration.options.find(
+          (option) => option.enabled && option.value === configuredDefault,
+        )?.value ??
+        configuration.options.find((option) => option.enabled)?.value ??
+        ''
+      )
+    }
+    const type = activeValue('STANDARD_TYPE')
+    const deliveryStageCode = activeValue('STANDARD_DELIVERY_STAGE')
+    const businessTypeCode = activeValue('STANDARD_BUSINESS_TYPE')
+    const countryCode = activeValue('COUNTRY')
+    expect([type, deliveryStageCode, businessTypeCode, countryCode].every(Boolean)).toBe(true)
+
+    const uploadResponse = await page.request.post('/api/v1/files/drafts', {
+      headers: {
+        ...authorization,
+        'idempotency-key': `standard-long-upload-${marker}`,
+      },
+      multipart: {
+        ownerType: 'STANDARD',
+        changeDescription: 'standard library long-text visual acceptance',
+        file: {
+          name: `standard-long-${marker}.md`,
+          mimeType: 'text/markdown',
+          buffer: Buffer.from('# Standard library long-text visual acceptance\n', 'utf8'),
+        },
+      },
+    })
+    expect(uploadResponse.status()).toBe(201)
+    const upload = (await uploadResponse.json()) as DraftUploadEnvelope
+
+    const createResponse = await page.request.post('/api/v1/standards', {
+      headers: authorization,
+      data: {
+        code: standardCode,
+        name: longName,
+        type,
+        deliveryStageCode,
+        businessTypeCode,
+        countryCodes: [countryCode],
+        isEnabled: true,
+        effectiveAt: '2026-12-12T00:00:00.000Z',
+        version: 'V9.9',
+        fileVersionId: upload.data.fileVersionId,
+        changeDescription: 'standard library long-text visual acceptance',
+      },
+    })
+    expect(createResponse.status()).toBe(201)
+    const created = (await createResponse.json()) as StandardEnvelope
+    standardId = created.data.id
+
+    await page.goto(`/#/standards?keyword=${encodeURIComponent(standardCode)}`)
+    const row = page.locator('.standard-table tbody tr').filter({ hasText: longName })
+    await expect(row).toHaveCount(1)
+    const titleButton = row.locator('.title-cell button')
+    await expect(titleButton).toHaveAttribute('title', longName)
+    expect(
+      await titleButton.evaluate((element) => element.scrollWidth > element.clientWidth),
+    ).toBe(true)
+    await expect(row.locator('td').nth(1)).toHaveText('-')
+    await expect(row.locator('td').nth(2)).toHaveText('-')
+    await expect(row.getByRole('button', { name: '编辑', exact: true })).toBeVisible()
+    await expect(row.getByRole('button', { name: '归档', exact: true })).toBeVisible()
+
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const horizontalScroll = page.locator('.content-scroll')
+    const dimensions = await horizontalScroll.evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    }))
+    expect(dimensions.scrollWidth).toBeGreaterThan(dimensions.clientWidth)
+    await horizontalScroll.evaluate((element) => {
+      element.scrollLeft = element.scrollWidth
+    })
+    await expect(row.locator('.action-cell')).toBeInViewport()
+
+    await page.locator('.keyword-input input').clear()
+    await page.getByRole('button', { name: '查询', exact: true }).click()
+    const publishedRow = page
+      .locator('.standard-table tbody tr')
+      .filter({ has: page.getByRole('button', { name: '下载', exact: true }) })
+      .first()
+    await expect(publishedRow).toBeVisible()
+    await expect(publishedRow.locator('td').nth(1)).toHaveText(/^V\d/u)
+    await expect(publishedRow.locator('td').nth(2)).toHaveText(/^\d{4}-\d{2}-\d{2}$/u)
+  } finally {
+    if (standardId) {
+      const archiveResponse = await page.request.post(`/api/v1/standards/${standardId}/archive`, {
+        headers: authorization,
+      })
+      expect(archiveResponse.status()).toBe(200)
+    }
+  }
+})
+
+test('a real limited account cannot enter the standard library', async ({ page }) => {
+  await login(page, limitedUsername, limitedPassword)
+  await page.goto('/#/standards')
+  await page.waitForURL((url) => url.hash === '#/dashboard')
+  await expect(page.locator('.standard-library')).toHaveCount(0)
+  await expect(
+    page.locator('.arco-message-error').filter({ hasText: '没有权限访问此页面' }),
+  ).toBeVisible()
 })
