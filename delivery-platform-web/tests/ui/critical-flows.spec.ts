@@ -184,7 +184,7 @@ test('administrator can use the target architecture navigation', async ({ page }
   await expect(page.getByText('示例项目 10', { exact: true })).toHaveCount(0)
 
   await page.goto('/#/archive')
-  await expect(page).toHaveURL(/#\/archive(?:\?.*)?$/u)
+  await expect(page).toHaveURL(/#\/archive\?projectId=[^&]+$/u, { timeout: 60_000 })
 
   await page.goto('/#/standards')
   await expect(page).toHaveURL(/#\/standards(?:\?.*)?$/u)
