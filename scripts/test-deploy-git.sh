@@ -154,9 +154,9 @@ EXPECTED
     fail "workflow remote receiver is missing Compose project positional assignment"
   grep -Fq "$minimum_count_pattern" "$workflow" || \
     fail "workflow remote receiver is missing minimum-count positional assignment"
-  [ "$(grep -Fc -- '-o ServerAliveInterval=30 -o ServerAliveCountMax=20' "$workflow")" = "4" ] || \
+  [ "$(grep -Fc -- '-o ServerAliveInterval=30 -o ServerAliveCountMax=20' "$workflow")" = "5" ] || \
     fail "workflow SSH/SCP calls do not all preserve long-running deployment connections"
-  [ "$(grep -Fc -- '-o ConnectTimeout=30' "$workflow")" = "4" ] || \
+  [ "$(grep -Fc -- '-o ConnectTimeout=30' "$workflow")" = "5" ] || \
     fail "workflow SSH/SCP calls do not all bound connection establishment"
   for index in "${!names[@]}"; do
     position=$((index + 1))
