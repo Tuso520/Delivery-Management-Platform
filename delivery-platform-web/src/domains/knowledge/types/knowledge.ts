@@ -88,12 +88,18 @@ export interface KnowledgeItem {
 
 export interface KnowledgeSummary {
   total: number
+  viewCount: number
+  downloadCount: number
   draft: number
   inReview: number
   rejected: number
   published: number
   archived: number
-  thisMonthNew: number
+}
+
+export interface KnowledgeCategoryCount {
+  categoryId: string
+  count: number
 }
 
 export interface QueryKnowledgeItemDto {
@@ -103,6 +109,8 @@ export interface QueryKnowledgeItemDto {
   categoryId?: string
   contentType?: KnowledgeContentType
   status?: KnowledgeItemStatus
+  sortBy?: 'title' | 'effectiveAt' | 'updatedAt'
+  sortOrder?: 'asc' | 'desc'
 }
 
 export interface CreateKnowledgeItemDto {

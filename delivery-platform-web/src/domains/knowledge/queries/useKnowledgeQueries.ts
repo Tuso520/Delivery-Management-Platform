@@ -16,6 +16,13 @@ export function useKnowledgeSummaryQuery() {
   return useQuery({ queryKey: queryKeys.knowledge.summary(), queryFn: knowledgeApi.getSummary })
 }
 
+export function useKnowledgeCategoryCountsQuery(keyword: MaybeRefOrGetter<string>) {
+  return useQuery({
+    queryKey: computed(() => queryKeys.knowledge.categoryCount(toValue(keyword))),
+    queryFn: () => knowledgeApi.getCategoryCounts(toValue(keyword)),
+  })
+}
+
 export function useKnowledgeDetailQuery(itemId: MaybeRefOrGetter<string>) {
   return useQuery({
     queryKey: computed(() => queryKeys.knowledge.detail(toValue(itemId))),

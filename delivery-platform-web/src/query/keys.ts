@@ -69,6 +69,9 @@ export const queryKeys = {
     lists: () => ['knowledge', 'list'] as const,
     list: <T extends QueryParams>(params: T) => ['knowledge', 'list', snapshot(params)] as const,
     summary: () => ['knowledge', 'summary'] as const,
+    categoryCounts: () => ['knowledge', 'category-counts'] as const,
+    categoryCount: (keyword: string) =>
+      ['knowledge', 'category-counts', keyword] as const,
     detail: (itemId: string) => ['knowledge', 'detail', itemId] as const,
   },
   files: {

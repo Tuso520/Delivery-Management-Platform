@@ -2,19 +2,25 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { IconSearch } from '@arco-design/web-vue/es/icon'
 import Message from '@arco-design/web-vue/es/message'
 import Modal from '@arco-design/web-vue/es/modal'
 import type { TableColumnData } from '@arco-design/web-vue'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 
+import downloadMetricIcon from '@/assets/figma/standard-library/download.svg'
+import eyeMetricIcon from '@/assets/figma/standard-library/eye.svg'
+import fileMetricIcon from '@/assets/figma/standard-library/file-text.svg'
+import plusIcon from '@/assets/figma/standard-library/plus.svg'
 import {
   knowledgeApi,
   type CreateKnowledgeItemPayload,
   type CreateKnowledgeVersionPayload,
   type UpdateKnowledgeVersionPayload,
 } from '@/domains/knowledge/api/knowledge.api'
-import { BusinessTable, PageContainer, PageToolbar, StatCard } from '@/design-system'
+import { BusinessTable } from '@/design-system'
 import {
+  useKnowledgeCategoryCountsQuery,
   useKnowledgeDetailQuery,
   useKnowledgeListQuery,
   useKnowledgeSummaryQuery,
@@ -39,7 +45,7 @@ import { downloadBlob } from '@/utils/blob'
 
 const route = useRoute()
 const router = useRouter()
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const permissionStore = usePermissionStore()
 const filePreview = useFilePreview()
 const queryClient = useQueryClient()
@@ -66,31 +72,64 @@ const localizedContentTypeOptions = computed(() =>
   })),
 )
 
-const columns = computed<TableColumnData[]>(() => [
+type KnowledgeTableColumnKey = 'title' | 'version' | 'effectiveAt' | 'updater' | 'actions'
+
+interface KnowledgeTableColumn {
+  key: KnowledgeTableColumnKey
+  title: string
+  width: number
+  headerAlign: 'center'
+  contentAlign: 'left' | 'center'
+  format: 'title' | 'version' | 'date' | 'person' | 'actions'
+  overflow: 'tooltip' | 'clip'
+}
+
+const tableColumns = computed<KnowledgeTableColumn[]>(() => [
   {
+    key: 'title',
     title: t('knowledge.fields.title'),
-    dataIndex: 'title',
-    slotName: 'title',
-    width: 280,
-    fixed: 'left',
+    width: 365,
+    headerAlign: 'center',
+    contentAlign: 'left',
+    format: 'title',
+    overflow: 'tooltip',
   },
-  { title: t('knowledge.fields.category'), slotName: 'category', width: 140 },
   {
-    title: t('knowledge.fields.contentType'),
-    dataIndex: 'contentType',
-    slotName: 'contentType',
-    width: 108,
+    key: 'version',
+    title: t('knowledge.fields.currentVersion'),
+    width: 90,
+    headerAlign: 'center',
+    contentAlign: 'center',
+    format: 'version',
+    overflow: 'clip',
   },
-  { title: t('knowledge.fields.currentVersion'), slotName: 'version', width: 96 },
-  { title: t('common.status'), dataIndex: 'status', slotName: 'status', width: 96 },
   {
+    key: 'effectiveAt',
     title: t('knowledge.fields.effectiveAt'),
-    dataIndex: 'effectiveAt',
-    slotName: 'effectiveAt',
-    width: 116,
+    width: 130,
+    headerAlign: 'center',
+    contentAlign: 'center',
+    format: 'date',
+    overflow: 'clip',
   },
-  { title: t('knowledge.fields.updater'), slotName: 'updater', width: 104 },
-  { title: t('common.action'), slotName: 'actions', width: 238, fixed: 'right' },
+  {
+    key: 'updater',
+    title: t('knowledge.fields.updater'),
+    width: 170,
+    headerAlign: 'center',
+    contentAlign: 'center',
+    format: 'person',
+    overflow: 'tooltip',
+  },
+  {
+    key: 'actions',
+    title: t('common.action'),
+    width: 182,
+    headerAlign: 'center',
+    contentAlign: 'center',
+    format: 'actions',
+    overflow: 'clip',
+  },
 ])
 
 const versionColumns = computed<TableColumnData[]>(() => [
@@ -109,17 +148,11 @@ const versionColumns = computed<TableColumnData[]>(() => [
   { title: t('common.action'), slotName: 'actions', width: 194, fixed: 'right' },
 ])
 
-const query = reactive({
-  page: Number(route.query.page) || 1,
-  pageSize: Number(route.query.pageSize) || 20,
-  keyword: typeof route.query.keyword === 'string' ? route.query.keyword : '',
-  categoryId: typeof route.query.categoryId === 'string' ? route.query.categoryId : '',
-  status:
-    typeof route.query.status === 'string'
-      ? (route.query.status as KnowledgeItemStatus)
-      : undefined,
-})
-const appliedQuery = ref({ ...query })
+const keyword = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
+const appliedKeyword = ref(keyword.value.trim())
+const selectedCategoryId = ref(
+  typeof route.query.categoryId === 'string' ? route.query.categoryId : '',
+)
 
 function listRouteQuery() {
   return preservedRouteQuery(route.query, ['mode', 'id'])
@@ -147,6 +180,7 @@ const createForm = reactive({
 })
 
 const editVisible = ref(false)
+const editingItemId = ref('')
 const editForm = reactive({
   title: '',
   categoryId: '',
@@ -168,21 +202,90 @@ const versionForm = reactive({
   supportingFileVersionIds: [] as string[],
 })
 
-const knowledgeListQuery = useKnowledgeListQuery(appliedQuery)
+interface KnowledgeCategoryOption {
+  id: string
+  value: string
+  label: string
+  description?: string | null
+}
+
+const categoryOptions = computed<KnowledgeCategoryOption[]>(() =>
+  fieldConfig.getFieldOptions('KNOWLEDGE_CATEGORY').map((option) => ({
+    id: option.id,
+    value: option.value,
+    label: option.label,
+    description: option.description,
+  })),
+)
+const allCategoryOptions = computed<KnowledgeCategoryOption[]>(() =>
+  fieldConfig.getFieldOptions('KNOWLEDGE_CATEGORY', true).map((option) => ({
+    id: option.id,
+    value: option.value,
+    label: option.label,
+    description: option.description,
+  })),
+)
+const selectedCategory = computed(() =>
+  allCategoryOptions.value.find((option) => option.id === selectedCategoryId.value),
+)
+const formCategoryOptions = computed(() => {
+  const options = categoryOptions.value.map((option) => ({
+    value: option.id,
+    label: option.label,
+  }))
+  const historicalCategory = detail.value?.category
+  if (
+    historicalCategory &&
+    editForm.categoryId === historicalCategory.id &&
+    !options.some((option) => option.value === historicalCategory.id)
+  ) {
+    options.push({
+      value: historicalCategory.id,
+      label: `${historicalCategory.name}（已停用）`,
+    })
+  }
+  return options
+})
+const listParams = computed(() => ({
+  page: 1,
+  pageSize: 100,
+  keyword: appliedKeyword.value || undefined,
+  categoryId: selectedCategoryId.value || undefined,
+  sortBy: 'updatedAt' as const,
+  sortOrder: 'desc' as const,
+}))
+
+const knowledgeListQuery = useKnowledgeListQuery(listParams)
 const knowledgeSummaryQuery = useKnowledgeSummaryQuery()
+const knowledgeCategoryCountsQuery = useKnowledgeCategoryCountsQuery(appliedKeyword)
 const knowledgeDetailQuery = useKnowledgeDetailQuery(selectedDetailId)
 const list = computed(() => knowledgeListQuery.data.value?.items ?? [])
-const total = computed(() => knowledgeListQuery.data.value?.total ?? 0)
+const categoryCountMap = computed(
+  () =>
+    new Map(
+      (knowledgeCategoryCountsQuery.data.value ?? []).map((item) => [
+        item.categoryId,
+        item.count,
+      ]),
+    ),
+)
+const sidebarCategoryOptions = computed(() => {
+  const activeIds = new Set(categoryOptions.value.map((option) => option.id))
+  return allCategoryOptions.value.filter(
+    (option) => activeIds.has(option.id) || (categoryCountMap.value.get(option.id) ?? 0) > 0,
+  )
+})
 const summary = computed(
   () =>
     knowledgeSummaryQuery.data.value ?? {
       total: 0,
+      viewCount: 0,
+      downloadCount: 0,
       draft: 0,
       inReview: 0,
       rejected: 0,
       published: 0,
       archived: 0,
-      thisMonthNew: 0,
     },
 )
 const detail = computed<KnowledgeItem | null>(() => knowledgeDetailQuery.data.value ?? null)
@@ -205,52 +308,6 @@ const hasActiveDraftVersion = computed(() =>
   ),
 )
 
-const summaryItems = computed(() => [
-  {
-    key: undefined,
-    label: t('knowledge.summary.total'),
-    value: summary.value.total,
-    tone: 'blue' as const,
-  },
-  {
-    key: 'IN_REVIEW' as KnowledgeItemStatus,
-    label: t('knowledge.summary.inReview'),
-    value: summary.value.inReview,
-    tone: 'cyan' as const,
-  },
-  {
-    key: 'PUBLISHED' as KnowledgeItemStatus,
-    label: t('knowledge.status.PUBLISHED'),
-    value: summary.value.published,
-    tone: 'green' as const,
-  },
-  {
-    key: undefined,
-    label: t('knowledge.summary.thisMonth'),
-    value: summary.value.thisMonthNew,
-    tone: 'red' as const,
-  },
-])
-
-const categoryOptions = computed(() => {
-  const result = fieldConfig.getFieldOptions('KNOWLEDGE_CATEGORY').map((option) => ({
-    value: option.id,
-    label: option.label,
-  }))
-  const historicalCategory = detail.value?.category
-  if (
-    historicalCategory &&
-    editForm.categoryId === historicalCategory.id &&
-    !result.some((option) => option.value === historicalCategory.id)
-  ) {
-    result.push({
-      value: historicalCategory.id,
-      label: `${historicalCategory.name}（已停用）`,
-    })
-  }
-  return result
-})
-
 function contentTypeLabel(value: KnowledgeContentType): string {
   const option = contentTypeOptions.find((item) => item.value === value)
   return option ? (option.label === 'Markdown' ? option.label : t(option.label)) : value
@@ -266,9 +323,7 @@ function statusColor(value: string): string {
 }
 
 function formatDate(value?: string | null): string {
-  if (!value) return '-'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(locale.value)
+  return value ? value.slice(0, 10) : '-'
 }
 
 function versionFileName(version: KnowledgeVersion): string {
@@ -286,55 +341,31 @@ async function fetchList(): Promise<void> {
   await knowledgeListQuery.refetch()
 }
 
-async function refreshPage(): Promise<void> {
-  await Promise.allSettled([
-    knowledgeSummaryQuery.refetch(),
-    knowledgeListQuery.refetch(),
-    fieldConfig.refresh(),
-  ])
-}
-
-async function applyListQuery(): Promise<void> {
-  appliedQuery.value = {
-    page: query.page,
-    pageSize: query.pageSize,
-    keyword: query.keyword.trim(),
-    categoryId: query.categoryId,
-    status: query.status,
-  }
+async function syncListRoute(): Promise<void> {
   await router.replace({
     path: route.path,
     query: {
       ...route.query,
-      page: query.page === 1 ? undefined : String(query.page),
-      pageSize: query.pageSize === 20 ? undefined : String(query.pageSize),
-      keyword: query.keyword.trim() || undefined,
-      categoryId: query.categoryId || undefined,
-      status: query.status,
+      keyword: appliedKeyword.value || undefined,
+      categoryId: selectedCategoryId.value || undefined,
     },
   })
 }
 
 function search(): void {
-  query.page = 1
-  void applyListQuery()
+  appliedKeyword.value = keyword.value.trim()
+  void syncListRoute()
 }
 
-function changePage(page: number): void {
-  query.page = page
-  void applyListQuery()
-}
-
-function selectSummary(status?: KnowledgeItemStatus): void {
-  query.status = query.status === status ? undefined : status
-  query.page = 1
-  void applyListQuery()
+function selectCategory(categoryId: string): void {
+  selectedCategoryId.value = categoryId
+  void syncListRoute()
 }
 
 function resetCreateForm(): void {
   Object.assign(createForm, {
     title: '',
-    categoryId: categoryOptions.value[0]?.value ?? '',
+    categoryId: categoryOptions.value[0]?.id ?? '',
     summary: '',
     contentType: 'MARKDOWN',
     effectiveAt: '',
@@ -410,6 +441,7 @@ async function invalidateKnowledge(itemId?: string): Promise<void> {
   const invalidations = [
     queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.lists() }),
     queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.summary() }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.categoryCounts() }),
   ]
   if (itemId) {
     invalidations.push(
@@ -557,25 +589,30 @@ function handleDetailVisibility(visible: boolean): void {
   if (!visible) closeDetail()
 }
 
-function openEdit(): void {
-  if (!detail.value || !canEdit.value || !['DRAFT', 'REJECTED'].includes(detail.value.status))
+function openEdit(row?: KnowledgeItem): void {
+  const source = row ?? detail.value
+  if (!source || !canEdit.value) return
+  if (!['DRAFT', 'REJECTED'].includes(source.status)) {
+    if (row) openDetail(row)
     return
+  }
+  editingItemId.value = source.id
   Object.assign(editForm, {
-    title: detail.value.title,
-    categoryId: detail.value.categoryId,
-    summary: detail.value.summary ?? '',
-    effectiveAt: detail.value.effectiveAt?.slice(0, 10) ?? '',
+    title: source.title,
+    categoryId: source.categoryId,
+    summary: source.summary ?? '',
+    effectiveAt: source.effectiveAt?.slice(0, 10) ?? '',
   })
   editVisible.value = true
 }
 
 async function submitEdit(): Promise<void> {
-  if (!detail.value || !editForm.title.trim() || !editForm.categoryId) {
+  if (!editingItemId.value || !editForm.title.trim() || !editForm.categoryId) {
     Message.warning(t('knowledge.validation.masterRequired'))
     return
   }
   await updateKnowledgeMutation.mutateAsync({
-    id: detail.value.id,
+    id: editingItemId.value,
     data: {
       title: editForm.title.trim(),
       categoryId: editForm.categoryId,
@@ -798,6 +835,24 @@ async function syncRouteIntent(): Promise<void> {
 }
 
 watch(
+  allCategoryOptions,
+  (options) => {
+    const activeOptions = categoryOptions.value
+    if (!activeOptions.length) return
+    if (options.some((option) => option.id === selectedCategoryId.value)) return
+    const configuredDefault = String(
+      fieldConfig.getField('KNOWLEDGE_CATEGORY')?.defaultValue ?? '',
+    )
+    selectedCategoryId.value =
+      activeOptions.find((option) => option.value === configuredDefault)?.id ??
+      activeOptions[0]?.id ??
+      ''
+    void syncListRoute()
+  },
+  { immediate: true },
+)
+
+watch(
   () => knowledgeDetailQuery.data.value,
   (record) => {
     if (!record) return
@@ -819,133 +874,195 @@ watch(
 </script>
 
 <template>
-  <PageContainer class="domain-page" gap="compact" :scrollable="false">
-    <section class="summary-grid" :aria-label="t('knowledge.summary.aria')">
-      <StatCard
-        v-for="item in summaryItems"
-        :key="item.label"
-        :label="item.label"
-        :value="item.value"
-        :tone="item.tone"
-        :active="query.status === item.key"
-        interactive
-        @select="selectSummary(item.key)"
-      />
+  <section class="knowledge-library">
+    <section class="knowledge-metrics" :aria-label="t('knowledge.summary.aria')">
+      <article class="knowledge-metric">
+        <div class="knowledge-metric__icon">
+          <img :src="fileMetricIcon" alt="" />
+        </div>
+        <div class="knowledge-metric__content">
+          <span>{{ t('knowledge.summary.total') }}</span>
+          <strong>{{ summary.total }}</strong>
+          <small>{{ t('knowledge.summary.itemsUnit') }}</small>
+        </div>
+      </article>
+      <article class="knowledge-metric">
+        <div class="knowledge-metric__icon">
+          <img :src="eyeMetricIcon" alt="" />
+        </div>
+        <div class="knowledge-metric__content">
+          <span>{{ t('knowledge.summary.views') }}</span>
+          <strong>{{ summary.viewCount }}</strong>
+          <small>{{ t('knowledge.summary.timesUnit') }}</small>
+        </div>
+      </article>
+      <article class="knowledge-metric">
+        <div class="knowledge-metric__icon">
+          <img :src="downloadMetricIcon" alt="" />
+        </div>
+        <div class="knowledge-metric__content">
+          <span>{{ t('knowledge.summary.downloads') }}</span>
+          <strong>{{ summary.downloadCount }}</strong>
+          <small>{{ t('knowledge.summary.timesUnit') }}</small>
+        </div>
+      </article>
     </section>
 
-    <section class="library-list-panel">
-      <PageToolbar class="library-toolbar">
-        <template #filters>
-          <div class="search-group">
-            <a-select
-              v-model="query.categoryId"
-              class="category-select"
-              allow-clear
-              :placeholder="t('knowledge.allCategories')"
-              :options="categoryOptions"
-            />
-            <a-input
-              v-model="query.keyword"
-              class="keyword-input"
-              allow-clear
-              :placeholder="t('knowledge.searchPlaceholder')"
-              @press-enter="search"
-            />
-            <a-button type="primary" class="search-button" @click="search">
-              {{ t('knowledge.query') }}
-            </a-button>
-          </div>
+    <section class="knowledge-toolbar" :aria-label="t('knowledge.toolbarAria')">
+      <a-input
+        v-model="keyword"
+        class="knowledge-search-input"
+        allow-clear
+        :placeholder="t('knowledge.searchPlaceholder')"
+        @press-enter="search"
+      />
+      <a-button type="primary" class="knowledge-query-button" @click="search">
+        <template #icon>
+          <IconSearch />
         </template>
-        <template #actions>
-          <a-button :loading="loading" @click="refreshPage">
-            {{ t('knowledge.refresh') }}
-          </a-button>
-          <a-button v-if="canCreate" type="primary" @click="openCreate">
-            {{ t('knowledge.create') }}
-          </a-button>
-        </template>
-      </PageToolbar>
-
-      <BusinessTable
-        :columns="columns"
-        :data="list"
-        :loading="loading"
-        :error="loadError"
-        :retry-label="t('knowledge.retry')"
-        :pagination="{ page: query.page, pageSize: query.pageSize, total }"
-        :scroll="{ x: 'max-content' }"
-        row-key="id"
-        @retry="fetchList"
-        @page-change="changePage"
+        {{ t('knowledge.query') }}
+      </a-button>
+      <a-button
+        v-if="canCreate"
+        type="primary"
+        class="knowledge-add-button"
+        @click="openCreate"
       >
-        <template #title="{ record }">
-          <button class="record-link" type="button" @click="openDetail(record)">
-            <strong>{{ record.title }}</strong>
-            <span>{{ record.summary || t('knowledge.noSummary') }}</span>
+        <template #icon>
+          <img :src="plusIcon" alt="" />
+        </template>
+        {{ t('knowledge.add') }}
+      </a-button>
+    </section>
+
+    <section class="knowledge-panel">
+      <aside class="knowledge-categories" :aria-label="t('knowledge.categoryHeader')">
+        <header class="knowledge-category-header">
+          {{ t('knowledge.categoryHeader') }}
+        </header>
+        <div class="knowledge-category-list">
+          <button
+            v-for="category in sidebarCategoryOptions"
+            :key="category.id"
+            type="button"
+            :value="category.id"
+            class="knowledge-category"
+            :class="{ 'knowledge-category--active': selectedCategoryId === category.id }"
+            @click="selectCategory(category.id)"
+          >
+            <span>{{ category.label }}</span>
+            <small>{{ categoryCountMap.get(category.id) ?? 0 }}</small>
           </button>
-        </template>
-        <template #category="{ record }">
-          {{ record.category?.name || '-' }}
-        </template>
-        <template #contentType="{ record }">
-          {{ contentTypeLabel(record.contentType) }}
-        </template>
-        <template #version="{ record }">
-          {{ record.currentPublishedVersion?.version || '-' }}
-        </template>
-        <template #status="{ record }">
-          <a-tag :color="statusColor(record.status)" size="small">
-            {{ statusLabel(record.status) }}
-          </a-tag>
-        </template>
-        <template #effectiveAt="{ record }">
-          {{ formatDate(record.effectiveAt) }}
-        </template>
-        <template #updater="{ record }">
-          {{ record.updater?.realName || '-' }}
-        </template>
-        <template #actions="{ record }">
-          <a-space size="mini" :wrap="false">
-            <a-button type="text" size="mini" @click="openDetail(record)">
-              {{ t('common.view') }}
-            </a-button>
-            <a-button
-              v-if="canDownload && record.currentPublishedVersion?.contentType === 'FILE'"
-              type="text"
-              size="mini"
-              @click="downloadItem(record)"
-            >
-              {{ t('common.download') }}
-            </a-button>
-            <a-button
-              v-if="canEdit && record.status !== 'ARCHIVED'"
-              type="text"
-              size="mini"
-              @click="openDetail(record)"
-            >
-              {{ t('common.edit') }}
-            </a-button>
-            <a-button
-              v-if="canArchive && record.status !== 'ARCHIVED' && record.status !== 'IN_REVIEW'"
-              type="text"
-              status="danger"
-              size="mini"
-              @click="archiveKnowledge(record)"
-            >
-              {{ t('knowledge.archive.actionShort') }}
-            </a-button>
-          </a-space>
-        </template>
-        <template #empty>
-          <a-empty
-            :description="
-              query.keyword || query.categoryId || query.status
-                ? t('knowledge.emptyFiltered')
-                : t('knowledge.empty')
-            "
-          />
-        </template>
-      </BusinessTable>
+        </div>
+      </aside>
+
+      <div class="knowledge-content-scroll">
+        <div class="knowledge-content">
+          <header class="knowledge-category-description">
+            <h1>{{ selectedCategory?.label || '-' }}</h1>
+            <p>{{ selectedCategory?.description || '-' }}</p>
+          </header>
+
+          <div class="knowledge-table-region">
+            <table class="knowledge-table">
+              <colgroup>
+                <col
+                  v-for="column in tableColumns"
+                  :key="column.key"
+                  :style="{ width: `${column.width}px` }"
+                />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th v-for="column in tableColumns" :key="column.key">
+                    {{ column.title }}
+                  </th>
+                </tr>
+              </thead>
+              <tbody v-if="loadError">
+                <tr class="knowledge-table__state-row">
+                  <td :colspan="tableColumns.length">
+                    <div class="knowledge-table__state">
+                      <span>{{ loadError }}</span>
+                      <a-button size="mini" @click="fetchList">
+                        {{ t('knowledge.retry') }}
+                      </a-button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+              <tbody v-else-if="list.length">
+                <tr v-for="record in list" :key="record.id">
+                  <td class="knowledge-table__title">
+                    <a-tooltip :content="record.title" position="top">
+                      <button type="button" @click="openDetail(record)">
+                        {{ record.title }}
+                      </button>
+                    </a-tooltip>
+                  </td>
+                  <td>{{ record.currentPublishedVersion?.version || '-' }}</td>
+                  <td>{{ formatDate(record.effectiveAt) }}</td>
+                  <td class="knowledge-table__person">
+                    <a-tooltip :content="record.updater?.realName || '-'" position="top">
+                      <span>{{ record.updater?.realName || '-' }}</span>
+                    </a-tooltip>
+                  </td>
+                  <td class="knowledge-table__actions">
+                    <button
+                      v-if="
+                        canDownload &&
+                          record.currentPublishedVersion?.contentType === 'FILE'
+                      "
+                      type="button"
+                      @click="downloadItem(record)"
+                    >
+                      {{ t('common.download') }}
+                    </button>
+                    <button
+                      v-else-if="canEdit && record.status !== 'ARCHIVED'"
+                      type="button"
+                      @click="openEdit(record)"
+                    >
+                      {{ t('common.edit') }}
+                    </button>
+                    <button
+                      v-if="
+                        canArchive &&
+                          record.status !== 'ARCHIVED' &&
+                          record.status !== 'IN_REVIEW'
+                      "
+                      type="button"
+                      class="knowledge-table__archive"
+                      @click="archiveKnowledge(record)"
+                    >
+                      {{ t('knowledge.archive.actionShort') }}
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+              <tbody v-else>
+                <tr class="knowledge-table__state-row">
+                  <td :colspan="tableColumns.length">
+                    <a-empty
+                      :description="
+                        appliedKeyword || selectedCategoryId
+                          ? t('knowledge.emptyFiltered')
+                          : t('knowledge.empty')
+                      "
+                    />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <a-spin
+              v-if="loading"
+              class="knowledge-table-loading"
+              :loading="true"
+              :tip="t('common.loading')"
+            />
+          </div>
+        </div>
+      </div>
     </section>
 
     <a-drawer
@@ -963,7 +1080,7 @@ watch(
               <a-button
                 v-if="canEdit && ['DRAFT', 'REJECTED'].includes(detail.status)"
                 size="small"
-                @click="openEdit"
+                @click="openEdit()"
               >
                 {{ t('knowledge.editMaster') }}
               </a-button>
@@ -1152,7 +1269,7 @@ watch(
             <a-form-item :label="t('knowledge.fields.category')" required>
               <a-select
                 v-model="createForm.categoryId"
-                :options="categoryOptions"
+                :options="formCategoryOptions"
                 allow-search
                 :placeholder="t('knowledge.categoryPlaceholder')"
               />
@@ -1250,7 +1367,7 @@ watch(
           <a-input v-model="editForm.title" />
         </a-form-item>
         <a-form-item :label="t('knowledge.fields.category')" required>
-          <a-select v-model="editForm.categoryId" :options="categoryOptions" allow-search />
+          <a-select v-model="editForm.categoryId" :options="formCategoryOptions" allow-search />
         </a-form-item>
         <a-form-item :label="t('knowledge.fields.summary')">
           <a-textarea v-model="editForm.summary" :auto-size="{ minRows: 2, maxRows: 4 }" />
@@ -1358,176 +1475,361 @@ watch(
         </a-form-item>
       </a-form>
     </a-modal>
-  </PageContainer>
+  </section>
 </template>
 
 <style scoped lang="scss">
-.domain-page {
-  --library-border: #e5e6eb;
-  height: 100%;
+.knowledge-library {
+  --knowledge-border: #e5e6eb;
+  width: 100%;
+  min-width: 0;
+  min-height: 784px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 13px 13px;
   overflow: hidden;
   color: #1d2129;
-  font-family: Inter, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: #fff;
+  font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  box-sizing: border-box;
 }
 
-.summary-grid {
+.knowledge-metrics {
+  height: 88px;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  flex: 0 0 88px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: center;
   gap: 12px;
 }
 
-:deep(.summary-grid .stat-card) {
-  min-height: 72px;
+.knowledge-metric {
+  height: 76px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  border-color: var(--library-border);
-  border-radius: 2px;
-  background: #fff;
-}
-
-:deep(.summary-grid .stat-card--active) {
-  border-color: var(--library-border);
-  border-top: 2px solid rgb(var(--stat-color));
-  background: rgb(var(--primary-1));
-  box-shadow: none;
-}
-
-:deep(.summary-grid .stat-card__label) {
-  color: #4e5969;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-:deep(.summary-grid .stat-card__value) {
-  margin: 0 0 0 12px;
-  font-size: 30px;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-}
-
-.library-list-panel {
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid var(--library-border);
-  border-radius: 2px;
-  background: #fff;
-}
-
-.library-toolbar {
-  flex: 0 0 auto;
+  gap: 12px;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--library-border);
+  background: #fff;
+  box-sizing: border-box;
 }
 
-.library-toolbar :deep(.page-toolbar__filters) {
+.knowledge-metric__icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  flex: 0 0 48px;
+  place-items: center;
+  border-radius: 2px;
+}
+
+.knowledge-metric__icon img {
+  width: 32px;
+  height: 32px;
+}
+
+.knowledge-metric__content {
   min-width: 0;
-  flex: 1 1 auto;
-  flex-wrap: nowrap;
-}
-
-.library-toolbar :deep(.page-toolbar__actions) {
-  flex: 0 0 auto;
-  flex-wrap: nowrap;
-  margin-left: auto;
-}
-
-.search-group {
   display: flex;
-  align-items: stretch;
+  align-items: baseline;
+}
+
+.knowledge-metric__content span {
+  position: absolute;
+  align-self: flex-start;
+  color: #999ea8;
+  font-size: 12px;
+  line-height: 18px;
+  transform: translateY(-3px);
+}
+
+.knowledge-metric__content strong {
+  margin-top: 17px;
+  color: #1d2129;
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 28px;
+}
+
+.knowledge-metric__content small {
+  margin-left: 4px;
+  color: #4e5969;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.knowledge-toolbar {
+  height: 32px;
+  display: flex;
+  flex: 0 0 32px;
+  align-items: center;
   gap: 8px;
 }
 
-.category-select {
-  width: 180px;
+.knowledge-search-input {
+  width: 270px;
 }
 
-.keyword-input {
-  width: min(360px, 38vw);
-}
-
-.search-group :deep(.keyword-input .arco-input-wrapper) {
-  border-radius: 2px 0 0 2px;
-}
-
-.search-button {
-  margin-left: -1px;
-  border-radius: 0 2px 2px 0 !important;
-}
-
-:deep(.library-list-panel > .business-table),
-:deep(.library-list-panel .business-table__viewport > .arco-table) {
-  width: max-content;
-  min-width: 100%;
-  overflow: visible;
-}
-
-:deep(.library-list-panel .arco-table-container) {
-  width: max-content;
-  min-width: 100%;
-  overflow: visible;
+:deep(.knowledge-search-input .arco-input-wrapper) {
+  height: 32px;
   border: 0;
-  border-radius: 0;
+  border-radius: 2px;
+  background: #f2f3f5;
+  box-shadow: none;
 }
 
-:deep(.library-list-panel .arco-table-element) {
-  width: max-content;
-  min-width: 100%;
-  table-layout: auto !important;
+.knowledge-query-button,
+.knowledge-add-button {
+  width: 82px;
+  height: 32px;
+  border-radius: 2px;
+  font-size: 13px;
 }
 
-:deep(.library-list-panel .arco-table-th) {
-  height: 42px;
+.knowledge-add-button {
+  margin-left: auto;
+}
+
+.knowledge-add-button img {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.knowledge-panel {
+  width: 100%;
+  min-width: 936px;
+  height: 625px;
+  display: flex;
+  flex: 0 0 625px;
+  overflow: hidden;
+  border: 1px solid var(--knowledge-border);
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.knowledge-categories {
+  width: 270px;
+  height: 100%;
+  display: flex;
+  flex: 0 0 270px;
+  flex-direction: column;
+  border-right: 1px solid var(--knowledge-border);
+  box-sizing: border-box;
+}
+
+.knowledge-category-header {
+  height: 44px;
+  display: flex;
+  flex: 0 0 44px;
+  align-items: center;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--knowledge-border);
+  background: #f2f3f5;
+  font-size: 13px;
+  font-weight: 500;
+  box-sizing: border-box;
+}
+
+.knowledge-category-list {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.knowledge-category {
+  width: 100%;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  border: 0;
+  border-bottom: 1px solid var(--knowledge-border);
+  color: #1d2129;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  box-sizing: border-box;
+}
+
+.knowledge-category span {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.knowledge-category small {
+  flex: 0 0 auto;
+  margin-left: 12px;
+  color: #999ea8;
+  font-size: 11px;
+}
+
+.knowledge-category:hover {
   background: #f7f8fa;
-  color: #4e5969;
+}
+
+.knowledge-category--active,
+.knowledge-category--active:hover {
+  color: #2563eb;
+  background: #e8effc;
+}
+
+.knowledge-content-scroll {
+  min-width: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.knowledge-content {
+  width: 937px;
+  min-width: 937px;
+  height: 100%;
+}
+
+.knowledge-category-description {
+  height: 72px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--knowledge-border);
+  box-sizing: border-box;
+}
+
+.knowledge-category-description h1,
+.knowledge-category-description p {
+  margin: 0;
+}
+
+.knowledge-category-description h1 {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+.knowledge-category-description p {
+  overflow: hidden;
+  color: #808080;
+  font-size: 13px;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.knowledge-table-region {
+  position: relative;
+  height: 551px;
+  overflow: auto;
+}
+
+.knowledge-table {
+  width: 937px;
+  table-layout: fixed;
+  border-collapse: collapse;
+  color: #1d2129;
+  font-size: 13px;
+}
+
+.knowledge-table th,
+.knowledge-table td {
+  height: 44px;
+  padding: 0 12px;
+  overflow: hidden;
+  border-right: 1px solid var(--knowledge-border);
+  border-bottom: 1px solid var(--knowledge-border);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.knowledge-table th:last-child,
+.knowledge-table td:last-child {
+  border-right: 0;
+}
+
+.knowledge-table th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  background: #f2f3f5;
   font-weight: 500;
 }
 
-:deep(.library-list-panel .arco-table-th),
-:deep(.library-list-panel .arco-table-td) {
-  padding-right: 16px;
-  padding-left: 16px;
-  border-color: var(--library-border);
+.knowledge-table tbody tr:nth-child(even) {
+  background: #f7f8fa;
+}
+
+.knowledge-table__title {
+  text-align: left !important;
+}
+
+.knowledge-table__title button {
+  width: 100%;
+  display: block;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  color: #165dff;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 500;
+  line-height: 43px;
+  text-align: left;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.record-link {
-  width: 100%;
-  display: grid;
-  gap: 2px;
+.knowledge-table__person span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.knowledge-table__actions button {
   padding: 0;
   border: 0;
-  color: inherit;
+  color: #3878f5;
   background: transparent;
   cursor: pointer;
-  text-align: left;
+  font: inherit;
 }
-.record-link strong {
-  color: rgb(var(--primary-6));
-  font-size: 13px;
-  font-weight: 600;
+
+.knowledge-table__actions button + button {
+  margin-left: 24px;
 }
-.record-link span {
-  overflow: hidden;
-  color: var(--color-text-3);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+
+.knowledge-table__actions .knowledge-table__archive {
+  color: #e33836;
 }
-.record-link:hover strong {
-  text-decoration: underline;
+
+.knowledge-table__state-row td {
+  height: 506px;
 }
-.content-summary {
-  display: block;
-  max-width: 260px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+
+.knowledge-table__state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #86909c;
+}
+
+.knowledge-table-loading {
+  position: absolute;
+  z-index: 3;
+  inset: 44px 0 0;
+  display: grid;
+  place-items: center;
+  background: rgb(255 255 255 / 72%);
 }
 
 .detail-spin {
@@ -1666,15 +1968,6 @@ watch(
   .detail-command-bar {
     align-items: flex-start;
     flex-direction: column;
-  }
-  .summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .library-toolbar :deep(.page-toolbar__filters) {
-    flex-wrap: wrap;
-  }
-  .keyword-input {
-    width: 100%;
   }
 }
 </style>

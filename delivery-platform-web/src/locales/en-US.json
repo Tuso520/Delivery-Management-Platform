@@ -1141,10 +1141,13 @@
     "subtitle": "Unified review and version management for files, Markdown, and external links",
     "refresh": "Refresh",
     "create": "New Resource",
+    "add": "Add",
     "createTitle": "New Knowledge Resource",
     "keyword": "Keyword",
-    "searchPlaceholder": "Search by title, file name, or summary",
+    "searchPlaceholder": "Search by standard name, code, or file name",
+    "toolbarAria": "Knowledge base toolbar",
     "allCategories": "All Categories",
+    "categoryHeader": "Category",
     "query": "Search",
     "retry": "Retry",
     "loadFailed": "Failed to load knowledge resources. Please try again.",
@@ -1192,9 +1195,11 @@
     "defaultFileName": "Knowledge Resource",
     "summary": {
       "aria": "Knowledge base summary",
-      "total": "Total Resources",
-      "inReview": "Pending Review",
-      "thisMonth": "Added This Month"
+      "total": "Total Standards",
+      "views": "Views",
+      "downloads": "Downloads",
+      "itemsUnit": "items",
+      "timesUnit": "times"
     },
     "fields": {
       "title": "Resource Title",
