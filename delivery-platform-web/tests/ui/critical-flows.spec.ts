@@ -191,6 +191,9 @@ test('administrator can use the target architecture navigation', async ({ page }
 
   await page.goto('/#/knowledge')
   await expect(page).toHaveURL(/#\/knowledge(?:\?.*)?$/u)
+  await expect(page.getByRole('heading', { name: '知识库' }).first()).toBeVisible({
+    timeout: 60_000,
+  })
 
   await page.goto('/#/organization/roles')
   await expect(page.getByRole('heading', { name: '角色管理' }).first()).toBeVisible({

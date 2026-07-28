@@ -1,0 +1,433 @@
+import { Buffer } from 'node:buffer'
+
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+
+interface SessionEnvelope {
+  data: { accessToken: string }
+}
+
+interface KnowledgeItem {
+  id: string
+  categoryId: string
+  title: string
+  versions?: Array<{
+    fileVersion?: {
+      logicalFileId: string
+    } | null
+    supportingFiles: Array<{
+      fileVersion: {
+        logicalFileId: string
+      }
+    }>
+  }>
+}
+
+interface KnowledgeListEnvelope {
+  data: {
+    items: KnowledgeItem[]
+    page: number
+    pageSize: number
+    total: number
+  }
+}
+
+interface KnowledgeEnvelope {
+  data: KnowledgeItem
+}
+
+interface UploadEnvelope {
+  data: {
+    fileVersionId: string
+    logicalFileId: string
+  }
+}
+
+const adminUsername = process.env.E2E_ADMIN_USERNAME
+const adminPassword = process.env.E2E_ADMIN_PASSWORD
+const limitedUsername = process.env.E2E_LIMITED_USERNAME
+const limitedPassword = process.env.E2E_LIMITED_PASSWORD
+const knowledgeReaderUsername = process.env.E2E_KNOWLEDGE_READER_USERNAME ?? 'elec_xu'
+const knowledgeReaderPassword =
+  process.env.E2E_KNOWLEDGE_READER_PASSWORD ?? process.env.E2E_LIMITED_PASSWORD
+
+function requireCredential(value: string | undefined, name: string): string {
+  if (!value) throw new Error(`${name} is required`)
+  return value
+}
+
+async function login(
+  page: Page,
+  username: string | undefined,
+  password: string | undefined,
+): Promise<string> {
+  await page.goto('/#/login')
+  await page.getByPlaceholder('用户名').fill(requireCredential(username, 'E2E username'))
+  await page.getByPlaceholder('密码').fill(requireCredential(password, 'E2E password'))
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/v1/auth/login' &&
+      response.request().method() === 'POST' &&
+      response.status() === 200,
+  )
+  await page.getByRole('button', { name: /登\s*录/u }).click()
+  const response = (await (await responsePromise).json()) as SessionEnvelope
+  await page.waitForURL((url) => !url.hash.startsWith('#/login'))
+  return response.data.accessToken
+}
+
+function authHeaders(accessToken: string): Record<string, string> {
+  return { authorization: `Bearer ${accessToken}` }
+}
+
+async function fetchKnowledge(
+  request: APIRequestContext,
+  accessToken: string,
+  query = 'page=1&pageSize=100&sortBy=updatedAt&sortOrder=desc',
+): Promise<KnowledgeListEnvelope> {
+  const response = await request.get(`/api/v1/knowledge?${query}`, {
+    headers: authHeaders(accessToken),
+  })
+  expect(response.status()).toBe(200)
+  return (await response.json()) as KnowledgeListEnvelope
+}
+
+async function uploadKnowledgeFile(
+  request: APIRequestContext,
+  accessToken: string,
+  name: string,
+  content: string,
+): Promise<UploadEnvelope['data']> {
+  const response = await request.post('/api/v1/files/drafts', {
+    headers: {
+      ...authHeaders(accessToken),
+      'idempotency-key': `knowledge-ui-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    },
+    multipart: {
+      ownerType: 'KNOWLEDGE',
+      changeDescription: '知识库 Figma 自动化验收',
+      file: {
+        name,
+        mimeType: 'text/markdown',
+        buffer: Buffer.from(content, 'utf8'),
+      },
+    },
+  })
+  expect(response.status()).toBe(201)
+  return ((await response.json()) as UploadEnvelope).data
+}
+
+test('knowledge library matches Figma node 125:624 and uses real backend services', async ({
+  page,
+}) => {
+  const browserErrors: string[] = []
+  page.on('console', (message) => {
+    if (message.type() === 'error') browserErrors.push(message.text())
+  })
+  page.on('pageerror', (error) => browserErrors.push(error.message))
+
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const accessToken = await login(page, adminUsername, adminPassword)
+  browserErrors.length = 0
+  await page.goto('/#/knowledge')
+
+  const root = page.locator('.knowledge-library')
+  const table = page.locator('.knowledge-table')
+  await expect(root).toBeVisible()
+  await expect(page.locator('.knowledge-category')).toHaveCount(10, { timeout: 60_000 })
+  await expect(table.locator('tbody tr').first()).toBeVisible({ timeout: 60_000 })
+  await expect(page.locator('.knowledge-metric')).toHaveCount(3)
+  await expect(page.locator('.knowledge-metric__icon img')).toHaveCount(3)
+  await expect(table.locator('thead th')).toHaveText([
+    '资料标题',
+    '当前版本',
+    '生效日期',
+    '更新人',
+    '操作',
+  ])
+  await expect(page.locator('.arco-pagination')).toHaveCount(0)
+
+  const geometry = await page.evaluate(() => {
+    const rect = (selector: string) => {
+      const node = document.querySelector<HTMLElement>(selector)
+      if (!node) throw new Error(`Missing ${selector}`)
+      const box = node.getBoundingClientRect()
+      return { width: box.width, height: box.height }
+    }
+    const widths = (selector: string) =>
+      Array.from(document.querySelectorAll<HTMLElement>(selector))
+        .slice(0, 5)
+        .map((node) => node.getBoundingClientRect().width)
+
+    return {
+      root: rect('.knowledge-library'),
+      metrics: rect('.knowledge-metrics'),
+      metric: rect('.knowledge-metric'),
+      toolbar: rect('.knowledge-toolbar'),
+      queryButton: rect('.knowledge-query-button'),
+      addButton: rect('.knowledge-add-button'),
+      panel: rect('.knowledge-panel'),
+      sidebar: rect('.knowledge-categories'),
+      categoryHeader: rect('.knowledge-category-header'),
+      categoryRow: rect('.knowledge-category'),
+      description: rect('.knowledge-category-description'),
+      content: rect('.knowledge-content'),
+      headerWidths: widths('.knowledge-table thead th'),
+      bodyWidths: widths('.knowledge-table tbody tr:first-child td'),
+      rowHeights: Array.from(document.querySelectorAll<HTMLElement>('.knowledge-table tr')).map(
+        (node) => node.getBoundingClientRect().height,
+      ),
+      pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    }
+  })
+
+  expect(geometry.root).toEqual({ width: 1234, height: 784 })
+  expect(geometry.metrics.height).toBe(88)
+  expect(geometry.metric.height).toBe(76)
+  expect(geometry.toolbar.height).toBe(32)
+  expect(geometry.queryButton).toEqual({ width: 82, height: 32 })
+  expect(geometry.addButton).toEqual({ width: 82, height: 32 })
+  expect(geometry.panel).toEqual({ width: 1208, height: 625 })
+  expect(geometry.sidebar.width).toBe(270)
+  expect(geometry.categoryHeader.height).toBe(44)
+  expect(geometry.categoryRow.height).toBe(44)
+  expect(geometry.description.height).toBe(72)
+  expect(geometry.content.width).toBe(937)
+  expect(geometry.headerWidths).toEqual([365, 90, 130, 170, 182])
+  expect(geometry.bodyWidths).toEqual(geometry.headerWidths)
+  expect(geometry.rowHeights.every((height) => height === 44)).toBe(true)
+  expect(geometry.pageOverflow).toBe(0)
+
+  await expect(page.locator('.knowledge-category-description h1')).toHaveText('岗位职责与能力')
+  await expect(page.locator('.knowledge-category-description p')).toHaveText(
+    '项目经理、电气、软件、运维等岗位职责、能力模型及技能评估要求。',
+  )
+  await expect(table.locator('tbody tr').first().locator('td').nth(1)).toHaveText('V1.0')
+
+  const selectedCategoryId = await page
+    .locator('.knowledge-category--active')
+    .getAttribute('value')
+  expect(selectedCategoryId).toBeTruthy()
+
+  const longTitle = `知识库超长标题-${Date.now()}-${'跨国交付现场调试与验收操作规范'.repeat(5)}`
+  let longItemId = ''
+  let fileItemId = ''
+  try {
+    const createLongResponse = await page.request.post('/api/v1/knowledge', {
+      headers: authHeaders(accessToken),
+      data: {
+        title: longTitle,
+        categoryId: selectedCategoryId,
+        summary: '用于核验超长标题、摘要、日期、版本与人员展示格式。',
+        effectiveAt: '2026-12-12',
+        version: 'V9.9',
+        contentType: 'MARKDOWN',
+        fileVersionId: null,
+        markdownContent: '# 自动化验收正文',
+        externalUrl: null,
+        supportingFileVersionIds: [],
+      },
+    })
+    expect(createLongResponse.status()).toBe(201)
+    longItemId = ((await createLongResponse.json()) as KnowledgeEnvelope).data.id
+
+    const mainFile = await uploadKnowledgeFile(
+      page.request,
+      accessToken,
+      `knowledge-main-${Date.now()}.md`,
+      'knowledge main file',
+    )
+    const supportingFile = await uploadKnowledgeFile(
+      page.request,
+      accessToken,
+      `knowledge-support-${Date.now()}.md`,
+      'knowledge supporting file',
+    )
+    const createFileResponse = await page.request.post('/api/v1/knowledge', {
+      headers: authHeaders(accessToken),
+      data: {
+        title: `知识文件与附件验收-${Date.now()}`,
+        categoryId: selectedCategoryId,
+        effectiveAt: '2026-12-12',
+        version: 'V1.0',
+        contentType: 'FILE',
+        fileVersionId: mainFile.fileVersionId,
+        markdownContent: null,
+        externalUrl: null,
+        supportingFileVersionIds: [supportingFile.fileVersionId],
+      },
+    })
+    expect(createFileResponse.status()).toBe(201)
+    fileItemId = ((await createFileResponse.json()) as KnowledgeEnvelope).data.id
+
+    const fileDetailResponse = await page.request.get(`/api/v1/knowledge/${fileItemId}`, {
+      headers: authHeaders(accessToken),
+    })
+    expect(fileDetailResponse.status()).toBe(200)
+    const fileDetail = ((await fileDetailResponse.json()) as KnowledgeEnvelope).data
+    expect(fileDetail.versions?.[0]?.supportingFiles).toHaveLength(1)
+    for (const logicalFileId of [mainFile.logicalFileId, supportingFile.logicalFileId]) {
+      const previewResponse = await page.request.get(
+        `/api/v1/files/${logicalFileId}/preview-session`,
+        { headers: authHeaders(accessToken) },
+      )
+      expect(previewResponse.status()).toBe(200)
+      const downloadResponse = await page.request.get(`/api/v1/files/${logicalFileId}/download`, {
+        headers: authHeaders(accessToken),
+      })
+      expect(downloadResponse.status()).toBe(200)
+      expect(await downloadResponse.body()).not.toHaveLength(0)
+    }
+
+    await page.reload()
+    await expect(page.getByRole('button', { name: longTitle })).toBeVisible({ timeout: 60_000 })
+    const longTitleMetrics = await page.getByRole('button', { name: longTitle }).evaluate((node) => ({
+      clientWidth: node.clientWidth,
+      scrollWidth: node.scrollWidth,
+      whiteSpace: getComputedStyle(node).whiteSpace,
+      textOverflow: getComputedStyle(node).textOverflow,
+    }))
+    expect(longTitleMetrics.scrollWidth).toBeGreaterThan(longTitleMetrics.clientWidth)
+    expect(longTitleMetrics.whiteSpace).toBe('nowrap')
+    expect(longTitleMetrics.textOverflow).toBe('ellipsis')
+    const longRow = page.locator('.knowledge-table tbody tr').filter({ hasText: longTitle })
+    await expect(longRow.locator('td').nth(1)).toHaveText('-')
+    await expect(longRow.locator('td').nth(2)).toHaveText('2026-12-12')
+
+    await page.getByRole('button', { name: longTitle }).click()
+    await expect(page.locator('.arco-drawer')).toBeVisible()
+    await expect(page.locator('.detail-section')).toBeVisible()
+    await page.locator('.arco-drawer-close-btn').click()
+
+    await page.getByRole('button', { name: '新增' }).click()
+    const createModal = page.locator('.arco-modal:visible')
+    await expect(createModal).toBeVisible()
+    await createModal.locator('.arco-select-view').click()
+    await expect(page.locator('.arco-select-dropdown:visible .arco-select-option')).toHaveCount(10)
+    await page.keyboard.press('Escape')
+    await createModal.locator('.arco-modal-close-btn').click()
+
+    const keyword = '岗位职责'
+    const filteredResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return (
+        url.pathname === '/api/v1/knowledge' &&
+        url.searchParams.get('keyword') === keyword &&
+        response.status() === 200
+      )
+    })
+    await page.locator('.knowledge-search-input input').fill(keyword)
+    await page.getByRole('button', { name: '查询' }).click()
+    await filteredResponse
+    await expect(table.locator('tbody tr')).toHaveCount(1)
+    await expect(table.locator('tbody tr')).toContainText(keyword)
+
+    await page.locator('.knowledge-search-input input').fill(`无匹配知识-${Date.now()}`)
+    await page.getByRole('button', { name: '查询' }).click()
+    await expect(page.getByText('没有符合条件的资料')).toBeVisible()
+
+    const firstPage = await fetchKnowledge(
+      page.request,
+      accessToken,
+      'page=1&pageSize=1&sortBy=title&sortOrder=asc',
+    )
+    const secondPage = await fetchKnowledge(
+      page.request,
+      accessToken,
+      'page=2&pageSize=1&sortBy=title&sortOrder=asc',
+    )
+    expect(firstPage.data.pageSize).toBe(1)
+    expect(firstPage.data.total).toBeGreaterThan(1)
+    expect(firstPage.data.items[0]?.id).not.toBe(secondPage.data.items[0]?.id)
+
+    await page.setViewportSize({ width: 1280, height: 900 })
+    const overflow = await page.evaluate(() => {
+      const scroll = document.querySelector<HTMLElement>('.knowledge-content-scroll')
+      if (!scroll) throw new Error('Missing knowledge content scroller')
+      return {
+        page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        table: scroll.scrollWidth - scroll.clientWidth,
+      }
+    })
+    expect(overflow.page).toBe(0)
+    expect(overflow.table).toBeGreaterThan(0)
+  } finally {
+    for (const itemId of [longItemId, fileItemId].filter(Boolean)) {
+      const archiveResponse = await page.request.post(`/api/v1/knowledge/${itemId}/archive`, {
+        headers: authHeaders(accessToken),
+      })
+      expect(archiveResponse.status()).toBe(200)
+    }
+  }
+
+  expect(browserErrors).toEqual([])
+})
+
+test('knowledge library exposes real loading/error recovery to a read-only user', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const accessToken = await login(page, knowledgeReaderUsername, knowledgeReaderPassword)
+  await page.goto('/#/knowledge')
+  await expect(page.locator('.knowledge-category')).toHaveCount(10, { timeout: 60_000 })
+  await expect(page.getByRole('button', { name: '新增' })).toHaveCount(0)
+  await expect(page.locator('.knowledge-table__actions button')).toHaveCount(0)
+
+  const list = await fetchKnowledge(page.request, accessToken, 'page=1&pageSize=1')
+  const forbiddenCreate = await page.request.post('/api/v1/knowledge', {
+    headers: authHeaders(accessToken),
+    data: {
+      title: '无权限创建',
+      categoryId: list.data.items[0]?.categoryId,
+      contentType: 'MARKDOWN',
+      fileVersionId: null,
+      markdownContent: '# forbidden',
+      externalUrl: null,
+      supportingFileVersionIds: [],
+    },
+  })
+  expect(forbiddenCreate.status()).toBe(403)
+
+  await page.route('**/api/v1/knowledge?**', async (route) => {
+    const url = new URL(route.request().url())
+    if (url.searchParams.get('keyword') === '延迟加载验收') {
+      await new Promise((resolve) => setTimeout(resolve, 500))
+    }
+    await route.continue()
+  })
+  await page.locator('.knowledge-search-input input').fill('延迟加载验收')
+  await page.getByRole('button', { name: '查询' }).click()
+  await expect(page.locator('.knowledge-table-loading')).toBeVisible()
+  await expect(page.locator('.knowledge-table-loading')).toBeHidden({ timeout: 60_000 })
+  await page.unroute('**/api/v1/knowledge?**')
+
+  await page.route('**/api/v1/knowledge?**', async (route) => {
+    const url = new URL(route.request().url())
+    if (url.searchParams.get('keyword') === '接口错误验收') {
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 500, message: 'test-only error' }),
+      })
+      return
+    }
+    await route.continue()
+  })
+  await page.locator('.knowledge-search-input input').fill('接口错误验收')
+  await page.getByRole('button', { name: '查询' }).click()
+  await expect(page.getByText('知识资料加载失败，请重试。')).toBeVisible({ timeout: 60_000 })
+  await page.unroute('**/api/v1/knowledge?**')
+  await page.getByRole('button', { name: '重试' }).click()
+  await expect(page.getByText('没有符合条件的资料')).toBeVisible({ timeout: 60_000 })
+})
+
+test('knowledge route and API reject a user without knowledge permission', async ({ page }) => {
+  const accessToken = await login(page, limitedUsername, limitedPassword)
+  await page.goto('/#/knowledge')
+  await expect(page).toHaveURL(/#\/dashboard/u)
+  await expect(page.locator('.knowledge-library')).toHaveCount(0)
+
+  const response = await page.request.get('/api/v1/knowledge?page=1&pageSize=1', {
+    headers: authHeaders(accessToken),
+  })
+  expect(response.status()).toBe(403)
+})

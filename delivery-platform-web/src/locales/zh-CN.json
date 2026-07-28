@@ -1145,10 +1145,13 @@
     "subtitle": "文件、Markdown 与外部链接的统一审核和版本管理",
     "refresh": "刷新",
     "create": "新增资料",
+    "add": "新增",
     "createTitle": "新增知识资料",
     "keyword": "关键词",
-    "searchPlaceholder": "搜索标题、文件名或简介",
+    "searchPlaceholder": "搜索标准名称、编号或文件名",
+    "toolbarAria": "知识库工具栏",
     "allCategories": "全部分类",
+    "categoryHeader": "分类",
     "query": "查询",
     "retry": "重试",
     "loadFailed": "知识资料加载失败，请重试。",
@@ -1196,9 +1199,11 @@
     "defaultFileName": "知识资料",
     "summary": {
       "aria": "知识库统计",
-      "total": "资料总数",
-      "inReview": "待审核",
-      "thisMonth": "本月新增"
+      "total": "标准总数",
+      "views": "查看次数",
+      "downloads": "下载次数",
+      "itemsUnit": "个",
+      "timesUnit": "次"
     },
     "fields": {
       "title": "资料标题",

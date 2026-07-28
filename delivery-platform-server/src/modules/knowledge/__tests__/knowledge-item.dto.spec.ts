@@ -5,6 +5,8 @@ import { validate } from 'class-validator';
 import {
   CreateKnowledgeItemDto,
   CreateKnowledgeVersionDto,
+  QueryKnowledgeCategoryCountsDto,
+  QueryKnowledgeItemDto,
   UpdateKnowledgeVersionDto,
 } from '../dto/knowledge-item.dto';
 
@@ -114,6 +116,36 @@ describe('knowledge primary content DTO contract', () => {
 
     expect(errors).toEqual(
       expect.arrayContaining([expect.objectContaining({ property: 'revision' })]),
+    );
+  });
+
+  it('accepts the supported server-side list sorting contract', async () => {
+    const dto = Object.assign(new QueryKnowledgeItemDto(), {
+      sortBy: 'effectiveAt',
+      sortOrder: 'asc',
+    });
+
+    await expect(validate(dto)).resolves.toEqual([]);
+  });
+
+  it.each([
+    { sortBy: 'status', sortOrder: 'asc' },
+    { sortBy: 'updatedAt', sortOrder: 'newest' },
+  ])('rejects unsupported server-side sorting values', async (query) => {
+    const errors = await validate(Object.assign(new QueryKnowledgeItemDto(), query));
+
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it('limits category-count keyword length to the same 100 characters as list search', async () => {
+    const dto = Object.assign(new QueryKnowledgeCategoryCountsDto(), {
+      keyword: '知'.repeat(101),
+    });
+
+    const errors = await validate(dto);
+
+    expect(errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ property: 'keyword' })]),
     );
   });
 });

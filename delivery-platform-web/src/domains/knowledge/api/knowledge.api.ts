@@ -4,6 +4,7 @@ import type {
   CreateKnowledgeItemDto as BaseCreateKnowledgeItemDto,
   CreateKnowledgeVersionDto as BaseCreateKnowledgeVersionDto,
   KnowledgeContentType,
+  KnowledgeCategoryCount,
   KnowledgeItem,
   KnowledgeItemPage,
   KnowledgeReviewSubmissionResult,
@@ -87,6 +88,12 @@ export const knowledgeApi = {
     return request.get<KnowledgeSummary>('/knowledge/summary')
   },
 
+  getCategoryCounts(keyword?: string) {
+    return request.get<KnowledgeCategoryCount[]>('/knowledge/category-counts', {
+      params: { keyword: keyword?.trim() || undefined },
+    })
+  },
+
   getList(params: QueryKnowledgeItemDto) {
     const normalizedParams: QueryKnowledgeItemDto = {
       ...params,
@@ -94,6 +101,8 @@ export const knowledgeApi = {
       categoryId: params.categoryId || undefined,
       contentType: params.contentType || undefined,
       status: params.status || undefined,
+      sortBy: params.sortBy || undefined,
+      sortOrder: params.sortOrder || undefined,
     }
     return request.get<KnowledgeItemPage>('/knowledge', { params: normalizedParams })
   },

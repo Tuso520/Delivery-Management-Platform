@@ -28,6 +28,8 @@ export const KNOWLEDGE_STATUSES = [
   'PUBLISHED',
   'ARCHIVED',
 ] as const;
+export const KNOWLEDGE_SORT_FIELDS = ['title', 'effectiveAt', 'updatedAt'] as const;
+export const SORT_ORDERS = ['asc', 'desc'] as const;
 
 interface KnowledgePrimaryContentCandidate {
   contentType?: unknown;
@@ -73,6 +75,13 @@ function IsExactlyOneKnowledgePrimaryContent(validationOptions?: ValidationOptio
   };
 }
 
+export class QueryKnowledgeCategoryCountsDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  keyword?: string;
+}
+
 export class QueryKnowledgeItemDto {
   @IsOptional()
   @Type(() => Number)
@@ -103,6 +112,14 @@ export class QueryKnowledgeItemDto {
   @IsOptional()
   @IsIn([...KNOWLEDGE_STATUSES])
   status?: (typeof KNOWLEDGE_STATUSES)[number];
+
+  @IsOptional()
+  @IsIn([...KNOWLEDGE_SORT_FIELDS])
+  sortBy?: (typeof KNOWLEDGE_SORT_FIELDS)[number];
+
+  @IsOptional()
+  @IsIn([...SORT_ORDERS])
+  sortOrder?: (typeof SORT_ORDERS)[number];
 }
 
 export class CreateKnowledgeItemDto {
