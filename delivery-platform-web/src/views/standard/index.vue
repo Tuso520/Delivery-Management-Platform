@@ -256,7 +256,7 @@ function currentVersion(row: Standard): string {
 }
 
 function effectiveDate(row: Standard): string {
-  return formatDate(row.currentPublishedVersion?.effectiveAt || row.effectiveAt)
+  return formatDate(row.currentPublishedVersion?.effectiveAt)
 }
 
 function versionFileName(version: StandardVersion): string {
