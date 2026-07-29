@@ -11,12 +11,17 @@ import metricFolders from '@/domains/archive/assets/metric-folders.svg'
 import metricItems from '@/domains/archive/assets/metric-items.svg'
 import metricRequired from '@/domains/archive/assets/metric-required.svg'
 import { archiveApi } from '@/domains/archive/api/archive.api'
-import { useArchiveProjectOptionsQuery, useArchiveTreeQuery } from '@/domains/archive/queries/useArchiveQueries'
+import {
+  useArchiveProjectOptionsQuery,
+  useArchiveTreeQuery,
+} from '@/domains/archive/queries/useArchiveQueries'
 import type {
   ProjectArchiveTargetFolder,
   ProjectArchiveTargetItem,
 } from '@/domains/archive/types/archive'
+import { resolveProjectArchiveFileName } from '@/domains/archive/utils/project-archive-file'
 import { BusinessModal, BusinessTable, PageContainer } from '@/design-system'
+import { usePermission } from '@/composables/usePermission'
 import { useFieldConfig } from '@/platform/field-configuration'
 import { useFilePreview } from '@/platform/file-preview/useFilePreview'
 import { fileApi } from '@/platform/file/file.api'
@@ -33,6 +38,7 @@ const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const filePreview = useFilePreview()
+const { hasPermission } = usePermission()
 const queryClient = useQueryClient()
 const fieldConfig = useFieldConfig('project-archive')
 
@@ -224,7 +230,7 @@ function previewItem(item: ProjectArchiveTargetItem): void {
   if (!previewIdentifier) return
   filePreview.openPreview({
     id: previewIdentifier,
-    title: item.currentVersion.displayName || item.name,
+    title: resolveProjectArchiveFileName(item),
   })
 }
 
@@ -249,18 +255,27 @@ function openFolderUpload(): void {
 
 async function downloadItem(item: ProjectArchiveTargetItem): Promise<void> {
   const logicalFileId = item.currentVersion?.logicalFileId
-  if (!logicalFileId) return
-  const blob = await fileApi.download(logicalFileId)
-  downloadBlob(blob, item.currentVersion?.displayName || item.name)
+  if (!logicalFileId || !canDownloadItem(item)) return
+  try {
+    const blob = await fileApi.download(logicalFileId)
+    downloadBlob(blob, resolveProjectArchiveFileName(item))
+  } catch {
+    Message.error(t('archive.messages.downloadFailed'))
+  }
+}
+
+function canDownloadItem(item: ProjectArchiveTargetItem): boolean {
+  return item.canDownload ?? hasPermission('file:download')
 }
 
 async function deleteFile(item: ProjectArchiveTargetItem): Promise<void> {
   const logicalFileId = item.currentVersion?.logicalFileId
   if (!logicalFileId) return
+  const fileName = resolveProjectArchiveFileName(item)
   try {
     await arcoConfirm(
       t('archive.deleteFile.confirm', {
-        name: item.currentVersion?.displayName || item.name,
+        name: fileName,
       }),
       t('archive.deleteFile.title'),
       {
@@ -271,8 +286,12 @@ async function deleteFile(item: ProjectArchiveTargetItem): Promise<void> {
   } catch {
     return
   }
-  await deleteFileMutation.mutateAsync(logicalFileId)
-  Message.success(t('archive.messages.fileDeleted'))
+  try {
+    await deleteFileMutation.mutateAsync(logicalFileId)
+    Message.success(t('archive.messages.fileDeleted'))
+  } catch {
+    Message.error(t('archive.messages.deleteFailed'))
+  }
 }
 
 function handleUploadSelection(
@@ -448,7 +467,7 @@ watch(
             stripe
             preserve-column-widths
             :batch-size="Math.max(20, selectedFolderItems.length)"
-            :scroll="{ x: 937, y: 471 }"
+            :scroll="{ x: 937 }"
             :empty-title="t('archive.emptyFolder')"
           >
             <template #columns>
@@ -456,13 +475,16 @@ watch(
                 <template #cell="{ record }">
                   <button
                     class="archive-file-name"
-                    :class="{ disabled: !record.currentVersion || record.currentVersion.canPreview === false }"
+                    :class="{
+                      disabled:
+                        !record.currentVersion || record.currentVersion.canPreview === false,
+                    }"
                     type="button"
                     :disabled="!record.currentVersion || record.currentVersion.canPreview === false"
-                    :title="record.currentVersion?.displayName || record.name"
+                    :title="resolveProjectArchiveFileName(record)"
                     @click="previewItem(record)"
                   >
-                    {{ record.currentVersion?.displayName || record.name }}
+                    {{ resolveProjectArchiveFileName(record) }}
                   </button>
                 </template>
               </a-table-column>
@@ -493,7 +515,7 @@ watch(
                       {{ t('archive.updateFile') }}
                     </button>
                     <button
-                      v-if="record.currentVersion"
+                      v-if="canDownloadItem(record) && record.currentVersion"
                       type="button"
                       @click="downloadItem(record)"
                     >
@@ -567,10 +589,12 @@ watch(
 .archive-page {
   --archive-border: #e5e6eb;
   width: 100%;
+  height: 100%;
   min-width: 1234px;
-  min-height: 784px;
+  min-height: 0;
   box-sizing: border-box;
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
   padding: 13px;
   color: #1d2129;
   font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
@@ -781,22 +805,24 @@ watch(
 
 .archive-loading {
   width: 100%;
-  min-height: 602px;
+  min-height: 0;
   display: flex;
-  flex: 1 1 602px;
+  flex: 1 1 auto;
   overflow: hidden;
 }
 
 .archive-loading :deep(.arco-spin-children) {
   width: 100%;
-  min-height: 100%;
+  height: 100%;
+  min-height: 0;
   display: flex;
 }
 
 .archive-workspace {
   width: 100%;
+  height: 100%;
   min-width: 1208px;
-  min-height: 602px;
+  min-height: 0;
   display: grid;
   flex: 1;
   grid-template-columns: 270px minmax(937px, 1fr);
@@ -989,9 +1015,8 @@ watch(
 }
 
 .archive-files :deep(.business-table) {
-  height: 515px;
-  min-height: 515px;
-  flex: 0 0 515px;
+  min-height: 0;
+  flex: 1 1 auto;
   overflow: hidden;
   border-top: 1px solid var(--archive-border);
 }
@@ -1021,7 +1046,8 @@ watch(
 .archive-files :deep(.archive-file-table .arco-table-th) {
   height: 44px;
   padding: 0 12px;
-  border-color: var(--archive-border);
+  border-color: var(--archive-border) !important;
+  border-right: 1px solid var(--archive-border) !important;
   background: #f2f3f5;
   color: #333;
   font-size: 13px;
@@ -1031,10 +1057,16 @@ watch(
 .archive-files :deep(.archive-file-table .arco-table-td) {
   height: 44px;
   padding: 0 12px;
-  border-color: var(--archive-border);
+  border-color: var(--archive-border) !important;
+  border-right: 1px solid var(--archive-border) !important;
   color: #333;
   font-size: 13px;
   font-weight: 400;
+}
+
+.archive-files :deep(.archive-file-table .arco-table-th:last-child),
+.archive-files :deep(.archive-file-table .arco-table-td:last-child) {
+  border-right: 0 !important;
 }
 
 .archive-files :deep(.archive-file-table .arco-table-tr:nth-child(even) .arco-table-td) {
@@ -1068,6 +1100,16 @@ watch(
   cursor: default;
 }
 
+.archive-file-name:not(:disabled):hover,
+.archive-file-name:not(:disabled):focus-visible {
+  color: #0e42d2;
+  text-decoration: underline;
+}
+
+.archive-file-name:not(:disabled):active {
+  color: #072ca6;
+}
+
 .archive-row-actions {
   display: flex;
   align-items: center;
@@ -1085,8 +1127,23 @@ watch(
   font: inherit;
 }
 
+.archive-row-actions button:hover,
+.archive-row-actions button:focus-visible {
+  color: #0e42d2;
+  text-decoration: underline;
+}
+
+.archive-row-actions button:active {
+  color: #072ca6;
+}
+
 .archive-row-actions button.danger {
   color: #e33836;
+}
+
+.archive-row-actions button.danger:hover,
+.archive-row-actions button.danger:focus-visible {
+  color: #b71c1c;
 }
 
 .archive-modal-actions {

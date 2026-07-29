@@ -1,7 +1,7 @@
 /* eslint-disable vue/one-component-per-file, vue/require-default-prop */
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { defineComponent, h, type PropType } from 'vue'
+import { defineComponent, h, nextTick, type PropType } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -30,7 +30,7 @@ const TableStub = defineComponent({
     columns: Array as PropType<Array<Record<string, unknown>>>,
     size: { type: String, default: 'medium' },
     showHeader: { type: Boolean, default: true },
-    bordered: Boolean,
+    bordered: { type: [Boolean, Object] as PropType<boolean | Record<string, unknown>> },
     stripe: Boolean,
     defaultExpandAllRows: Boolean,
   },
@@ -217,6 +217,59 @@ describe('BusinessTable mount contract', () => {
     expect(column).toBeDefined()
     expect(column).toMatchObject({ title: '项目名称', dataIndex: 'name', minWidth: 220 })
     expect(column?.slots.cell()).toEqual(expect.objectContaining({ type: 'span' }))
+  })
+
+  it('fills the viewport by expanding only min-width columns', async () => {
+    class ResizeObserverStub {
+      constructor(private readonly callback: ResizeObserverCallback) {}
+
+      observe(): void {
+        this.callback(
+          [{ contentRect: { width: 1600 } } as ResizeObserverEntry],
+          this as unknown as ResizeObserver,
+        )
+      }
+
+      disconnect(): void {}
+
+      unobserve(): void {}
+    }
+    vi.stubGlobal('ResizeObserver', ResizeObserverStub)
+    const columns = [
+      { title: '模板名称', dataIndex: 'name', minWidth: 220 },
+      { title: '适用项目类型', dataIndex: 'projectType', minWidth: 120 },
+      { title: '当前版本', dataIndex: 'version', width: 111 },
+      { title: '目录规模', dataIndex: 'scale', width: 111 },
+      { title: '使用项目数', dataIndex: 'projects', width: 95 },
+      { title: '状态', dataIndex: 'status', width: 100 },
+      { title: '更新人', dataIndex: 'updatedBy', minWidth: 120 },
+      { title: '更新时间', dataIndex: 'updatedAt', width: 149 },
+      { title: '操作', dataIndex: 'actions', width: 182 },
+    ]
+    const wrapper = mount(BusinessTable, {
+      props: {
+        data: [{ id: 'template-1' }],
+        columns,
+        fitContainer: true,
+        scroll: { minWidth: 1208 },
+        bordered: { wrapper: false, cell: true },
+      },
+      global,
+    })
+    await nextTick()
+
+    const table = wrapper.getComponent(TableStub)
+    const fittedColumns = table.props('columns') as Array<{ width?: number; minWidth?: number }>
+    expect(table.props('scroll')).toMatchObject({ x: 1600, minWidth: 1208 })
+    expect(table.props('bordered')).toEqual({ wrapper: false, cell: true })
+    expect(fittedColumns.reduce((total, column) => total + (column.width ?? 0), 0)).toBe(1600)
+    expect(fittedColumns[2]?.width).toBe(111)
+    expect(fittedColumns[8]?.width).toBe(182)
+    expect(fittedColumns[0]?.width).toBeGreaterThan(220)
+    expect(fittedColumns[1]?.width).toBeGreaterThan(120)
+    expect(fittedColumns[6]?.width).toBeGreaterThan(120)
+
+    vi.unstubAllGlobals()
   })
 
   it('supports the legacy named columns slot without forwarding it to Arco Table', () => {

@@ -1126,6 +1126,8 @@
       "uploaded": "上传成功",
       "noUploadTarget": "当前项目没有可上传的档案项",
       "fileDeleted": "文件已删除，历史版本记录已保留",
+      "downloadFailed": "文件下载失败，请检查权限后重试",
+      "deleteFailed": "文件删除失败，请检查权限后重试",
       "templateSynced": "模板新增项已同步，现有档案内容未被修改",
       "archived": "档案项已归档",
       "restored": "档案项已恢复"

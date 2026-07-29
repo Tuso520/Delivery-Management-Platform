@@ -15,7 +15,9 @@ describe('archive template route state', () => {
     expect(page).toContain('class="archive-workspace"')
     expect(page).toContain('<section class="archive-toolbar">')
     expect(page).toContain('grid-template-columns: 270px minmax(937px, 1fr)')
-    expect(page).toContain(':scroll="{ x: 937, y: 471 }"')
+    expect(page).toContain(':scroll="{ x: 937 }"')
+    expect(page).toContain(':title="resolveProjectArchiveFileName(record)"')
+    expect(page).toContain('v-if="canDownloadItem(record) && record.currentVersion"')
     expect(page).not.toContain('class="project-selector"')
   })
 

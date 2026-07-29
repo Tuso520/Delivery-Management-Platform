@@ -15,54 +15,99 @@ async function login(page: Page): Promise<void> {
   await page.waitForURL((url) => !url.hash.startsWith('#/login'))
 }
 
-test('project archive matches Figma 43:317 geometry and columns', async ({ page }) => {
-  await login(page)
+test('project archive matches Figma 43:317 and fills three desktop viewports', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.goto('/#/archive')
-  await expect(page.locator('.archive-directory__item').first()).toBeVisible({ timeout: 60_000 })
+  await login(page)
 
-  const layout = await page.locator('.archive-page').evaluate((root) => {
-    const metrics = root.querySelector<HTMLElement>('.archive-metrics')
-    const toolbar = root.querySelector<HTMLElement>('.archive-toolbar')
-    const workspace = root.querySelector<HTMLElement>('.archive-workspace')
-    const directory = root.querySelector<HTMLElement>('.archive-directory')
-    const firstDirectoryItem = root.querySelector<HTMLElement>('.archive-directory__item')
-    const firstRow = root.querySelector<HTMLElement>('.arco-table-td')
-    const headers = [...root.querySelectorAll<HTMLElement>('thead .arco-table-th')]
-    if (
-      !metrics ||
-      !toolbar ||
-      !workspace ||
-      !directory ||
-      !firstDirectoryItem ||
-      !firstRow ||
-      headers.length !== 6
-    ) {
-      throw new Error('Project archive layout nodes are incomplete')
-    }
-    return {
-      root: root.getBoundingClientRect().toJSON(),
-      metricsHeight: Math.round(metrics.getBoundingClientRect().height),
-      toolbarHeight: Math.round(toolbar.getBoundingClientRect().height),
-      workspaceHeight: Math.round(workspace.getBoundingClientRect().height),
-      directoryWidth: Math.round(directory.getBoundingClientRect().width),
-      directoryRowHeight: Math.round(firstDirectoryItem.getBoundingClientRect().height),
-      tableRowHeight: Math.round(firstRow.getBoundingClientRect().height),
-      headerWidths: headers.map((header) => Math.round(header.getBoundingClientRect().width)),
-    }
-  })
+  const viewports = [
+    { width: 1440, height: 900 },
+    { width: 1920, height: 1080 },
+    { width: 2560, height: 1440 },
+  ]
+  const workspaceHeights: number[] = []
 
-  expect(layout.root.width).toBe(1234)
-  expect(layout.root.height).toBeGreaterThanOrEqual(784)
-  expect(layout).toMatchObject({
-    metricsHeight: 100,
-    toolbarHeight: 32,
-    directoryWidth: 270,
-    directoryRowHeight: 44,
-    tableRowHeight: 44,
-    headerWidths: [340, 80, 100, 113, 122, 182],
-  })
-  expect(layout.workspaceHeight).toBeGreaterThanOrEqual(602)
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport)
+    await page.goto('/#/archive')
+    await expect(page.locator('.archive-directory__item').first()).toBeVisible({
+      timeout: 60_000,
+    })
+
+    const layout = await page.locator('.archive-page').evaluate((root) => {
+      const metrics = root.querySelector<HTMLElement>('.archive-metrics')
+      const toolbar = root.querySelector<HTMLElement>('.archive-toolbar')
+      const projectSelect = root.querySelector<HTMLElement>('.archive-project-select')
+      const workspace = root.querySelector<HTMLElement>('.archive-workspace')
+      const directory = root.querySelector<HTMLElement>('.archive-directory')
+      const directoryScroll = root.querySelector<HTMLElement>('.archive-directory__scroll')
+      const firstDirectoryItem = root.querySelector<HTMLElement>('.archive-directory__item')
+      const tableViewport = root.querySelector<HTMLElement>('.business-table__viewport')
+      const firstRow = root.querySelector<HTMLElement>('.arco-table-td')
+      const headers = [...root.querySelectorAll<HTMLElement>('thead .arco-table-th')]
+      const cells = [...root.querySelectorAll<HTMLElement>('tbody tr:first-child .arco-table-td')]
+      const layoutMain = root.closest<HTMLElement>('.layout-main')
+      if (
+        !metrics ||
+        !toolbar ||
+        !projectSelect ||
+        !workspace ||
+        !directory ||
+        !directoryScroll ||
+        !firstDirectoryItem ||
+        !tableViewport ||
+        !firstRow ||
+        !layoutMain ||
+        headers.length !== 6 ||
+        cells.length !== 6
+      ) {
+        throw new Error('Project archive layout nodes are incomplete')
+      }
+      const rootRect = root.getBoundingClientRect()
+      const selectRect = projectSelect.getBoundingClientRect()
+      const directoryRect = directory.getBoundingClientRect()
+      return {
+        root: rootRect.toJSON(),
+        main: layoutMain.getBoundingClientRect().toJSON(),
+        metricsHeight: Math.round(metrics.getBoundingClientRect().height),
+        toolbarHeight: Math.round(toolbar.getBoundingClientRect().height),
+        workspaceHeight: Math.round(workspace.getBoundingClientRect().height),
+        selectLeft: Math.round(selectRect.left),
+        selectWidth: Math.round(selectRect.width),
+        directoryLeft: Math.round(directoryRect.left),
+        directoryWidth: Math.round(directoryRect.width),
+        directoryRowHeight: Math.round(firstDirectoryItem.getBoundingClientRect().height),
+        directoryOverflowY: getComputedStyle(directoryScroll).overflowY,
+        tableOverflowY: getComputedStyle(tableViewport).overflowY,
+        tableRowHeight: Math.round(firstRow.getBoundingClientRect().height),
+        headerWidths: headers.map((header) => Math.round(header.getBoundingClientRect().width)),
+        headerBorders: headers.map((header) => getComputedStyle(header).borderRightWidth),
+        cellBorders: cells.map((cell) => getComputedStyle(cell).borderRightWidth),
+        documentScrollHeight: document.documentElement.scrollHeight,
+        documentClientHeight: document.documentElement.clientHeight,
+      }
+    })
+
+    workspaceHeights.push(layout.workspaceHeight)
+    expect(layout.root.bottom).toBeCloseTo(layout.main.bottom, 0)
+    expect(layout).toMatchObject({
+      metricsHeight: 100,
+      toolbarHeight: 32,
+      selectWidth: 270,
+      directoryWidth: 270,
+      directoryRowHeight: 44,
+      directoryOverflowY: 'auto',
+      tableOverflowY: 'auto',
+      tableRowHeight: 44,
+      headerWidths: [340, 80, 100, 113, 122, 182],
+      headerBorders: ['1px', '1px', '1px', '1px', '1px', '0px'],
+      cellBorders: ['1px', '1px', '1px', '1px', '1px', '0px'],
+    })
+    expect(layout.selectLeft).toBe(layout.directoryLeft)
+    expect(layout.documentScrollHeight).toBe(layout.documentClientHeight)
+  }
+
+  expect(workspaceHeights[1]).toBeGreaterThan(workspaceHeights[0])
+  expect(workspaceHeights[2]).toBeGreaterThan(workspaceHeights[1])
   await expect(page.getByRole('button', { name: '上传', exact: true })).toBeVisible()
   await expect(page.getByText('同步模板', { exact: true })).toHaveCount(0)
 })

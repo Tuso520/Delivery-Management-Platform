@@ -650,22 +650,22 @@ watch(
 
     <section class="table-card">
       <BusinessTable
-        class="template-table"
+        class="archive-template-table"
         :data="records"
         :loading="loading"
         :error="listError"
         row-key="id"
         size="small"
-        bordered
+        :bordered="{ wrapper: false, cell: true }"
         stripe
-        preserve-column-widths
+        fit-container
         :batch-size="Math.max(20, records.length)"
-        :scroll="{ x: 1208, y: 670 }"
+        :scroll="{ minWidth: 1208 }"
         :empty-title="t('common.noData')"
         :retry-label="t('common.retry')"
         @retry="templateListQuery.refetch()"
       >
-        <a-table-column :width="280" align="left">
+        <a-table-column :min-width="280" align="left">
           <template #title>
             <button
               class="column-sort"
@@ -692,7 +692,7 @@ watch(
         </a-table-column>
         <a-table-column
           :title="t('archiveTemplate.columns.projectType')"
-          :width="120"
+          :min-width="120"
           align="center"
         >
           <template #cell="{ record }">
@@ -733,7 +733,11 @@ watch(
             {{ record._count?.projectSnapshots || 0 }}
           </template>
         </a-table-column>
-        <a-table-column :title="t('archiveTemplate.columns.updatedBy')" :width="160" align="center">
+        <a-table-column
+          :title="t('archiveTemplate.columns.updatedBy')"
+          :min-width="160"
+          align="center"
+        >
           <template #cell="{ record }">
             <span
               class="single-line-cell"
@@ -748,7 +752,12 @@ watch(
             {{ formatDate(record.updatedAt) }}
           </template>
         </a-table-column>
-        <a-table-column :title="t('common.action')" :width="182" align="center">
+        <a-table-column
+          :title="t('common.action')"
+          :width="182"
+          fixed="right"
+          align="center"
+        >
           <template #cell="{ record }">
             <span class="table-actions">
               <button class="table-action" type="button" @click="openDetail(record)">
@@ -1160,20 +1169,20 @@ watch(
   scrollbar-gutter: auto;
 }
 
-.table-card :deep(.template-table),
-.table-card :deep(.template-table .arco-table-container),
-.table-card :deep(.template-table .arco-table-content) {
+.table-card :deep(.archive-template-table),
+.table-card :deep(.archive-template-table .arco-table-container),
+.table-card :deep(.archive-template-table .arco-table-content) {
   height: 100%;
 }
 
-.table-card :deep(.template-table .arco-table-element) {
-  width: 1208px;
+.table-card :deep(.archive-template-table .arco-table-element) {
+  width: 100%;
   min-width: 1208px;
   table-layout: fixed;
 }
 
-.table-card :deep(.template-table .arco-table-th),
-.table-card :deep(.template-table .arco-table-td) {
+.table-card :deep(.archive-template-table .arco-table-th),
+.table-card :deep(.archive-template-table .arco-table-td) {
   box-sizing: border-box;
   height: 44px;
   padding: 0;
@@ -1182,24 +1191,24 @@ watch(
   line-height: normal;
 }
 
-.table-card :deep(.template-table .arco-table-th) {
+.table-card :deep(.archive-template-table .arco-table-th) {
   background: #f2f3f5;
   color: #1d2129;
   font-weight: 500;
 }
 
-.table-card :deep(.template-table .arco-table-td) {
+.table-card :deep(.archive-template-table .arco-table-td) {
   background: #fff;
   color: #1d2129;
   font-weight: 400;
 }
 
-.table-card :deep(.template-table .arco-table-tr-stripe .arco-table-td),
-.table-card :deep(.template-table tbody .arco-table-tr:nth-child(even) .arco-table-td) {
+.table-card :deep(.archive-template-table .arco-table-tr-stripe .arco-table-td),
+.table-card :deep(.archive-template-table tbody .arco-table-tr:nth-child(even) .arco-table-td) {
   background: #f7f8fa;
 }
 
-.table-card :deep(.template-table .arco-table-cell) {
+.table-card :deep(.archive-template-table .arco-table-cell) {
   display: flex;
   height: 43px;
   min-width: 0;
@@ -1237,6 +1246,10 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.archive-template-table :deep(.arco-table-col-fixed-right) {
+  background: inherit;
 }
 
 .template-link {

@@ -31,6 +31,8 @@ export interface ProjectArchiveCurrentVersion {
   logicalFileId?: string
   previewIdentifier?: string
   displayName?: string
+  originalName?: string
+  extension?: string
   fileSize?: string
   uploader?: { id: string; realName: string; username: string }
   pendingReview?: boolean
@@ -66,6 +68,7 @@ export interface ProjectArchiveTargetItem {
   owner?: { id: string; realName: string; username: string } | null
   updatedAt: string
   canUpload: boolean
+  canDownload: boolean
   canDeleteFile: boolean
   pendingReviewSummary: {
     count: number

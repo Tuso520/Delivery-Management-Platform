@@ -90,7 +90,9 @@ export class ProjectArchiveTargetService {
                             status: true,
                             uploadedAt: true,
                             uploadedBy: true,
-                            asset: { select: { size: true } },
+                            asset: {
+                              select: { size: true, originalName: true, extension: true },
+                            },
                             uploader: { select: { id: true, realName: true, username: true } },
                             reviewTasks: {
                               where: { archivedAt: null },
@@ -123,7 +125,9 @@ export class ProjectArchiveTargetService {
                             status: true,
                             uploadedAt: true,
                             uploadedBy: true,
-                            asset: { select: { size: true } },
+                            asset: {
+                              select: { size: true, originalName: true, extension: true },
+                            },
                             uploader: { select: { id: true, realName: true, username: true } },
                             reviewTasks: {
                               where: { archivedAt: null },
@@ -164,6 +168,7 @@ export class ProjectArchiveTargetService {
     }
 
     const canUpload = this.hasPermission(actor, 'archive:upload');
+    const canDownload = this.hasPermission(actor, 'file:download');
     const canDeleteFile = this.hasPermission(actor, 'file:archive');
     const folders = project.archiveFolders.map((folder) => {
       const items = folder.items.map((item) => {
@@ -244,6 +249,8 @@ export class ProjectArchiveTargetService {
                   ? workflowCandidate.version.id
                   : presentedFile?.logicalFile.id,
                 displayName: presentedFile?.logicalFile.displayName,
+                originalName: presentedVersion.asset?.originalName,
+                extension: presentedVersion.asset?.extension,
                 fileSize: presentedVersion.asset?.size?.toString() ?? '0',
                 uploader: presentedVersion.uploader,
                 pendingReview: Boolean(pendingCandidate),
@@ -254,6 +261,11 @@ export class ProjectArchiveTargetService {
           owner: item.ownerUser,
           updatedAt: presentedVersion?.uploadedAt ?? item.updatedAt,
           canUpload: canUpload && !item.archivedAt && !folder.archivedAt,
+          canDownload:
+            canDownload &&
+            !item.archivedAt &&
+            !folder.archivedAt &&
+            Boolean(presentedFile?.logicalFile.id),
           canDeleteFile:
             canDeleteFile &&
             !item.archivedAt &&
