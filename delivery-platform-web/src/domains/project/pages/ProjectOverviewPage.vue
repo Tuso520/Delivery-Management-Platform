@@ -36,6 +36,24 @@ const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const permissionStore = usePermissionStore()
+const projectLayout = Object.freeze({
+  nameColumnWidth: 240,
+  managerColumnWidth: 110,
+  scopeWidth: 100,
+  toolbarGap: 8,
+})
+const projectLayoutStyle = {
+  '--project-name-column-width': `${projectLayout.nameColumnWidth}px`,
+  '--project-manager-column-width': `${projectLayout.managerColumnWidth}px`,
+  '--project-scope-width': `${projectLayout.scopeWidth}px`,
+  '--project-toolbar-gap': `${projectLayout.toolbarGap}px`,
+  '--project-search-width': `${
+    projectLayout.nameColumnWidth +
+    projectLayout.managerColumnWidth -
+    projectLayout.scopeWidth -
+    projectLayout.toolbarGap
+  }px`,
+} as CSSProperties
 const requestedScope = String(route.query.scope ?? '')
 const scope = ref<ProjectScope>(
   ['mine', 'all', 'archived'].includes(requestedScope)
@@ -325,7 +343,12 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
 </script>
 
 <template>
-  <PageContainer class="project-page" gap="normal" :scrollable="false">
+  <PageContainer
+    class="project-page"
+    gap="normal"
+    :scrollable="false"
+    :style="projectLayoutStyle"
+  >
     <section class="summary-band" :aria-label="t('projects.summaryAria')">
       <article
         v-for="metric in summaryMetrics"
@@ -402,7 +425,7 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
         >
           <a-table-column
             :title="t('projects.columns.name')"
-            :width="240"
+            :width="projectLayout.nameColumnWidth"
             fixed="left"
             align="center"
           >
@@ -414,7 +437,11 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
               </a-tooltip>
             </template>
           </a-table-column>
-          <a-table-column :title="t('projects.columns.manager')" :width="110" align="center">
+          <a-table-column
+            :title="t('projects.columns.manager')"
+            :width="projectLayout.managerColumnWidth"
+            align="center"
+          >
             <template #title>
               <button
                 type="button"
@@ -665,6 +692,7 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
   min-width: 0;
   flex: 1 1 auto;
   flex-wrap: nowrap;
+  gap: var(--project-toolbar-gap);
 }
 
 .project-toolbar :deep(.page-toolbar__actions) {
@@ -674,8 +702,8 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
 }
 
 .scope-field {
-  width: 100px;
-  flex: 0 0 100px;
+  width: var(--project-scope-width);
+  flex: 0 0 var(--project-scope-width);
 }
 
 .scope-field :deep(.arco-select) {
@@ -727,13 +755,14 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
 }
 
 .keyword-input {
-  width: 242px;
+  width: var(--project-search-width);
+  flex: 0 0 var(--project-search-width);
 }
 
 .search-group {
   display: flex;
   align-items: stretch;
-  gap: 8px;
+  gap: var(--project-toolbar-gap);
 }
 
 .search-group :deep(.keyword-input .arco-input-wrapper) {
@@ -913,7 +942,7 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
   flex: 1;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--project-border);
+  box-shadow: inset 0 0 0 1px var(--project-border);
 }
 .project-table-frame > :deep(.business-table) {
   min-height: 0;
@@ -975,6 +1004,7 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
 :deep(.project-list-panel .arco-table-th),
 :deep(.project-list-panel .arco-table-td) {
   padding: 0;
+  border-right: 1px solid var(--project-border);
   border-color: var(--project-border);
   white-space: nowrap;
 }
@@ -1049,7 +1079,8 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
     flex-wrap: wrap;
   }
   .keyword-input {
-    width: min(242px, calc(100vw - 42px));
+    width: min(var(--project-search-width), calc(100vw - 42px));
+    flex-basis: min(var(--project-search-width), calc(100vw - 42px));
   }
 }
 </style>

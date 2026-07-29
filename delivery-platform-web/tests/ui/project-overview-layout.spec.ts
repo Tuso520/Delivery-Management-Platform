@@ -195,7 +195,9 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
   })
   page.on('pageerror', (error) => pageErrors.push(error.message))
   page.on('requestfailed', (request) => {
-    requestFailures.push(`${request.method()} ${request.url()} ${request.failure()?.errorText || ''}`)
+    requestFailures.push(
+      `${request.method()} ${request.url()} ${request.failure()?.errorText || ''}`,
+    )
   })
 
   const listResponse = page.waitForResponse(
@@ -253,9 +255,9 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
       iconContainerSize: Math.round(metricIcon.getBoundingClientRect().width),
       iconSize: Math.round(metricImage.getBoundingClientRect().width),
       iconBackground: getComputedStyle(metricIcon).backgroundColor,
-      metricLabelOffsets: [
-        ...document.querySelectorAll<HTMLElement>('.metric-label'),
-      ].map(leftInPage),
+      metricLabelOffsets: [...document.querySelectorAll<HTMLElement>('.metric-label')].map(
+        leftInPage,
+      ),
       toolbarOffsets: {
         scope: leftInPage(scope),
         keyword: leftInPage(keyword),
@@ -340,9 +342,50 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
     .evaluateAll((headers) =>
       headers.slice(0, 13).map((header) => Math.round(header.getBoundingClientRect().width)),
     )
-  expect(columnWidths).toEqual([
-    240, 110, 160, 200, 180, 120, 120, 80, 160, 160, 120, 110, 100,
-  ])
+  expect(columnWidths).toEqual([240, 110, 160, 200, 180, 120, 120, 80, 160, 160, 120, 110, 100])
+
+  const gridAlignment = await page.evaluate(() => {
+    const keyword = document.querySelector<HTMLElement>('.keyword-input')
+    const tableFrame = document.querySelector<HTMLElement>('.project-table-frame')
+    const headers = [
+      ...document.querySelectorAll<HTMLElement>('.project-list-panel thead .arco-table-th'),
+    ].slice(0, 13)
+    const cells = [
+      ...document.querySelectorAll<HTMLElement>(
+        '.project-list-panel tbody .arco-table-tr:first-child .arco-table-td',
+      ),
+    ].slice(0, 13)
+    if (!keyword || !tableFrame || headers.length !== 13 || cells.length !== 13) {
+      throw new Error('Project overview grid alignment nodes are incomplete')
+    }
+    const borderSnapshot = (element: HTMLElement) => {
+      const style = getComputedStyle(element)
+      return `${style.borderRightWidth} ${style.borderRightStyle} ${style.borderRightColor}`
+    }
+    return {
+      searchToManagerRightDelta: Math.abs(
+        keyword.getBoundingClientRect().right - headers[1].getBoundingClientRect().right,
+      ),
+      tableContentLeftDelta: Math.abs(
+        tableFrame.getBoundingClientRect().left - headers[0].getBoundingClientRect().left,
+      ),
+      headerBorders: headers.map(borderSnapshot),
+      cellBorders: cells.map(borderSnapshot),
+      frameBorderWidth: getComputedStyle(tableFrame).borderLeftWidth,
+      frameInsetStroke: getComputedStyle(tableFrame).boxShadow,
+    }
+  })
+  expect(gridAlignment.searchToManagerRightDelta).toBeLessThanOrEqual(0.5)
+  expect(gridAlignment.tableContentLeftDelta).toBeLessThanOrEqual(0.5)
+  expect(gridAlignment.headerBorders).toEqual(
+    Array.from({ length: 13 }, () => '1px solid rgb(229, 230, 235)'),
+  )
+  expect(gridAlignment.cellBorders).toEqual(
+    Array.from({ length: 13 }, () => '1px solid rgb(229, 230, 235)'),
+  )
+  expect(gridAlignment.frameBorderWidth).toBe('0px')
+  expect(gridAlignment.frameInsetStroke).toContain('rgb(229, 230, 235)')
+  expect(gridAlignment.frameInsetStroke).toContain('inset')
 
   const leftAlignedOffsets = await page
     .locator('.project-list-panel tbody .arco-table-tr')
@@ -417,6 +460,14 @@ test('project overview keeps loading, empty and error states inside the Figma ta
   await expect(page.locator('.project-list-panel .arco-spin-loading')).toBeVisible()
   await expect(page.locator('.business-empty')).toContainText('暂无符合条件的项目')
   await expect(page.locator('.project-table-frame')).toHaveCSS('height', '602px')
+  await expect(page.locator('.project-list-panel thead .arco-table-th')).toHaveCount(13)
+  expect(
+    await page
+      .locator('.project-list-panel thead .arco-table-th')
+      .evaluateAll((headers) =>
+        headers.map((header) => getComputedStyle(header).borderRightWidth),
+      ),
+  ).toEqual(Array.from({ length: 13 }, () => '1px'))
 
   responseMode = 'error'
   await page.getByPlaceholder('搜索项目名称', { exact: true }).fill('project-overview-error-state')
@@ -438,9 +489,7 @@ test('project scope exposes archived projects and project manager sorting cycles
   await expect(page.locator('.scope-field .arco-select-view')).toBeVisible()
 
   await page.locator('.scope-field .arco-select-view').click()
-  const archivedOption = page
-    .locator('.arco-select-option:visible')
-    .filter({ hasText: '归档项目' })
+  const archivedOption = page.locator('.arco-select-option:visible').filter({ hasText: '归档项目' })
   await expect(archivedOption).toBeVisible()
   const archivedRequest = page.waitForRequest((request) => {
     const url = new URL(request.url())
@@ -454,8 +503,7 @@ test('project scope exposes archived projects and project manager sorting cycles
   const ascendingRequest = page.waitForRequest((request) => {
     const url = new URL(request.url())
     return (
-      url.pathname === '/api/v1/projects' &&
-      url.searchParams.get('sort') === 'projectManager:asc'
+      url.pathname === '/api/v1/projects' && url.searchParams.get('sort') === 'projectManager:asc'
     )
   })
   await sortButton.click()
@@ -465,8 +513,7 @@ test('project scope exposes archived projects and project manager sorting cycles
   const descendingRequest = page.waitForRequest((request) => {
     const url = new URL(request.url())
     return (
-      url.pathname === '/api/v1/projects' &&
-      url.searchParams.get('sort') === 'projectManager:desc'
+      url.pathname === '/api/v1/projects' && url.searchParams.get('sort') === 'projectManager:desc'
     )
   })
   await sortButton.click()
@@ -490,7 +537,11 @@ test('project overview stays inside the App Shell at common desktop widths', asy
       const main = document.querySelector<HTMLElement>('.layout-main')
       const projectPage = document.querySelector<HTMLElement>('.project-page')
       const tableFrame = document.querySelector<HTMLElement>('.project-table-frame')
-      if (!main || !projectPage || !tableFrame) {
+      const keyword = document.querySelector<HTMLElement>('.keyword-input')
+      const managerHeader = document.querySelector<HTMLElement>(
+        '.project-list-panel thead .arco-table-th:nth-child(2)',
+      )
+      if (!main || !projectPage || !tableFrame || !keyword || !managerHeader) {
         throw new Error('Project overview responsive layout nodes are incomplete')
       }
       const mainBox = main.getBoundingClientRect()
@@ -507,14 +558,18 @@ test('project overview stays inside the App Shell at common desktop widths', asy
           tableBox.left >= pageBox.left &&
           tableBox.right <= pageBox.right &&
           tableBox.bottom <= pageBox.bottom,
+        searchToManagerRightDelta: Math.abs(
+          keyword.getBoundingClientRect().right - managerHeader.getBoundingClientRect().right,
+        ),
       }
     })
-    expect(metrics).toEqual({
+    expect(metrics).toMatchObject({
       documentOverflow: 0,
       pageOverflow: 0,
       pageInsideMain: true,
       tableInsidePage: true,
     })
+    expect(metrics.searchToManagerRightDelta).toBeLessThanOrEqual(0.5)
   }
 })
 
@@ -587,7 +642,11 @@ test('project overview uses wheel loading, large rows and a fixed project-name c
   await expect(page.getByText('987,654,321,012.00', { exact: true })).toBeVisible()
   await expect(page.getByText('2,888,888.13', { exact: true })).toBeVisible()
   await expect(
-    page.locator('.project-list-panel tbody .arco-table-tr').first().locator('.arco-table-td').nth(7),
+    page
+      .locator('.project-list-panel tbody .arco-table-tr')
+      .first()
+      .locator('.arco-table-td')
+      .nth(7),
   ).toContainText('VND')
   await expect(page.getByText('越南·胡志明市', { exact: true })).toBeVisible()
 
@@ -614,7 +673,7 @@ test('project overview uses wheel loading, large rows and a fixed project-name c
   expect(scenario.requestCount).toBe(completedRequestCount)
 })
 
-test('archive template table keeps its declared column widths stable', async ({ page }) => {
+test('archive template table fills the viewport with aligned grid lines', async ({ page }) => {
   await login(page)
   await page.goto('/#/archive-template')
   await expect(page.locator('.template-link').first()).toBeVisible({ timeout: 60_000 })
@@ -635,18 +694,43 @@ test('archive template table keeps its declared column widths stable', async ({ 
 
     return {
       distinctWidthSnapshots: new Set(snapshots).size,
-      hasPreservedWidthClass: Boolean(
-        card.querySelector('.business-table--preserve-column-widths'),
+      bodyWidths: [
+        ...table.querySelectorAll<HTMLElement>('tbody .arco-table-tr:first-child .arco-table-td'),
+      ].map((cell) => Math.round(cell.getBoundingClientRect().width)),
+      headerWidths: [...table.querySelectorAll<HTMLElement>('thead .arco-table-th')].map((header) =>
+        Math.round(header.getBoundingClientRect().width),
       ),
+      hasFitContainerClass: Boolean(card.querySelector('.business-table--fit-container')),
+      lastHeaderBorderRight: getComputedStyle(
+        table.querySelector<HTMLElement>('thead .arco-table-th:last-child')!,
+      ).borderRightWidth,
+      operationRightDelta: Math.round(
+        Math.abs(
+          viewport.getBoundingClientRect().right -
+            table
+              .querySelector<HTMLElement>('thead .arco-table-th:last-child')!
+              .getBoundingClientRect().right,
+        ),
+      ),
+      rightBorderColors: [
+        ...table.querySelectorAll<HTMLElement>('thead .arco-table-th, tbody .arco-table-td'),
+      ].map((cell) => getComputedStyle(cell).borderRightColor),
       scrollWidth: viewport.scrollWidth,
+      tableWidth: Math.round(table.getBoundingClientRect().width),
+      viewportWidth: Math.round(viewport.getBoundingClientRect().width),
       tableLayout: getComputedStyle(table).tableLayout,
     }
   })
 
   expect(metrics).toMatchObject({
     distinctWidthSnapshots: 1,
-    hasPreservedWidthClass: true,
+    hasFitContainerClass: true,
+    lastHeaderBorderRight: '1px',
+    operationRightDelta: 0,
     tableLayout: 'fixed',
   })
-  expect(metrics.scrollWidth).toBeGreaterThanOrEqual(1080)
+  expect(metrics.scrollWidth).toBeGreaterThanOrEqual(1208)
+  expect(metrics.tableWidth).toBeGreaterThanOrEqual(metrics.viewportWidth)
+  expect(metrics.bodyWidths).toEqual(metrics.headerWidths)
+  expect(new Set(metrics.rightBorderColors)).toEqual(new Set(['rgb(224, 224, 224)']))
 })
