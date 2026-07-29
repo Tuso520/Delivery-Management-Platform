@@ -124,10 +124,7 @@ function listRouteQuery() {
 
 const templateListQuery = useArchiveTemplateListQuery({})
 const templateDetailQuery = useArchiveTemplateDetailQuery(selectedTemplateId, drawerVisible)
-const templateVersionsQuery = useArchiveTemplateVersionsQuery(
-  selectedTemplateId,
-  drawerVisible,
-)
+const templateVersionsQuery = useArchiveTemplateVersionsQuery(selectedTemplateId, drawerVisible)
 const templateVersionQuery = useArchiveTemplateVersionQuery(selectedVersionId, drawerVisible)
 const formOptionQueries = useArchiveTemplateFormOptionsQueries()
 const records = computed(() => templateListQuery.data.value ?? [])
@@ -609,32 +606,40 @@ watch(
 
     <a-card :bordered="false" class="table-card">
       <BusinessTable
+        class="archive-template-table"
         :data="records"
         :loading="loading"
         row-key="id"
-        :scroll="{ x: 1080 }"
-        preserve-column-widths
+        :bordered="{ wrapper: false, cell: true }"
+        :scroll="{ minWidth: 1208 }"
+        fit-container
+        stripe
       >
-        <a-table-column :title="t('archiveTemplate.columns.name')" :width="220">
+        <a-table-column :title="t('archiveTemplate.columns.name')" :min-width="220">
           <template #cell="{ record }">
-            <button class="template-link" type="button" @click="openDetail(record)">
+            <button
+              class="template-link"
+              type="button"
+              :title="record.templateName"
+              @click="openDetail(record)"
+            >
               <strong>{{ record.templateName }}</strong>
             </button>
           </template>
         </a-table-column>
-        <a-table-column :title="t('archiveTemplate.columns.projectType')" :width="130">
+        <a-table-column :title="t('archiveTemplate.columns.projectType')" :min-width="120">
           <template #cell="{ record }">
-            {{
-              projectTypeLabel(record.projectType)
-            }}
+            <span class="table-text-ellipsis" :title="projectTypeLabel(record.projectType)">
+              {{ projectTypeLabel(record.projectType) }}
+            </span>
           </template>
         </a-table-column>
-        <a-table-column :title="t('archiveTemplate.columns.currentVersion')" :width="100">
+        <a-table-column :title="t('archiveTemplate.columns.currentVersion')" :width="111">
           <template #cell="{ record }">
             {{ record.currentPublishedVersion?.versionNo || t('archiveTemplate.notPublished') }}
           </template>
         </a-table-column>
-        <a-table-column :title="t('archiveTemplate.columns.scale')" :width="110">
+        <a-table-column :title="t('archiveTemplate.columns.scale')" :width="111">
           <template #cell="{ record }">
             <span v-if="record.currentPublishedVersion?._count">
               {{
@@ -647,7 +652,7 @@ watch(
             <span v-else>—</span>
           </template>
         </a-table-column>
-        <a-table-column :title="t('archiveTemplate.columns.projects')" :width="90">
+        <a-table-column :title="t('archiveTemplate.columns.projects')" :width="95">
           <template #cell="{ record }">
             {{ record._count?.projectSnapshots || 0 }}
           </template>
@@ -659,28 +664,31 @@ watch(
             </a-tag>
           </template>
         </a-table-column>
-        <a-table-column :title="t('archiveTemplate.columns.updatedBy')" :width="90">
+        <a-table-column :title="t('archiveTemplate.columns.updatedBy')" :min-width="120">
           <template #cell="{ record }">
-            {{ record.updater?.realName || t('archiveTemplate.system') }}
+            <span
+              class="table-text-ellipsis"
+              :title="record.updater?.realName || t('archiveTemplate.system')"
+            >
+              {{ record.updater?.realName || t('archiveTemplate.system') }}
+            </span>
           </template>
         </a-table-column>
-        <a-table-column :title="t('common.updatedAt')" :width="110">
+        <a-table-column :title="t('common.updatedAt')" :width="149">
           <template #cell="{ record }">
             {{ formatDate(record.updatedAt) }}
           </template>
         </a-table-column>
-        <a-table-column :title="t('common.action')" :width="160" fixed="right">
+        <a-table-column :title="t('common.action')" :width="182" fixed="right">
           <template #cell="{ record }">
             <a-space size="mini">
               <a-button type="text" size="mini" @click="openDetail(record)">
-                {{
-                  t('common.view')
-                }}
+                {{ t('common.view') }}
               </a-button>
               <a-button
                 v-if="
                   record.status !== 'DISABLED' &&
-                    permissionStore.hasPermission('archive_template:update_draft')
+                  permissionStore.hasPermission('archive_template:update_draft')
                 "
                 type="text"
                 size="mini"
@@ -692,7 +700,7 @@ watch(
               <a-button
                 v-if="
                   record.status !== 'DISABLED' &&
-                    permissionStore.hasPermission('archive_template:disable')
+                  permissionStore.hasPermission('archive_template:disable')
                 "
                 type="text"
                 size="mini"
@@ -745,11 +753,7 @@ watch(
           <a-grid-item>
             <a-form-item :label="t('common.country')">
               <a-select v-model="createForm.countryCode" allow-search allow-clear>
-                <a-option
-                  v-for="item in countries"
-                  :key="item.value"
-                  :value="item.value"
-                >
+                <a-option v-for="item in countries" :key="item.value" :value="item.value">
                   {{ item.label }}
                 </a-option>
               </a-select>
@@ -774,14 +778,10 @@ watch(
         </a-form-item>
         <div class="modal-actions">
           <a-button :disabled="creating" @click="createVisible = false">
-            {{
-              t('common.cancel')
-            }}
+            {{ t('common.cancel') }}
           </a-button>
           <a-button type="primary" :loading="creating" @click="createTemplate">
-            {{
-              t('archiveTemplate.createAndEdit')
-            }}
+            {{ t('archiveTemplate.createAndEdit') }}
           </a-button>
         </div>
       </a-form>
@@ -816,9 +816,7 @@ watch(
                 {{ t('archiveTemplate.addStandardFolders') }}
               </a-button>
               <a-button v-if="canEditVersion" @click="addFolder">
-                {{
-                  t('archiveTemplate.addFolder')
-                }}
+                {{ t('archiveTemplate.addFolder') }}
               </a-button>
               <a-button v-if="canEditVersion" :loading="savingStructure" @click="saveStructure()">
                 {{ t('archiveTemplate.saveDraft') }}
@@ -878,9 +876,7 @@ watch(
                   </div>
                   <a-space v-if="canEditVersion">
                     <a-button type="text" size="mini" @click="addItem(folder)">
-                      {{
-                        t('archiveTemplate.addItem')
-                      }}
+                      {{ t('archiveTemplate.addItem') }}
                     </a-button>
                     <a-button
                       type="text"
@@ -925,29 +921,16 @@ watch(
                     </div>
                     <div class="item-policies">
                       <a-checkbox v-model="item.required">
-                        {{
-                          t('archiveTemplate.required')
-                        }}
+                        {{ t('archiveTemplate.required') }}
                       </a-checkbox>
                       <a-checkbox v-model="item.reviewRequired">
-                        {{
-                          t('archiveTemplate.reviewRequired')
-                        }}
+                        {{ t('archiveTemplate.reviewRequired') }}
                       </a-checkbox>
                       <a-checkbox v-model="item.allowMultipleFiles">
-                        {{
-                          t('archiveTemplate.allowMultipleFiles')
-                        }}
+                        {{ t('archiveTemplate.allowMultipleFiles') }}
                       </a-checkbox>
-                      <a-input-number
-                        v-model="item.maxFileSizeMb"
-                        :min="1"
-                        :max="500"
-                        hide-button
-                      >
-                        <template #suffix>
-                          MB
-                        </template>
+                      <a-input-number v-model="item.maxFileSizeMb" :min="1" :max="500" hide-button>
+                        <template #suffix> MB </template>
                       </a-input-number>
                       <a-button type="text" status="danger" @click="removeItem(folder, itemIndex)">
                         {{ t('common.delete') }}
@@ -962,19 +945,13 @@ watch(
                       </div>
                       <a-space>
                         <a-tag v-if="item.required" color="red">
-                          {{
-                            t('archiveTemplate.required')
-                          }}
+                          {{ t('archiveTemplate.required') }}
                         </a-tag>
                         <a-tag v-if="item.reviewRequired" color="orange">
-                          {{
-                            t('archiveTemplate.reviewRequiredShort')
-                          }}
+                          {{ t('archiveTemplate.reviewRequiredShort') }}
                         </a-tag>
                         <a-tag v-if="item.allowMultipleFiles">
-                          {{
-                            t('archiveTemplate.allowMultipleFilesShort')
-                          }}
+                          {{ t('archiveTemplate.allowMultipleFilesShort') }}
                         </a-tag>
                       </a-space>
                     </div>
@@ -1026,16 +1003,77 @@ watch(
   padding: 0;
 }
 
+.archive-template-table {
+  --archive-template-grid-border: #e0e0e0;
+  --archive-template-row-border: #e5e6eb;
+}
+
+.archive-template-table :deep(.arco-table-th),
+.archive-template-table :deep(.arco-table-td) {
+  height: 44px;
+  border-bottom: 1px solid var(--archive-template-row-border);
+  font-size: 13px;
+}
+
+.archive-template-table :deep(.arco-table-cell) {
+  min-width: 0;
+  min-height: 43px;
+  align-items: center;
+  padding: 0 12px;
+  overflow: hidden;
+}
+
+.archive-template-table :deep(.arco-table-border-cell .arco-table-th),
+.archive-template-table :deep(.arco-table-border-cell .arco-table-td:not(.arco-table-tr-expand)) {
+  border-right-color: var(--archive-template-grid-border);
+}
+
+.archive-template-table :deep(.arco-table-th) {
+  background: #f2f3f5;
+  color: #1d2129;
+  font-weight: 500;
+}
+
+.archive-template-table :deep(.arco-table-td) {
+  background: #fff;
+}
+
+.archive-template-table
+  :deep(
+    .arco-table-stripe
+      .arco-table-tr:not(.arco-table-tr-empty):not(.arco-table-tr-summary):nth-child(even)
+      .arco-table-td
+  ) {
+  background: #f7f8fa;
+}
+
+.archive-template-table :deep(.arco-table-col-fixed-right) {
+  background: inherit;
+}
+
 .template-link {
-  display: grid;
-  gap: 3px;
+  display: block;
+  width: 100%;
+  min-width: 0;
   padding: 0;
+  overflow: hidden;
   border: 0;
   background: transparent;
   color: rgb(var(--primary-6));
   cursor: pointer;
   font: inherit;
   text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-link strong,
+.table-text-ellipsis {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .update-cell small,

@@ -107,10 +107,100 @@ describe('ProjectArchiveTargetService', () => {
       maxFileSize: BigInt(10_000),
       namingRule: 'Drawing-{version}',
       canUpload: true,
+      canDownload: false,
       canDeleteFile: false,
     });
     expect(result.folders[0].items[0]).not.toHaveProperty('canArchive');
     expect(result.folders[0].items[0]).not.toHaveProperty('canRestore');
+  });
+
+  it('returns original file metadata and action permissions for the Figma file row', async () => {
+    const uploadedAt = new Date('2026-07-20T00:00:00.000Z');
+    prisma.project.findFirst.mockResolvedValue({
+      id: 'project-1',
+      projectCode: 'P-001',
+      projectName: 'Archive project',
+      currentStage: 'EXECUTION',
+      archiveTemplateId: null,
+      archiveTemplateVersionId: null,
+      archiveTemplateVersion: null,
+      archiveTemplate: null,
+      archiveFolders: [
+        {
+          id: 'folder-1',
+          name: 'Temporary files',
+          description: null,
+          sortOrder: 10,
+          sourceStableKey: 'folder-temporary',
+          isTemporary: false,
+          archivedAt: null,
+          items: [
+            {
+              id: 'item-1',
+              name: 'Meeting minutes',
+              description: null,
+              required: true,
+              reviewRequired: false,
+              approvalTemplateId: null,
+              ownerRoleId: null,
+              allowMultipleFiles: false,
+              allowedExtensions: ['docx'],
+              maxFileSize: BigInt(10_000),
+              namingRule: null,
+              sourceStableKey: 'item-minutes',
+              isTemporary: false,
+              temporaryReason: null,
+              archivedAt: null,
+              updatedAt: uploadedAt,
+              ownerUser: null,
+              files: [
+                {
+                  id: 'archive-file-1',
+                  status: 'APPROVED',
+                  updatedAt: uploadedAt,
+                  logicalFile: {
+                    id: 'logical-file-1',
+                    displayName: 'Meeting minutes',
+                    status: 'ACTIVE',
+                    currentVersion: {
+                      id: 'version-1',
+                      version: 'V1.0',
+                      status: 'APPROVED',
+                      uploadedAt,
+                      uploadedBy: 'user-1',
+                      asset: {
+                        size: BigInt(1024),
+                        originalName: '项目启动会议纪要.docx',
+                        extension: 'docx',
+                      },
+                      uploader: { id: 'user-1', realName: '郭宁', username: 'guo' },
+                      reviewTasks: [],
+                    },
+                    versions: [],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    const result = await service.getArchiveTree('project-1', {
+      ...actor,
+      permissions: [...actor.permissions, 'archive:upload', 'file:download', 'file:archive'],
+    });
+
+    expect(result.folders[0].items[0]).toMatchObject({
+      currentVersion: {
+        displayName: 'Meeting minutes',
+        originalName: '项目启动会议纪要.docx',
+        extension: 'docx',
+      },
+      canUpload: true,
+      canDownload: true,
+      canDeleteFile: true,
+    });
   });
 
   it('does not expose commands retired by Figma 43:317', () => {
@@ -119,5 +209,4 @@ describe('ProjectArchiveTargetService', () => {
     expect(service).not.toHaveProperty('archiveItem');
     expect(service).not.toHaveProperty('restoreItem');
   });
-
 });

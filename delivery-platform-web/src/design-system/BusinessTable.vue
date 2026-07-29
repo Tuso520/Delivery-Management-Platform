@@ -14,7 +14,7 @@ import {
   type VNode,
   type VNodeChild,
 } from 'vue'
-import type { TableColumnData } from '@arco-design/web-vue'
+import type { TableBorder, TableColumnData } from '@arco-design/web-vue'
 
 import ErrorState from './ErrorState.vue'
 import EmptyState from './EmptyState.vue'
@@ -45,11 +45,12 @@ const props = withDefaults(
     rowKey?: string
     pagination?: PaginationState | null
     batchSize?: number
-    bordered?: boolean
+    bordered?: boolean | TableBorder
     stripe?: boolean
     defaultExpandAllRows?: boolean
     columns?: TableColumnData[]
     scroll?: TableScroll
+    fitContainer?: boolean
     preserveColumnWidths?: boolean
     size?: 'mini' | 'small' | 'medium' | 'large'
     showHeader?: boolean
@@ -68,6 +69,7 @@ const props = withDefaults(
     defaultExpandAllRows: false,
     columns: () => [],
     scroll: () => ({ x: 'max-content' }),
+    fitContainer: false,
     preserveColumnWidths: false,
     size: 'large',
     showHeader: true,
@@ -110,14 +112,29 @@ const preferredTableWidth = computed(() =>
 )
 const shouldDistributeColumns = computed(
   () =>
+    !props.fitContainer &&
     !props.preserveColumnWidths &&
     viewportWidth.value > 0 &&
     preferredTableWidth.value <= viewportWidth.value,
 )
 const tableColumns = computed(() =>
-  shouldDistributeColumns.value
-    ? resolvedColumns.value.map((column) => withoutExplicitWidth(column))
-    : resolvedColumns.value,
+  props.fitContainer
+    ? fitColumnsToWidth(resolvedColumns.value, fittedTableWidth.value)
+    : shouldDistributeColumns.value
+      ? resolvedColumns.value.map((column) => withoutExplicitWidth(column))
+      : resolvedColumns.value,
+)
+const fittedTableWidth = computed(() =>
+  Math.max(preferredTableWidth.value, viewportWidth.value || preferredTableWidth.value),
+)
+const tableScroll = computed<TableScroll>(() =>
+  props.fitContainer
+    ? {
+        ...props.scroll,
+        x: fittedTableWidth.value,
+        minWidth: props.scroll.minWidth ?? preferredTableWidth.value,
+      }
+    : props.scroll,
 )
 const errorMessage = computed(() =>
   props.error instanceof Error ? props.error.message : props.error || '',
@@ -183,7 +200,9 @@ function preferredColumnWidth(column: TableColumnData): number {
     return column.children.reduce((total, child) => total + preferredColumnWidth(child), 0)
   }
   const candidate = column.width ?? column.minWidth
-  return typeof candidate === 'number' ? candidate : Number.parseFloat(String(candidate || 120)) || 120
+  return typeof candidate === 'number'
+    ? candidate
+    : Number.parseFloat(String(candidate || 120)) || 120
 }
 
 function withoutExplicitWidth(column: TableColumnData): TableColumnData {
@@ -196,6 +215,43 @@ function withoutExplicitWidth(column: TableColumnData): TableColumnData {
       ? { children: column.children.map((child) => withoutExplicitWidth(child)) }
       : {}),
   }
+}
+
+function fitColumnsToWidth(columns: TableColumnData[], targetWidth: number): TableColumnData[] {
+  const preferredWidths = columns.map(preferredColumnWidth)
+  const preferredWidth = preferredWidths.reduce((total, width) => total + width, 0)
+  const flexibleIndexes = columns.flatMap((column, index) =>
+    column.width == null && column.minWidth != null && !column.children?.length ? [index] : [],
+  )
+
+  if (flexibleIndexes.length === 0) return columns
+
+  const flexiblePreferredWidth = flexibleIndexes.reduce(
+    (total, index) => total + (preferredWidths[index] ?? 0),
+    0,
+  )
+  let remainingExtraWidth = Math.max(0, targetWidth - preferredWidth)
+
+  return columns.map((column, index) => {
+    if (!flexibleIndexes.includes(index)) return column
+
+    const preferredWidthForColumn = preferredWidths[index] ?? 0
+    const isLastFlexibleColumn = index === flexibleIndexes.at(-1)
+    const extraWidth = isLastFlexibleColumn
+      ? remainingExtraWidth
+      : Math.floor(
+          remainingExtraWidth === 0 || flexiblePreferredWidth === 0
+            ? 0
+            : (Math.max(0, targetWidth - preferredWidth) * preferredWidthForColumn) /
+                flexiblePreferredWidth,
+        )
+    remainingExtraWidth -= extraWidth
+
+    return {
+      ...column,
+      width: preferredWidthForColumn + extraWidth,
+    }
+  })
 }
 
 onMounted(() => {
@@ -256,17 +312,15 @@ function extractDeclarativeColumns(value: VNodeChild | undefined): TableColumnDa
 </script>
 
 <template>
-  <ErrorState
-    v-if="error"
-    :title="errorMessage"
-    :retry-label="retryLabel"
-    @retry="emit('retry')"
-  />
+  <ErrorState v-if="error" :title="errorMessage" :retry-label="retryLabel" @retry="emit('retry')" />
   <div
     v-else
     :class="[
       'business-table',
-      { 'business-table--preserve-column-widths': preserveColumnWidths },
+      {
+        'business-table--fit-container': fitContainer,
+        'business-table--preserve-column-widths': preserveColumnWidths,
+      },
     ]"
   >
     <div ref="viewport" class="business-table__viewport" @scroll.passive="handleViewportScroll">
@@ -277,7 +331,7 @@ function extractDeclarativeColumns(value: VNodeChild | undefined): TableColumnDa
         :row-key="rowKey"
         :pagination="false"
         :columns="tableColumns"
-        :scroll="scroll"
+        :scroll="tableScroll"
         :size="size"
         :show-header="showHeader"
         :bordered="bordered"
@@ -334,9 +388,8 @@ function extractDeclarativeColumns(value: VNodeChild | undefined): TableColumnDa
   table-layout: auto;
 }
 
-.business-table--preserve-column-widths
-  .business-table__viewport
-  :deep(.arco-table-element) {
+.business-table--preserve-column-widths .business-table__viewport :deep(.arco-table-element),
+.business-table--fit-container .business-table__viewport :deep(.arco-table-element) {
   table-layout: fixed;
 }
 
