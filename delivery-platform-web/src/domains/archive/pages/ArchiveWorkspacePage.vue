@@ -380,23 +380,25 @@ watch(
     </section>
 
     <section class="archive-toolbar">
-      <a-select
-        :model-value="selectedProjectId"
-        :loading="loadingProjects"
-        :filter-option="false"
-        allow-search
-        class="archive-project-select"
-        :placeholder="t('archive.selectProject')"
-        @search="projectKeyword = $event"
-        @change="changeProject"
-      >
-        <a-option
-          v-for="project in projects"
-          :key="project.id"
-          :value="project.id"
-          :label="project.projectName"
-        />
-      </a-select>
+      <div class="archive-project-select">
+        <a-select
+          :model-value="selectedProjectId"
+          :loading="loadingProjects"
+          :filter-option="false"
+          allow-search
+          class="archive-project-select__control"
+          :placeholder="t('archive.selectProject')"
+          @search="projectKeyword = $event"
+          @change="changeProject"
+        >
+          <a-option
+            v-for="project in projects"
+            :key="project.id"
+            :value="project.id"
+            :label="project.projectName"
+          />
+        </a-select>
+      </div>
       <div class="archive-toolbar__right">
         <span v-if="tree" class="archive-project-meta">
           {{ tree.project.code }}
@@ -688,6 +690,13 @@ watch(
 
 .archive-project-select {
   width: 270px;
+  min-width: 270px;
+  max-width: 270px;
+  flex: 0 0 270px;
+}
+
+.archive-project-select :deep(.archive-project-select__control) {
+  width: 100%;
 }
 
 .archive-project-select :deep(.arco-select-view-single) {
@@ -827,8 +836,8 @@ watch(
   flex: 1;
   grid-template-columns: 270px minmax(937px, 1fr);
   overflow: hidden;
-  border: 1px solid var(--archive-border);
   background: #fff;
+  box-shadow: inset 0 0 0 1px var(--archive-border);
 }
 
 .archive-directory {
@@ -1025,6 +1034,11 @@ watch(
   height: 100%;
 }
 
+.archive-files :deep(.archive-file-table .arco-table-element) {
+  width: 937px !important;
+  min-width: 937px !important;
+}
+
 .archive-files :deep(.business-table__viewport) {
   height: 100%;
   max-height: none;
@@ -1067,6 +1081,11 @@ watch(
 .archive-files :deep(.archive-file-table .arco-table-th:last-child),
 .archive-files :deep(.archive-file-table .arco-table-td:last-child) {
   border-right: 0 !important;
+}
+
+.archive-files :deep(.archive-file-table .arco-table-th:first-child .arco-table-cell) {
+  justify-content: center;
+  text-align: center;
 }
 
 .archive-files :deep(.archive-file-table .arco-table-tr:nth-child(even) .arco-table-td) {
