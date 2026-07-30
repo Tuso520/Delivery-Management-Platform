@@ -44,7 +44,6 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
       const directory = root.querySelector<HTMLElement>('.archive-directory')
       const directoryScroll = root.querySelector<HTMLElement>('.archive-directory__scroll')
       const firstDirectoryItem = root.querySelector<HTMLElement>('.archive-directory__item')
-      const filesPanel = root.querySelector<HTMLElement>('.archive-files')
       const tableViewport = root.querySelector<HTMLElement>('.business-table__viewport')
       const firstRow = root.querySelector<HTMLElement>('.arco-table-td')
       const headers = [...root.querySelectorAll<HTMLElement>('thead .arco-table-th')]
@@ -58,7 +57,6 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
         !directory ||
         !directoryScroll ||
         !firstDirectoryItem ||
-        !filesPanel ||
         !tableViewport ||
         !firstRow ||
         !layoutMain ||
@@ -84,7 +82,7 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
         directoryOverflowY: getComputedStyle(directoryScroll).overflowY,
         tableOverflowY: getComputedStyle(tableViewport).overflowY,
         tableRowHeight: Math.round(firstRow.getBoundingClientRect().height),
-        tablePanelWidth: Math.round(filesPanel.getBoundingClientRect().width),
+        tableViewportClientWidth: tableViewport.clientWidth,
         headerWidths: headers.map((header) => Math.round(header.getBoundingClientRect().width)),
         headerBorders: headers.map((header) => getComputedStyle(header).borderRightWidth),
         cellBorders: cells.map((cell) => getComputedStyle(cell).borderRightWidth),
@@ -116,7 +114,10 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
       })
     }
     expect(
-      Math.abs(layout.headerWidths.reduce((total, width) => total + width, 0) - layout.tablePanelWidth),
+      Math.abs(
+        layout.headerWidths.reduce((total, width) => total + width, 0) -
+          layout.tableViewportClientWidth,
+      ),
     ).toBeLessThanOrEqual(2)
     expect(layout.selectLeft).toBe(layout.directoryLeft)
     expect(layout.documentScrollHeight).toBe(layout.documentClientHeight)
