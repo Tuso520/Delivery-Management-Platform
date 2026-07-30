@@ -18,6 +18,10 @@ async function login(page: Page): Promise<void> {
 test('project archive matches Figma 43:317 and fills three desktop viewports', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await login(page)
+  await page.goto('/#/archive')
+  await expect(page.locator('.archive-directory__item').first()).toBeVisible({
+    timeout: 60_000,
+  })
 
   const viewports = [
     { width: 1440, height: 900 },
@@ -28,10 +32,7 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
 
   for (const viewport of viewports) {
     await page.setViewportSize(viewport)
-    await page.goto('/#/archive')
-    await expect(page.locator('.archive-directory__item').first()).toBeVisible({
-      timeout: 60_000,
-    })
+    await expect(page.locator('.archive-directory__item').first()).toBeVisible()
 
     const layout = await page.locator('.archive-page').evaluate((root) => {
       const metrics = root.querySelector<HTMLElement>('.archive-metrics')
