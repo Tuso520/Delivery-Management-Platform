@@ -1038,11 +1038,6 @@ watch(
   height: 100%;
 }
 
-.archive-files :deep(.archive-file-table .arco-table-element) {
-  width: 937px !important;
-  min-width: 937px !important;
-}
-
 .archive-files :deep(.business-table__viewport) {
   height: 100%;
   max-height: none;
