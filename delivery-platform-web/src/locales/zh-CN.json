@@ -1266,7 +1266,7 @@
     "title": "标准库",
     "subtitle": "SOP、流程、检查标准与模板的统一版本库",
     "refresh": "刷新",
-    "create": "新增标准",
+    "create": "新增",
     "keyword": "关键词",
     "searchPlaceholder": "搜索标准名称、编号或文件名",
     "allCategories": "全部分类",
@@ -1380,7 +1380,7 @@
       "relationAdded": "标准关系已添加",
       "relationRemoved": "标准关系已移除",
       "archived": "标准已归档",
-      "publishedNoDownload": "该标准暂无可下载的已发布版本"
+      "fileUnavailable": "该标准暂无可打开的文件版本"
     },
     "review": {
       "title": "提交审核",

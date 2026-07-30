@@ -1266,7 +1266,7 @@
     "title": "Standards Library",
     "subtitle": "A unified version library for SOPs, workflows, inspection standards, and templates",
     "refresh": "Refresh",
-    "create": "New Standard",
+    "create": "Add",
     "keyword": "Keyword",
     "searchPlaceholder": "Search by standard name, code, or file name",
     "allCategories": "All Categories",
@@ -1380,7 +1380,7 @@
       "relationAdded": "Standard relationship added",
       "relationRemoved": "Standard relationship removed",
       "archived": "Standard archived",
-      "publishedNoDownload": "This standard has no published version available for download"
+      "fileUnavailable": "This standard has no file version available to open"
     },
     "review": {
       "title": "Submit for Review",

@@ -9,6 +9,20 @@ const acceptanceScreenshot = resolve(
   process.cwd(),
   '../.ai-work/acceptance-standard-library-1440x900.png',
 )
+const managementDomainLabels = [
+  '进度与计划管理',
+  '质量管理',
+  '安全管理',
+  '成本与预算管理',
+  '合同、付款与商务管理',
+  '采购与供应链管理',
+  '风险、问题与待办管理',
+  '变更与增项管理',
+  '沟通、会议与汇报管理',
+  '文件、档案与成果物管理',
+  '阶段评审与审批管理',
+  '分包商与相关方管理',
+] as const
 
 interface SessionEnvelope {
   data: { accessToken: string }
@@ -142,13 +156,18 @@ test('standard library matches Figma node 70:322 geometry and real configured co
   expect(geometry.metrics.height).toBe(88)
   expect(geometry.metric.height).toBe(76)
   expect(geometry.toolbar.height).toBe(32)
-  expect(geometry.libraryPanel.height).toBe(625)
+  expect(geometry.libraryPanel.height).toBeGreaterThanOrEqual(625)
   expect(geometry.sidebar.width).toBe(270)
   expect(geometry.tabs.height).toBe(44)
   expect(geometry.categoryRow.height).toBe(44)
   expect(geometry.categoryDescription.height).toBe(80)
   expect(geometry.contentPanel.width).toBeGreaterThanOrEqual(937)
-  expect(geometry.headerWidths).toEqual([365, 90, 130, 170, 182])
+  expect(geometry.headerWidths.slice(1)).toEqual([90, 130, 170, 182])
+  expect(geometry.headerWidths[0]).toBeGreaterThanOrEqual(365)
+  expect(geometry.headerWidths.reduce((total, width) => total + width, 0)).toBeCloseTo(
+    geometry.contentPanel.width,
+    0,
+  )
   expect(geometry.bodyWidths).toEqual(geometry.headerWidths)
   expect(geometry.rowHeights.every((height) => height === 44)).toBe(true)
 
@@ -172,25 +191,85 @@ test('standard library matches Figma node 70:322 geometry and real configured co
   await page.getByRole('button', { name: '查询' }).click()
   await filteredResponse
   await expect(table.locator('tbody tr')).toHaveCount(1)
-  await expect(table.locator('tbody tr').first()).toContainText(keyword)
+  await expect(table.locator('tbody tr').first()).toContainText('DC-TPL-KICKOFF-V1.0.md')
 
   await page.locator('.keyword-input input').clear()
   await page.getByRole('button', { name: '查询' }).click()
   await expect(table.locator('tbody tr').first()).toBeVisible()
   await page.locator('.category-tabs button').nth(1).click()
   await expect(page.locator('.category-tabs button').nth(1)).toHaveClass(/active/u)
+  await expect(page.locator('.category-list button span')).toHaveText([
+    ...managementDomainLabels,
+  ])
   await expect(page.locator('.category-description h1')).not.toHaveText('-')
   await page.locator('.category-tabs button').nth(0).click()
   await expect(page.locator('.category-tabs button').nth(0)).toHaveClass(/active/u)
 
   await table.locator('.title-cell button').first().click()
-  await expect(page.locator('.arco-drawer')).toBeVisible()
-  await expect(page.locator('.version-section')).toBeVisible()
-  await page.locator('.arco-drawer-close-btn').click()
-  await page.getByRole('button', { name: '新建' }).click()
+  await expect(page.locator('.attachment-preview-modal')).toBeVisible()
+  await expect(page.locator('.arco-drawer')).toHaveCount(0)
+  await page.locator('.attachment-preview-modal .arco-modal-close-btn').click()
+  await page.getByRole('button', { name: '新增', exact: true }).click()
   const createModal = page.locator('.arco-modal:visible')
   await expect(createModal).toBeVisible()
+  const managementDomainField = createModal
+    .locator('.arco-form-item')
+    .filter({ hasText: '管理领域' })
+  await managementDomainField.locator('.arco-select').click()
+  await expect(
+    page.locator('.arco-select-dropdown:visible .arco-select-option'),
+  ).toHaveText([...managementDomainLabels])
+  await page.keyboard.press('Escape')
   await createModal.locator('.arco-modal-close-btn').click()
+
+  const panelHeights: number[] = []
+  for (const viewport of [
+    { width: 1280, height: 800 },
+    { width: 1920, height: 1080 },
+    { width: 2560, height: 1440 },
+  ]) {
+    await page.setViewportSize(viewport)
+    await page.goto('/#/standards')
+    await expect(page.locator('.standard-table tbody tr').first()).toBeVisible()
+    const adaptiveLayout = await page.locator('.standard-library').evaluate((standardRoot) => {
+      const panel = standardRoot.querySelector<HTMLElement>('.library-panel')
+      const sidebar = standardRoot.querySelector<HTMLElement>('.category-sidebar')
+      const content = standardRoot.querySelector<HTMLElement>('.content-panel')
+      const categoryList = standardRoot.querySelector<HTMLElement>('.category-list')
+      const tableRegion = standardRoot.querySelector<HTMLElement>('.table-region')
+      if (!panel || !sidebar || !content || !categoryList || !tableRegion) {
+        throw new Error('Standard library adaptive layout nodes are incomplete')
+      }
+      const rootBox = standardRoot.getBoundingClientRect()
+      const panelBox = panel.getBoundingClientRect()
+      const sidebarBox = sidebar.getBoundingClientRect()
+      const contentBox = content.getBoundingClientRect()
+      return {
+        panelHeight: Math.round(panelBox.height),
+        panelBottomInset: Math.round(rootBox.bottom - panelBox.bottom),
+        sideContentBottomDelta: Math.abs(sidebarBox.bottom - contentBox.bottom),
+        rootOverflowY: getComputedStyle(standardRoot).overflowY,
+        categoryOverflowY: getComputedStyle(categoryList).overflowY,
+        tableOverflowY: getComputedStyle(tableRegion).overflowY,
+      }
+    })
+    panelHeights.push(adaptiveLayout.panelHeight)
+    expect(adaptiveLayout).toMatchObject({
+      panelBottomInset: 13,
+      sideContentBottomDelta: 0,
+      rootOverflowY: 'hidden',
+      categoryOverflowY: 'auto',
+      tableOverflowY: 'auto',
+    })
+    await page.locator('.standard-library').screenshot({
+      path: resolve(
+        process.cwd(),
+        `../.ai-work/acceptance-standard-library-${viewport.width}x${viewport.height}.png`,
+      ),
+    })
+  }
+  expect(panelHeights[1]).toBeGreaterThan(panelHeights[0])
+  expect(panelHeights[2]).toBeGreaterThan(panelHeights[1])
   expect(browserErrors).toEqual([])
 })
 
@@ -221,7 +300,7 @@ test('standard library keeps real loading, empty and validation errors inside th
   await page.goto(`/#/standards?keyword=${emptyKeyword}`)
   await expect(page.locator('.table-loading')).toBeVisible()
   await expect(page.locator('.standard-table .empty-cell')).toContainText('暂无标准')
-  await expect(page.locator('.library-panel')).toHaveCSS('height', '625px')
+  await expect(page.locator('.library-panel')).toBeVisible()
 
   const firstPageResponse = await page.request.get(
     '/api/v1/standards?page=1&pageSize=3&sortBy=name&sortOrder=asc',
@@ -275,7 +354,7 @@ test('standard library keeps real loading, empty and validation errors inside th
       .filter({ hasText: 'Request failed with status code 400' })
       .first(),
   ).toBeVisible()
-  await expect(page.locator('.library-panel')).toHaveCSS('height', '625px')
+  await expect(page.locator('.library-panel')).toBeVisible()
 })
 
 test('standard library renders a real long draft, published actions and minimum-width scrolling', async ({
@@ -287,6 +366,10 @@ test('standard library renders a real long draft, published actions and minimum-
   const marker = Date.now().toString(36).toUpperCase()
   const standardCode = `UI-LONG-${marker}`
   const longName = `标准库长文本视觉验收-${'超长标准名称'.repeat(28)}-${marker}`.slice(0, 190)
+  const longFileName = `${`标准库超长文件名-${'项目交付标准资料'.repeat(18)}-${marker}`.slice(
+    0,
+    180,
+  )}.md`
   let standardId = ''
 
   try {
@@ -326,7 +409,7 @@ test('standard library renders a real long draft, published actions and minimum-
         ownerType: 'STANDARD',
         changeDescription: 'standard library long-text visual acceptance',
         file: {
-          name: `standard-long-${marker}.md`,
+          name: longFileName,
           mimeType: 'text/markdown',
           buffer: Buffer.from('# Standard library long-text visual acceptance\n', 'utf8'),
         },
@@ -356,10 +439,10 @@ test('standard library renders a real long draft, published actions and minimum-
     standardId = created.data.id
 
     await page.goto(`/#/standards?keyword=${encodeURIComponent(standardCode)}`)
-    const row = page.locator('.standard-table tbody tr').filter({ hasText: longName })
+    const row = page.locator('.standard-table tbody tr').filter({ hasText: longFileName })
     await expect(row).toHaveCount(1)
     const titleButton = row.locator('.title-cell button')
-    await expect(titleButton).toHaveAttribute('title', longName)
+    await expect(titleButton).toHaveAttribute('title', longFileName)
     expect(
       await titleButton.evaluate((element) => element.scrollWidth > element.clientWidth),
     ).toBe(true)
@@ -384,9 +467,11 @@ test('standard library renders a real long draft, published actions and minimum-
     await page.getByRole('button', { name: '查询', exact: true }).click()
     const publishedRow = page
       .locator('.standard-table tbody tr')
-      .filter({ has: page.getByRole('button', { name: '下载', exact: true }) })
+      .filter({ has: page.getByRole('button', { name: '编辑', exact: true }) })
+      .filter({ hasText: /^.*V\d/u })
       .first()
     await expect(publishedRow).toBeVisible()
+    await expect(publishedRow.getByRole('button', { name: '下载', exact: true })).toHaveCount(0)
     await expect(publishedRow.locator('td').nth(1)).toHaveText(/^V\d/u)
     await expect(publishedRow.locator('td').nth(2)).toHaveText(/^\d{4}-\d{2}-\d{2}$/u)
   } finally {
