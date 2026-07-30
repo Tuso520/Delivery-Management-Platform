@@ -380,23 +380,25 @@ watch(
     </section>
 
     <section class="archive-toolbar">
-      <a-select
-        :model-value="selectedProjectId"
-        :loading="loadingProjects"
-        :filter-option="false"
-        allow-search
-        class="archive-project-select"
-        :placeholder="t('archive.selectProject')"
-        @search="projectKeyword = $event"
-        @change="changeProject"
-      >
-        <a-option
-          v-for="project in projects"
-          :key="project.id"
-          :value="project.id"
-          :label="project.projectName"
-        />
-      </a-select>
+      <div class="archive-project-select-shell">
+        <a-select
+          :model-value="selectedProjectId"
+          :loading="loadingProjects"
+          :filter-option="false"
+          allow-search
+          class="archive-project-select"
+          :placeholder="t('archive.selectProject')"
+          @search="projectKeyword = $event"
+          @change="changeProject"
+        >
+          <a-option
+            v-for="project in projects"
+            :key="project.id"
+            :value="project.id"
+            :label="project.projectName"
+          />
+        </a-select>
+      </div>
       <div class="archive-toolbar__right">
         <span v-if="tree" class="archive-project-meta">
           {{ tree.project.code }}
@@ -686,11 +688,16 @@ watch(
   justify-content: space-between;
 }
 
-.archive-project-select {
+.archive-project-select-shell {
   width: 270px;
+  flex: 0 0 270px;
 }
 
-.archive-project-select :deep(.arco-select-view-single) {
+.archive-project-select-shell :deep(.archive-project-select) {
+  width: 100%;
+}
+
+.archive-project-select-shell :deep(.arco-select-view-single) {
   height: 32px;
   min-height: 32px;
   border: 0;
@@ -700,14 +707,14 @@ watch(
   padding: 4px 12px;
 }
 
-.archive-project-select :deep(.arco-select-view-value) {
+.archive-project-select-shell :deep(.arco-select-view-value) {
   color: #86909c;
   font-size: 13px;
   font-weight: 500;
   line-height: 22px;
 }
 
-.archive-project-select :deep(.arco-select-view-arrow) {
+.archive-project-select-shell :deep(.arco-select-view-arrow) {
   color: #86909c;
   font-size: 12px;
 }

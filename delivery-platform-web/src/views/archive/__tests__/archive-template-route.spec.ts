@@ -14,6 +14,8 @@ describe('archive template route state', () => {
     expect(page).toContain('class="archive-metrics"')
     expect(page).toContain('class="archive-workspace"')
     expect(page).toContain('<section class="archive-toolbar">')
+    expect(page).toContain('class="archive-project-select-shell"')
+    expect(page).toContain('flex: 0 0 270px')
     expect(page).toContain('grid-template-columns: 270px minmax(937px, 1fr)')
     expect(page).toContain(':scroll="{ x: 937 }"')
     expect(page).toContain(':title="resolveProjectArchiveFileName(record)"')
