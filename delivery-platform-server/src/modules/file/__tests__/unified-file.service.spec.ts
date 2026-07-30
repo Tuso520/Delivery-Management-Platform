@@ -788,6 +788,7 @@ describe('UnifiedFileService', () => {
       } as unknown as PrismaService;
       const storage = {
         getPresignedUrlFrom: jest.fn().mockResolvedValue('https://files.test/business'),
+        toBrowserPreviewUrl: jest.fn((url: string) => url),
       } as unknown as FileStorageService;
       const service = new UnifiedFileService(
         prisma,
@@ -911,6 +912,7 @@ describe('UnifiedFileService', () => {
     } as unknown as PrismaService;
     const storage = {
       getPresignedUrlFrom: jest.fn().mockResolvedValue('https://files.test/signed'),
+      toBrowserPreviewUrl: jest.fn((url: string) => url),
     } as unknown as FileStorageService;
     const service = new UnifiedFileService(
       prisma,
@@ -1000,6 +1002,7 @@ describe('UnifiedFileService', () => {
       } as unknown as PrismaService;
       const storage = {
         getPresignedUrlFrom: jest.fn().mockResolvedValue('https://files.test/signed-office'),
+        toBrowserPreviewUrl: jest.fn((url: string) => url),
       } as unknown as FileStorageService;
       const service = new UnifiedFileService(
         prisma,
@@ -1185,6 +1188,7 @@ describe('UnifiedFileService', () => {
     } as unknown as PrismaService;
     const storage = {
       getPresignedUrlFrom: jest.fn().mockResolvedValue('https://files.test/original.dwg'),
+      toBrowserPreviewUrl: jest.fn((url: string) => url),
     } as unknown as FileStorageService;
     const service = new UnifiedFileService(
       prisma,
@@ -1265,6 +1269,7 @@ describe('UnifiedFileService', () => {
     } as unknown as PrismaService;
     const storage = {
       getPresignedUrlFrom: jest.fn().mockResolvedValue('https://files.test/processed.pdf'),
+      toBrowserPreviewUrl: jest.fn((url: string) => url),
     } as unknown as FileStorageService;
     const service = new UnifiedFileService(
       prisma,
@@ -1321,6 +1326,7 @@ describe('UnifiedFileService', () => {
         .fn()
         .mockResolvedValue(Readable.from(Buffer.from(JSON.stringify(outline)))),
       getPresignedUrlFrom: jest.fn().mockResolvedValue('https://files.test/outline.json'),
+      toBrowserPreviewUrl: jest.fn((url: string) => url),
     } as unknown as FileStorageService;
     const service = new UnifiedFileService(
       prisma,

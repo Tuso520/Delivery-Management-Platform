@@ -162,6 +162,31 @@ const legacyTargetDictionaries: readonly DictionarySeed[] = [
   },
 ] as const;
 
+export const standardManagementDomainItems = [
+  { value: 'PROGRESS_PLANNING_MANAGEMENT', label: '进度与计划管理' },
+  { value: 'QUALITY_MANAGEMENT', label: '质量管理' },
+  { value: 'SAFETY_MANAGEMENT', label: '安全管理' },
+  { value: 'COST_BUDGET_MANAGEMENT', label: '成本与预算管理' },
+  { value: 'CONTRACT_PAYMENT_COMMERCIAL_MANAGEMENT', label: '合同、付款与商务管理' },
+  { value: 'PROCUREMENT_SUPPLY_CHAIN_MANAGEMENT', label: '采购与供应链管理' },
+  { value: 'RISK_ISSUE_TODO_MANAGEMENT', label: '风险、问题与待办管理' },
+  { value: 'CHANGE_ADDITION_MANAGEMENT', label: '变更与增项管理' },
+  { value: 'COMMUNICATION_MEETING_REPORTING_MANAGEMENT', label: '沟通、会议与汇报管理' },
+  { value: 'FILE_ARCHIVE_DELIVERABLE_MANAGEMENT', label: '文件、档案与成果物管理' },
+  { value: 'STAGE_REVIEW_APPROVAL_MANAGEMENT', label: '阶段评审与审批管理' },
+  { value: 'SUBCONTRACTOR_STAKEHOLDER_MANAGEMENT', label: '分包商与相关方管理' },
+] as const satisfies DictionarySeed['items'];
+
+const legacyStandardManagementDomainValues = [
+  'MANAGEMENT_POLICY',
+  'ROLES_RESPONSIBILITIES',
+  'PROCESS_SOP',
+  'TECH_PRODUCT_STANDARD',
+  'WORK_SPECIFICATION',
+  'INSPECTION_ACCEPTANCE',
+  'TEMPLATE_FORM',
+] as const;
+
 const fieldConfigurationDictionaries: readonly DictionarySeed[] = [
   { code: 'COUNTRY', name: '国家', items: [['CN', '中国'], ['VN', '越南'], ['TH', '泰国'], ['ID', '印尼'], ['MY', '马来西亚'], ['OM', '阿曼'], ['SG', '新加坡'], ['AE', '阿联酋']].map(([value, label]) => ({ value, label })) },
   { code: 'CUSTOMER_TYPE', name: '客户类型', items: [['FACTORY', '工厂'], ['IDC', 'IDC'], ['AIDC', 'AIDC'], ['COMMERCIAL', '商业'], ['MEDICAL', '医疗'], ['RAIL_TRANSIT', '轨道交通'], ['STANDARD_PRODUCT', '标品']].map(([value, label]) => ({ value, label })) },
@@ -195,7 +220,7 @@ const fieldConfigurationDictionaries: readonly DictionarySeed[] = [
   { code: 'PROJECT_TYPE', name: '项目类型', items: [['EPC_INTEGRATED', 'EPC综合'], ['SYSTEM_INTEGRATION', '系统集成'], ['EQUIPMENT_SUPPLY', '设备供货'], ['CONSTRUCTION_IMPLEMENTATION', '施工实施'], ['SOFTWARE_ONLY', '纯软件'], ['TECHNICAL_SERVICE', '技术服务'], ['GENERAL', '通用']].map(([value, label]) => ({ value, label })) },
   { code: 'STANDARD_TYPE', name: '标准类型', items: [['SOP', 'SOP'], ['MANAGEMENT_POLICY', '管理制度'], ['DELIVERY_WORKFLOW', '交付流程'], ['CHECK_STANDARD', '检查标准'], ['DOCUMENT_TEMPLATE', '文档模板'], ['FORM_TEMPLATE', '表单模板'], ['TECHNICAL_STANDARD', '技术标准'], ['WORK_INSTRUCTION', '作业指导书']].map(([value, label]) => ({ value, label })) },
   { code: 'STANDARD_DELIVERY_STAGE', name: '交付阶段', items: [['PROJECT_STARTUP', '项目启动'], ['DETAILED_DESIGN', '深化设计'], ['PROCUREMENT_PRODUCTION', '采购与生产'], ['CONSTRUCTION_INSTALLATION', '施工与安装'], ['HARDWARE_COMMISSIONING', '硬件调试'], ['SOFTWARE_TESTING', '软件测试'], ['INTERNAL_ACCEPTANCE', '内部验收'], ['CUSTOMER_ACCEPTANCE', '客户验收'], ['CLOSEOUT_HANDOVER', '收尾与移交'], ['WARRANTY_REVIEW', '维保与复盘']].map(([value, label]) => ({ value, label })) },
-  { code: 'STANDARD_MANAGEMENT_DOMAIN', name: '管理领域', items: [['MANAGEMENT_POLICY', '管理制度'], ['ROLES_RESPONSIBILITIES', '岗位与职责'], ['PROCESS_SOP', '流程与 SOP'], ['TECH_PRODUCT_STANDARD', '技术与产品标准'], ['WORK_SPECIFICATION', '作业规范'], ['INSPECTION_ACCEPTANCE', '检查与验收'], ['TEMPLATE_FORM', '模板与表单']].map(([value, label]) => ({ value, label })) },
+  { code: 'STANDARD_MANAGEMENT_DOMAIN', name: '管理领域', items: standardManagementDomainItems },
   { code: 'STANDARD_BUSINESS_TYPE', name: '业务类型', items: [{ value: 'GENERAL', label: '通用' }] },
   { code: 'STANDARD_STATUS', name: '状态', items: [['DRAFT', '草稿'], ['IN_REVIEW', '审核中'], ['REJECTED', '已驳回'], ['PUBLISHED', '已发布'], ['ARCHIVED', '已归档']].map(([value, label]) => ({ value, label })) },
   { code: 'STANDARD_ENABLED_STATUS', name: '启用状态', items: [['ENABLED', '启用'], ['DISABLED', '停用']].map(([value, label]) => ({ value, label })) },
@@ -320,6 +345,20 @@ export async function seedTargetDictionaries(prisma: PrismaClient, actorId?: str
           },
         });
       }
+    }
+    if (definition.code === 'STANDARD_MANAGEMENT_DOMAIN') {
+      await prisma.dictionaryItem.updateMany({
+        where: {
+          categoryId: category.id,
+          itemValue: { in: [...legacyStandardManagementDomainValues] },
+          status: 'Active',
+          deletedAt: null,
+        },
+        data: {
+          status: 'Inactive',
+          ...(actorId ? { updatedBy: actorId } : {}),
+        },
+      });
     }
   }
 }

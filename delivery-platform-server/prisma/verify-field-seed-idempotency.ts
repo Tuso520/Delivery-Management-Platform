@@ -15,7 +15,7 @@ const expectedCounts: Record<string, number> = {
   PROJECT_STATUS: 5,
   STANDARD_TYPE: 8,
   STANDARD_DELIVERY_STAGE: 10,
-  STANDARD_MANAGEMENT_DOMAIN: 7,
+  STANDARD_MANAGEMENT_DOMAIN: 19,
   STANDARD_BUSINESS_TYPE: 1,
   STANDARD_STATUS: 5,
   STANDARD_ENABLED_STATUS: 2,
@@ -36,7 +36,13 @@ async function snapshot() {
       isSystem: true,
       items: {
         where: { isSystemDefault: true, deletedAt: null },
-        select: { itemValue: true, itemLabel: true, itemCode: true, isSystemDefault: true },
+        select: {
+          itemValue: true,
+          itemLabel: true,
+          itemCode: true,
+          isSystemDefault: true,
+          status: true,
+        },
         orderBy: [{ sortOrder: 'asc' }, { itemValue: 'asc' }],
       },
     },
@@ -62,6 +68,12 @@ async function main(): Promise<void> {
     }
     if (category.items.some((item) => !item.isSystemDefault || item.itemCode !== item.itemValue)) {
       throw new Error(`${category.categoryCode} 缺少系统默认或稳定编码标记`);
+    }
+    if (
+      category.categoryCode === 'STANDARD_MANAGEMENT_DOMAIN' &&
+      category.items.filter((item) => item.status === 'Active').length !== 12
+    ) {
+      throw new Error('STANDARD_MANAGEMENT_DOMAIN 启用项必须严格为 12 项');
     }
   }
   console.log(`FIELD_SEED_IDEMPOTENT=YES categories=${second.length} values=${second.reduce((sum, category) => sum + category.items.length, 0)}`);
