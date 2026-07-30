@@ -11,9 +11,9 @@ const acceptanceScreenshot = resolve(
 async function login(page: Page): Promise<void> {
   if (!adminUsername || !adminPassword) throw new Error('UI E2E credentials are required')
 
-  await page.goto('/#/login')
+  await page.goto('/#/login', { waitUntil: 'domcontentloaded' })
   const fields = page.locator('.login-form input')
-  await expect(fields).toHaveCount(2)
+  await expect(fields).toHaveCount(2, { timeout: 20_000 })
   await expect(page.locator('.login-form .password-visibility')).toBeVisible()
   await fields.nth(0).fill(adminUsername)
   await fields.nth(1).fill(adminPassword)
@@ -21,8 +21,19 @@ async function login(page: Page): Promise<void> {
   await page.waitForURL((url) => !url.hash.startsWith('#/login'))
 }
 
-function createProjectScenario() {
-  let template: Record<string, unknown> | undefined
+function createProjectScenario(envelope: Record<string, unknown>) {
+  const sourceData = envelope.data
+  if (!sourceData || typeof sourceData !== 'object') {
+    throw new Error('The real project list response does not contain data')
+  }
+  const data = sourceData as Record<string, unknown>
+  const sourceItems = data.items
+  const template =
+    Array.isArray(sourceItems) && sourceItems[0] && typeof sourceItems[0] === 'object'
+      ? (sourceItems[0] as Record<string, unknown>)
+      : undefined
+  if (!template) throw new Error('The real project list response does not contain a project')
+
   let requestCount = 0
 
   return {
@@ -31,15 +42,6 @@ function createProjectScenario() {
     },
     async fulfill(route: Route): Promise<void> {
       requestCount += 1
-      const response = await route.fetch()
-      const envelope = await response.json()
-      const sourceItems = envelope?.data?.items
-      template = (Array.isArray(sourceItems) && sourceItems[0]) || template
-      if (!template) {
-        await route.fulfill({ response })
-        return
-      }
-
       const url = new URL(route.request().url())
       const page = Number(url.searchParams.get('page') || 1)
       const pageSize = Number(url.searchParams.get('pageSize') || 20)
@@ -60,11 +62,12 @@ function createProjectScenario() {
       const start = (page - 1) * pageSize
 
       await route.fulfill({
-        response,
+        status: 200,
+        contentType: 'application/json',
         json: {
           ...envelope,
           data: {
-            ...envelope.data,
+            ...data,
             items: allItems.slice(start, start + pageSize),
             page,
             pageSize,
@@ -195,7 +198,9 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
   })
   page.on('pageerror', (error) => pageErrors.push(error.message))
   page.on('requestfailed', (request) => {
-    requestFailures.push(`${request.method()} ${request.url()} ${request.failure()?.errorText || ''}`)
+    requestFailures.push(
+      `${request.method()} ${request.url()} ${request.failure()?.errorText || ''}`,
+    )
   })
 
   const listResponse = page.waitForResponse(
@@ -253,9 +258,9 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
       iconContainerSize: Math.round(metricIcon.getBoundingClientRect().width),
       iconSize: Math.round(metricImage.getBoundingClientRect().width),
       iconBackground: getComputedStyle(metricIcon).backgroundColor,
-      metricLabelOffsets: [
-        ...document.querySelectorAll<HTMLElement>('.metric-label'),
-      ].map(leftInPage),
+      metricLabelOffsets: [...document.querySelectorAll<HTMLElement>('.metric-label')].map(
+        leftInPage,
+      ),
       toolbarOffsets: {
         scope: leftInPage(scope),
         keyword: leftInPage(keyword),
@@ -340,9 +345,50 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
     .evaluateAll((headers) =>
       headers.slice(0, 13).map((header) => Math.round(header.getBoundingClientRect().width)),
     )
-  expect(columnWidths).toEqual([
-    240, 110, 160, 200, 180, 120, 120, 80, 160, 160, 120, 110, 100,
-  ])
+  expect(columnWidths).toEqual([240, 110, 160, 200, 180, 120, 120, 80, 160, 160, 120, 110, 100])
+
+  const gridAlignment = await page.evaluate(() => {
+    const keyword = document.querySelector<HTMLElement>('.keyword-input')
+    const tableFrame = document.querySelector<HTMLElement>('.project-table-frame')
+    const headers = [
+      ...document.querySelectorAll<HTMLElement>('.project-list-panel thead .arco-table-th'),
+    ].slice(0, 13)
+    const cells = [
+      ...document.querySelectorAll<HTMLElement>(
+        '.project-list-panel tbody .arco-table-tr:first-child .arco-table-td',
+      ),
+    ].slice(0, 13)
+    if (!keyword || !tableFrame || headers.length !== 13 || cells.length !== 13) {
+      throw new Error('Project overview grid alignment nodes are incomplete')
+    }
+    const borderSnapshot = (element: HTMLElement) => {
+      const style = getComputedStyle(element)
+      return `${style.borderRightWidth} ${style.borderRightStyle} ${style.borderRightColor}`
+    }
+    return {
+      searchToManagerRightDelta: Math.abs(
+        keyword.getBoundingClientRect().right - headers[1].getBoundingClientRect().right,
+      ),
+      tableContentLeftDelta: Math.abs(
+        tableFrame.getBoundingClientRect().left - headers[0].getBoundingClientRect().left,
+      ),
+      headerBorders: headers.map(borderSnapshot),
+      cellBorders: cells.map(borderSnapshot),
+      frameBorderWidth: getComputedStyle(tableFrame).borderLeftWidth,
+      frameInsetStroke: getComputedStyle(tableFrame).boxShadow,
+    }
+  })
+  expect(gridAlignment.searchToManagerRightDelta).toBeLessThanOrEqual(0.5)
+  expect(gridAlignment.tableContentLeftDelta).toBeLessThanOrEqual(0.5)
+  expect(gridAlignment.headerBorders).toEqual(
+    Array.from({ length: 13 }, () => '1px solid rgb(229, 230, 235)'),
+  )
+  expect(gridAlignment.cellBorders).toEqual(
+    Array.from({ length: 13 }, () => '1px solid rgb(229, 230, 235)'),
+  )
+  expect(gridAlignment.frameBorderWidth).toBe('0px')
+  expect(gridAlignment.frameInsetStroke).toContain('rgb(229, 230, 235)')
+  expect(gridAlignment.frameInsetStroke).toContain('inset')
 
   const leftAlignedOffsets = await page
     .locator('.project-list-panel tbody .arco-table-tr')
@@ -417,6 +463,12 @@ test('project overview keeps loading, empty and error states inside the Figma ta
   await expect(page.locator('.project-list-panel .arco-spin-loading')).toBeVisible()
   await expect(page.locator('.business-empty')).toContainText('暂无符合条件的项目')
   await expect(page.locator('.project-table-frame')).toHaveCSS('height', '602px')
+  await expect(page.locator('.project-list-panel thead .arco-table-th')).toHaveCount(13)
+  expect(
+    await page
+      .locator('.project-list-panel thead .arco-table-th')
+      .evaluateAll((headers) => headers.map((header) => getComputedStyle(header).borderRightWidth)),
+  ).toEqual(Array.from({ length: 13 }, () => '1px'))
 
   responseMode = 'error'
   await page.getByPlaceholder('搜索项目名称', { exact: true }).fill('project-overview-error-state')
@@ -427,6 +479,7 @@ test('project overview keeps loading, empty and error states inside the Figma ta
   )
   await expect(page.getByRole('button', { name: '重新加载', exact: true })).toBeVisible()
   await expect(page.locator('.project-table-frame')).toHaveCSS('height', '602px')
+  await page.unrouteAll({ behavior: 'wait' })
 })
 
 test('project scope exposes archived projects and project manager sorting cycles both directions', async ({
@@ -438,9 +491,7 @@ test('project scope exposes archived projects and project manager sorting cycles
   await expect(page.locator('.scope-field .arco-select-view')).toBeVisible()
 
   await page.locator('.scope-field .arco-select-view').click()
-  const archivedOption = page
-    .locator('.arco-select-option:visible')
-    .filter({ hasText: '归档项目' })
+  const archivedOption = page.locator('.arco-select-option:visible').filter({ hasText: '归档项目' })
   await expect(archivedOption).toBeVisible()
   const archivedRequest = page.waitForRequest((request) => {
     const url = new URL(request.url())
@@ -454,8 +505,7 @@ test('project scope exposes archived projects and project manager sorting cycles
   const ascendingRequest = page.waitForRequest((request) => {
     const url = new URL(request.url())
     return (
-      url.pathname === '/api/v1/projects' &&
-      url.searchParams.get('sort') === 'projectManager:asc'
+      url.pathname === '/api/v1/projects' && url.searchParams.get('sort') === 'projectManager:asc'
     )
   })
   await sortButton.click()
@@ -465,8 +515,7 @@ test('project scope exposes archived projects and project manager sorting cycles
   const descendingRequest = page.waitForRequest((request) => {
     const url = new URL(request.url())
     return (
-      url.pathname === '/api/v1/projects' &&
-      url.searchParams.get('sort') === 'projectManager:desc'
+      url.pathname === '/api/v1/projects' && url.searchParams.get('sort') === 'projectManager:desc'
     )
   })
   await sortButton.click()
@@ -490,7 +539,11 @@ test('project overview stays inside the App Shell at common desktop widths', asy
       const main = document.querySelector<HTMLElement>('.layout-main')
       const projectPage = document.querySelector<HTMLElement>('.project-page')
       const tableFrame = document.querySelector<HTMLElement>('.project-table-frame')
-      if (!main || !projectPage || !tableFrame) {
+      const keyword = document.querySelector<HTMLElement>('.keyword-input')
+      const managerHeader = document.querySelector<HTMLElement>(
+        '.project-list-panel thead .arco-table-th:nth-child(2)',
+      )
+      if (!main || !projectPage || !tableFrame || !keyword || !managerHeader) {
         throw new Error('Project overview responsive layout nodes are incomplete')
       }
       const mainBox = main.getBoundingClientRect()
@@ -507,14 +560,18 @@ test('project overview stays inside the App Shell at common desktop widths', asy
           tableBox.left >= pageBox.left &&
           tableBox.right <= pageBox.right &&
           tableBox.bottom <= pageBox.bottom,
+        searchToManagerRightDelta: Math.abs(
+          keyword.getBoundingClientRect().right - managerHeader.getBoundingClientRect().right,
+        ),
       }
     })
-    expect(metrics).toEqual({
+    expect(metrics).toMatchObject({
       documentOverflow: 0,
       pageOverflow: 0,
       pageInsideMain: true,
       tableInsidePage: true,
     })
+    expect(metrics.searchToManagerRightDelta).toBeLessThanOrEqual(0.5)
   }
 })
 
@@ -573,13 +630,21 @@ test('project overview uses wheel loading, large rows and a fixed project-name c
   page,
 }) => {
   await login(page)
-  const scenario = createProjectScenario()
+  const sourceListResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/v1/projects?') &&
+      response.request().method() === 'GET' &&
+      response.status() === 200,
+  )
+  await page.goto('/#/projects')
+  const sourceEnvelope = (await (await sourceListResponse).json()) as Record<string, unknown>
+  const scenario = createProjectScenario(sourceEnvelope)
   await page.route(
     (url) => url.pathname === '/api/v1/projects' && url.searchParams.has('pageSize'),
     (route) => scenario.fulfill(route),
   )
 
-  await page.goto('/#/projects')
+  await page.reload()
   const viewport = page.locator('.project-list-panel .business-table__viewport')
   await expect(page.locator('.project-link')).toHaveCount(20, { timeout: 60_000 })
   await expect(page.locator('.business-table__pagination')).toHaveCount(0)
@@ -587,7 +652,11 @@ test('project overview uses wheel loading, large rows and a fixed project-name c
   await expect(page.getByText('987,654,321,012.00', { exact: true })).toBeVisible()
   await expect(page.getByText('2,888,888.13', { exact: true })).toBeVisible()
   await expect(
-    page.locator('.project-list-panel tbody .arco-table-tr').first().locator('.arco-table-td').nth(7),
+    page
+      .locator('.project-list-panel tbody .arco-table-tr')
+      .first()
+      .locator('.arco-table-td')
+      .nth(7),
   ).toContainText('VND')
   await expect(page.getByText('越南·胡志明市', { exact: true })).toBeVisible()
 
