@@ -57,19 +57,19 @@
 |---|---|
 | `GET /api/v1/standards/summary` | 标准总数、累计访问、累计下载 |
 | `GET /api/v1/standards/category-counts` | 按交付阶段或管理领域返回分类计数 |
-| `GET /api/v1/standards` | 关键词、维度、分类、类型、状态、启用、国家、业务类型、排序和游标分页 |
+| `GET /api/v1/standards` | 关键词、维度、分类、类型、状态、启用、国家、业务类型、排序和 `page/pageSize` 分页 |
 | `POST /api/v1/standards` | 创建标准及首个文件版本 |
-| `GET /api/v1/standards/:id` | 详情和当前发布版本 |
+| `GET /api/v1/standards/:id` | 详情、当前发布版本和版本历史 |
 | `PATCH /api/v1/standards/:id` | 编辑主数据和可编辑版本 |
 | `PATCH /api/v1/standards/:id/enabled` | 启用或停用 |
-| `GET /api/v1/standards/:id/versions` | 版本历史 |
 | `POST /api/v1/standards/:id/versions` | 创建后续版本 |
-| `POST /api/v1/standards/:id/submit-review` | 提交统一审核 |
+| `PATCH /api/v1/standard-versions/:id` | 更新草稿或已驳回版本 |
+| `POST /api/v1/standard-versions/:id/submit-review` | 提交统一审核 |
 | `GET/POST/DELETE /api/v1/standards/:id/relations` | 查询和维护稳定 ID 关系 |
 | `POST /api/v1/standards/:id/archive` | 软归档 |
 
 列表排序、筛选、分类计数和分页全部在服务端执行。页面为匹配 Figma 不显示分页器，
-而是在固定表体中按游标继续加载；前端不对已获取行伪造全量排序或筛选。
+而是在固定表体中按 `page/pageSize` 继续加载；前端不对已获取行伪造全量排序或筛选。
 
 ## 版本与状态流转
 
