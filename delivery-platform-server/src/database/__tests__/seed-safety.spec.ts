@@ -517,10 +517,11 @@ describe('deployment seed safety', () => {
       Promise.resolve({ id: `category-${where.categoryCode}` }),
     );
     const itemUpsert = jest.fn().mockResolvedValue({ id: 'item-1' });
+    const itemUpdateMany = jest.fn().mockResolvedValue({ count: 7 });
     const knowledgeCategoryUpsert = jest.fn().mockResolvedValue({ id: 'knowledge-category-1' });
     const prisma = {
       dictionaryCategory: { upsert: categoryUpsert },
-      dictionaryItem: { upsert: itemUpsert },
+      dictionaryItem: { upsert: itemUpsert, updateMany: itemUpdateMany },
       knowledgeCategory: { upsert: knowledgeCategoryUpsert },
     } as unknown as PrismaClient;
 
@@ -555,6 +556,46 @@ describe('deployment seed safety', () => {
     );
     expect(categoryCodes).not.toEqual(
       expect.arrayContaining(['skill_level', 'skill_category', 'training_category']),
+    );
+    const managementDomainCalls = itemUpsert.mock.calls
+      .map(([call]) => call)
+      .filter(
+        (call) =>
+          call.where.categoryId_itemValue.categoryId ===
+          'category-STANDARD_MANAGEMENT_DOMAIN',
+      );
+    expect(managementDomainCalls.map((call) => call.create.itemLabel)).toEqual([
+      '进度与计划管理',
+      '质量管理',
+      '安全管理',
+      '成本与预算管理',
+      '合同、付款与商务管理',
+      '采购与供应链管理',
+      '风险、问题与待办管理',
+      '变更与增项管理',
+      '沟通、会议与汇报管理',
+      '文件、档案与成果物管理',
+      '阶段评审与审批管理',
+      '分包商与相关方管理',
+    ]);
+    expect(itemUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          categoryId: 'category-STANDARD_MANAGEMENT_DOMAIN',
+          itemValue: {
+            in: [
+              'MANAGEMENT_POLICY',
+              'ROLES_RESPONSIBILITIES',
+              'PROCESS_SOP',
+              'TECH_PRODUCT_STANDARD',
+              'WORK_SPECIFICATION',
+              'INSPECTION_ACCEPTANCE',
+              'TEMPLATE_FORM',
+            ],
+          },
+        }),
+        data: { status: 'Inactive' },
+      }),
     );
   });
 

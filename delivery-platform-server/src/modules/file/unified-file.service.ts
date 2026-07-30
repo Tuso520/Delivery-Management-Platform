@@ -563,11 +563,12 @@ export class UnifiedFileService {
     }
     const processingJobs = await this.findPreviewProcessingJobs(current.asset.id);
     const resolvedPreview = await this.resolvePreview(current.asset, processingJobs);
-    const previewUrl = await this.storage.getPresignedUrlFrom(
+    const internalPreviewUrl = await this.storage.getPresignedUrlFrom(
       resolvedPreview.asset.storageBucket,
       resolvedPreview.asset.storageKey,
       300,
     );
+    const previewUrl = this.storage.toBrowserPreviewUrl(internalPreviewUrl);
     await this.operationLog.log({
       userId: actor.sub,
       module: 'file',
@@ -584,7 +585,7 @@ export class UnifiedFileService {
             fileVersionId: current.id,
             fileName: current.asset.originalName,
             extension: current.asset.extension,
-            previewUrl,
+            previewUrl: internalPreviewUrl,
             downloadAllowed,
             actor,
           })

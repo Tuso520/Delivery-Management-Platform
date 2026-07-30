@@ -746,6 +746,59 @@ describe('StandardService', () => {
     );
   });
 
+  it('returns the real file name and logical file id used by the library row', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      standardRecord({
+        name: '不作为文件名展示的标准名称',
+        versions: [
+          standardVersionRecord({
+            fileVersion: publicFileVersionWithInternalMetadata('项目验收资料移交清单模板.docx'),
+          }),
+        ],
+      }),
+    ]);
+    const prisma = {
+      standard: {
+        count: jest.fn().mockResolvedValue(1),
+        findMany,
+      },
+    } as unknown as PrismaService;
+    const service = new StandardService(prisma, reviewConfiguration, reviewTasks);
+
+    const result = await service.findAll(
+      {},
+      { sub: 'manager-1', permissions: ['standard:publish'] },
+    );
+
+    expect(result.items[0]).toMatchObject({
+      name: '不作为文件名展示的标准名称',
+      displayVersion: {
+        fileVersion: {
+          logicalFileId: 'logical-file-1',
+          asset: { originalName: '项目验收资料移交清单模板.docx' },
+        },
+      },
+    });
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({
+          versions: expect.objectContaining({
+            take: 1,
+            select: expect.objectContaining({
+              fileVersion: expect.objectContaining({
+                select: expect.objectContaining({
+                  asset: {
+                    select: expect.objectContaining({ originalName: true, extension: true }),
+                  },
+                }),
+              }),
+            }),
+          }),
+        }),
+      }),
+    );
+  });
+
   it('preserves disabled configured values that are already referenced', async () => {
     const assertConfiguredValue = jest.fn().mockResolvedValue(undefined);
     const fieldConfiguration = {
@@ -821,6 +874,7 @@ function standardRecord(overrides: Record<string, unknown> = {}) {
     status: 'DRAFT',
     currentPublishedVersionId: null,
     currentPublishedVersion: null,
+    versions: [standardVersionRecord()],
     effectiveAt: null,
     createdBy: 'owner-1',
     updatedBy: 'owner-1',

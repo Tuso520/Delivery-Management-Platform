@@ -28,6 +28,9 @@ interface StorageConfig {
   useSSL: boolean;
 }
 
+const MAX_OBJECT_NAME_SEGMENT_BYTES = 240;
+const MAX_STORAGE_EXTENSION_BYTES = 24;
+
 @Injectable()
 export class FileStorageService {
   private readonly logger = new Logger(FileStorageService.name);
@@ -62,13 +65,9 @@ export class FileStorageService {
       return uploadFile.storageKey;
     }
     await this.ensureBucket();
-    const extension = extname(uploadFile.originalname).toLowerCase();
-    const safeName = basename(uploadFile.originalname, extension)
-      .replace(/[^\p{L}\p{N}._-]+/gu, '-')
-      .slice(0, 80);
     const objectName = [
       this.normalizePath(subPath),
-      `${uuidv4()}-${safeName || 'file'}${extension}`,
+      this.buildStoredFileName(uploadFile.originalname),
     ]
       .filter(Boolean)
       .join('/');
@@ -98,14 +97,10 @@ export class FileStorageService {
     const normalizedName = withNormalizedUploadFileName({
       originalname: originalName,
     } as Express.Multer.File).originalname;
-    const extension = extname(normalizedName).toLowerCase();
-    const safeName = basename(normalizedName, extension)
-      .replace(/[^\p{L}\p{N}._-]+/gu, '-')
-      .slice(0, 80);
     const objectName = [
       'incoming',
       new Date().toISOString().slice(0, 10),
-      `${uuidv4()}-${safeName || 'file'}${extension}`,
+      this.buildStoredFileName(normalizedName),
     ].join('/');
     const checksum = createHash('sha256');
     const headChunks: Buffer[] = [];
@@ -237,6 +232,11 @@ export class FileStorageService {
     }
   }
 
+  toBrowserPreviewUrl(presignedUrl: string): string {
+    const parsedUrl = new URL(presignedUrl);
+    return `/storage${parsedUrl.pathname}${parsedUrl.search}`;
+  }
+
   async getObject(storagePath: string): Promise<Readable> {
     await this.ensureBucket();
     return this.getObjectFrom(this.bucket, storagePath);
@@ -315,6 +315,38 @@ export class FileStorageService {
       .split('/')
       .filter((segment) => segment && segment !== '.' && segment !== '..')
       .join('/');
+  }
+
+  private buildStoredFileName(originalName: string): string {
+    const rawExtension = extname(originalName).toLowerCase();
+    const extension = this.truncateUtf8(
+      rawExtension.replace(/[^\p{L}\p{N}._-]+/gu, ''),
+      MAX_STORAGE_EXTENSION_BYTES,
+    );
+    const prefix = `${uuidv4()}-`;
+    const safeBaseName = basename(originalName, rawExtension).replace(
+      /[^\p{L}\p{N}._-]+/gu,
+      '-',
+    );
+    const availableBaseNameBytes =
+      MAX_OBJECT_NAME_SEGMENT_BYTES -
+      Buffer.byteLength(prefix, 'utf8') -
+      Buffer.byteLength(extension, 'utf8');
+    const boundedBaseName =
+      this.truncateUtf8(safeBaseName, availableBaseNameBytes) || 'file';
+    return `${prefix}${boundedBaseName}${extension}`;
+  }
+
+  private truncateUtf8(value: string, maxBytes: number): string {
+    let result = '';
+    let byteLength = 0;
+    for (const character of value) {
+      const characterBytes = Buffer.byteLength(character, 'utf8');
+      if (byteLength + characterBytes > maxBytes) break;
+      result += character;
+      byteLength += characterBytes;
+    }
+    return result;
   }
 
   private getUploadBody(file: Express.Multer.File): Buffer | Readable | string {

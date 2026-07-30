@@ -49,6 +49,16 @@ describe('FileStorageService readiness', () => {
     });
   });
 
+  it('maps an internal signed URL to the same-origin browser storage proxy', () => {
+    const service = createService(jest.fn().mockResolvedValue(true));
+
+    expect(
+      service.toBrowserPreviewUrl(
+        'http://minio:9000/delivery-files/path/file.pdf?X-Amz-Signature=signed',
+      ),
+    ).toBe('/storage/delivery-files/path/file.pdf?X-Amz-Signature=signed');
+  });
+
   it('streams incoming content while calculating checksum and signature bytes', async () => {
     const service = createService(jest.fn().mockResolvedValue(true));
     const putObject = jest.fn(
@@ -56,6 +66,8 @@ describe('FileStorageService readiness', () => {
         _bucket: string,
         _objectName: string,
         stream: Readable,
+        _size: number | undefined,
+        _metadata: Record<string, string>,
       ): Promise<void> =>
         new Promise((resolve, reject) => {
           stream.on('data', () => undefined);
@@ -88,6 +100,46 @@ describe('FileStorageService readiness', () => {
     });
     expect(result.storageKey).toMatch(/^incoming\/\d{4}-\d{2}-\d{2}\//u);
     expect(putObject).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the full original name in metadata while bounding a multibyte storage key', async () => {
+    const service = createService(jest.fn().mockResolvedValue(true));
+    const putObject = jest.fn(
+      (
+        _bucket: string,
+        _objectName: string,
+        stream: Readable,
+        _size: number | undefined,
+        _metadata: Record<string, string>,
+      ): Promise<void> =>
+        new Promise((resolve, reject) => {
+          stream.on('data', () => undefined);
+          stream.once('end', resolve);
+          stream.once('error', reject);
+        }),
+    );
+    Object.defineProperty(service, 'client', {
+      value: {
+        bucketExists: jest.fn().mockResolvedValue(true),
+        putObject,
+        removeObject: jest.fn().mockResolvedValue(undefined),
+      },
+    });
+    const originalName = `${'项目交付标准资料'.repeat(24)}.md`;
+
+    await service.uploadIncoming(
+      Readable.from([Buffer.from('# content', 'utf8')]),
+      originalName,
+      'text/markdown',
+      500,
+    );
+
+    const objectName = putObject.mock.calls[0]?.[1] as string;
+    const objectNameSegment = objectName.split('/').at(-1) ?? '';
+    const metadata = putObject.mock.calls[0]?.[4] as Record<string, string>;
+    expect(Buffer.byteLength(objectNameSegment, 'utf8')).toBeLessThanOrEqual(240);
+    expect(objectNameSegment).toMatch(/\.md$/u);
+    expect(metadata['X-Amz-Meta-Original-Name']).toBe(encodeURIComponent(originalName));
   });
 
   it('preserves an oversize upload as a bad request and removes any partial object', async () => {

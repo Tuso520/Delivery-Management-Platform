@@ -88,13 +88,13 @@ const publicStandardSelect = {
     orderBy: { countryCode: 'asc' },
   },
   currentPublishedVersion: {
-    select: {
-      id: true,
-      version: true,
-      status: true,
-      effectiveAt: true,
-      publishedAt: true,
-    },
+    select: publicStandardVersionSelect,
+  },
+  versions: {
+    where: { archivedAt: null },
+    orderBy: [{ revision: 'desc' }, { updatedAt: 'desc' }],
+    take: 1,
+    select: publicStandardVersionSelect,
   },
 } satisfies Prisma.StandardSelect;
 
@@ -164,6 +164,14 @@ function mapPublicStandardVersion(record: PublicStandardVersionRecord) {
 }
 
 function mapPublicStandard(record: PublicStandardRecord, versions?: PublicStandardVersionRecord[]) {
+  const currentPublishedVersion = record.currentPublishedVersion
+    ? mapPublicStandardVersion(record.currentPublishedVersion)
+    : null;
+  const latestVersion = record.versions[0] ? mapPublicStandardVersion(record.versions[0]) : null;
+  const displayVersion = ['DRAFT', 'IN_REVIEW', 'REJECTED'].includes(record.status)
+    ? latestVersion ?? currentPublishedVersion
+    : currentPublishedVersion ?? latestVersion;
+
   return {
     id: record.id,
     code: record.code,
@@ -176,15 +184,8 @@ function mapPublicStandard(record: PublicStandardRecord, versions?: PublicStanda
     isEnabled: record.isEnabled,
     status: record.status,
     currentPublishedVersionId: record.currentPublishedVersionId,
-    currentPublishedVersion: record.currentPublishedVersion
-      ? {
-          id: record.currentPublishedVersion.id,
-          version: record.currentPublishedVersion.version,
-          status: record.currentPublishedVersion.status,
-          effectiveAt: record.currentPublishedVersion.effectiveAt,
-          publishedAt: record.currentPublishedVersion.publishedAt,
-        }
-      : null,
+    currentPublishedVersion,
+    displayVersion,
     effectiveAt: record.effectiveAt,
     createdBy: record.createdBy,
     updatedBy: record.updatedBy,
