@@ -1093,6 +1093,11 @@ watch(
   overflow: hidden;
 }
 
+.table-card :deep(.archive-template-table) {
+  --archive-template-grid-border: #e0e0e0;
+  --archive-template-row-border: #e5e6eb;
+}
+
 .search-group {
   display: flex;
   min-width: 0;
@@ -1186,9 +1191,16 @@ watch(
   box-sizing: border-box;
   height: 44px;
   padding: 0;
-  border-color: #e0e0e0;
+  border-color: var(--archive-template-grid-border);
+  border-bottom-color: var(--archive-template-row-border);
   font-size: 13px;
   line-height: normal;
+}
+
+.table-card :deep(.archive-template-table.arco-table-border-cell .arco-table-th),
+.table-card
+  :deep(.archive-template-table.arco-table-border-cell .arco-table-td:not(.arco-table-tr-expand)) {
+  border-right-color: var(--archive-template-grid-border);
 }
 
 .table-card :deep(.archive-template-table .arco-table-th) {
@@ -1248,8 +1260,21 @@ watch(
   white-space: nowrap;
 }
 
-.archive-template-table :deep(.arco-table-col-fixed-right) {
+.table-card :deep(.archive-template-table .arco-table-col-fixed-right) {
   background: inherit;
+}
+
+.table-card :deep(.archive-template-table .arco-table-td:last-child .arco-space) {
+  flex-wrap: nowrap;
+  gap: 12px !important;
+}
+
+.table-card :deep(.archive-template-table .arco-table-td:last-child .arco-btn-text) {
+  width: auto;
+  min-width: 0;
+  height: 22px;
+  padding: 0;
+  white-space: nowrap;
 }
 
 .template-link {
