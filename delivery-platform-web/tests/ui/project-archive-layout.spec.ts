@@ -45,6 +45,7 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
       const directoryScroll = root.querySelector<HTMLElement>('.archive-directory__scroll')
       const firstDirectoryItem = root.querySelector<HTMLElement>('.archive-directory__item')
       const tableViewport = root.querySelector<HTMLElement>('.business-table__viewport')
+      const tableElement = root.querySelector<HTMLElement>('.arco-table-element')
       const firstRow = root.querySelector<HTMLElement>('.arco-table-td')
       const headers = [...root.querySelectorAll<HTMLElement>('thead .arco-table-th')]
       const cells = [...root.querySelectorAll<HTMLElement>('tbody tr:first-child .arco-table-td')]
@@ -58,6 +59,7 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
         !directoryScroll ||
         !firstDirectoryItem ||
         !tableViewport ||
+        !tableElement ||
         !firstRow ||
         !layoutMain ||
         headers.length !== 6 ||
@@ -82,7 +84,7 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
         directoryOverflowY: getComputedStyle(directoryScroll).overflowY,
         tableOverflowY: getComputedStyle(tableViewport).overflowY,
         tableRowHeight: Math.round(firstRow.getBoundingClientRect().height),
-        tableViewportClientWidth: tableViewport.clientWidth,
+        tableElementWidth: Math.round(tableElement.getBoundingClientRect().width),
         headerWidths: headers.map((header) => Math.round(header.getBoundingClientRect().width)),
         headerBorders: headers.map((header) => getComputedStyle(header).borderRightWidth),
         cellBorders: cells.map((cell) => getComputedStyle(cell).borderRightWidth),
@@ -116,7 +118,7 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
     expect(
       Math.abs(
         layout.headerWidths.reduce((total, width) => total + width, 0) -
-          layout.tableViewportClientWidth,
+          layout.tableElementWidth,
       ),
     ).toBeLessThanOrEqual(2)
     expect(layout.selectLeft).toBe(layout.directoryLeft)
