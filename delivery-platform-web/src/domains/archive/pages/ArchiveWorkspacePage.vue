@@ -693,7 +693,6 @@ watch(
   min-width: 270px;
   max-width: 270px;
   flex: 0 0 270px;
-  margin-left: 1px;
 }
 
 .archive-project-select-shell :deep(.archive-project-select__control) {
