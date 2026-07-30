@@ -77,18 +77,20 @@ type KnowledgeTableColumnKey = 'title' | 'version' | 'effectiveAt' | 'updater' |
 interface KnowledgeTableColumn {
   key: KnowledgeTableColumnKey
   title: string
-  width: number
+  minWidth: number
   headerAlign: 'center'
   contentAlign: 'left' | 'center'
   format: 'title' | 'version' | 'date' | 'person' | 'actions'
   overflow: 'tooltip' | 'clip'
 }
 
+const KNOWLEDGE_TABLE_MIN_WIDTH = 937
+
 const tableColumns = computed<KnowledgeTableColumn[]>(() => [
   {
     key: 'title',
     title: t('knowledge.fields.title'),
-    width: 365,
+    minWidth: 365,
     headerAlign: 'center',
     contentAlign: 'left',
     format: 'title',
@@ -97,7 +99,7 @@ const tableColumns = computed<KnowledgeTableColumn[]>(() => [
   {
     key: 'version',
     title: t('knowledge.fields.currentVersion'),
-    width: 90,
+    minWidth: 90,
     headerAlign: 'center',
     contentAlign: 'center',
     format: 'version',
@@ -106,7 +108,7 @@ const tableColumns = computed<KnowledgeTableColumn[]>(() => [
   {
     key: 'effectiveAt',
     title: t('knowledge.fields.effectiveAt'),
-    width: 130,
+    minWidth: 130,
     headerAlign: 'center',
     contentAlign: 'center',
     format: 'date',
@@ -115,7 +117,7 @@ const tableColumns = computed<KnowledgeTableColumn[]>(() => [
   {
     key: 'updater',
     title: t('knowledge.fields.updater'),
-    width: 170,
+    minWidth: 170,
     headerAlign: 'center',
     contentAlign: 'center',
     format: 'person',
@@ -124,13 +126,17 @@ const tableColumns = computed<KnowledgeTableColumn[]>(() => [
   {
     key: 'actions',
     title: t('common.action'),
-    width: 182,
+    minWidth: 182,
     headerAlign: 'center',
     contentAlign: 'center',
     format: 'actions',
     overflow: 'clip',
   },
 ])
+
+function columnWidthPercentage(column: KnowledgeTableColumn): string {
+  return `${(column.minWidth / KNOWLEDGE_TABLE_MIN_WIDTH) * 100}%`
+}
 
 const versionColumns = computed<TableColumnData[]>(() => [
   { title: t('knowledge.fields.version'), dataIndex: 'version', width: 90 },
@@ -263,10 +269,7 @@ const list = computed(() => knowledgeListQuery.data.value?.items ?? [])
 const categoryCountMap = computed(
   () =>
     new Map(
-      (knowledgeCategoryCountsQuery.data.value ?? []).map((item) => [
-        item.categoryId,
-        item.count,
-      ]),
+      (knowledgeCategoryCountsQuery.data.value ?? []).map((item) => [item.categoryId, item.count]),
     ),
 )
 const sidebarCategoryOptions = computed(() => {
@@ -840,9 +843,7 @@ watch(
     const activeOptions = categoryOptions.value
     if (!activeOptions.length) return
     if (options.some((option) => option.id === selectedCategoryId.value)) return
-    const configuredDefault = String(
-      fieldConfig.getField('KNOWLEDGE_CATEGORY')?.defaultValue ?? '',
-    )
+    const configuredDefault = String(fieldConfig.getField('KNOWLEDGE_CATEGORY')?.defaultValue ?? '')
     selectedCategoryId.value =
       activeOptions.find((option) => option.value === configuredDefault)?.id ??
       activeOptions[0]?.id ??
@@ -963,13 +964,16 @@ watch(
             <p>{{ selectedCategory?.description || '-' }}</p>
           </header>
 
-          <div class="knowledge-table-region">
+          <div
+            class="knowledge-table-region"
+            :class="{ 'knowledge-table-region--state': loadError || !list.length }"
+          >
             <table class="knowledge-table">
               <colgroup>
                 <col
                   v-for="column in tableColumns"
                   :key="column.key"
-                  :style="{ width: `${column.width}px` }"
+                  :style="{ width: columnWidthPercentage(column) }"
                 />
               </colgroup>
               <thead>
@@ -1009,10 +1013,7 @@ watch(
                   </td>
                   <td class="knowledge-table__actions">
                     <button
-                      v-if="
-                        canDownload &&
-                          record.currentPublishedVersion?.contentType === 'FILE'
-                      "
+                      v-if="canDownload && record.currentPublishedVersion?.contentType === 'FILE'"
                       type="button"
                       @click="downloadItem(record)"
                     >
@@ -1027,9 +1028,7 @@ watch(
                     </button>
                     <button
                       v-if="
-                        canArchive &&
-                          record.status !== 'ARCHIVED' &&
-                          record.status !== 'IN_REVIEW'
+                        canArchive && record.status !== 'ARCHIVED' && record.status !== 'IN_REVIEW'
                       "
                       type="button"
                       class="knowledge-table__archive"
@@ -1482,12 +1481,14 @@ watch(
 .knowledge-library {
   --knowledge-border: #e5e6eb;
   width: 100%;
+  height: 100%;
   min-width: 0;
-  min-height: 784px;
+  min-height: 0;
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 8px;
-  padding: 8px 13px 13px;
+  padding: 8px 13px 15px;
   overflow: hidden;
   color: #1d2129;
   background: #fff;
@@ -1599,13 +1600,14 @@ watch(
 
 .knowledge-panel {
   width: 100%;
-  min-width: 936px;
-  height: 625px;
+  min-width: 0;
+  min-height: 0;
   display: flex;
-  flex: 0 0 625px;
+  flex: 1 1 0;
+  gap: 1px;
   overflow: hidden;
-  border: 1px solid var(--knowledge-border);
-  background: #fff;
+  background: var(--knowledge-border);
+  box-shadow: inset 0 0 0 1px var(--knowledge-border);
   box-sizing: border-box;
 }
 
@@ -1615,7 +1617,7 @@ watch(
   display: flex;
   flex: 0 0 270px;
   flex-direction: column;
-  border-right: 1px solid var(--knowledge-border);
+  background: #fff;
   box-sizing: border-box;
 }
 
@@ -1634,6 +1636,7 @@ watch(
 
 .knowledge-category-list {
   min-height: 0;
+  flex: 1 1 0;
   overflow-y: auto;
 }
 
@@ -1680,21 +1683,26 @@ watch(
 
 .knowledge-content-scroll {
   min-width: 0;
+  min-height: 0;
   height: 100%;
   flex: 1 1 auto;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
+  background: #fff;
 }
 
 .knowledge-content {
-  width: 937px;
-  min-width: 937px;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
   height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .knowledge-category-description {
   height: 72px;
   display: flex;
+  flex: 0 0 72px;
   flex-direction: column;
   justify-content: center;
   padding: 0 16px;
@@ -1724,16 +1732,23 @@ watch(
 
 .knowledge-table-region {
   position: relative;
-  height: 551px;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 0;
   overflow: auto;
 }
 
 .knowledge-table {
-  width: 937px;
+  width: 100%;
+  min-width: 937px;
   table-layout: fixed;
   border-collapse: collapse;
   color: #1d2129;
   font-size: 13px;
+}
+
+.knowledge-table-region--state .knowledge-table {
+  height: 100%;
 }
 
 .knowledge-table th,
@@ -1809,10 +1824,6 @@ watch(
 
 .knowledge-table__actions .knowledge-table__archive {
   color: #e33836;
-}
-
-.knowledge-table__state-row td {
-  height: 506px;
 }
 
 .knowledge-table__state {
