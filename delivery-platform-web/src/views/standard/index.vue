@@ -263,6 +263,22 @@ function versionFileName(version: StandardVersion): string {
   return version.fileVersion.asset.originalName
 }
 
+function standardFileName(row: Standard): string {
+  return row.displayVersion?.fileVersion.asset.originalName || row.name
+}
+
+function previewStandard(row: Standard): void {
+  const version = row.displayVersion
+  if (!version) {
+    Message.warning(t('standard.messages.fileUnavailable'))
+    return
+  }
+  filePreview.openPreview({
+    id: version.fileVersion.logicalFileId,
+    title: standardFileName(row),
+  })
+}
+
 function applySearch(): void {
   appliedKeyword.value = keyword.value.trim()
   void router.replace({
@@ -532,18 +548,6 @@ async function downloadVersion(version: StandardVersion): Promise<void> {
   await summaryQuery.refetch()
 }
 
-async function downloadStandard(row: Standard): Promise<void> {
-  const record = detail.value?.id === row.id ? detail.value : await loadStandard(row.id)
-  const version =
-    record.versions?.find((item) => item.id === record.currentPublishedVersionId) ??
-    record.versions?.find((item) => item.status === 'PUBLISHED')
-  if (!version) {
-    Message.warning(t('standard.messages.publishedNoDownload'))
-    return
-  }
-  await downloadVersion(version)
-}
-
 function archiveStandard(row: Standard): void {
   Modal.confirm({
     title: t('standard.archive.title'),
@@ -615,7 +619,7 @@ function archiveStandard(row: Standard): void {
         <template #icon>
           <img :src="plusIcon" alt="" class="button-icon" />
         </template>
-        {{ t('common.create') }}
+        {{ t('standard.create') }}
       </a-button>
     </div>
 
@@ -683,8 +687,12 @@ function archiveStandard(row: Standard): void {
               <tbody>
                 <tr v-for="row in list" :key="row.id">
                   <td class="title-cell">
-                    <button type="button" :title="row.name" @click="openDetail(row)">
-                      {{ row.name }}
+                    <button
+                      type="button"
+                      :title="standardFileName(row)"
+                      @click="previewStandard(row)"
+                    >
+                      {{ standardFileName(row) }}
                     </button>
                   </td>
                   <td v-if="fieldEnabled('STANDARD_CURRENT_VERSION')" class="center-cell">
@@ -698,20 +706,12 @@ function archiveStandard(row: Standard): void {
                   </td>
                   <td class="action-cell">
                     <button
-                      v-if="!row.currentPublishedVersion && canEdit"
+                      v-if="canEdit"
                       type="button"
                       class="action-edit"
                       @click="openEdit(row)"
                     >
                       {{ t('common.edit') }}
-                    </button>
-                    <button
-                      v-else-if="row.currentPublishedVersion && canDownload"
-                      type="button"
-                      class="action-edit"
-                      @click="downloadStandard(row)"
-                    >
-                      {{ t('common.download') }}
                     </button>
                     <button
                       v-if="canArchive && row.status !== 'IN_REVIEW'"
@@ -1073,11 +1073,13 @@ function archiveStandard(row: Standard): void {
 <style scoped lang="scss">
 .standard-library {
   width: 100%;
+  height: 100%;
   min-width: 0;
-  min-height: 758px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  box-sizing: border-box;
   padding: 8px 13px 13px;
   overflow: hidden;
   color: #1d2129;
@@ -1219,9 +1221,9 @@ function archiveStandard(row: Standard): void {
 .library-panel {
   width: 100%;
   min-width: 936px;
-  height: 625px;
+  min-height: 0;
   display: flex;
-  flex: 0 0 625px;
+  flex: 1 1 auto;
   align-items: stretch;
   overflow: hidden;
   border: 1px solid #e5e6eb;
@@ -1379,13 +1381,14 @@ function archiveStandard(row: Standard): void {
 }
 
 .standard-table {
-  width: 937px;
+  width: 100%;
+  min-width: 937px;
   border-spacing: 0;
   border-collapse: separate;
   table-layout: fixed;
 
   .column-title {
-    width: 365px;
+    width: auto;
   }
 
   .column-version {
@@ -1446,12 +1449,23 @@ function archiveStandard(row: Standard): void {
   }
 
   .title-cell button {
+    width: 100%;
     max-width: 100%;
+    display: block;
     overflow: hidden;
     color: #165dff;
     font-weight: 500;
+    text-align: left;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .title-cell button:hover,
+  .title-cell button:focus-visible,
+  .action-edit:hover,
+  .action-edit:focus-visible {
+    color: #0e42d2;
+    text-decoration: underline;
   }
 
   .center-cell {
@@ -1472,6 +1486,12 @@ function archiveStandard(row: Standard): void {
 
   .action-archive {
     color: #e33836;
+  }
+
+  .action-archive:hover,
+  .action-archive:focus-visible {
+    color: #b71c1c;
+    text-decoration: underline;
   }
 
   .empty-cell {

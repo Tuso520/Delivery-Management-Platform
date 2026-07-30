@@ -40,6 +40,11 @@ export default defineConfig({
         target: process.env.VITE_PROXY_TARGET || 'http://localhost:3000',
         changeOrigin: true,
       },
+      '/storage': {
+        target: process.env.VITE_STORAGE_PROXY_TARGET || 'http://localhost:9000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/storage/u, ''),
+      },
     },
   },
   css: {

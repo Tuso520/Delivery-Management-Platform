@@ -57,14 +57,6 @@ export interface StandardVersion {
   updatedAt: string
 }
 
-export interface StandardPublishedVersionSummary {
-  id: string
-  version: string
-  status: StandardStatus
-  effectiveAt: string | null
-  publishedAt: string | null
-}
-
 export interface Standard {
   id: string
   code: string
@@ -77,7 +69,8 @@ export interface Standard {
   isEnabled: boolean
   status: StandardStatus
   currentPublishedVersionId?: string | null
-  currentPublishedVersion: StandardPublishedVersionSummary | null
+  currentPublishedVersion: StandardVersion | null
+  displayVersion: StandardVersion | null
   effectiveAt: string | null
   createdBy: string
   updatedBy: string
