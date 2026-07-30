@@ -1003,19 +1003,23 @@ watch(
   padding: 0;
 }
 
-.archive-template-table {
+.table-card :deep(.business-table__viewport) {
+  scrollbar-gutter: auto;
+}
+
+.table-card :deep(.archive-template-table) {
   --archive-template-grid-border: #e0e0e0;
   --archive-template-row-border: #e5e6eb;
 }
 
-.archive-template-table :deep(.arco-table-th),
-.archive-template-table :deep(.arco-table-td) {
+.table-card :deep(.archive-template-table .arco-table-th),
+.table-card :deep(.archive-template-table .arco-table-td) {
   height: 44px;
   border-bottom: 1px solid var(--archive-template-row-border);
   font-size: 13px;
 }
 
-.archive-template-table :deep(.arco-table-cell) {
+.table-card :deep(.archive-template-table .arco-table-cell) {
   min-width: 0;
   min-height: 43px;
   align-items: center;
@@ -1023,32 +1027,46 @@ watch(
   overflow: hidden;
 }
 
-.archive-template-table :deep(.arco-table-border-cell .arco-table-th),
-.archive-template-table :deep(.arco-table-border-cell .arco-table-td:not(.arco-table-tr-expand)) {
+.table-card :deep(.archive-template-table.arco-table-border-cell .arco-table-th),
+.table-card
+  :deep(.archive-template-table.arco-table-border-cell .arco-table-td:not(.arco-table-tr-expand)) {
   border-right-color: var(--archive-template-grid-border);
 }
 
-.archive-template-table :deep(.arco-table-th) {
+.table-card :deep(.archive-template-table .arco-table-th) {
   background: #f2f3f5;
   color: #1d2129;
   font-weight: 500;
 }
 
-.archive-template-table :deep(.arco-table-td) {
+.table-card :deep(.archive-template-table .arco-table-td) {
   background: #fff;
 }
 
-.archive-template-table
+.table-card
   :deep(
-    .arco-table-stripe
+    .archive-template-table.arco-table-stripe
       .arco-table-tr:not(.arco-table-tr-empty):not(.arco-table-tr-summary):nth-child(even)
       .arco-table-td
   ) {
   background: #f7f8fa;
 }
 
-.archive-template-table :deep(.arco-table-col-fixed-right) {
+.table-card :deep(.archive-template-table .arco-table-col-fixed-right) {
   background: inherit;
+}
+
+.table-card :deep(.archive-template-table .arco-table-td:last-child .arco-space) {
+  flex-wrap: nowrap;
+  gap: 12px !important;
+}
+
+.table-card :deep(.archive-template-table .arco-table-td:last-child .arco-btn-text) {
+  width: auto;
+  min-width: 0;
+  height: 22px;
+  padding: 0;
+  white-space: nowrap;
 }
 
 .template-link {

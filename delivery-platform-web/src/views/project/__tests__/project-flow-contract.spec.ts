@@ -34,7 +34,8 @@ describe('project overview and overlay contract', () => {
     const table = source('src/design-system/BusinessTable.vue')
     expect(overview).toContain(':scroll="{ x: \'max-content\' }"')
     expect(overview).toContain('size="large"')
-    expect(overview).toMatch(/:width="240"\s+fixed="left"/u)
+    expect(overview).toContain('nameColumnWidth: 240')
+    expect(overview).toMatch(/:width="projectLayout\.nameColumnWidth"\s+fixed="left"/u)
     expect(overview).toContain("join('·') || '-'")
     expect(overview).toContain('fractionDigits: 2')
     expect(overview).toContain('table-layout: fixed !important')
@@ -57,7 +58,7 @@ describe('project overview and overlay contract', () => {
     expect(overview).toContain("MYR: { color: '#10b981', backgroundColor: '#d1fae5' }")
     expect(overview).toContain(':width="80"')
     expect(overview).not.toContain('toolbar-refresh.png')
-    expect(overview).toContain('width: 242px')
+    expect(overview).toContain('grid-template-columns: repeat(4, 242px) minmax(0, 1fr)')
     expect(overview).toContain('flex: 1 1 auto')
   })
 
