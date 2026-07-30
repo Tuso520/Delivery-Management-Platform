@@ -386,7 +386,7 @@ watch(
           :loading="loadingProjects"
           :filter-option="false"
           allow-search
-          class="archive-project-select"
+          class="archive-project-select archive-project-select__control"
           :placeholder="t('archive.selectProject')"
           @search="projectKeyword = $event"
           @change="changeProject"
@@ -690,8 +690,14 @@ watch(
 
 .archive-project-select-shell {
   width: 270px;
+  min-width: 270px;
+  max-width: 270px;
   flex: 0 0 270px;
   margin-left: 1px;
+}
+
+.archive-project-select-shell :deep(.archive-project-select__control) {
+  width: 100%;
 }
 
 .archive-project-select-shell :deep(.archive-project-select) {
@@ -835,8 +841,8 @@ watch(
   flex: 1;
   grid-template-columns: 270px minmax(937px, 1fr);
   overflow: hidden;
-  border: 1px solid var(--archive-border);
   background: #fff;
+  box-shadow: inset 0 0 0 1px var(--archive-border);
 }
 
 .archive-directory {
@@ -1033,6 +1039,11 @@ watch(
   height: 100%;
 }
 
+.archive-files :deep(.archive-file-table .arco-table-element) {
+  width: 937px !important;
+  min-width: 937px !important;
+}
+
 .archive-files :deep(.business-table__viewport) {
   height: 100%;
   max-height: none;
@@ -1075,6 +1086,11 @@ watch(
 .archive-files :deep(.archive-file-table .arco-table-th:last-child),
 .archive-files :deep(.archive-file-table .arco-table-td:last-child) {
   border-right: 0 !important;
+}
+
+.archive-files :deep(.archive-file-table .arco-table-th:first-child .arco-table-cell) {
+  justify-content: center;
+  text-align: center;
 }
 
 .archive-files :deep(.archive-file-table .arco-table-tr:nth-child(even) .arco-table-td) {

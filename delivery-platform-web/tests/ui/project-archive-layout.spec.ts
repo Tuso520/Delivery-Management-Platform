@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 
 const adminUsername = process.env.E2E_ADMIN_USERNAME
@@ -123,6 +125,15 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
     ).toBeLessThanOrEqual(2)
     expect(layout.selectLeft).toBe(layout.directoryLeft)
     expect(layout.documentScrollHeight).toBe(layout.documentClientHeight)
+    await page.locator('.archive-page').screenshot({
+      path: resolve(
+        process.cwd(),
+        '..',
+        '.ai-work',
+        'project-archive-43-317',
+        `local-${viewport.width}x${viewport.height}.png`,
+      ),
+    })
   }
 
   expect(workspaceHeights[1]).toBeGreaterThan(workspaceHeights[0])
@@ -133,4 +144,175 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
   })
   await expect(page.getByRole('button', { name: '上传', exact: true })).toBeVisible()
   await expect(page.getByText('同步模板', { exact: true })).toHaveCount(0)
+})
+
+test('project archive preview, update, download and delete use the real local API', async ({
+  page,
+}) => {
+  const pageErrors: string[] = []
+  const failedApiResponses: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await login(page)
+  await page.goto('/#/archive')
+  const firstRow = page.locator('.archive-file-table tbody tr').first()
+  await expect(firstRow).toBeVisible({ timeout: 60_000 })
+  page.on('response', (response) => {
+    if (response.status() >= 400 && new URL(response.url()).pathname.startsWith('/api/')) {
+      failedApiResponses.push(`${response.status()} ${new URL(response.url()).pathname}`)
+    }
+  })
+  const archiveItemName = (await firstRow.locator('.archive-file-name').textContent())?.trim()
+  expect(archiveItemName).toBeTruthy()
+  const folderName = (await page.locator('.archive-folder-heading h2').textContent())?.trim()
+  expect(folderName).toBeTruthy()
+  const uploadedFileName = `${folderName}-V1.0.docx`
+
+  await firstRow.getByRole('button', { name: '更新', exact: true }).click()
+  const uploadDialog = page.locator('.arco-modal').filter({ hasText: '上传档案文件' })
+  await expect(uploadDialog).toBeVisible()
+  const fileInput = uploadDialog.locator('input[type="file"]')
+  const acceptedTypes = (await fileInput.getAttribute('accept')) ?? ''
+  expect(acceptedTypes).toContain('.docx')
+  const fixturePath = resolve(
+    process.cwd(),
+    '..',
+    'delivery-platform-server',
+    'prisma',
+    'seed-files',
+    'knowledge-catalog',
+    '项目经理岗位职责.docx',
+  )
+  await fileInput.setInputFiles({
+    name: uploadedFileName,
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    buffer: readFileSync(fixturePath),
+  })
+
+  const uploadResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      /\/archive-items\/[^/]+\/files$/u.test(new URL(response.url()).pathname),
+  )
+  await uploadDialog.getByRole('button', { name: '上传', exact: true }).click()
+  const uploadResponse = await uploadResponsePromise
+  expect(uploadResponse.ok(), await uploadResponse.text()).toBe(true)
+  await expect(uploadDialog).toBeHidden()
+
+  const fileLink = firstRow.getByRole('button', { name: uploadedFileName })
+  await expect(fileLink).toBeVisible({ timeout: 30_000 })
+  await expect(fileLink).toHaveCSS('color', 'rgb(22, 93, 255)')
+  await expect(firstRow.getByRole('button', { name: '更新', exact: true })).toBeVisible()
+  await expect(firstRow.getByRole('button', { name: '下载', exact: true })).toBeVisible()
+  await expect(firstRow.getByRole('button', { name: '删除', exact: true })).toBeVisible()
+  await page.locator('.archive-page').screenshot({
+    path: resolve(
+      process.cwd(),
+      '..',
+      '.ai-work',
+      'project-archive-43-317',
+      'local-operations-1440x900.png',
+    ),
+  })
+  await fileLink.click()
+  const previewDialog = page.locator('.attachment-preview-modal')
+  await expect(previewDialog).toBeVisible({ timeout: 30_000 })
+  await previewDialog.locator('.arco-modal-close-btn').click()
+  await expect(previewDialog).toBeHidden()
+
+  await page.route(
+    '**/api/v1/files/*/download',
+    (route) =>
+      route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 403,
+          message: 'permission denied by the error-path assertion',
+          data: null,
+        }),
+      }),
+    { times: 1 },
+  )
+  const rejectedDownloadResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'GET' &&
+      /\/files\/[^/]+\/download$/u.test(new URL(response.url()).pathname),
+  )
+  await firstRow.getByRole('button', { name: '下载', exact: true }).click()
+  const rejectedDownloadResponse = await rejectedDownloadResponsePromise
+  expect(rejectedDownloadResponse.status()).toBe(403)
+  await expect(page.getByText('文件下载失败，请检查权限后重试', { exact: true })).toBeVisible()
+  failedApiResponses.length = 0
+
+  const downloadPromise = page.waitForEvent('download')
+  await firstRow.getByRole('button', { name: '下载', exact: true }).click()
+  const download = await downloadPromise
+  expect(download.suggestedFilename()).toBe(uploadedFileName)
+
+  await page.route(
+    '**/api/v1/files/*/archive',
+    (route) =>
+      route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 403,
+          message: 'permission denied by the error-path assertion',
+          data: null,
+        }),
+      }),
+    { times: 1 },
+  )
+  await firstRow.getByRole('button', { name: '删除', exact: true }).click()
+  const rejectedDeleteDialog = page.locator('.arco-modal').filter({ hasText: '删除文件' })
+  const rejectedDeleteResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      /\/files\/[^/]+\/archive$/u.test(new URL(response.url()).pathname),
+  )
+  await rejectedDeleteDialog.getByRole('button', { name: '删除', exact: true }).click()
+  const rejectedDeleteResponse = await rejectedDeleteResponsePromise
+  expect(rejectedDeleteResponse.status()).toBe(403)
+  await expect(page.getByText('文件删除失败，请检查权限后重试', { exact: true })).toBeVisible()
+  await expect(firstRow.getByRole('button', { name: '删除', exact: true })).toBeVisible()
+  failedApiResponses.length = 0
+
+  await firstRow.getByRole('button', { name: '删除', exact: true }).click()
+  const deleteDialog = page.locator('.arco-modal').filter({ hasText: '删除文件' })
+  await expect(deleteDialog).toContainText('确认删除当前文件？历史版本记录将保留。')
+  const deleteResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      /\/files\/[^/]+\/archive$/u.test(new URL(response.url()).pathname),
+  )
+  await deleteDialog.getByRole('button', { name: '删除', exact: true }).click()
+  const deleteResponse = await deleteResponsePromise
+  expect(deleteResponse.ok()).toBe(true)
+  await expect(firstRow.getByRole('button', { name: '下载', exact: true })).toHaveCount(0)
+  await expect(firstRow.getByRole('button', { name: '删除', exact: true })).toHaveCount(0)
+
+  const projectControl = page.locator('.archive-project-select__control')
+  const currentProjectName = (
+    await projectControl.locator('.arco-select-view-value').textContent()
+  )?.trim()
+  await projectControl.click()
+  const projectOptions = page.locator('.arco-select-dropdown:visible .arco-select-option')
+  await expect(projectOptions.first()).toBeVisible()
+  const optionNames = (await projectOptions.allTextContents()).map((name) => name.trim())
+  const nextProjectIndex = optionNames.findIndex((name) => name && name !== currentProjectName)
+  expect(nextProjectIndex).toBeGreaterThanOrEqual(0)
+  const archiveTreeResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'GET' &&
+      /\/projects\/[^/]+\/archive-tree$/u.test(new URL(response.url()).pathname),
+  )
+  await projectOptions.nth(nextProjectIndex).click()
+  const archiveTreeResponse = await archiveTreeResponsePromise
+  expect(archiveTreeResponse.ok(), await archiveTreeResponse.text()).toBe(true)
+  await expect(projectControl).toContainText(optionNames[nextProjectIndex] ?? '')
+  await expect(page.locator('.archive-directory__item').first()).toBeVisible()
+
+  expect(pageErrors).toEqual([])
+  expect(failedApiResponses).toEqual([])
 })
