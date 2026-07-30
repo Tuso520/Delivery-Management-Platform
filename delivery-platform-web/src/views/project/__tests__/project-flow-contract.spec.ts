@@ -35,6 +35,7 @@ describe('project overview and overlay contract', () => {
     expect(overview).toContain(':scroll="{ x: \'max-content\' }"')
     expect(overview).toContain('size="large"')
     expect(overview).toMatch(/nameColumnWidth:\s*240/u)
+    expect(overview).toContain('managerColumnWidth: 110')
     expect(overview).toMatch(/:width="projectLayout\.nameColumnWidth"\s+fixed="left"/u)
     expect(overview).toContain("join('·') || '-'")
     expect(overview).toContain('fractionDigits: 2')
@@ -60,6 +61,10 @@ describe('project overview and overlay contract', () => {
     expect(overview).not.toContain('toolbar-refresh.png')
     expect(overview).toContain('grid-template-columns: repeat(4, 242px) minmax(0, 1fr)')
     expect(overview).toContain('grid-template-columns: repeat(5, minmax(0, 1fr))')
+    expect(overview).toContain("'--project-search-width'")
+    expect(overview).toContain('projectLayout.nameColumnWidth +')
+    expect(overview).toContain('border-right: 1px solid var(--project-border)')
+    expect(overview).toContain('box-shadow: inset 0 0 0 1px var(--project-border)')
     expect(overview).toContain('flex: 1 1 auto')
   })
 

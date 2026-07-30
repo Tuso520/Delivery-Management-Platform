@@ -11,9 +11,9 @@ const acceptanceScreenshot = resolve(
 async function login(page: Page): Promise<void> {
   if (!adminUsername || !adminPassword) throw new Error('UI E2E credentials are required')
 
-  await page.goto('/#/login')
+  await page.goto('/#/login', { waitUntil: 'domcontentloaded' })
   const fields = page.locator('.login-form input')
-  await expect(fields).toHaveCount(2)
+  await expect(fields).toHaveCount(2, { timeout: 20_000 })
   await expect(page.locator('.login-form .password-visibility')).toBeVisible()
   await fields.nth(0).fill(adminUsername)
   await fields.nth(1).fill(adminPassword)
@@ -21,8 +21,19 @@ async function login(page: Page): Promise<void> {
   await page.waitForURL((url) => !url.hash.startsWith('#/login'))
 }
 
-function createProjectScenario() {
-  let template: Record<string, unknown> | undefined
+function createProjectScenario(envelope: Record<string, unknown>) {
+  const sourceData = envelope.data
+  if (!sourceData || typeof sourceData !== 'object') {
+    throw new Error('The real project list response does not contain data')
+  }
+  const data = sourceData as Record<string, unknown>
+  const sourceItems = data.items
+  const template =
+    Array.isArray(sourceItems) && sourceItems[0] && typeof sourceItems[0] === 'object'
+      ? (sourceItems[0] as Record<string, unknown>)
+      : undefined
+  if (!template) throw new Error('The real project list response does not contain a project')
+
   let requestCount = 0
 
   return {
@@ -31,15 +42,6 @@ function createProjectScenario() {
     },
     async fulfill(route: Route): Promise<void> {
       requestCount += 1
-      const response = await route.fetch()
-      const envelope = await response.json()
-      const sourceItems = envelope?.data?.items
-      template = (Array.isArray(sourceItems) && sourceItems[0]) || template
-      if (!template) {
-        await route.fulfill({ response })
-        return
-      }
-
       const url = new URL(route.request().url())
       const page = Number(url.searchParams.get('page') || 1)
       const pageSize = Number(url.searchParams.get('pageSize') || 20)
@@ -60,11 +62,12 @@ function createProjectScenario() {
       const start = (page - 1) * pageSize
 
       await route.fulfill({
-        response,
+        status: 200,
+        contentType: 'application/json',
         json: {
           ...envelope,
           data: {
-            ...envelope.data,
+            ...data,
             items: allItems.slice(start, start + pageSize),
             page,
             pageSize,
@@ -477,6 +480,7 @@ test('project overview keeps loading, empty and error states inside the Figma ta
   )
   await expect(page.getByRole('button', { name: '重新加载', exact: true })).toBeVisible()
   await expect(page.locator('.project-table-frame')).toHaveCSS('height', '602px')
+  await page.unrouteAll({ behavior: 'wait' })
 })
 
 test('project scope exposes archived projects and project manager sorting cycles both directions', async ({
@@ -627,13 +631,21 @@ test('project overview uses wheel loading, large rows and a fixed project-name c
   page,
 }) => {
   await login(page)
-  const scenario = createProjectScenario()
+  const sourceListResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/v1/projects?') &&
+      response.request().method() === 'GET' &&
+      response.status() === 200,
+  )
+  await page.goto('/#/projects')
+  const sourceEnvelope = (await (await sourceListResponse).json()) as Record<string, unknown>
+  const scenario = createProjectScenario(sourceEnvelope)
   await page.route(
     (url) => url.pathname === '/api/v1/projects' && url.searchParams.has('pageSize'),
     (route) => scenario.fulfill(route),
   )
 
-  await page.goto('/#/projects')
+  await page.reload()
   const viewport = page.locator('.project-list-panel .business-table__viewport')
   await expect(page.locator('.project-link')).toHaveCount(20, { timeout: 60_000 })
   await expect(page.locator('.business-table__pagination')).toHaveCount(0)

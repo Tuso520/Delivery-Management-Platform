@@ -56,15 +56,12 @@ const projectLayoutStyle = {
 } as CSSProperties
 const requestedScope = String(route.query.scope ?? '')
 const scope = ref<ProjectScope>(
-  ['mine', 'all', 'archived'].includes(requestedScope)
-    ? (requestedScope as ProjectScope)
-    : 'mine',
+  ['mine', 'all', 'archived'].includes(requestedScope) ? (requestedScope as ProjectScope) : 'mine',
 )
 const requestedSort = String(route.query.sort ?? '')
-const initialSort: ProjectSort | undefined = [
-  'projectManager:asc',
-  'projectManager:desc',
-].includes(requestedSort)
+const initialSort: ProjectSort | undefined = ['projectManager:asc', 'projectManager:desc'].includes(
+  requestedSort,
+)
   ? (requestedSort as ProjectSort)
   : undefined
 const keywordInput = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
@@ -350,11 +347,7 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
     :style="projectLayoutStyle"
   >
     <section class="summary-band" :aria-label="t('projects.summaryAria')">
-      <article
-        v-for="metric in summaryMetrics"
-        :key="metric.id"
-        class="summary-metric"
-      >
+      <article v-for="metric in summaryMetrics" :key="metric.id" class="summary-metric">
         <span class="metric-icon"><img :src="metric.icon" alt="" /></span>
         <span class="metric-copy">
           <span class="metric-label">{{ metric.label }}</span>
@@ -451,7 +444,13 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
               >
                 {{ t('projects.columns.manager') }}
                 <span class="manager-sort-icon" aria-hidden="true">
-                  {{ managerSort === 'projectManager:asc' ? '↑' : managerSort === 'projectManager:desc' ? '↓' : '↕' }}
+                  {{
+                    managerSort === 'projectManager:asc'
+                      ? '↑'
+                      : managerSort === 'projectManager:desc'
+                        ? '↓'
+                        : '↕'
+                  }}
                 </span>
               </button>
             </template>
@@ -502,7 +501,11 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
               {{ acceptance(row) }}
             </template>
           </a-table-column>
-          <a-table-column :title="t('projects.columns.contractCurrency')" :width="80" align="center">
+          <a-table-column
+            :title="t('projects.columns.contractCurrency')"
+            :width="80"
+            align="center"
+          >
             <template #cell="{ record: row }">
               <span
                 v-if="row.contractCurrency"
