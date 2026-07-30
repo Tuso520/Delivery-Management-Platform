@@ -29,8 +29,10 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
     { width: 2560, height: 1440 },
   ]
   const workspaceHeights: number[] = []
+  const headerWidthsByViewport: number[][] = []
+  const baselineHeaderWidths = [340, 80, 100, 113, 122, 182]
 
-  for (const viewport of viewports) {
+  for (const [viewportIndex, viewport] of viewports.entries()) {
     await page.setViewportSize(viewport)
     await expect(page.locator('.archive-directory__item').first()).toBeVisible()
 
@@ -42,6 +44,7 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
       const directory = root.querySelector<HTMLElement>('.archive-directory')
       const directoryScroll = root.querySelector<HTMLElement>('.archive-directory__scroll')
       const firstDirectoryItem = root.querySelector<HTMLElement>('.archive-directory__item')
+      const filesPanel = root.querySelector<HTMLElement>('.archive-files')
       const tableViewport = root.querySelector<HTMLElement>('.business-table__viewport')
       const firstRow = root.querySelector<HTMLElement>('.arco-table-td')
       const headers = [...root.querySelectorAll<HTMLElement>('thead .arco-table-th')]
@@ -55,6 +58,7 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
         !directory ||
         !directoryScroll ||
         !firstDirectoryItem ||
+        !filesPanel ||
         !tableViewport ||
         !firstRow ||
         !layoutMain ||
@@ -80,6 +84,7 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
         directoryOverflowY: getComputedStyle(directoryScroll).overflowY,
         tableOverflowY: getComputedStyle(tableViewport).overflowY,
         tableRowHeight: Math.round(firstRow.getBoundingClientRect().height),
+        tablePanelWidth: Math.round(filesPanel.getBoundingClientRect().width),
         headerWidths: headers.map((header) => Math.round(header.getBoundingClientRect().width)),
         headerBorders: headers.map((header) => getComputedStyle(header).borderRightWidth),
         cellBorders: cells.map((cell) => getComputedStyle(cell).borderRightWidth),
@@ -89,6 +94,7 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
     })
 
     workspaceHeights.push(layout.workspaceHeight)
+    headerWidthsByViewport.push(layout.headerWidths)
     expect(layout.root.bottom).toBeCloseTo(layout.main.bottom, 0)
     expect(layout).toMatchObject({
       metricsHeight: 100,
@@ -99,16 +105,29 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
       directoryOverflowY: 'auto',
       tableOverflowY: 'auto',
       tableRowHeight: 44,
-      headerWidths: [340, 80, 100, 113, 122, 182],
       headerBorders: ['1px', '1px', '1px', '1px', '1px', '0px'],
       cellBorders: ['1px', '1px', '1px', '1px', '1px', '0px'],
     })
+    if (viewportIndex === 0) {
+      expect(layout.headerWidths).toEqual(baselineHeaderWidths)
+    } else {
+      layout.headerWidths.forEach((width, index) => {
+        expect(width).toBeGreaterThanOrEqual(baselineHeaderWidths[index] ?? 0)
+      })
+    }
+    expect(
+      Math.abs(layout.headerWidths.reduce((total, width) => total + width, 0) - layout.tablePanelWidth),
+    ).toBeLessThanOrEqual(2)
     expect(layout.selectLeft).toBe(layout.directoryLeft)
     expect(layout.documentScrollHeight).toBe(layout.documentClientHeight)
   }
 
   expect(workspaceHeights[1]).toBeGreaterThan(workspaceHeights[0])
   expect(workspaceHeights[2]).toBeGreaterThan(workspaceHeights[1])
+  baselineHeaderWidths.forEach((_, index) => {
+    expect(headerWidthsByViewport[1]?.[index]).toBeGreaterThan(headerWidthsByViewport[0]?.[index] ?? 0)
+    expect(headerWidthsByViewport[2]?.[index]).toBeGreaterThan(headerWidthsByViewport[1]?.[index] ?? 0)
+  })
   await expect(page.getByRole('button', { name: '上传', exact: true })).toBeVisible()
   await expect(page.getByText('同步模板', { exact: true })).toHaveCount(0)
 })
