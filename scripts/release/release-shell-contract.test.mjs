@@ -1,0 +1,86 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import { test } from 'node:test'
+
+const deploy = await readFile(new URL('./deploy-release.sh', import.meta.url), 'utf8')
+const restore = await readFile(new URL('./restore-release.sh', import.meta.url), 'utf8')
+const dataCompose = await readFile(new URL('../../deploy/compose/data.yml', import.meta.url), 'utf8')
+
+function occursInOrder(source, values) {
+  let cursor = -1
+  for (const value of values) {
+    const next = source.indexOf(value, cursor + 1)
+    assert.notEqual(next, -1, `missing deployment contract: ${value}`)
+    assert.ok(next > cursor, `deployment contract is out of order: ${value}`)
+    cursor = next
+  }
+}
+
+test('deployment quiesces, backs up, migrates, starts and switches in that order', () => {
+  const body = deploy.slice(deploy.indexOf('deploy_release()'))
+  occursInOrder(body, [
+    'stop_application',
+    'create_backup',
+    'run_migrations',
+    'start_application',
+    'switch_frontend',
+    'check_origin internal',
+    'check_origin public',
+    'publish_state',
+  ])
+})
+
+test('deployment binds release identity and checksummed paired backups', () => {
+  for (const contract of [
+    'DEPLOY_TARGET_ID',
+    "runtime env file permissions must be 0600",
+    '@sha256:',
+    'frontend bundle checksum mismatch',
+    'mysql.sql.gz',
+    'minio.tar.gz',
+    'source-release-manifest.json',
+    'source-release.env',
+    'checksums.sha256',
+  ]) {
+    assert.match(deploy, new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'))
+  }
+})
+
+test('paired restore is explicit, path-bound, checksummed and fail-closed', () => {
+  for (const contract of [
+    "CONFIRM_DATA_RESTORE=RESTORE",
+    'direct child of the server backups directory',
+    'sha256sum --check --strict',
+    'data-restore-incomplete',
+    'DROP DATABASE IF EXISTS',
+    'minio.tar.gz',
+    'FLUSHALL',
+    'check_origin internal',
+    'check_origin public',
+  ]) {
+    assert.match(restore, new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'))
+  }
+})
+
+test('restore brings back the matching application only after data and worker checks', () => {
+  const body = restore.slice(restore.indexOf('main()'))
+  occursInOrder(body, [
+    'restore_storage',
+    'up -d --no-deps --force-recreate backend',
+    'wait_backend_ready',
+    'up -d --no-deps --force-recreate file-worker outbox-worker',
+    'check_workers_stable',
+    'switch_frontend',
+    'check_origin internal',
+    'check_origin public',
+    'publish_state',
+  ])
+  assert.match(restore, /redis-cli -a "\$REDIS_PASSWORD" FLUSHALL/u)
+  assert.match(dataCompose, /environment:\s+REDIS_PASSWORD: \$\{REDIS_PASSWORD:\?REDIS_PASSWORD is required\}/u)
+})
+
+test('v2 scripts never delete Docker volumes or globally prune Docker', () => {
+  const combined = `${deploy}\n${restore}`
+  assert.doesNotMatch(combined, /docker\s+(?:system|volume)\s+prune/u)
+  assert.doesNotMatch(combined, /\bdown\s+-v\b/u)
+})

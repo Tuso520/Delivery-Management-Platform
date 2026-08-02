@@ -1,5 +1,14 @@
 # 更新记录
 
+## 2026-08-02（轻量测试与不可变发布架构）
+
+- 本地默认质量检查改为 PowerShell 7 下的 Node 进程内流程，不启动 WSL、Docker、MySQL、Redis 或 MinIO；新增项目台账、项目档案、档案模板、项目弹窗和标准库的设计/实现/差异视觉报告。
+- CI 在质量门禁后只构建一次：后端运行镜像和迁移镜像固定为 GHCR digest，前端静态包与 Release Manifest 发布为 OCI Artifact；真实 MySQL、Redis、MinIO、API 和浏览器验收全部使用同一组正式发布物。
+- 测试环境自动部署，生产环境只允许从测试验证凭据推广同一完整 SHA，并通过 `production` GitHub Environment 人工审批；旧部署工作流仅保留手动迁移兜底。
+- 测试和生产服务器拆分为宿主 Nginx、应用 Compose 和内部数据 Compose；前端采用符号链接原子切换，数据端口只绑定 localhost，所有文件继续统一使用 500 MiB 上限。
+- 新增发布前停写、MySQL/MinIO 成对备份、迁移门禁、内外网 Release ID 校验、失败标记和显式成对恢复；恢复时校验 checksum、源 Release、Worker 稳定性和服务器身份，不自动删除备份或 Docker 卷。
+- 新增测试/生产账号、SSH、sudo、目录、内外网地址、Nginx、GitHub Variables/Secrets、首发接管、日常推广和回滚的完整中文教程。
+
 ## 2026-07-28（标准库 Figma 精确对齐）
 
 - 以 Figma 节点 `70:322` 为标准库唯一视觉基准，重构三项统计、关键词工具栏、交付阶段/管理领域分类工作区和五列固定宽度表格；统一 88px 指标区、270/937px 双栏、44px 行高、`365/90/130/170/182px` 列宽、纵向滚动和无分页器布局。

@@ -24,6 +24,8 @@ release/*.tar.gz
 release/*.sha256
 release/*.manifest.txt
 release/archive/
+!scripts/release/
+!scripts/release/**
 *.bundle
 docker/mysql/data/
 docker/redis/data/

@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "project-overview",
+      "title": "项目台账",
+      "reference": ".ai-work/figma-project-overview-18-1341.png",
+      "actual": ".ai-work/acceptance-project-overview-1440x900.png"
+    },
+    {
+      "id": "project-archive",
+      "title": "项目档案",
+      "reference": ".ai-work/project-archive-43-317/figma-43-317.png",
+      "actual": ".ai-work/project-archive-43-317/local-1440x900.png"
+    },
+    {
+      "id": "archive-template",
+      "title": "档案模板",
+      "reference": ".ai-work/archive-template-figma-69-305.png",
+      "actual": ".ai-work/acceptance-archive-template-1440x900.png"
+    },
+    {
+      "id": "project-dialog",
+      "title": "项目新建弹窗",
+      "reference": ".ai-work/project-detail-dialog-1440x900.png",
+      "actual": ".ai-work/project-modal/local-create-1440x900.png"
+    },
+    {
+      "id": "standard-library",
+      "title": "标准库",
+      "reference": ".ai-work/figma-standard-library-70-322.png",
+      "actual": ".ai-work/acceptance-standard-library-1440x900.png"
+    }
+  ]
+}

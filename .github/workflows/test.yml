@@ -28,6 +28,11 @@ jobs:
         run: node scripts/sync-access-control-contract.mjs
       - name: Prisma runtime boundary check
         run: node scripts/check-prisma-runtime-boundaries.mjs
+      - name: Release contract and shell syntax checks
+        run: |
+          node --test scripts/release/release-manifest.test.mjs scripts/release/release-shell-contract.test.mjs
+          bash -n scripts/release/deploy-release.sh
+          bash -n scripts/release/restore-release.sh
       - name: 安装后端依赖
         working-directory: delivery-platform-server
         run: pnpm install --frozen-lockfile
@@ -59,4 +64,30 @@ jobs:
         working-directory: delivery-platform-web
         run: pnpm build && pnpm budget
       - name: Docker Compose 配置检查
-        run: docker compose --env-file .env.local.example -f docker-compose.test.yml config -q
+        run: |
+          docker compose --env-file .env.local.example -f docker-compose.test.yml config -q
+          docker compose --env-file /dev/null -f deploy/compose/data.yml config -q
+          docker compose --env-file /dev/null -f deploy/compose/app.yml config -q
+        env:
+          DATA_PROJECT_NAME: delivery-platform-ci-data-config
+          APP_PROJECT_NAME: delivery-platform-ci-app-config
+          DATA_NETWORK_NAME: delivery-platform-ci-data-config
+          MYSQL_VOLUME_NAME: delivery-platform-ci-mysql-config
+          REDIS_VOLUME_NAME: delivery-platform-ci-redis-config
+          MINIO_VOLUME_NAME: delivery-platform-ci-minio-config
+          MYSQL_DATABASE: delivery_platform
+          MYSQL_USER: delivery_user
+          MYSQL_ROOT_PASSWORD: config-only-root
+          MYSQL_USER_PASSWORD: config-only-user
+          REDIS_PASSWORD: config-only-redis
+          MINIO_ROOT_USER: config_only_minio
+          MINIO_ROOT_PASSWORD: config-only-minio
+          MINIO_BUCKET: delivery-platform
+          RELEASE_ID: 0123456789ab
+          BACKEND_IMAGE: ghcr.io/example/delivery-platform/backend@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          MIGRATION_IMAGE: ghcr.io/example/delivery-platform/migrator@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          JWT_SECRET: config-only-jwt
+          INTEGRATION_SECRET_ENCRYPTION_KEY: Y29uZmlnLW9ubHktMzItYnl0ZS1rZXktMTIzNDU2Nw==
+          SEED_ADMIN_PASSWORD: config-only-admin
+          SEED_DEFAULT_PASSWORD: config-only-default
+          CORS_ORIGIN: https://config.invalid

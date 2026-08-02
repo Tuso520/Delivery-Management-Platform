@@ -7,6 +7,10 @@ const acceptanceScreenshot = resolve(
   process.cwd(),
   '../.ai-work/acceptance-project-overview-1440x900.png',
 )
+const archiveTemplateScreenshot = resolve(
+  process.cwd(),
+  '../.ai-work/acceptance-archive-template-1440x900.png',
+)
 
 async function login(page: Page): Promise<void> {
   if (!adminUsername || !adminPassword) throw new Error('UI E2E credentials are required')
@@ -748,6 +752,10 @@ test('archive template matches Figma 69:305 geometry and server query behavior',
   expect(metrics.tableWidth).toBeGreaterThanOrEqual(metrics.viewportWidth)
   expect(metrics.bodyWidths).toEqual(metrics.headerWidths)
   expect(new Set(metrics.rightBorderColors)).toEqual(new Set(['rgb(224, 224, 224)']))
+  await page.locator('.template-page').screenshot({
+    path: archiveTemplateScreenshot,
+    animations: 'disabled',
+  })
   const publishedRow = page
     .locator('tbody .arco-table-tr')
     .filter({ hasText: '标准项目档案模板' })

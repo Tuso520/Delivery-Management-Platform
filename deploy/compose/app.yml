@@ -1,0 +1,89 @@
+name: ${APP_PROJECT_NAME:?APP_PROJECT_NAME is required}
+
+x-backend-environment: &backend-environment
+  NODE_ENV: production
+  RELEASE_ID: ${RELEASE_ID:?RELEASE_ID is required}
+  DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_USER_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
+  REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+  JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+  JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+  INTEGRATION_SECRET_ENCRYPTION_KEY: ${INTEGRATION_SECRET_ENCRYPTION_KEY:?INTEGRATION_SECRET_ENCRYPTION_KEY is required}
+  MINIO_ENDPOINT: minio
+  MINIO_PORT: 9000
+  MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+  MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+  MINIO_BUCKET: ${MINIO_BUCKET}
+  MINIO_USE_SSL: "false"
+
+services:
+  backend-migrate:
+    image: ${MIGRATION_IMAGE:?MIGRATION_IMAGE must be pinned by digest}
+    pull_policy: always
+    restart: "no"
+    environment:
+      <<: *backend-environment
+      EXPECTED_MIGRATION_COUNT: ${EXPECTED_MIGRATION_COUNT:-45}
+      INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME: ${INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME:-admin}
+      SEED_RESET_EXISTING_USER_PASSWORDS: ${SEED_RESET_EXISTING_USER_PASSWORDS:-false}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?SEED_ADMIN_PASSWORD is required}
+      SEED_DEFAULT_PASSWORD: ${SEED_DEFAULT_PASSWORD:?SEED_DEFAULT_PASSWORD is required}
+    command: ["sh", "prisma/run-deployment-migrations.sh"]
+    networks:
+      - data
+
+  backend:
+    image: ${BACKEND_IMAGE:?BACKEND_IMAGE must be pinned by digest}
+    pull_policy: always
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${BACKEND_HOST_PORT:-3000}:3000"
+    environment:
+      <<: *backend-environment
+      ONLYOFFICE_DOCS_URL: ${ONLYOFFICE_DOCS_URL:-}
+      ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-}
+      CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN is required}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+    networks:
+      - data
+
+  file-worker:
+    image: ${BACKEND_IMAGE:?BACKEND_IMAGE must be pinned by digest}
+    pull_policy: always
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 330s
+    command: ["node", "dist/workers/file-processing.worker"]
+    environment:
+      <<: *backend-environment
+      FILE_CONVERTER_URL: ${FILE_CONVERTER_URL:-}
+      FILE_CONVERTER_TOKEN: ${FILE_CONVERTER_TOKEN:-}
+      FILE_CONVERTER_TIMEOUT_MS: ${FILE_CONVERTER_TIMEOUT_MS:-120000}
+      FILE_CONVERTER_MAX_OUTPUT_BYTES: ${FILE_CONVERTER_MAX_OUTPUT_BYTES:-524288000}
+      FILE_PROCESSING_MAX_ATTEMPTS: ${FILE_PROCESSING_MAX_ATTEMPTS:-3}
+      FILE_PROCESSING_LEASE_MS: ${FILE_PROCESSING_LEASE_MS:-300000}
+      FILE_PROCESSING_RETRY_BASE_MS: ${FILE_PROCESSING_RETRY_BASE_MS:-5000}
+      FILE_PROCESSING_RETRY_MAX_MS: ${FILE_PROCESSING_RETRY_MAX_MS:-900000}
+    networks:
+      - data
+
+  outbox-worker:
+    image: ${BACKEND_IMAGE:?BACKEND_IMAGE must be pinned by digest}
+    pull_policy: always
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 75s
+    command: ["node", "dist/workers/outbox-dispatch.worker"]
+    environment:
+      <<: *backend-environment
+    networks:
+      - data
+
+networks:
+  data:
+    name: ${DATA_NETWORK_NAME:?DATA_NETWORK_NAME is required}
+    external: true

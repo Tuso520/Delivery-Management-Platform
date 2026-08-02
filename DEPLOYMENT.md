@@ -1,8 +1,12 @@
 # 部署快速入口
 
+当前正式入口是 [发布与服务器架构 v2](docs/deployment-architecture-v2.md)：CI 构建一次后端镜像和前端静态包，测试服务器自动发布，生产服务器人工审批后复用同一 Release。宿主 Nginx 服务静态文件，MySQL/Redis/MinIO 使用服务器内部独立数据层。
+
+下面的 `deploy-git.sh` 命令仅用于首次接管前备份或 legacy 恢复，不再用于日常更新。
+
 完整部署说明维护在 [docs/deployment.md](docs/deployment.md)。本文件只保留最常用的生产更新命令和健康检查命令。
 
-## 生产更新
+## Legacy 生产更新（迁移期兜底）
 
 ```bash
 cd /www/wwwroot/delivery-platform

@@ -1,0 +1,378 @@
+name: 构建并发布不可变 Release
+
+on:
+  workflow_run:
+    workflows: [质量检查]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: main 历史中的完整提交、标签或 ref
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: release-${{ github.event.workflow_run.head_sha || github.event.inputs.ref || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: 固定已通过质量门禁的提交
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.resolve.outputs.commit }}
+      short_commit: ${{ steps.resolve.outputs.short_commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 解析发布提交
+        id: resolve
+        env:
+          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          REQUESTED_REF: ${{ github.event.inputs.ref }}
+        run: |
+          set -Eeuo pipefail
+          git fetch --no-tags origin main
+          requested="${WORKFLOW_RUN_SHA:-${REQUESTED_REF:-$GITHUB_SHA}}"
+          commit="$(git rev-parse --verify --end-of-options "${requested}^{commit}")"
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$commit" origin/main || {
+            echo "::error::只允许发布 main 历史中的提交"
+            exit 1
+          }
+          printf 'commit=%s\n' "$commit" >> "$GITHUB_OUTPUT"
+          printf 'short_commit=%s\n' "${commit:0:12}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: 构建一次并发布 Release
+    needs: resolve
+    runs-on: ubuntu-latest
+    outputs:
+      backend_image: ${{ steps.metadata.outputs.backend_image }}
+      migrator_image: ${{ steps.metadata.outputs.migrator_image }}
+      frontend_artifact: ${{ steps.metadata.outputs.frontend_artifact }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.commit }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.4
+      - uses: docker/setup-buildx-action@v3
+      - uses: oras-project/setup-oras@v1
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 计算不可变包名
+        id: names
+        env:
+          RELEASE_SHA: ${{ needs.resolve.outputs.commit }}
+        run: |
+          set -Eeuo pipefail
+          repository="${GITHUB_REPOSITORY,,}"
+          printf 'backend_repository=ghcr.io/%s/backend\n' "$repository" >> "$GITHUB_OUTPUT"
+          printf 'migrator_repository=ghcr.io/%s/migrator\n' "$repository" >> "$GITHUB_OUTPUT"
+          printf 'frontend_artifact=ghcr.io/%s/frontend-release:sha-%s\n' "$repository" "$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: 构建并推送后端运行镜像
+        id: backend
+        uses: docker/build-push-action@v6
+        with:
+          context: delivery-platform-server
+          file: delivery-platform-server/Dockerfile
+          target: runtime
+          push: true
+          tags: ${{ steps.names.outputs.backend_repository }}:sha-${{ needs.resolve.outputs.commit }}
+          build-args: RELEASE_ID=${{ needs.resolve.outputs.short_commit }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: 构建并推送迁移镜像
+        id: migrator
+        uses: docker/build-push-action@v6
+        with:
+          context: delivery-platform-server
+          file: delivery-platform-server/Dockerfile
+          target: migrator
+          push: true
+          tags: ${{ steps.names.outputs.migrator_repository }}:sha-${{ needs.resolve.outputs.commit }}
+          build-args: RELEASE_ID=${{ needs.resolve.outputs.short_commit }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: 构建前端静态包
+        env:
+          VITE_RELEASE_ID: ${{ needs.resolve.outputs.short_commit }}
+        run: |
+          set -Eeuo pipefail
+          pnpm --dir delivery-platform-web install --frozen-lockfile
+          pnpm --dir delivery-platform-web build
+          mkdir -p release
+          tar -C delivery-platform-web/dist -czf release/frontend.tar.gz .
+
+      - name: 生成并验证 Release Manifest
+        id: metadata
+        env:
+          RELEASE_SHA: ${{ needs.resolve.outputs.commit }}
+          BACKEND_REPOSITORY: ${{ steps.names.outputs.backend_repository }}
+          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
+          MIGRATOR_REPOSITORY: ${{ steps.names.outputs.migrator_repository }}
+          MIGRATOR_DIGEST: ${{ steps.migrator.outputs.digest }}
+          FRONTEND_ARTIFACT: ${{ steps.names.outputs.frontend_artifact }}
+        run: |
+          set -Eeuo pipefail
+          backend_image="$BACKEND_REPOSITORY@$BACKEND_DIGEST"
+          migrator_image="$MIGRATOR_REPOSITORY@$MIGRATOR_DIGEST"
+          node scripts/release/release-manifest.mjs create \
+            --release-id "$RELEASE_SHA" \
+            --repository "$GITHUB_REPOSITORY" \
+            --backend-image "$backend_image" \
+            --migrator-image "$migrator_image" \
+            --frontend-artifact "$FRONTEND_ARTIFACT" \
+            --frontend-file release/frontend.tar.gz \
+            --migration-count 45 \
+            --output release/release-manifest.json
+          node scripts/release/release-manifest.mjs verify \
+            --manifest release/release-manifest.json \
+            --release-id "$RELEASE_SHA" \
+            --frontend-file release/frontend.tar.gz
+          printf 'backend_image=%s\n' "$backend_image" >> "$GITHUB_OUTPUT"
+          printf 'migrator_image=%s\n' "$migrator_image" >> "$GITHUB_OUTPUT"
+          printf 'frontend_artifact=%s\n' "$FRONTEND_ARTIFACT" >> "$GITHUB_OUTPUT"
+
+      - name: 推送前端静态包和发布清单到 GHCR
+        working-directory: release
+        run: |
+          set -Eeuo pipefail
+          oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<< "$GHCR_TOKEN"
+          oras push "$FRONTEND_ARTIFACT" \
+            frontend.tar.gz:application/gzip \
+            release-manifest.json:application/vnd.delivery-platform.release.v1+json
+        env:
+          FRONTEND_ARTIFACT: ${{ steps.names.outputs.frontend_artifact }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 保存发布物诊断副本
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ needs.resolve.outputs.commit }}
+          path: |
+            release/frontend.tar.gz
+            release/release-manifest.json
+          retention-days: 30
+          if-no-files-found: error
+
+  integration:
+    name: 使用正式发布物执行真实集成验收
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_ENV: test
+      DATA_PROJECT_NAME: delivery-platform-ci-data
+      APP_PROJECT_NAME: delivery-platform-ci-app
+      DATA_NETWORK_NAME: delivery-platform-ci-data
+      MYSQL_VOLUME_NAME: delivery-platform-ci-mysql
+      REDIS_VOLUME_NAME: delivery-platform-ci-redis
+      MINIO_VOLUME_NAME: delivery-platform-ci-minio
+      MYSQL_DATABASE: delivery_platform
+      MYSQL_USER: delivery_user
+      MYSQL_HOST_PORT: "13306"
+      REDIS_HOST_PORT: "16379"
+      MINIO_API_HOST_PORT: "19000"
+      MINIO_CONSOLE_HOST_PORT: "19001"
+      MINIO_ROOT_USER: delivery_minio
+      MINIO_BUCKET: delivery-platform
+      BACKEND_HOST_PORT: "13000"
+      EXPECTED_MIGRATION_COUNT: "45"
+      INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME: admin
+      SEED_RESET_EXISTING_USER_PASSWORDS: "true"
+      CORS_ORIGIN: http://127.0.0.1:18080
+      RELEASE_ID: ${{ needs.resolve.outputs.short_commit }}
+      BACKEND_IMAGE: ${{ needs.build.outputs.backend_image }}
+      MIGRATION_IMAGE: ${{ needs.build.outputs.migrator_image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.commit }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.4
+      - uses: oras-project/setup-oras@v1
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 生成隔离验收凭据
+        run: |
+          set_secret() {
+            local name="$1" value="$2"
+            echo "::add-mask::$value"
+            printf '%s=%s\n' "$name" "$value" >> "$GITHUB_ENV"
+          }
+          set_secret MYSQL_ROOT_PASSWORD "$(openssl rand -hex 24)"
+          set_secret MYSQL_USER_PASSWORD "$(openssl rand -hex 24)"
+          set_secret REDIS_PASSWORD "$(openssl rand -hex 24)"
+          set_secret MINIO_ROOT_PASSWORD "$(openssl rand -hex 24)"
+          set_secret JWT_SECRET "$(openssl rand -base64 48 | tr -d '\r\n')"
+          set_secret INTEGRATION_SECRET_ENCRYPTION_KEY "$(openssl rand -base64 32 | tr -d '\r\n')"
+          set_secret SEED_ADMIN_PASSWORD "$(openssl rand -base64 24 | tr -d '\r\n')"
+          set_secret SEED_DEFAULT_PASSWORD "$(openssl rand -base64 24 | tr -d '\r\n')"
+
+      - name: 下载并验证前端发布物
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FRONTEND_ARTIFACT: ${{ needs.build.outputs.frontend_artifact }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p release/frontend
+          oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<< "$GHCR_TOKEN"
+          oras pull "$FRONTEND_ARTIFACT" -o release
+          node scripts/release/release-manifest.mjs verify \
+            --manifest release/release-manifest.json \
+            --release-id "${{ needs.resolve.outputs.commit }}" \
+            --frontend-file release/frontend.tar.gz
+          tar -C release/frontend -xzf release/frontend.tar.gz
+
+      - name: 安装真实验收测试依赖
+        run: |
+          pnpm --dir delivery-platform-server install --frozen-lockfile
+          pnpm --dir delivery-platform-web install --frozen-lockfile
+          pnpm --dir delivery-platform-web exec playwright install --with-deps chromium
+
+      - name: 启动数据层、迁移和应用层
+        run: |
+          set -Eeuo pipefail
+          data=(docker compose --env-file /dev/null -f deploy/compose/data.yml)
+          app=(docker compose --env-file /dev/null -f deploy/compose/app.yml)
+          "${data[@]}" up -d mysql redis minio
+          for service in mysql redis minio; do
+            for _ in $(seq 1 60); do
+              id="$("${data[@]}" ps -q "$service")"
+              status="$(docker inspect "$id" --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' 2>/dev/null || true)"
+              [ "$status" = healthy ] && break
+              sleep 3
+            done
+            [ "$status" = healthy ] || { "${data[@]}" logs "$service"; exit 1; }
+          done
+          "${data[@]}" run --rm minio-init
+          "${app[@]}" pull backend backend-migrate file-worker outbox-worker
+          "${app[@]}" run --rm --no-deps backend-migrate
+          "${app[@]}" run --rm --no-deps \
+            -e DEPLOY_ENV=test -e CONFIRM_TEST_DATA_SEED=YES \
+            backend-migrate ./node_modules/.bin/ts-node --transpile-only prisma/seed-test-data.ts
+          "${app[@]}" run --rm --no-deps \
+            -e DEPLOY_ENV=test \
+            backend-migrate ./node_modules/.bin/ts-node --transpile-only prisma/verify-test-data.ts
+          "${app[@]}" up -d --no-deps backend file-worker outbox-worker
+          for _ in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:13000/api/v1/ready >/dev/null && break
+            sleep 3
+          done
+          curl -fsS http://127.0.0.1:13000/api/v1/ready >/dev/null
+          docker run -d --name delivery-platform-ci-frontend \
+            --network "$DATA_NETWORK_NAME" -p 127.0.0.1:18080:80 \
+            -v "$PWD/release/frontend:/usr/share/nginx/html:ro" \
+            -v "$PWD/deploy/nginx/ci.conf:/etc/nginx/conf.d/default.conf:ro" \
+            nginx:alpine
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:18080/build-info.json >/dev/null && break
+            sleep 2
+          done
+          test "$(curl -fsS http://127.0.0.1:18080/build-info.json | jq -r .releaseId)" = "$RELEASE_ID"
+
+      - name: 真实 NestJS API E2E
+        working-directory: delivery-platform-server
+        env:
+          E2E_API_BASE_URL: http://127.0.0.1:13000/api/v1
+          E2E_USERNAME: admin
+          E2E_LIMITED_USERNAME: pm_wang
+        run: |
+          E2E_PASSWORD="$SEED_ADMIN_PASSWORD" \
+          E2E_LIMITED_PASSWORD="$SEED_DEFAULT_PASSWORD" \
+          pnpm test:e2e --runInBand
+
+      - name: 浏览器 API 和权限数据范围 E2E
+        working-directory: delivery-platform-web
+        env:
+          PLAYWRIGHT_API_BASE_URL: http://127.0.0.1:13000
+          PLAYWRIGHT_WEB_BASE_URL: http://127.0.0.1:18080
+          PLAYWRIGHT_HTML_OUTPUT_DIR: ../test-results/release-playwright-report
+          E2E_ADMIN_USERNAME: admin
+          E2E_LIMITED_USERNAME: pm_wang
+        run: |
+          pnpm test:smoke:api
+          E2E_ADMIN_PASSWORD="$SEED_ADMIN_PASSWORD" \
+          E2E_LIMITED_PASSWORD="$SEED_DEFAULT_PASSWORD" \
+          pnpm test:e2e
+
+      - name: 保存失败诊断和视觉报告
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-integration-${{ needs.resolve.outputs.commit }}
+          path: |
+            test-results/
+            delivery-platform-web/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: 输出并清理真实验收环境
+        if: ${{ always() }}
+        run: |
+          app=(docker compose --env-file /dev/null -f deploy/compose/app.yml)
+          data=(docker compose --env-file /dev/null -f deploy/compose/data.yml)
+          "${app[@]}" ps -a || true
+          "${data[@]}" ps -a || true
+          docker logs --tail 200 delivery-platform-ci-frontend 2>&1 || true
+          docker rm -f delivery-platform-ci-frontend >/dev/null 2>&1 || true
+          "${app[@]}" down --remove-orphans || true
+          "${data[@]}" down -v --remove-orphans || true
+
+  deploy_test:
+    name: 自动部署测试服务器
+    needs: [resolve, build, integration]
+    if: ${{ vars.RELEASE_V2_ENABLED == 'true' }}
+    uses: ./.github/workflows/reusable-deploy-release.yml
+    with:
+      environment_name: test
+      release_id: ${{ needs.resolve.outputs.commit }}
+      frontend_artifact: ${{ needs.build.outputs.frontend_artifact }}
+    secrets: inherit
+
+  attest_test:
+    name: 记录测试环境验证凭据
+    needs: [resolve, build, deploy_test]
+    if: ${{ vars.RELEASE_V2_ENABLED == 'true' && needs.deploy_test.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: oras-project/setup-oras@v1
+      - name: 发布测试验证凭据
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_SHA: ${{ needs.resolve.outputs.commit }}
+        run: |
+          set -Eeuo pipefail
+          repository="${GITHUB_REPOSITORY,,}"
+          printf '{"schemaVersion":1,"releaseId":"%s","environment":"test","runId":"%s"}\n' \
+            "$RELEASE_SHA" "$GITHUB_RUN_ID" > test-verification.json
+          oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<< "$GHCR_TOKEN"
+          oras push "ghcr.io/$repository/tested-release:sha-$RELEASE_SHA" \
+            test-verification.json:application/vnd.delivery-platform.test-verification.v1+json

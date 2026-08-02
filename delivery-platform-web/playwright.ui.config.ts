@@ -2,6 +2,7 @@ import { defineConfig } from '@playwright/test'
 
 const webBaseUrl = process.env.PLAYWRIGHT_WEB_BASE_URL?.trim().replace(/\/+$/, '')
 const browserChannel = process.env.PLAYWRIGHT_BROWSER_CHANNEL?.trim()
+const htmlOutputDirectory = process.env.PLAYWRIGHT_HTML_OUTPUT_DIR?.trim()
 
 if (!webBaseUrl) {
   throw new Error(
@@ -15,7 +16,12 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   workers: 1,
-  reporter: 'list',
+  reporter: htmlOutputDirectory
+    ? [
+        ['list'],
+        ['html', { outputFolder: htmlOutputDirectory, open: 'never' }],
+      ]
+    : 'list',
   // This scenario intentionally crosses several lazy-loaded routes and real
   // MySQL-backed pages. Keep per-action and per-navigation limits strict, but
   // allow the complete end-to-end journey to finish on constrained CI runners.

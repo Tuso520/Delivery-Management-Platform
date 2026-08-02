@@ -232,6 +232,7 @@ const archiveUploadGuides = {
 };
 
 const localProjects = buildLocalProjects();
+let localProjectPayments = [];
 let archiveItems = buildLocalArchiveItems(localProjects);
 let projectFiles = buildLocalProjectFiles(localProjects, archiveItems);
 let fileReviews = buildLocalFileReviews(
@@ -239,6 +240,28 @@ let fileReviews = buildLocalFileReviews(
   archiveItems,
   localProjects,
 );
+projectFiles = [
+  ...projectFiles,
+  ...Array.from({ length: 6 }, (_, index) => ({
+    id: `standard-logical-file-${index + 1}`,
+    projectId: null,
+    archiveItemId: null,
+    fileName: localStandardFileName(index),
+    originalName: localStandardFileName(index),
+    fileExt: "md",
+    fileSize: 256,
+    mimeType: "text/markdown; charset=utf-8",
+    storagePath: null,
+    versionNo: "V1.0",
+    isCurrent: true,
+    fileStatus: "Approved",
+    uploadUserId: adminUser.id,
+    uploadTime: now(),
+    remark: "标准库本地视觉验收文件。",
+    createdAt: now(),
+    updatedAt: now(),
+  })),
+];
 
 const dictionaries = {
   project_type: {
@@ -978,18 +1001,283 @@ function envelope(data, message = "ok", code = 0) {
 }
 
 function page(list, pageNumber = 1, pageSize = 100) {
+  const resolvedPage = Number(pageNumber) || 1;
+  const resolvedPageSize = Number(pageSize) || 100;
+  const start = (resolvedPage - 1) * resolvedPageSize;
   return {
-    list,
-    pagination: {
-      page: Number(pageNumber) || 1,
-      pageSize: Number(pageSize) || 100,
-      total: list.length,
-      totalPages: Math.max(
-        1,
-        Math.ceil(list.length / (Number(pageSize) || 100)),
-      ),
-    },
+    items: list.slice(start, start + resolvedPageSize),
+    page: resolvedPage,
+    pageSize: resolvedPageSize,
+    total: list.length,
   };
+}
+
+function fieldOption(value, label, index, code = null) {
+  return {
+    id: `local-field-${value.toLowerCase().replace(/[^a-z0-9]+/gu, "-")}`,
+    label,
+    value,
+    code,
+    description: `${label}相关标准、模板和执行要求。`,
+    sort: index + 1,
+    enabled: true,
+  };
+}
+
+function fieldConfiguration(fieldCode, fieldName, values, defaultValue = null, sort = 1) {
+  return {
+    id: `local-config-${fieldCode.toLowerCase()}`,
+    fieldCode,
+    fieldName,
+    fieldType: "SINGLE_SELECT",
+    required: false,
+    enabled: true,
+    defaultValue: defaultValue ?? values[0]?.[0] ?? null,
+    sort,
+    options: values.map(([value, label, code], index) =>
+      fieldOption(value, label, index, code ?? null),
+    ),
+    visibleScopes: [],
+    permissions: {},
+    description: null,
+    revision: 1,
+    createdBy: adminUser.id,
+    updatedBy: adminUser.id,
+    createdAt: now(),
+    updatedAt: now(),
+  };
+}
+
+function moduleFieldOptions(moduleCode) {
+  const commonCountry = fieldConfiguration(
+    "COUNTRY",
+    "国家/地区",
+    [["CN", "中国", "CN"], ["VN", "越南", "VN"], ["TH", "泰国", "TH"]],
+    "CN",
+    90,
+  );
+  if (moduleCode === "project") {
+    return [
+      fieldConfiguration("CURRENCY", "币种", [["CNY", "人民币", "CNY"], ["USD", "美元", "USD"], ["VND", "越南盾", "VND"]], "CNY"),
+      fieldConfiguration("PROJECT_TYPE", "项目类型", [["software", "软件交付"], ["electrical", "电气交付"]], "software", 2),
+      fieldConfiguration("PROJECT_STATUS", "项目状态", [["Active", "进行中"], ["Draft", "草稿"], ["Accepted", "已验收"]], "Active", 3),
+      fieldConfiguration("CUSTOMER_TYPE", "客户类型", [["END_USER", "最终用户"], ["CONTRACTOR", "总包商"]], "END_USER", 4),
+      fieldConfiguration("CONTRACT_TYPE", "合同类型", [["DIRECT", "直签合同"], ["SUBCONTRACT", "分包合同"]], "DIRECT", 5),
+      fieldConfiguration("PRODUCT_TYPE", "产品类型", [["PLATFORM", "平台软件"], ["CONTROL", "控制系统"]], "PLATFORM", 6),
+      fieldConfiguration("PROJECT_KEYWORD", "项目关键词", [["KEY", "重点项目"], ["OVERSEAS", "海外项目"]], "KEY", 7),
+      fieldConfiguration("PROJECT_STAGE", "项目阶段", [["01_presale", "售前"], ["02_design", "设计"], ["03_procurement", "采购"]], "01_presale", 8),
+      commonCountry,
+    ];
+  }
+  if (moduleCode === "project-archive") {
+    return [
+      fieldConfiguration("FILE_TYPE", "文件类型", [["pdf", "PDF"], ["docx", "Word"], ["xlsx", "Excel"], ["png", "图片"]], "pdf"),
+    ];
+  }
+  if (moduleCode === "standard") {
+    return [
+      fieldConfiguration("STANDARD_TYPE", "标准类型", [["DELIVERY", "交付标准"], ["MANAGEMENT", "管理标准"]], "DELIVERY"),
+      fieldConfiguration("STANDARD_DELIVERY_STAGE", "交付阶段", [["INITIATION", "启动阶段"], ["DESIGN", "设计阶段"], ["DELIVERY", "交付阶段"]], "INITIATION", 2),
+      fieldConfiguration(
+        "STANDARD_MANAGEMENT_DOMAIN",
+        "管理领域",
+        [
+          ["PROGRESS_PLANNING_MANAGEMENT", "进度与计划管理"],
+          ["QUALITY_MANAGEMENT", "质量管理"],
+          ["SAFETY_MANAGEMENT", "安全管理"],
+          ["COST_BUDGET_MANAGEMENT", "成本与预算管理"],
+          ["CONTRACT_PAYMENT_COMMERCIAL_MANAGEMENT", "合同、付款与商务管理"],
+          ["PROCUREMENT_SUPPLY_CHAIN_MANAGEMENT", "采购与供应链管理"],
+          ["RISK_ISSUE_TODO_MANAGEMENT", "风险、问题与待办管理"],
+          ["CHANGE_ADDITION_MANAGEMENT", "变更与增项管理"],
+          ["COMMUNICATION_MEETING_REPORTING_MANAGEMENT", "沟通、会议与汇报管理"],
+          ["FILE_ARCHIVE_DELIVERABLE_MANAGEMENT", "文件、档案与成果物管理"],
+          ["STAGE_REVIEW_APPROVAL_MANAGEMENT", "阶段评审与审批管理"],
+          ["SUBCONTRACTOR_STAKEHOLDER_MANAGEMENT", "分包商与相关方管理"],
+        ],
+        "PROGRESS_PLANNING_MANAGEMENT",
+        3,
+      ),
+      fieldConfiguration("STANDARD_BUSINESS_TYPE", "业务类型", [["SOFTWARE", "软件"], ["ELECTRICAL", "电气"]], "SOFTWARE", 4),
+      fieldConfiguration("STANDARD_STATUS", "标准状态", [["PUBLISHED", "已发布"], ["DRAFT", "草稿"], ["IN_REVIEW", "审核中"]], "PUBLISHED", 5),
+      commonCountry,
+    ];
+  }
+  return [];
+}
+
+function archiveTargetTreeForProject(project) {
+  const folders = archiveStageDefinitions.map((stage, folderIndex) => {
+    const items = archiveItems
+      .filter(
+        (item) =>
+          item.projectId === project.id &&
+          item.stageCode === stage.stageCode &&
+          !item.deletedAt,
+      )
+      .sort((left, right) => left.sortOrder - right.sortOrder)
+      .map((item) => {
+        const file = projectFiles.find(
+          (candidate) => candidate.archiveItemId === item.id && !candidate.deletedAt,
+        );
+        return {
+          id: item.id,
+          name: item.name,
+          description: item.usageDescription,
+          required: item.isRequired,
+          reviewRequired: item.needReview,
+          approvalTemplateId: null,
+          ownerRoleId: null,
+          allowMultipleFiles: false,
+          allowedExtensions: String(item.allowedFileTypes || "")
+            .split(",")
+            .filter(Boolean),
+          maxFileSize: 524288000,
+          namingRule: null,
+          sourceStableKey: item.templateItemId,
+          isTemporary: false,
+          temporaryReason: null,
+          archivedAt: null,
+          status: item.status,
+          currentVersion: file
+            ? {
+                id: file.id,
+                logicalFileId: file.id,
+                previewIdentifier: file.id,
+                version: file.versionNo,
+                status: file.fileStatus,
+                uploadedAt: file.uploadTime,
+                displayName: file.originalName,
+                originalName: file.originalName,
+                extension: file.fileExt,
+                fileSize: String(file.fileSize),
+                uploader: {
+                  id: projectManagerUser.id,
+                  realName: projectManagerUser.realName,
+                  username: projectManagerUser.username,
+                },
+                pendingReview: file.fileStatus === "Reviewing",
+                canPreview: true,
+              }
+            : null,
+          fileCount: file ? 1 : 0,
+          owner: {
+            id: projectManagerUser.id,
+            realName: projectManagerUser.realName,
+            username: projectManagerUser.username,
+          },
+          updatedAt: item.updatedAt,
+          canUpload: true,
+          canDownload: Boolean(file),
+          canDeleteFile: Boolean(file),
+          pendingReviewSummary: { count: file?.fileStatus === "Reviewing" ? 1 : 0, tasks: [] },
+        };
+      });
+    return {
+      id: `folder-${project.id}-${stage.stageCode}`,
+      name: stage.stageName,
+      description: null,
+      sortOrder: folderIndex + 1,
+      sourceStableKey: stage.stageCode,
+      isTemporary: false,
+      archivedAt: null,
+      completedCount: items.filter((item) => ["Approved", "Archived"].includes(item.status)).length,
+      totalCount: items.length,
+      requiredCompletedCount: items.filter(
+        (item) => item.required && ["Approved", "Archived"].includes(item.status),
+      ).length,
+      requiredTotalCount: items.filter((item) => item.required).length,
+      items,
+    };
+  });
+  return {
+    project: {
+      id: project.id,
+      code: project.projectCode,
+      name: project.projectName,
+      currentStage: project.currentStage,
+    },
+    template: { id: "local-template", version: "1.0", latestVersion: "1.0", hasDiff: false },
+    folders,
+  };
+}
+
+function localStandardFileName(index) {
+  return index === 0
+    ? "DC-TPL-KICKOFF-V1.0.md"
+    : `STD-2026-${String(index + 1).padStart(3, "0")}-V1.${index}.md`;
+}
+
+function localStandards() {
+  const names = [
+    "项目启动会纪要模板",
+    "设计评审与变更控制规范",
+    "软件版本发布与回滚标准",
+    "现场安全检查管理规范",
+    "项目验收资料移交标准",
+    "项目复盘和经验沉淀指南",
+  ];
+  return names.map((name, index) => {
+    const versionId = `standard-version-${index + 1}`;
+    const effectiveAt = `2026-0${(index % 6) + 1}-01`;
+    const version = {
+      id: versionId,
+      standardId: `standard-${index + 1}`,
+      version: `V1.${index}`,
+      fileVersionId: `standard-file-version-${index + 1}`,
+      fileVersion: {
+        id: `standard-file-version-${index + 1}`,
+        logicalFileId: `standard-logical-file-${index + 1}`,
+        version: "V1.0",
+        status: "READY",
+        asset: {
+          id: `standard-asset-${index + 1}`,
+          originalName: localStandardFileName(index),
+          extension: "md",
+          mimeType: "text/markdown; charset=utf-8",
+          size: 256,
+        },
+      },
+      status: "PUBLISHED",
+      revision: 1,
+      effectiveAt,
+      changeDescription: "本地视觉验收发布版本",
+      submittedBy: adminUser.id,
+      submitter: { id: adminUser.id, realName: adminUser.realName },
+      publishedAt: now(),
+      archivedAt: null,
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    return {
+      id: `standard-${index + 1}`,
+      code: `STD-2026-${String(index + 1).padStart(3, "0")}`,
+      name,
+      type: index % 2 ? "MANAGEMENT" : "DELIVERY",
+      deliveryStageCode: ["INITIATION", "DESIGN", "DELIVERY"][index % 3],
+      managementDomainCode: [
+        "PROGRESS_PLANNING_MANAGEMENT",
+        "QUALITY_MANAGEMENT",
+        "SAFETY_MANAGEMENT",
+      ][index % 3],
+      businessTypeCode: index % 2 ? "ELECTRICAL" : "SOFTWARE",
+      countryCodes: ["CN"],
+      isEnabled: true,
+      status: "PUBLISHED",
+      currentPublishedVersionId: versionId,
+      currentPublishedVersion: version,
+      displayVersion: version,
+      effectiveAt,
+      createdBy: adminUser.id,
+      updatedBy: adminUser.id,
+      creator: { id: adminUser.id, realName: adminUser.realName },
+      updater: { id: adminUser.id, realName: adminUser.realName },
+      archivedAt: null,
+      createdAt: now(),
+      updatedAt: now(),
+      versions: [version],
+    };
+  });
 }
 
 function sendJson(res, data, status = 200) {
@@ -1568,6 +1856,49 @@ async function handleApi(req, res, url) {
         "platform.login_slogan": "让交付工作保持高效、清晰、有序。",
       }),
     );
+    return;
+  }
+
+  if (req.method === "GET" && path === "/dashboard/project-summary") {
+    sendJson(res, envelope({ total: localProjects.length, active: 6, delayed: 1, accepted: 1 }));
+    return;
+  }
+  if (req.method === "GET" && path === "/dashboard/my-tasks") {
+    sendJson(res, envelope([]));
+    return;
+  }
+  if (req.method === "GET" && path === "/dashboard/high-risks") {
+    sendJson(res, envelope([]));
+    return;
+  }
+  if (req.method === "GET" && path === "/dashboard/recent-projects") {
+    sendJson(res, envelope([]));
+    return;
+  }
+  if (req.method === "GET" && path === "/dashboard/recent-activities") {
+    sendJson(res, envelope([]));
+    return;
+  }
+
+  if (req.method === "GET" && path === "/references/users") {
+    sendJson(
+      res,
+      envelope(
+        localUsers.map((user) => ({
+          id: user.id,
+          name: user.username,
+          displayName: user.realName,
+          departmentName: "交付中心",
+          active: true,
+        })),
+      ),
+    );
+    return;
+  }
+
+  const moduleFieldOptionsMatch = path.match(/^\/field-options\/module\/([^/]+)$/);
+  if (req.method === "GET" && moduleFieldOptionsMatch) {
+    sendJson(res, envelope(moduleFieldOptions(decodeURIComponent(moduleFieldOptionsMatch[1]))));
     return;
   }
 
@@ -2227,6 +2558,28 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (req.method === "GET" && path === "/projects/summary") {
+    const visibleProjects = localProjects.filter((project) => !project.deletedAt);
+    const accepted = visibleProjects.filter((project) => project.projectStatus === "Accepted");
+    sendJson(
+      res,
+      envelope({
+        total: visibleProjects.length,
+        active: visibleProjects.filter((project) => project.projectStatus === "Active").length,
+        acceptedThisYear: accepted.length,
+        totalConvertedAmount: visibleProjects.reduce(
+          (total, project) => total + Number(project.convertedAmount || 0),
+          0,
+        ),
+        acceptedConvertedAmount: accepted.reduce(
+          (total, project) => total + Number(project.convertedAmount || 0),
+          0,
+        ),
+      }),
+    );
+    return;
+  }
+
   if (req.method === "POST" && path === "/projects") {
     const body = await readJson(req);
     const id = `project-${Date.now()}`;
@@ -2234,27 +2587,43 @@ async function handleApi(req, res, url) {
       id,
       projectCode:
         body.projectCode ||
-        `${body.countryCode || "CN"}-${Date.now().toString().slice(-6)}`,
+        `${body.countryCode || "CN"}-${Date.now().toString().slice(-3)}`,
       projectName: body.projectName || "新建交付项目",
+      shortName: body.shortName || null,
       countryCode: body.countryCode || "CN",
       city: body.city || "",
       customerName: body.customerName || "",
+      customerType: body.customerType || null,
+      contractType: body.contractType || null,
+      product: body.product || null,
+      keywords: Array.isArray(body.keywords) ? [...body.keywords] : [],
       projectType: body.projectType || "software",
       contractCurrency: body.contractCurrency || "CNY",
       baseCurrency: body.baseCurrency || "CNY",
       currencyCode: body.contractCurrency || "CNY",
-      contractAmount: Number(body.contractAmount || 0),
-      exchangeRate: 1,
-      convertedAmount: Number(body.contractAmount || 0),
-      baseCurrencyAmount: Number(body.contractAmount || 0),
+      contractAmount: String(body.contractAmount || "0"),
+      exchangeRate: "1",
+      convertedAmount: String(body.contractAmount || "0"),
+      baseCurrencyAmount: String(body.contractAmount || "0"),
       projectLanguage: body.projectLanguage || "zh-CN",
+      archiveTemplateId: body.archiveTemplateId || null,
+      contractNo: body.contractNo || null,
+      contractSignedAt: body.contractSignedAt || null,
+      expectedAcceptanceAt: body.expectedAcceptanceAt || null,
+      actualAcceptanceAt: body.actualAcceptanceAt || null,
+      progressPercent: Number(body.progressPercent || 0),
       salesOwnerId: body.salesOwnerId || "user-sales-li",
       projectManagerId: body.projectManagerId || projectManagerUser.id,
       electricalOwnerId: body.electricalOwnerId || "user-elec-chen",
       softwareOwnerId: body.softwareOwnerId || "user-sw-zhao",
-      currentStage: body.currentStage || "01_presale",
+      currentStage: body.deliveryStages?.[0] || body.currentStage || "01_presale",
+      currentStages: body.deliveryStages?.length
+        ? [...body.deliveryStages]
+        : [body.currentStage || "01_presale"],
       projectStatus: "Active",
       riskLevel: body.riskLevel || "Medium",
+      canEdit: true,
+      canUpdateProgress: true,
       startDate: body.startDate || now().slice(0, 10),
       plannedStartDate: body.startDate || now().slice(0, 10),
       plannedEndDate: body.plannedEndDate || "2026-12-31",
@@ -2283,6 +2652,10 @@ async function handleApi(req, res, url) {
       ],
     };
     localProjects.unshift(project);
+    localProjectPayments = [
+      ...buildLocalProjectPayments(id, body.paymentPlans),
+      ...localProjectPayments,
+    ];
     const newItems = buildLocalArchiveItems([project]);
     archiveItems = [...newItems, ...archiveItems];
     sendJson(res, envelope(project), 201);
@@ -2299,7 +2672,7 @@ async function handleApi(req, res, url) {
   }
 
   const projectUpdateMatch = path.match(/^\/projects\/([^/]+)$/);
-  if (req.method === "PUT" && projectUpdateMatch) {
+  if (["PUT", "PATCH"].includes(req.method) && projectUpdateMatch) {
     const project = localProjects.find(
       (item) => item.id === projectUpdateMatch[1] && !item.deletedAt,
     );
@@ -2307,7 +2680,20 @@ async function handleApi(req, res, url) {
       sendJson(res, envelope(null, "项目不存在", 404), 404);
       return;
     }
-    Object.assign(project, await readJson(req), { updatedAt: now() });
+    const body = await readJson(req);
+    const { paymentPlans, ...projectChanges } = body;
+    Object.assign(project, projectChanges, {
+      ...(body.deliveryStages?.length
+        ? { currentStage: body.deliveryStages[0], currentStages: [...body.deliveryStages] }
+        : {}),
+      updatedAt: now(),
+    });
+    if (Array.isArray(paymentPlans)) {
+      localProjectPayments = [
+        ...localProjectPayments.filter((payment) => payment.projectId !== project.id),
+        ...buildLocalProjectPayments(project.id, paymentPlans),
+      ];
+    }
     sendJson(res, envelope(project));
     return;
   }
@@ -2322,7 +2708,7 @@ async function handleApi(req, res, url) {
     return;
   }
 
-  const archiveTreeMatch = path.match(/^\/projects\/([^/]+)\/archives$/);
+  const archiveTreeMatch = path.match(/^\/projects\/([^/]+)\/(?:archives|archive-tree)$/);
   if (req.method === "GET" && archiveTreeMatch) {
     const project = localProjects.find(
       (item) => item.id === archiveTreeMatch[1] && !item.deletedAt,
@@ -2331,7 +2717,71 @@ async function handleApi(req, res, url) {
       sendJson(res, envelope(null, "项目不存在", 404), 404);
       return;
     }
-    sendJson(res, envelope(archiveTreeForProject(project.id)));
+    sendJson(
+      res,
+      envelope(
+        path.endsWith("/archive-tree")
+          ? archiveTargetTreeForProject(project)
+          : archiveTreeForProject(project.id),
+      ),
+    );
+    return;
+  }
+
+  if (req.method === "GET" && path === "/standards/summary") {
+    const standards = localStandards();
+    sendJson(
+      res,
+      envelope({
+        total: standards.length,
+        viewCount: 286,
+        downloadCount: 94,
+        draft: 0,
+        inReview: 0,
+        rejected: 0,
+        published: standards.length,
+        archived: 0,
+      }),
+    );
+    return;
+  }
+
+  if (req.method === "GET" && path === "/standards/category-counts") {
+    const dimension = url.searchParams.get("dimension");
+    const codeKey = dimension === "MANAGEMENT_DOMAIN" ? "managementDomainCode" : "deliveryStageCode";
+    const counts = new Map();
+    for (const standard of localStandards()) {
+      const code = standard[codeKey];
+      if (code) counts.set(code, (counts.get(code) || 0) + 1);
+    }
+    sendJson(
+      res,
+      envelope([...counts].map(([code, count]) => ({ code, count }))),
+    );
+    return;
+  }
+
+  if (req.method === "GET" && path === "/standards") {
+    const keyword = (url.searchParams.get("keyword") || "").trim().toLowerCase();
+    const deliveryStageCode = url.searchParams.get("deliveryStageCode");
+    const managementDomainCode = url.searchParams.get("managementDomainCode");
+    const standards = localStandards().filter(
+      (standard) =>
+        (!keyword || standard.name.toLowerCase().includes(keyword) || standard.code.toLowerCase().includes(keyword)) &&
+        (!deliveryStageCode || standard.deliveryStageCode === deliveryStageCode) &&
+        (!managementDomainCode || standard.managementDomainCode === managementDomainCode),
+    );
+    sendJson(
+      res,
+      envelope(page(standards, url.searchParams.get("page"), url.searchParams.get("pageSize"))),
+    );
+    return;
+  }
+
+  const standardDetailMatch = path.match(/^\/standards\/([^/]+)$/);
+  if (req.method === "GET" && standardDetailMatch) {
+    const standard = localStandards().find((item) => item.id === standardDetailMatch[1]);
+    sendJson(res, envelope(standard ?? null, standard ? "ok" : "标准不存在", standard ? 0 : 404), standard ? 200 : 404);
     return;
   }
 
@@ -2498,10 +2948,16 @@ async function handleApi(req, res, url) {
           id: "currency-cny",
           currencyCode: "CNY",
           currencyName: "人民币",
-          symbol: "¥",
+          currencySymbol: "¥",
           decimalPlaces: 2,
           isBaseCurrency: true,
           status: "Active",
+          cnyRate: "1",
+          rateDate: "2026-07-08",
+          rateLocked: true,
+          lockedBy: adminUser.id,
+          lockedAt: now(),
+          rateSource: "local-test",
           createdAt: now(),
           updatedAt: now(),
         },
@@ -2509,10 +2965,33 @@ async function handleApi(req, res, url) {
           id: "currency-usd",
           currencyCode: "USD",
           currencyName: "美元",
-          symbol: "$",
+          currencySymbol: "$",
           decimalPlaces: 2,
           isBaseCurrency: false,
           status: "Active",
+          cnyRate: "7.2",
+          rateDate: "2026-07-08",
+          rateLocked: false,
+          lockedBy: null,
+          lockedAt: null,
+          rateSource: "local-test",
+          createdAt: now(),
+          updatedAt: now(),
+        },
+        {
+          id: "currency-vnd",
+          currencyCode: "VND",
+          currencyName: "越南盾",
+          currencySymbol: "₫",
+          decimalPlaces: 0,
+          isBaseCurrency: false,
+          status: "Active",
+          cnyRate: "0.00028",
+          rateDate: "2026-07-08",
+          rateLocked: false,
+          lockedBy: null,
+          lockedAt: null,
+          rateSource: "local-test",
           createdAt: now(),
           updatedAt: now(),
         },
@@ -2576,11 +3055,11 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === "GET" && path === "/archive-templates") {
-    const templates = [
+    let templates = [
       [
         "archive-template-standard",
         "AR-STD-001",
-        "标准交付档案模板",
+        "标准项目档案模板",
         null,
         "适用于软件、电气、海外和国内项目的通用档案目录。",
       ],
@@ -2655,12 +3134,35 @@ async function handleApi(req, res, url) {
       projectType,
       languageCode: "zh-CN",
       version: "V1.0",
-      status: "Active",
+      status: "PUBLISHED",
       description,
       _count: { items: 70 },
+      currentPublishedVersion: {
+        id: `${id}-version-1`,
+        versionNo: "V1.0",
+        status: "PUBLISHED",
+        publishedAt: now(),
+        _count: { folders: 7, versionItems: 70 },
+      },
       createdAt: now(),
       updatedAt: now(),
     }));
+    const keyword = String(url.searchParams.get("keyword") || "").trim().toLowerCase();
+    if (keyword) {
+      templates = templates.filter(
+        (template) =>
+          template.templateName.toLowerCase().includes(keyword) ||
+          template.templateCode.toLowerCase().includes(keyword),
+      );
+    }
+    const sortBy = url.searchParams.get("sortBy");
+    const sortOrder = url.searchParams.get("sortOrder") === "asc" ? 1 : -1;
+    if (sortBy === "templateName" || sortBy === "updatedAt") {
+      templates.sort(
+        (left, right) =>
+          String(left[sortBy]).localeCompare(String(right[sortBy]), "zh-CN") * sortOrder,
+      );
+    }
     sendJson(res, envelope(templates));
     return;
   }
@@ -3501,11 +4003,15 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === "GET" && path === "/project-payments") {
+    const projectId = url.searchParams.get("projectId");
+    const payments = projectId
+      ? localProjectPayments.filter((payment) => payment.projectId === projectId)
+      : localProjectPayments;
     sendJson(
       res,
       envelope(
         page(
-          [],
+          payments,
           url.searchParams.get("page"),
           url.searchParams.get("pageSize"),
         ),
@@ -3515,6 +4021,33 @@ async function handleApi(req, res, url) {
   }
 
   sendJson(res, envelope(null, `本地测试服务未实现接口: ${path}`, 404), 404);
+}
+
+function buildLocalProjectPayments(projectId, plans) {
+  if (!Array.isArray(plans)) return [];
+  return plans.map((plan, index) => {
+    const receivedOriginalAmount = String(plan.receivedOriginalAmount || "0");
+    const received = Number(receivedOriginalAmount) > 0;
+    return {
+      id: plan.id || `payment-${projectId}-${index + 1}`,
+      projectId,
+      paymentName: plan.paymentName || `款项 ${index + 1}`,
+      paymentType: plan.paymentType || "Milestone",
+      dueDate: plan.dueDate || null,
+      receivedDate: received ? plan.receivedDate || now() : null,
+      status: received ? "Received" : "Pending",
+      originalAmount: String(plan.originalAmount || "0"),
+      originalCurrency: plan.originalCurrency || "CNY",
+      exchangeRate: "1",
+      convertedCurrency: plan.convertedCurrency || "CNY",
+      convertedAmount: String(plan.originalAmount || "0"),
+      receivedOriginalAmount,
+      receivedConvertedAmount: receivedOriginalAmount,
+      rateDate: now().slice(0, 10),
+      rateSource: "local-test",
+      remark: plan.remark || "",
+    };
+  });
 }
 
 const mimeTypes = {

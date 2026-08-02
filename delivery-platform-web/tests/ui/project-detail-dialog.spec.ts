@@ -161,8 +161,9 @@ test('distinct create, edit and view dialogs match the Figma project-detail shel
   await stageSelect.click()
   const additionalStage = page
     .locator(
-      '.arco-select-option:visible:not(.arco-select-option-disabled):not(.arco-select-option-selected)',
+      '.arco-trigger-popup:visible .arco-select-option:not(.arco-select-option-disabled):not(.arco-select-option-selected)',
     )
+    .filter({ hasText: '设计' })
     .first()
   await expect(additionalStage).toBeVisible()
   await additionalStage.click()
