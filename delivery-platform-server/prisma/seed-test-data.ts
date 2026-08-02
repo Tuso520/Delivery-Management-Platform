@@ -363,11 +363,11 @@ async function seedAdministration(minimum: number, adminId: string): Promise<voi
     data: Array.from({ length: ruleMissing }, (_, index) => ({
       name: `随机通知规则 ${suffix(index)}`,
       eventType: `TEST_EVENT_${index + 1}`,
-      channel: 'in_app',
+      channel: 'IN_APP',
       recipientRole: 'SUPER_ADMIN',
       template: '测试事件：{{title}}',
-      channels: ['in_app'],
-      recipientPolicy: { type: 'role', roles: ['SUPER_ADMIN'] },
+      channels: ['IN_APP'],
+      recipientPolicy: { type: 'ROLE', values: ['SUPER_ADMIN'] },
     })),
   });
 
@@ -572,7 +572,7 @@ async function seedApprovals(
           create: {
             stepOrder: 1,
             stepName: '测试审批',
-            approverType: 'USER',
+            approverType: 'user',
             approverValues: [adminId],
           },
         },

@@ -398,8 +398,11 @@ describe('StandardService', () => {
     expect(transaction).not.toHaveBeenCalled();
   });
 
-  it('submits a standard version through the unified review services', async () => {
+  it('submits a standard version through the stable default review template', async () => {
     const prisma = {
+      approvalTemplate: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'template-1' }),
+      },
       standardVersion: {
         findUnique: jest.fn().mockResolvedValue({
           id: 'version-1',
@@ -430,10 +433,19 @@ describe('StandardService', () => {
 
     const result = await service.submitReview(
       'version-1',
-      { approvalTemplateId: 'template-1', revision: 3 },
+      { revision: 3 },
       owner,
     );
 
+    expect(prisma.approvalTemplate.findFirst).toHaveBeenCalledWith({
+      where: {
+        templateCode: 'TARGET_STANDARD_REVIEW',
+        businessType: 'STANDARD',
+        isEnabled: true,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
     expect(reviewConfiguration.resolve).toHaveBeenCalledWith('template-1', 'user-1');
     expect(createReviewTask).toHaveBeenCalledWith(
       expect.objectContaining({

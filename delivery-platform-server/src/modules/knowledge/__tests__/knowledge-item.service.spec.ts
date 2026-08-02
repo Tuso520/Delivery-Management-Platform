@@ -578,8 +578,11 @@ describe('KnowledgeItemService', () => {
     expect(transaction.knowledgeVersion.findUnique).not.toHaveBeenCalled();
   });
 
-  it('submits a knowledge version through the unified review services', async () => {
+  it('submits a knowledge version through the stable default review template', async () => {
     const prisma = {
+      approvalTemplate: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'template-1' }),
+      },
       knowledgeVersion: {
         findUnique: jest.fn().mockResolvedValue({
           id: 'version-1',
@@ -613,10 +616,20 @@ describe('KnowledgeItemService', () => {
 
     const result = await service.submitReview(
       'version-1',
-      { approvalTemplateId: 'template-1', revision: 4 },
+      { revision: 4 },
       owner,
     );
 
+    expect(prisma.approvalTemplate.findFirst).toHaveBeenCalledWith({
+      where: {
+        templateCode: 'TARGET_KNOWLEDGE_REVIEW',
+        businessType: 'KNOWLEDGE',
+        isEnabled: true,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    expect(reviewConfiguration.resolve).toHaveBeenCalledWith('template-1', 'user-1');
     expect(createReviewTask).toHaveBeenCalledWith(
       expect.objectContaining({
         sourceType: 'KNOWLEDGE',
