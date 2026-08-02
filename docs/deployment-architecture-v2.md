@@ -223,6 +223,8 @@ Secrets：
 - `DEPLOY_SSH_KEY`：该环境独立的私钥全文。
 - `DEPLOY_KNOWN_HOSTS`：已线下核对的 host key 行。
 
+不需要创建长期 GHCR PAT。部署作业会把当前 job 的短期 `GITHUB_TOKEN` 通过已校验 host key 的 SSH 标准输入交给目标服务器执行 `docker login`，完成或失败后都执行 `docker logout ghcr.io`；退出凭据失败会使 job 失败，不能记录为发布成功。服务器不得手工保存个人 GitHub Token；首次接管前只需确认 `dmpdeploy` 能运行 Docker，且仓库关联的 GHCR package 允许该工作流读取。
+
 仓库级 Variable：
 
 - 首次切换前保持 `RELEASE_V2_ENABLED=false`。
@@ -368,3 +370,5 @@ bash /srv/delivery-platform/control/restore-release.sh
 - production 审批记录和回滚备份路径。
 
 任何一项失败都不记录为发布成功。
+
+两台既有服务器的逐步回传表、脱敏边界和 GitHub 页面操作顺序见 [服务器接管操作单](server-handover-checklist.md)。
