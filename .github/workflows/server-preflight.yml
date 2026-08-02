@@ -1,0 +1,146 @@
+name: 服务器接管预检
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment_name:
+        description: 待检查的 GitHub Environment
+        required: true
+        type: choice
+        options:
+          - test
+          - production
+      release_sha:
+        description: 已通过不可变 Release 验收的完整 40 位 main SHA
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  preflight:
+    name: 预检 ${{ inputs.environment_name }} 服务器
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment_name }}
+    concurrency:
+      group: server-preflight-${{ inputs.environment_name }}
+      cancel-in-progress: false
+    env:
+      DEPLOY_ENV: ${{ inputs.environment_name }}
+      RELEASE_SHA: ${{ inputs.release_sha }}
+      SERVER_HOST: ${{ vars.DEPLOY_HOST || secrets.DEPLOY_HOST }}
+      SERVER_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+      SERVER_USER: ${{ vars.DEPLOY_USER || secrets.DEPLOY_USER }}
+      SERVER_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      SERVER_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      APP_ROOT: ${{ vars.DEPLOY_APP_ROOT || '/srv/delivery-platform' }}
+      DEPLOY_TARGET_ID: ${{ vars.DEPLOY_TARGET_ID }}
+      INTERNAL_ORIGIN: ${{ vars.INTERNAL_ORIGIN }}
+      PUBLIC_ORIGIN: ${{ vars.PUBLIC_ORIGIN }}
+      REMOTE_STAGE: /tmp/delivery-preflight-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: 校验预检参数
+        run: |
+          set -Eeuo pipefail
+          missing=0
+          for name in SERVER_HOST SERVER_USER SERVER_SSH_KEY SERVER_KNOWN_HOSTS APP_ROOT DEPLOY_TARGET_ID INTERNAL_ORIGIN PUBLIC_ORIGIN; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is required for Environment $DEPLOY_ENV"
+              missing=1
+            fi
+          done
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::release_sha 必须是完整 40 位小写 SHA'; missing=1; }
+          case "$DEPLOY_ENV" in test|production) ;; *) echo '::error::Environment must be test or production'; missing=1 ;; esac
+          exit "$missing"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 0
+
+      - name: 校验 Release 属于 main 历史
+        run: |
+          set -Eeuo pipefail
+          git fetch --no-tags origin main
+          test "$(git rev-parse --verify --end-of-options "${RELEASE_SHA}^{commit}")" = "$RELEASE_SHA"
+          git merge-base --is-ancestor "$RELEASE_SHA" origin/main
+
+      - name: 配置固定 SSH 主机身份
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$SERVER_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: 验证目标服务器可读取不可变镜像
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          repository="${GITHUB_REPOSITORY,,}"
+          backend="ghcr.io/$repository/backend:sha-$RELEASE_SHA"
+          migrator="ghcr.io/$repository/migrator:sha-$RELEASE_SHA"
+          printf '%s' "$GHCR_TOKEN" | ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=30 \
+            "$SERVER_USER@$SERVER_HOST" \
+            "docker login ghcr.io -u '$GITHUB_ACTOR' --password-stdin"
+          ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=30 \
+            "$SERVER_USER@$SERVER_HOST" \
+            "docker manifest inspect '$backend' >/dev/null && docker manifest inspect '$migrator' >/dev/null"
+
+      - name: 上传临时预检文件
+        run: |
+          set -Eeuo pipefail
+          ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=30 \
+            "$SERVER_USER@$SERVER_HOST" "install -d -m 700 '$REMOTE_STAGE'"
+          scp -i ~/.ssh/deploy_key -P "$SERVER_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=30 \
+            deploy/compose/app.yml deploy/compose/data.yml scripts/release/server-preflight.sh \
+            "$SERVER_USER@$SERVER_HOST:$REMOTE_STAGE/"
+
+      - name: 执行服务器接管预检
+        run: |
+          set -Eeuo pipefail
+          ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            "$SERVER_USER@$SERVER_HOST" 'bash -s' -- \
+            "$APP_ROOT" "$DEPLOY_ENV" "$DEPLOY_TARGET_ID" \
+            "$INTERNAL_ORIGIN" "$PUBLIC_ORIGIN" "$REMOTE_STAGE" <<'REMOTE'
+          set -Eeuo pipefail
+          APP_ROOT="$1" \
+          DEPLOY_ENV="$2" \
+          DEPLOY_TARGET_ID="$3" \
+          INTERNAL_ORIGIN="$4" \
+          PUBLIC_ORIGIN="$5" \
+          APP_COMPOSE_FILE="$6/app.yml" \
+          DATA_COMPOSE_FILE="$6/data.yml" \
+          bash "$6/server-preflight.sh"
+          REMOTE
+
+      - name: 清理临时预检文件和 GHCR 凭据
+        if: ${{ always() }}
+        run: |
+          set -Eeuo pipefail
+          if [ ! -f ~/.ssh/deploy_key ]; then
+            exit 0
+          fi
+          ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=30 \
+            "$SERVER_USER@$SERVER_HOST" 'bash -s' -- "$REMOTE_STAGE" <<'REMOTE'
+          set -Eeuo pipefail
+          stage="$1"
+          case "$stage" in
+            /tmp/delivery-preflight-[0-9]*-[0-9]*) ;;
+            *) printf 'unsafe preflight stage: %s\n' "$stage" >&2; exit 1 ;;
+          esac
+          rm -f -- "$stage/app.yml" "$stage/data.yml" "$stage/server-preflight.sh"
+          rmdir -- "$stage" 2>/dev/null || true
+          docker logout ghcr.io
+          REMOTE

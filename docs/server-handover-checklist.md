@@ -210,6 +210,16 @@ docker inspect <minio-container> --format '{{range .Mounts}}{{println .Name .Des
 
 不创建长期 GHCR PAT。每次部署使用该 job 的短期 `GITHUB_TOKEN`，经固定 host key 的 SSH 标准输入临时登录目标服务器；流程结束无论成功失败都执行 `docker logout ghcr.io`，退出凭据失败会使发布 job 失败。
 
+完成变量和密钥后，在 Actions 手动运行“服务器接管预检”：
+
+1. `environment_name` 先选 `test`，生产准备时再选 `production`。
+2. `release_sha` 填已通过不可变 Release 验收的完整 40 位 main SHA。
+3. 首次接管审批人批准预检。
+4. 工作流验证 SSH、target-id、目录和文件权限、运行配置占位符、旧数据卷、Compose、Nginx sudo、内外网 `/ready`，并用短期凭据确认服务器能读取该 Release 的后端和迁移镜像。
+5. 预检只上传临时检查文件并执行 `docker manifest inspect`、`docker compose config` 等检查；不会启动、停止、重建或删除容器和卷，结束后清理临时文件和 GHCR 凭据。
+
+预检必须 PASS 后才能进入 Nginx 和维护窗口步骤。此时仍保持 `RELEASE_V2_ENABLED=false`。
+
 ## 8. 第七批：宿主 Nginx
 
 从 `deploy/nginx/delivery-platform.conf.template` 生成本环境配置，替换全部 `__...__`。把 HTTP 规则并入现有 HTTPS server，保持：
