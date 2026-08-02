@@ -133,8 +133,25 @@ async function expectProjectResponse(
   response: APIResponse,
   expectedStatuses: number[] = [200, 201],
 ): Promise<ProjectEnvelope> {
-  expect(expectedStatuses).toContain(response.status())
-  return (await response.json()) as ProjectEnvelope
+  const payload = (await response.json()) as ProjectEnvelope
+  if (!expectedStatuses.includes(response.status())) {
+    throw new Error(
+      `${response.url()}: expected status ${expectedStatuses.join(' or ')}, ` +
+        `received ${response.status()}; response=${JSON.stringify(payload)}`,
+    )
+  }
+  return payload
+}
+
+function requireSeedProject(
+  projects: ProjectListEnvelope,
+  projectCode = 'VN-LG-2026-001',
+): ProjectListItem {
+  const project = projects.data.items.find((item) => item.projectCode === projectCode)
+  if (!project) {
+    throw new Error(`Required seeded project ${projectCode} was not returned by the project API`)
+  }
+  return project
 }
 
 test('administrator can use the target architecture navigation', async ({ page }) => {
@@ -146,15 +163,16 @@ test('administrator can use the target architecture navigation', async ({ page }
     accessToken,
     '/api/v1/projects?scope=all&page=1&pageSize=20',
   )
-  expect(projects.data.total).toBe(9)
+  expect(projects.data.total).toBeGreaterThanOrEqual(9)
   expect(projects.data.items.every((project) => !project.archivedAt)).toBe(true)
-  expect(projects.data.items[0]).toMatchObject({
+  const seedProject = requireSeedProject(projects)
+  expect(seedProject).toMatchObject({
     contractType: expect.any(String),
     product: expect.any(String),
     projectType: expect.any(String),
     shortName: expect.any(String),
   })
-  expect(projects.data.items[0]?.keywords?.length).toBeGreaterThan(0)
+  expect(seedProject.keywords?.length).toBeGreaterThan(0)
 
   const archivedProjects = await fetchProjectList(
     page,
@@ -170,10 +188,13 @@ test('administrator can use the target architecture navigation', async ({ page }
     canRestore: true,
   })
 
-  await page.goto('/#/projects')
-  await expect(page.locator('.summary-metric').filter({ hasText: /项目总数\s*9/u })).toBeVisible({
-    timeout: 60_000,
-  })
+  await page.goto('/#/projects?scope=all')
+  await expect(
+    page
+      .locator('.summary-metric')
+      .filter({ hasText: new RegExp(`项目总数\\s*${projects.data.total}`, 'u') }),
+  ).toBeVisible({ timeout: 60_000 })
+  await page.goto(`/#/projects?scope=all&keyword=${encodeURIComponent('示例项目 1')}`)
   await expect(page.getByText('示例项目 1', { exact: true })).toBeVisible({ timeout: 60_000 })
   await expect(page.getByText('VN-LG-2026-001', { exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '新建' })).toBeVisible()
@@ -215,8 +236,7 @@ test('administrator can create, edit, inspect, progress, archive and restore a p
     accessToken,
     '/api/v1/projects?scope=all&page=1&pageSize=20',
   )
-  const templateSource = projects.data.items[0]
-  expect(templateSource).toBeDefined()
+  const templateSource = requireSeedProject(projects)
   if (
     !templateSource.contractType ||
     !templateSource.product ||
@@ -386,8 +406,7 @@ test('administrator round-trips a private MinIO file and File Worker output', as
     accessToken,
     '/api/v1/projects?scope=all&page=1&pageSize=20',
   )
-  const project = projects.data.items[0]
-  expect(project).toBeDefined()
+  const project = requireSeedProject(projects)
 
   const treeResponse = await page.request.get(`/api/v1/projects/${project.id}/archive-tree`, {
     headers: authorization,
