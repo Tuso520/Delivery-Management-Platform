@@ -64,7 +64,10 @@ initialize_paths() {
   RELEASES_DIR="$APP_ROOT/releases"
   BACKUPS_DIR="$APP_ROOT/backups"
   LOCK_FILE="$STATE_DIR/deploy.lock"
-  install -d -m 700 "$STATE_DIR" "$RELEASES_DIR" "$BACKUPS_DIR"
+  install -d -m 700 "$STATE_DIR" "$BACKUPS_DIR"
+  # Nginx workers only need to traverse this directory to the immutable
+  # frontend selected by `current`; listing releases remains disabled.
+  install -d -m 711 "$RELEASES_DIR"
 
   [ -f "$STATE_DIR/target-id" ] && [ ! -L "$STATE_DIR/target-id" ] || \
     die 'server target identity file is missing or unsafe'
@@ -159,7 +162,11 @@ prepare_frontend() {
   [ "$(jq -er '.releaseId' "$stage/frontend/build-info.json")" = "$SHORT_RELEASE_ID" ] || \
     die 'frontend build-info releaseId does not match the manifest'
   cp -- "$RELEASE_MANIFEST" "$stage/release-manifest.json"
-  chmod -R a-w "$stage/frontend"
+  # The deploy account owns releases, while the unprivileged host Nginx worker
+  # must be able to traverse directories and read static files.
+  find "$stage/frontend" -type d -exec chmod 0555 {} +
+  find "$stage/frontend" -type f -exec chmod 0444 {} +
+  chmod 0511 "$stage"
   mv -T -- "$stage" "$final"
   log "frontend release prepared: $final"
 }

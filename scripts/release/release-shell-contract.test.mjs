@@ -46,6 +46,17 @@ test('deployment binds release identity and checksummed paired backups', () => {
   }
 })
 
+test('frontend releases are readable by host Nginx without exposing private state', () => {
+  for (const contract of [
+    'install -d -m 711 "$RELEASES_DIR"',
+    'find "$stage/frontend" -type d -exec chmod 0555 {} +',
+    'find "$stage/frontend" -type f -exec chmod 0444 {} +',
+    'chmod 0511 "$stage"',
+  ]) {
+    assert.match(deploy, new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'))
+  }
+})
+
 test('paired restore is explicit, path-bound, checksummed and fail-closed', () => {
   for (const contract of [
     "CONFIRM_DATA_RESTORE=RESTORE",

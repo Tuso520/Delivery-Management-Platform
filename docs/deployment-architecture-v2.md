@@ -68,20 +68,40 @@ flowchart LR
 
 以下命令由有 sudo 权限的运维账号分别在测试、生产服务器执行。示例假设 Linux、Docker Engine、Compose v2 和宿主 Nginx 已安装。
 
+### 4.0 安装并核对服务器工具
+
+发布脚本依赖 Bash、Docker Compose v2、Nginx、`jq`、`curl`、GNU `tar`、`gzip`、`coreutils` 和 `util-linux`。Ubuntu/Debian 示例：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y jq curl tar gzip util-linux coreutils openssl ca-certificates
+
+docker version
+docker compose version
+nginx -v
+for cmd in docker jq sha256sum tar gzip curl flock realpath stat sudo awk; do
+  command -v "$cmd" >/dev/null || { echo "缺少命令: $cmd" >&2; exit 1; }
+done
+```
+
+RHEL 系发行版使用对应包管理器安装同名能力。必须使用 Compose v2 的 `docker compose` 子命令；不能只安装旧版 `docker-compose`。服务器必须有足够空间同时保存当前 Release、候选 Release、MySQL/MinIO 成对备份和 Docker 镜像。
+
 ### 4.1 创建专用系统账号和目录
 
 ```bash
 sudo useradd --create-home --shell /bin/bash dmpdeploy
 sudo usermod -aG docker dmpdeploy
-sudo install -d -m 0750 -o dmpdeploy -g dmpdeploy /srv/delivery-platform
+sudo install -d -m 0751 -o dmpdeploy -g dmpdeploy /srv/delivery-platform
 sudo -u dmpdeploy install -d -m 0700 \
   /srv/delivery-platform/config \
   /srv/delivery-platform/control \
   /srv/delivery-platform/incoming \
-  /srv/delivery-platform/releases \
   /srv/delivery-platform/backups \
   /srv/delivery-platform/state
+sudo -u dmpdeploy install -d -m 0711 /srv/delivery-platform/releases
 ```
+
+根目录的 `0751` 和 `releases` 的 `0711` 只允许 Nginx 沿已知路径进入静态文件，不允许列目录；`config`、`backups`、`state` 等仍为 `0700`。发布脚本会把静态目录设为 `0555`、文件设为 `0444`，不会把运行配置或备份暴露给 Nginx。
 
 `dmpdeploy` 只用于 GitHub Actions 发布，不用于人工日常登录。加入 `docker` 组等同于授予宿主高权限，SSH 私钥必须独立、可轮换，不能与管理员个人密钥共用。创建后重新登录一次，使组权限生效。
 
@@ -173,7 +193,7 @@ sudo stat -c '%a %U:%G %n' /srv/delivery-platform/config/runtime.env
 - `__BACKEND_PORT__` → `3000` 或运行配置中的 `BACKEND_HOST_PORT`
 - `__PUBLIC_HOSTNAME__`、`__INTERNAL_HOSTNAME__` → 本环境两个主机名
 
-把 HTTP server 块接入现有 HTTPS/证书配置。公网 443 server 必须保留同样的 `root`、缓存规则、`client_max_body_size 500m` 和 `/api/` 代理规则。测试配置后再 reload：
+把 HTTP server 块接入现有 HTTPS/证书配置。公网 443 server 必须保留同样的 `root`、缓存规则、`client_max_body_size 501m` 和 `/api/` 代理规则。这里的 501 MiB 是 multipart 请求包络上限；后端仍严格限制单个文件为 500 MiB。测试配置后再 reload：
 
 ```bash
 sudo nginx -t
@@ -223,7 +243,8 @@ Secrets：
 4. 等待 build 和 integration 成功，部署作业进入 Environment 审批。
 5. 启用 Nginx v2 配置并批准部署。
 6. 核对 GitHub deploy、外网 `build-info.json`、`/api/v1/ready` 和登录。
-7. 测试稳定后移除 `test` 临时审批；生产环境仍保留审批。
+7. 用 Nginx Worker 的真实系统账号执行 `test -r /srv/delivery-platform/current/frontend/index.html`，确认静态文件可读。
+8. 测试稳定后移除 `test` 临时审批；生产环境仍保留审批。
 
 ## 7. 旧 Docker 全栈首次接管
 
@@ -284,6 +305,12 @@ curl -fsS <public-origin>/api/v1/ready
 curl -fsS <public-origin>/build-info.json
 ```
 
+再从 Nginx 主配置的 `user` 指令确认 Worker 账号（Ubuntu/Debian 通常是 `www-data`，不能直接照抄），并验证该账号确实能读取当前静态入口：
+
+```bash
+sudo -u <nginx-worker-user> test -r /srv/delivery-platform/current/frontend/index.html
+```
+
 同时用 `admin` 和一个受限业务账号登录，验证项目列表、档案、文件预览/下载、审核、标准、知识、通知与权限矩阵。测试服务器通过后才可用同一 SHA 运行生产推广。
 
 ## 8. 日常发布和回滚
@@ -324,7 +351,7 @@ bash /srv/delivery-platform/control/restore-release.sh
 - 当前 v2 不自动删除备份；先配置服务器容量告警和异机备份，再引入经过验收的保留清理任务。
 - 至少监控：根分区/数据卷空间、MySQL/Redis/MinIO health、API `/ready`、Worker 重启次数、Nginx 5xx、备份失败和 `state/*incomplete` 标记。
 - MySQL、Redis、MinIO 数据仍在服务器内部，但生命周期与应用 Release 分离；应用发布不执行 `down -v`。
-- 500 MiB 是统一文件上限。本阶段继续使用现有上传方式，不引入分片或大文件上传策略；Nginx、后端校验和文件处理输出限制必须一致为 500 MiB。
+- 500 MiB 是统一的单文件硬上限。本阶段继续使用现有流式上传方式，不引入分片或断点续传；Nginx 使用 501 MiB 请求包络上限容纳 multipart 元数据，后端和文件处理仍只接受最多 500 MiB 的文件正文。
 
 ## 10. 验收清单
 
