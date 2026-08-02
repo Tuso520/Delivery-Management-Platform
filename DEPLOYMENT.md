@@ -1,6 +1,6 @@
 # 部署快速入口
 
-当前正式入口是 [发布与服务器架构 v2](docs/deployment-architecture-v2.md)：CI 构建一次后端镜像和前端静态包，测试服务器自动发布，生产服务器人工审批后复用同一 Release。宿主 Nginx 服务静态文件，MySQL/Redis/MinIO 使用服务器内部独立数据层。
+当前正式入口是 [发布与服务器架构 v2](docs/deployment-architecture-v2.md)：CI 构建一次后端镜像和前端静态包，测试服务器自动发布，生产服务器人工审批后复用同一 Release。宿主 Nginx 服务静态文件，MySQL/Redis/MinIO 使用服务器内部独立数据层。既有服务器首次切换时按 [服务器接管操作单](docs/server-handover-checklist.md) 分批执行并回传脱敏结果。
 
 下面的 `deploy-git.sh` 命令仅用于首次接管前备份或 legacy 恢复，不再用于日常更新。
 

@@ -5,6 +5,10 @@ import { test } from 'node:test'
 const deploy = await readFile(new URL('./deploy-release.sh', import.meta.url), 'utf8')
 const restore = await readFile(new URL('./restore-release.sh', import.meta.url), 'utf8')
 const dataCompose = await readFile(new URL('../../deploy/compose/data.yml', import.meta.url), 'utf8')
+const deployWorkflow = await readFile(
+  new URL('../../.github/workflows/reusable-deploy-release.yml', import.meta.url),
+  'utf8',
+)
 
 function occursInOrder(source, values) {
   let cursor = -1
@@ -94,4 +98,16 @@ test('v2 scripts never delete Docker volumes or globally prune Docker', () => {
   const combined = `${deploy}\n${restore}`
   assert.doesNotMatch(combined, /docker\s+(?:system|volume)\s+prune/u)
   assert.doesNotMatch(combined, /\bdown\s+-v\b/u)
+})
+
+test('remote image pulls use a job-scoped GHCR credential and always log out', () => {
+  occursInOrder(deployWorkflow, [
+    '临时授权目标服务器读取 GHCR',
+    'docker login ghcr.io',
+    '执行服务器原地切换',
+    '清理目标服务器临时 GHCR 凭据',
+    'docker logout ghcr.io',
+  ])
+  assert.match(deployWorkflow, /GHCR_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/u)
+  assert.match(deployWorkflow, /if: \$\{\{ always\(\) \}\}/u)
 })
