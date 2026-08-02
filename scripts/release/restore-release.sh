@@ -11,6 +11,7 @@ INTERNAL_ORIGIN="${INTERNAL_ORIGIN:-}"
 PUBLIC_ORIGIN="${PUBLIC_ORIGIN:-}"
 BACKUP_PATH="${BACKUP_PATH:-}"
 CONFIRM_DATA_RESTORE="${CONFIRM_DATA_RESTORE:-}"
+NGINX_CONTROL='/usr/local/sbin/dmp-nginx-control'
 
 STATE_DIR=""
 BACKUPS_DIR=""
@@ -198,9 +199,9 @@ switch_frontend() {
   local target="releases/$SOURCE_RELEASE_ID"
   local next="$APP_ROOT/.current-restore-${SOURCE_RELEASE_ID}-$$"
   ln -s "$target" "$next"
+  sudo -n "$NGINX_CONTROL" check
   mv -Tf "$next" "$APP_ROOT/current"
-  sudo -n nginx -t
-  sudo -n systemctl reload nginx
+  sudo -n "$NGINX_CONTROL" reload
 }
 
 check_origin() {

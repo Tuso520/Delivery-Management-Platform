@@ -132,13 +132,23 @@ ssh-keyscan -p <ssh-port> -H <ssh-host>
 
 输出保存为对应 Environment 的 `DEPLOY_KNOWN_HOSTS`。`ssh-keyscan` 的输出必须与控制台展示的服务器指纹人工比对，不能未经核对直接信任。
 
-### 4.3 限定 Nginx 重载权限
+### 4.3 安装并授权 Nginx 控制适配器
 
-先执行 `command -v nginx` 和 `command -v systemctl`，按服务器真实路径创建 `/etc/sudoers.d/delivery-platform-deploy`。常见路径示例：
+部署脚本不直接假定 Nginx 由 systemd 管理。将 `deploy/nginx/dmp-nginx-control.template` 复制到服务器，分别把 `__NGINX_BINARY__`、`__NGINX_CONFIG__` 替换为真实绝对路径，再由 root 安装：
+
+```bash
+sudo install -m 0755 -o root -g root /path/to/completed-dmp-nginx-control \
+  /usr/local/sbin/dmp-nginx-control
+sudo /usr/local/sbin/dmp-nginx-control check
+```
+
+普通 Debian Nginx 常见值是 `/usr/sbin/nginx` 和 `/etc/nginx/nginx.conf`；宝塔 Nginx 必须使用宝塔自己的二进制与配置路径。适配器只接受 `check`、`reload` 两个固定参数，reload 前会再次执行配置检查。
+
+使用 `sudo visudo -f /etc/sudoers.d/delivery-platform-deploy` 写入：
 
 ```text
-dmpdeploy ALL=(root) NOPASSWD: /usr/sbin/nginx -t
-dmpdeploy ALL=(root) NOPASSWD: /usr/bin/systemctl reload nginx
+dmpdeploy ALL=(root) NOPASSWD: /usr/local/sbin/dmp-nginx-control check
+dmpdeploy ALL=(root) NOPASSWD: /usr/local/sbin/dmp-nginx-control reload
 ```
 
 然后执行：
@@ -146,10 +156,10 @@ dmpdeploy ALL=(root) NOPASSWD: /usr/bin/systemctl reload nginx
 ```bash
 sudo chmod 0440 /etc/sudoers.d/delivery-platform-deploy
 sudo visudo -cf /etc/sudoers.d/delivery-platform-deploy
-sudo -u dmpdeploy sudo -n nginx -t
+sudo -u dmpdeploy sudo -n /usr/local/sbin/dmp-nginx-control check
 ```
 
-不要授予无参数限制的 `systemctl`、shell 或编辑 Nginx 配置的 sudo 权限。
+不要授予无参数限制的 Nginx、`systemctl`、shell 或编辑 Nginx 配置的 sudo 权限。控制适配器必须保持 `755 root:root`，不得由 `dmpdeploy` 修改。
 
 ### 4.4 写入服务器身份
 
@@ -207,8 +217,8 @@ sudo stat -c '%a %U:%G %n' /srv/delivery-platform/config/runtime.env
 域名 HTTPS server 在证书指令后包含同一个 `/etc/nginx/snippets/delivery-platform-app.inc`。公网 443 server 因此与 HTTP 入口共用 `root`、缓存规则、`client_max_body_size 501m` 和 `/api/` 代理规则。这里的 501 MiB 是 multipart 请求包络上限；后端仍严格限制单个文件为 500 MiB。测试配置后再 reload：
 
 ```bash
-sudo nginx -t
-sudo systemctl reload nginx
+sudo /usr/local/sbin/dmp-nginx-control check
+sudo /usr/local/sbin/dmp-nginx-control reload
 ```
 
 首次接管旧架构时不要提前启用指向 `current/frontend` 的配置；按第 7 节在停机窗口内启用。

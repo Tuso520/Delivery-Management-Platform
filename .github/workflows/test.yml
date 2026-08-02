@@ -33,6 +33,7 @@ jobs:
           node --test scripts/release/release-manifest.test.mjs scripts/release/release-shell-contract.test.mjs
           bash -n scripts/release/deploy-release.sh
           bash -n scripts/release/restore-release.sh
+          sh -n deploy/nginx/dmp-nginx-control.template
       - name: 安装后端依赖
         working-directory: delivery-platform-server
         run: pnpm install --frozen-lockfile

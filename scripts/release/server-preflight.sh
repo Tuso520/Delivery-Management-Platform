@@ -9,6 +9,7 @@ PUBLIC_ORIGIN="${PUBLIC_ORIGIN:-}"
 RUNTIME_ENV_FILE="${RUNTIME_ENV_FILE:-$APP_ROOT/config/runtime.env}"
 APP_COMPOSE_FILE="${APP_COMPOSE_FILE:-}"
 DATA_COMPOSE_FILE="${DATA_COMPOSE_FILE:-}"
+NGINX_CONTROL='/usr/local/sbin/dmp-nginx-control'
 PREFLIGHT_RELEASE_ENV=""
 
 log() { printf '[server-preflight] %s\n' "$*"; }
@@ -159,6 +160,8 @@ main() {
 
   require_file "$APP_COMPOSE_FILE"
   require_file "$DATA_COMPOSE_FILE"
+  require_file "$NGINX_CONTROL"
+  require_mode_owner "$NGINX_CONTROL" 755 'root:root'
   docker compose --env-file "$RUNTIME_ENV_FILE" -f "$DATA_COMPOSE_FILE" config -q
 
   umask 077
@@ -171,7 +174,7 @@ main() {
   docker compose --env-file "$RUNTIME_ENV_FILE" --env-file "$PREFLIGHT_RELEASE_ENV" \
     -f "$APP_COMPOSE_FILE" config -q
 
-  sudo -n nginx -t >/dev/null
+  sudo -n "$NGINX_CONTROL" check >/dev/null
   check_origin internal "$INTERNAL_ORIGIN"
   check_origin public "$PUBLIC_ORIGIN"
 
