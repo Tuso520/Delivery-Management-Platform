@@ -64,6 +64,14 @@ flowchart LR
 - GitHub 托管 Runner 必须能连接 SSH 入口；如果生产 SSH 仅内网可达，应改用组织自托管 Runner，不能临时开放数据库或对象存储端口。
 - DNS 或 `/etc/hosts` 必须在首次切换前准备好。健康检查不会跳过证书验证。
 
+没有域名时，公网入口使用公网 IP 的受信任 HTTPS 证书，不能降级为生产 HTTP。Let’s Encrypt IP 证书使用 `shortlived` profile，有效期约 160 小时；Certbot 必须为 5.4 或更高版本，并至少每 12 小时执行一次自动续期检查。此模式使用：
+
+- 公网：`https://<public-ip>`。
+- 服务器内网验证：`http://127.0.0.1:8081`。
+- 80 端口：只服务 `/.well-known/acme-challenge/`，其他请求跳转 443。
+- 模板：`deploy/nginx/delivery-platform-ip-acme-bootstrap.conf.template`、`delivery-platform-ip.conf.template` 和 `delivery-platform-app.inc.template`。
+- 自动续期：`deploy/systemd/delivery-platform-certbot-renew.*`。
+
 ## 4. 每台服务器的一次性准备
 
 以下命令由有 sudo 权限的运维账号分别在测试、生产服务器执行。示例假设 Linux、Docker Engine、Compose v2 和宿主 Nginx 已安装。
@@ -187,13 +195,16 @@ sudo stat -c '%a %U:%G %n' /srv/delivery-platform/config/runtime.env
 
 ### 4.6 安装宿主 Nginx 配置
 
-复制 `deploy/nginx/delivery-platform.conf.template`，替换：
+先复制 `deploy/nginx/delivery-platform-app.inc.template`，替换：
 
 - `__APP_ROOT__` → `/srv/delivery-platform`
 - `__BACKEND_PORT__` → `3000` 或运行配置中的 `BACKEND_HOST_PORT`
+
+将其安装为 `/etc/nginx/snippets/delivery-platform-app.inc`。有域名时再复制 `deploy/nginx/delivery-platform.conf.template`，替换：
+
 - `__PUBLIC_HOSTNAME__`、`__INTERNAL_HOSTNAME__` → 本环境两个主机名
 
-把 HTTP server 块接入现有 HTTPS/证书配置。公网 443 server 必须保留同样的 `root`、缓存规则、`client_max_body_size 501m` 和 `/api/` 代理规则。这里的 501 MiB 是 multipart 请求包络上限；后端仍严格限制单个文件为 500 MiB。测试配置后再 reload：
+域名 HTTPS server 在证书指令后包含同一个 `/etc/nginx/snippets/delivery-platform-app.inc`。公网 443 server 因此与 HTTP 入口共用 `root`、缓存规则、`client_max_body_size 501m` 和 `/api/` 代理规则。这里的 501 MiB 是 multipart 请求包络上限；后端仍严格限制单个文件为 500 MiB。测试配置后再 reload：
 
 ```bash
 sudo nginx -t
@@ -201,6 +212,8 @@ sudo systemctl reload nginx
 ```
 
 首次接管旧架构时不要提前启用指向 `current/frontend` 的配置；按第 7 节在停机窗口内启用。
+
+无域名时不要使用上述域名模板，按 [服务器接管操作单](server-handover-checklist.md) 的 IP HTTPS 步骤，先启用仅包含 ACME challenge 的引导配置，取得受信任 IP 证书后再启用 443 和 `127.0.0.1:8081` 两个应用入口。
 
 ## 5. GitHub Environment 配置
 

@@ -14,6 +14,26 @@ const preflightWorkflow = await readFile(
   new URL('../../.github/workflows/server-preflight.yml', import.meta.url),
   'utf8',
 )
+const nginxAppSnippet = await readFile(
+  new URL('../../deploy/nginx/delivery-platform-app.inc.template', import.meta.url),
+  'utf8',
+)
+const nginxIpBootstrap = await readFile(
+  new URL('../../deploy/nginx/delivery-platform-ip-acme-bootstrap.conf.template', import.meta.url),
+  'utf8',
+)
+const nginxIpHttps = await readFile(
+  new URL('../../deploy/nginx/delivery-platform-ip.conf.template', import.meta.url),
+  'utf8',
+)
+const certbotTimer = await readFile(
+  new URL('../../deploy/systemd/delivery-platform-certbot-renew.timer', import.meta.url),
+  'utf8',
+)
+const certbotService = await readFile(
+  new URL('../../deploy/systemd/delivery-platform-certbot-renew.service.template', import.meta.url),
+  'utf8',
+)
 
 function occursInOrder(source, values) {
   let cursor = -1
@@ -155,4 +175,33 @@ test('server preflight workflow is manual, environment-bound and cleans temporar
       new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'),
     )
   }
+})
+
+test('no-domain Nginx entry keeps ACME on HTTP and serves the application over IP HTTPS', () => {
+  for (const contract of [
+    'listen 80;',
+    'location ^~ /.well-known/acme-challenge/',
+    'return 308 https://__PUBLIC_IP__$request_uri;',
+    'listen 443 ssl;',
+    '/etc/letsencrypt/live/__PUBLIC_IP__/fullchain.pem',
+    'include /etc/nginx/snippets/delivery-platform-app.inc;',
+    'listen 127.0.0.1:8081;',
+  ]) {
+    assert.match(
+      nginxIpHttps,
+      new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'),
+    )
+  }
+  assert.match(nginxIpBootstrap, /return 404;/u)
+  assert.doesNotMatch(nginxIpBootstrap, /proxy_pass/u)
+  assert.match(nginxAppSnippet, /client_max_body_size 501m;/u)
+  assert.match(nginxAppSnippet, /proxy_request_buffering off;/u)
+  assert.match(nginxAppSnippet, /proxy_pass http:\/\/127\.0\.0\.1:__BACKEND_PORT__;/u)
+})
+
+test('short-lived IP certificate renewal is checked at least twice daily', () => {
+  assert.match(certbotTimer, /OnUnitActiveSec=12h/u)
+  assert.match(certbotTimer, /Persistent=true/u)
+  assert.match(certbotService, /renew --quiet --deploy-hook/u)
+  assert.doesNotMatch(certbotService, /ExecStartPost/u)
 })

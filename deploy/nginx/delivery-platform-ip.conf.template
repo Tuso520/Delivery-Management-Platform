@@ -1,0 +1,41 @@
+# No-domain deployment with a publicly trusted short-lived IP certificate.
+# Replace __PUBLIC_IP__. Install delivery-platform-app.inc first, and enable
+# this file only after the certificate paths below exist.
+
+server {
+    listen 80;
+    server_name __PUBLIC_IP__;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 308 https://__PUBLIC_IP__$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name __PUBLIC_IP__;
+
+    ssl_certificate /etc/letsencrypt/live/__PUBLIC_IP__/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/__PUBLIC_IP__/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:delivery_platform_tls:10m;
+    ssl_session_timeout 1d;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    include /etc/nginx/snippets/delivery-platform-app.inc;
+}
+
+# The deployment script runs on the server and verifies this loopback-only
+# origin independently from the public HTTPS path.
+server {
+    listen 127.0.0.1:8081;
+    server_name 127.0.0.1;
+
+    include /etc/nginx/snippets/delivery-platform-app.inc;
+}

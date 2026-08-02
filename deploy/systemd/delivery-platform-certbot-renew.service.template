@@ -1,0 +1,8 @@
+[Unit]
+Description=Renew Delivery Management Platform short-lived IP certificate
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=__CERTBOT_PATH__ renew --quiet --deploy-hook "__SYSTEMCTL_PATH__ reload nginx"
