@@ -1,0 +1,16 @@
+# Enable this HTTP-only file before requesting the first IP certificate.
+# Replace __PUBLIC_IP__. It does not expose the application over plain HTTP.
+server {
+    listen 80;
+    server_name __PUBLIC_IP__;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 404;
+    }
+}

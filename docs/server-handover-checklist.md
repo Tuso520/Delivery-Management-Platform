@@ -222,7 +222,7 @@ docker inspect <minio-container> --format '{{range .Mounts}}{{println .Name .Des
 
 ## 8. 第七批：宿主 Nginx
 
-从 `deploy/nginx/delivery-platform.conf.template` 生成本环境配置，替换全部 `__...__`。把 HTTP 规则并入现有 HTTPS server，保持：
+先从 `deploy/nginx/delivery-platform-app.inc.template` 生成共享应用片段，替换 `__APP_ROOT__` 和 `__BACKEND_PORT__`。有域名时再从 `deploy/nginx/delivery-platform.conf.template` 生成入口配置，替换两个主机名；HTTPS server 在证书指令后包含同一个共享应用片段。共享片段保持：
 
 - `root /srv/delivery-platform/current/frontend`
 - `/api/` 代理到 `127.0.0.1:3000` 或实际 `BACKEND_HOST_PORT`
@@ -235,6 +235,96 @@ docker inspect <minio-container> --format '{{range .Mounts}}{{println .Name .Des
 ```bash
 sudo nginx -t
 sudo systemctl reload nginx
+```
+
+### 8.1 无域名：公网 IP HTTPS
+
+无域名时不允许把生产公网入口降级为 HTTP。每台服务器使用各自公网 IP 的 Let’s Encrypt `shortlived` 证书：
+
+```text
+PUBLIC_ORIGIN=https://<public-ip>
+INTERNAL_ORIGIN=http://127.0.0.1:8081
+CORS_ORIGIN=https://<public-ip>
+```
+
+IP 证书约 160 小时有效，必须使用 Certbot 5.4 或更高版本并自动续期。Debian 12 示例：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y python3-venv
+sudo /usr/bin/python3 -m venv /opt/certbot
+sudo /opt/certbot/bin/pip install --upgrade pip 'certbot>=5.4'
+sudo ln -sfn /opt/certbot/bin/certbot /usr/local/sbin/certbot
+/usr/local/sbin/certbot --version
+```
+
+创建 challenge 目录，把 `delivery-platform-ip-acme-bootstrap.conf.template` 中的 `__PUBLIC_IP__` 替换为本机公网 IP，安装到 Nginx 实际加载的 vhost 目录：
+
+```bash
+sudo install -d -m 0755 /var/www/certbot/.well-known/acme-challenge
+sudo nginx -t
+sudo systemctl reload nginx
+printf 'acme-ready\n' | sudo tee /var/www/certbot/.well-known/acme-challenge/probe >/dev/null
+curl -fsS http://<public-ip>/.well-known/acme-challenge/probe
+sudo rm -f /var/www/certbot/.well-known/acme-challenge/probe
+```
+
+先使用独立目录请求不受信任的 staging 证书，避免消耗生产限额：
+
+```bash
+sudo /usr/local/sbin/certbot certonly \
+  --staging \
+  --preferred-profile shortlived \
+  --webroot \
+  --webroot-path /var/www/certbot \
+  --ip-address <public-ip> \
+  --email <certificate-notice-email> \
+  --agree-tos \
+  --non-interactive \
+  --config-dir /etc/letsencrypt-staging \
+  --work-dir /var/lib/letsencrypt-staging \
+  --logs-dir /var/log/letsencrypt-staging
+```
+
+staging PASS 后申请正式证书：
+
+```bash
+sudo /usr/local/sbin/certbot certonly \
+  --preferred-profile shortlived \
+  --webroot \
+  --webroot-path /var/www/certbot \
+  --ip-address <public-ip> \
+  --email <certificate-notice-email> \
+  --agree-tos \
+  --non-interactive
+
+sudo test -r /etc/letsencrypt/live/<public-ip>/fullchain.pem
+sudo test -r /etc/letsencrypt/live/<public-ip>/privkey.pem
+```
+
+把 `delivery-platform-app.inc.template` 中的 `__APP_ROOT__` 替换为 `/srv/delivery-platform`、`__BACKEND_PORT__` 替换为 `3000`（若运行配置使用其他宿主端口则填真实值），安装为 `/etc/nginx/snippets/delivery-platform-app.inc`。把 `delivery-platform-ip.conf.template` 中的 `__PUBLIC_IP__` 替换为公网 IP 后，取代引导 vhost。证书存在前禁止启用 443 模板。
+
+安装自动续期单元，把 `__CERTBOT_PATH__` 替换为 `/usr/local/sbin/certbot`，把 `__SYSTEMCTL_PATH__` 替换为 `command -v systemctl` 的真实绝对路径。续期成功且证书实际更新时才 reload Nginx：
+
+```bash
+sudo install -m 0644 deploy/systemd/delivery-platform-certbot-renew.service.template \
+  /etc/systemd/system/delivery-platform-certbot-renew.service
+sudo install -m 0644 deploy/systemd/delivery-platform-certbot-renew.timer \
+  /etc/systemd/system/delivery-platform-certbot-renew.timer
+sudo editor /etc/systemd/system/delivery-platform-certbot-renew.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now delivery-platform-certbot-renew.timer
+sudo systemctl start delivery-platform-certbot-renew.service
+sudo systemctl status delivery-platform-certbot-renew.timer --no-pager
+sudo nginx -t
+```
+
+最终必须真实 PASS：
+
+```bash
+curl -fsS http://127.0.0.1:8081/api/v1/ready
+curl -fsS https://<public-ip>/api/v1/ready
+curl -fsS https://<public-ip>/build-info.json
 ```
 
 ## 9. 第八批：测试服务器首次接管

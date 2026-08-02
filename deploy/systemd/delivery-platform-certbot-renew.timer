@@ -1,0 +1,12 @@
+[Unit]
+Description=Check Delivery Management Platform IP certificate twice daily
+
+[Timer]
+OnBootSec=15m
+OnUnitActiveSec=12h
+RandomizedDelaySec=30m
+Persistent=true
+Unit=delivery-platform-certbot-renew.service
+
+[Install]
+WantedBy=timers.target
