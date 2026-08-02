@@ -225,7 +225,7 @@ Vue Route
 
 1. 领域入口已经垂直拆分，但页面模板和局部状态仍大：Knowledge 1667 行、Archive 1157/1201 行、Project 1019 行、ProjectDetailDialog 806 行。下一轮应按列表区、筛选区、编辑器、预览区和状态协调器继续组件化，且先补行为测试。
 2. PDF Worker 仍为 1,417.59 kB；普通最大 JavaScript 分块已降至 476.84 kB并通过预算，但 PDF 预览仍应按路由和文件类型延迟加载。
-3. 宿主机前置门禁真实 FAIL：Node 24.14.0、pnpm 11.9.0 与项目锁定的 Node 20、pnpm 10.34.4 不一致；容器冷构建已在锁定版本下通过。
+3. 当前开发机是 Node 24.14.0、pnpm 11.9.0，与正式基线 Node 20、pnpm 10.34.4 不同；本地轻量脚本可用于快速诊断，最终发布结论必须来自锁定版本的 CI。
 4. 27 个历史 Prisma Model 只有运行时隔离和治理方案，没有生产数据核对证据，因此仍禁止物理删除。
 5. 审计补偿和运维恢复接口已有单元/E2E 基础，但仍需生产告警、积压指标和故障演练。
 
@@ -235,23 +235,31 @@ Vue Route
 | --- | --- |
 | 前端 ESLint | PASS，0 error / 0 warning |
 | 前端 TypeScript | PASS |
-| 前端 Vitest | PASS，42 套件 / 193 用例 |
-| 前端生产 Build 与体积预算 | PASS，1,470 modules；105 assets；普通最大 JS 476.84 kB；PDF Worker 1,417.59 kB |
+| 前端 Vitest | PASS，44 套件 / 222 用例 |
+| 前端生产 Build 与体积预算 | PASS，1,479 modules；105 assets；JavaScript 合计 2,135.7 KiB；PDF Worker 1,417.59 kB |
 | 后端 ESLint | PASS，0 error；38 个既有 Seed/Verify `console` warning |
 | 后端 TypeScript / Nest Build | PASS / PASS |
-| 后端 Jest | PASS，74 套件 / 528 用例 |
-| 权限、架构、Prisma、文档事实门禁 | PASS；86 权限、16 角色、前端循环 0、27 个历史 Model 生产调用 0 |
-| Compose 配置 | 基础与测试配置均 PASS，迁移计数 41 |
-| Docker 冷构建 | PASS，Node 20 + pnpm 10.34.4 下前端、后端和迁移镜像全部构建成功 |
-| 真实 API | PASS，`/ready` 的 MySQL、Redis、MinIO 全部 `ok`；Nest E2E 3/3 |
-| Playwright API / Chromium UI | PASS，2/2；干净数据库 12/12 |
-| 容器稳定性 | PASS，API、前端、MySQL、Redis、MinIO 健康；API、两个 Worker、前端及依赖重启次数均为 0 |
-| 宿主版本前置门禁 | FAIL，Node/pnpm 版本不符合项目锁定值；非源码失败 |
+| 后端 Jest | PASS，74 套件 / 548 用例 |
+| 权限、架构、Prisma、文档、Release 门禁 | PASS；86 权限、16 角色、前端循环 0、27 个历史 Model 生产调用 0、发布契约 8/8 |
+| Release Shell / YAML 静态检查 | PASS；deploy/restore `bash -n`，5 个 workflow 与 2 个 v2 Compose YAML 可解析 |
+| 本地视觉验收 | PASS，5/5；项目台账、项目档案、档案模板、项目弹窗已有三联对比，标准库缺少项目内设计参考图并明确标记 |
+| Compose 配置 | PASS；基础、生产、测试、v2 数据和 v2 应用共 5 组 `config -q`，未启动容器 |
+| v2 镜像构建 / 真实集成 E2E | PENDING，必须由推送后的 Node 20 CI 使用正式 Release 验证 |
+| 测试/生产服务器接管 | PENDING，由用户按 `docs/deployment-architecture-v2.md` 配置服务器与 GitHub Environment 后执行 |
 
 ### 8.7 下一步优先级
 
-1. P0：将开发机切换到 Node 20 与 pnpm 10.34.4，消除宿主前置门禁失败。
+1. P0：按 v2 教程完成测试服务器接管和首次 Release，取得真实 integration/deploy 证据后再推广生产。
 2. P1：继续拆分 Knowledge、Archive、Project 大页面，目标是页面只保留组合与路由协调。
-3. P1：为审计补偿、Outbox 和文件任务接入积压指标、告警和定期恢复演练。
+3. P1：为审计补偿、Outbox、文件任务和 v2 备份接入积压/容量告警与定期恢复演练。
 4. P2：按治理台账对 27 个历史 Model 做生产只读盘点，再决定分批迁移和删除。
 5. P2：优化 PDF Worker 的加载路径与缓存策略，不改变 500 MiB 统一上传上限。
+
+### 8.8 部署与测试架构
+
+- 本地默认使用 `scripts/local-quality.ps1` 和 `scripts/local-visual.ps1`，不启动 WSL、Docker 或真实数据服务；视觉报告同时展示设计参考、本次实现和差异叠加，缺失基准时明确失败降级而不伪造参考图。
+- GitHub 质量检查通过后只构建一次后端 runtime、migrator 和前端静态包；`release-manifest.json` 绑定完整 Git SHA、镜像 digest、前端 checksum 与 migration 数量。
+- 测试和生产各自保留内部 MySQL、Redis、MinIO，但数据 Compose 与应用 Compose 分离；数据端口只监听 localhost，应用发布不删除命名卷。
+- 宿主 Nginx 直接服务 `current/frontend`，发布脚本在停写、成对备份、migration、API/Worker 稳定后原子切换前端，并同时检查内网和公网 Release ID。
+- 测试服务器由 main 的已验收 Release 自动发布；生产只接受同一测试验证凭据，经 `production` Environment 人工审批后原地切换，不重新构建。
+- migration 开始后的回滚必须恢复同一 v2 备份中的 MySQL、MinIO、Redis 状态、后端、Worker 和前端；服务器身份、路径、checksum、源 Manifest 和显式确认均为 fail-closed 门禁。

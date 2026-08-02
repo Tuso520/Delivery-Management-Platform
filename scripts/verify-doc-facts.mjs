@@ -89,6 +89,9 @@ expectText('docs/product.md', `${facts.routes} 个 HTTP 路由和 ${facts.permis
 expectText('docker-compose.yml', `EXPECTED_MIGRATION_COUNT=\${EXPECTED_MIGRATION_COUNT:-${facts.migrations}}`, '生产迁移数量门禁与源码不一致');
 expectText('docker-compose.test.yml', `EXPECTED_MIGRATION_COUNT: \${EXPECTED_MIGRATION_COUNT:-${facts.migrations}}`, '测试迁移数量门禁与源码不一致');
 expectText('.github/workflows/deploy.yml', `EXPECTED_MIGRATION_COUNT: "${facts.migrations}"`, 'CI 迁移数量门禁与源码不一致');
+expectText('deploy/compose/app.yml', `EXPECTED_MIGRATION_COUNT: \${EXPECTED_MIGRATION_COUNT:-${facts.migrations}}`, 'v2 应用迁移数量门禁与源码不一致');
+expectText('deploy/runtime-config.template', `EXPECTED_MIGRATION_COUNT=${facts.migrations}`, 'v2 运行配置迁移数量与源码不一致');
+expectText('.github/workflows/release.yml', `--migration-count ${facts.migrations}`, 'v2 Release Manifest 迁移数量与源码不一致');
 expectText(
   'docs/architecture.md',
   '{ code, message, data, timestamp, traceId }',

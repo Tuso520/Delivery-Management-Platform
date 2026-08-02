@@ -1,5 +1,7 @@
 # 开发规范
 
+本地默认采用不启动 Docker/WSL 的轻量化流程，命令和视觉报告见 [本地轻量化测试](local-testing-lightweight.md)。需要真实 MySQL、Redis、MinIO 的发布验收由 GitHub Release integration 执行。
+
 ## 环境要求
 
 - Node.js 20。

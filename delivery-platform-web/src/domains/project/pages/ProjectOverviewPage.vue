@@ -39,12 +39,14 @@ const permissionStore = usePermissionStore()
 const projectLayout = Object.freeze({
   nameColumnWidth: 240,
   managerColumnWidth: 110,
+  tableWidth: 1860,
   scopeWidth: 100,
   toolbarGap: 8,
 })
 const projectLayoutStyle = {
   '--project-name-column-width': `${projectLayout.nameColumnWidth}px`,
   '--project-manager-column-width': `${projectLayout.managerColumnWidth}px`,
+  '--project-table-width': `${projectLayout.tableWidth}px`,
   '--project-scope-width': `${projectLayout.scopeWidth}px`,
   '--project-toolbar-gap': `${projectLayout.toolbarGap}px`,
   '--project-search-width': `${
@@ -985,7 +987,7 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
   border-radius: 0;
 }
 :deep(.project-list-panel .arco-table-element) {
-  width: max-content;
+  width: var(--project-table-width) !important;
   min-width: 100%;
   table-layout: fixed !important;
 }

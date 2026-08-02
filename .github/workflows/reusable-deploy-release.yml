@@ -1,0 +1,154 @@
+name: 部署不可变 Release（复用）
+
+on:
+  workflow_call:
+    inputs:
+      environment_name:
+        description: GitHub Environment 名称
+        required: true
+        type: string
+      release_id:
+        description: 已验收的完整 40 位 commit SHA
+        required: true
+        type: string
+      frontend_artifact:
+        description: GHCR 前端 OCI Artifact 引用
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    name: 部署到 ${{ inputs.environment_name }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment_name }}
+    concurrency:
+      group: deploy-${{ inputs.environment_name }}
+      cancel-in-progress: false
+    env:
+      DEPLOY_ENV: ${{ inputs.environment_name }}
+      RELEASE_ID: ${{ inputs.release_id }}
+      FRONTEND_ARTIFACT: ${{ inputs.frontend_artifact }}
+      SERVER_HOST: ${{ vars.DEPLOY_HOST || secrets.DEPLOY_HOST }}
+      SERVER_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+      SERVER_USER: ${{ vars.DEPLOY_USER || secrets.DEPLOY_USER }}
+      SERVER_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      SERVER_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      APP_ROOT: ${{ vars.DEPLOY_APP_ROOT || '/srv/delivery-platform' }}
+      DEPLOY_TARGET_ID: ${{ vars.DEPLOY_TARGET_ID }}
+      INTERNAL_ORIGIN: ${{ vars.INTERNAL_ORIGIN }}
+      PUBLIC_ORIGIN: ${{ vars.PUBLIC_ORIGIN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_id }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: oras-project/setup-oras@v1
+
+      - name: 校验 Environment 发布参数
+        run: |
+          set -Eeuo pipefail
+          missing=0
+          for name in SERVER_HOST SERVER_USER SERVER_SSH_KEY SERVER_KNOWN_HOSTS APP_ROOT DEPLOY_TARGET_ID INTERNAL_ORIGIN PUBLIC_ORIGIN; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is required for Environment $DEPLOY_ENV"
+              missing=1
+            fi
+          done
+          [[ "$RELEASE_ID" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::RELEASE_ID is invalid'; missing=1; }
+          case "$DEPLOY_ENV" in test|production) ;; *) echo '::error::Environment must be test or production'; missing=1 ;; esac
+          exit "$missing"
+
+      - name: 下载并验证前端发布物
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p release
+          oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<< "$GHCR_TOKEN"
+          oras pull "$FRONTEND_ARTIFACT" -o release
+          node scripts/release/release-manifest.mjs verify \
+            --manifest release/release-manifest.json \
+            --release-id "$RELEASE_ID" \
+            --frontend-file release/frontend.tar.gz
+
+      - name: 配置固定 SSH 主机身份
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$SERVER_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: 上传发布控制文件
+        run: |
+          set -Eeuo pipefail
+          remote_stage="/tmp/delivery-release-${RELEASE_ID}-${GITHUB_RUN_ID}"
+          ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            "$SERVER_USER@$SERVER_HOST" "install -d -m 700 '$remote_stage'"
+          scp -i ~/.ssh/deploy_key -P "$SERVER_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            release/frontend.tar.gz release/release-manifest.json \
+            deploy/compose/app.yml deploy/compose/data.yml \
+            scripts/release/deploy-release.sh scripts/release/restore-release.sh \
+            "$SERVER_USER@$SERVER_HOST:$remote_stage/"
+          printf 'REMOTE_STAGE=%s\n' "$remote_stage" >> "$GITHUB_ENV"
+
+      - name: 执行服务器原地切换
+        run: |
+          set -Eeuo pipefail
+          ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            "$SERVER_USER@$SERVER_HOST" 'bash -s' -- \
+            "$APP_ROOT" "$REMOTE_STAGE" "$DEPLOY_ENV" "$DEPLOY_TARGET_ID" \
+            "$INTERNAL_ORIGIN" "$PUBLIC_ORIGIN" <<'REMOTE'
+          set -Eeuo pipefail
+          APP_ROOT="$1"
+          REMOTE_STAGE="$2"
+          DEPLOY_ENV="$3"
+          DEPLOY_TARGET_ID="$4"
+          INTERNAL_ORIGIN="$5"
+          PUBLIC_ORIGIN="$6"
+
+          test -d "$APP_ROOT" && test ! -L "$APP_ROOT"
+          test -f "$APP_ROOT/state/target-id" && test ! -L "$APP_ROOT/state/target-id"
+          test "$(tr -d '\r\n' < "$APP_ROOT/state/target-id")" = "$DEPLOY_TARGET_ID"
+          test -d "$REMOTE_STAGE" && test ! -L "$REMOTE_STAGE"
+          install -d -m 700 "$APP_ROOT/control" "$APP_ROOT/incoming"
+          install -m 600 "$REMOTE_STAGE/app.yml" "$APP_ROOT/control/app.yml"
+          install -m 600 "$REMOTE_STAGE/data.yml" "$APP_ROOT/control/data.yml"
+          install -m 700 "$REMOTE_STAGE/deploy-release.sh" "$APP_ROOT/control/deploy-release.sh"
+          install -m 700 "$REMOTE_STAGE/restore-release.sh" "$APP_ROOT/control/restore-release.sh"
+          install -m 600 "$REMOTE_STAGE/frontend.tar.gz" "$APP_ROOT/incoming/frontend.tar.gz"
+          install -m 600 "$REMOTE_STAGE/release-manifest.json" "$APP_ROOT/incoming/release-manifest.json"
+
+          APP_ROOT="$APP_ROOT" \
+          DEPLOY_ENV="$DEPLOY_ENV" \
+          DEPLOY_TARGET_ID="$DEPLOY_TARGET_ID" \
+          INTERNAL_ORIGIN="$INTERNAL_ORIGIN" \
+          PUBLIC_ORIGIN="$PUBLIC_ORIGIN" \
+          RELEASE_MANIFEST="$APP_ROOT/incoming/release-manifest.json" \
+          FRONTEND_BUNDLE="$APP_ROOT/incoming/frontend.tar.gz" \
+          bash "$APP_ROOT/control/deploy-release.sh" deploy
+          rm -f -- "$APP_ROOT/incoming/frontend.tar.gz" "$APP_ROOT/incoming/release-manifest.json"
+          rm -rf -- "$REMOTE_STAGE"
+          REMOTE
+
+      - name: 从外部核对生产入口发布号
+        run: |
+          set -Eeuo pipefail
+          expected="${RELEASE_ID:0:12}"
+          actual="$(curl -fsS --connect-timeout 10 --max-time 30 -H 'Cache-Control: no-cache' \
+            "${PUBLIC_ORIGIN%/}/build-info.json" | jq -r '.releaseId')"
+          test "$actual" = "$expected"
+          curl -fsS --connect-timeout 10 --max-time 30 "${PUBLIC_ORIGIN%/}/api/v1/ready" >/dev/null

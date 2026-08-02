@@ -207,7 +207,7 @@ services:
     build:
       context: ./delivery-platform-server
       dockerfile: Dockerfile
-      target: builder
+      target: migrator
       args:
         RELEASE_ID: ${RELEASE_ID:-development}
         DEBIAN_MIRROR: ${DEBIAN_MIRROR:-http://deb.debian.org/debian}

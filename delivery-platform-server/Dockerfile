@@ -37,11 +37,22 @@ COPY prisma/ ./prisma/
 RUN pnpm prisma:generate
 RUN pnpm build
 
+# Migration tooling intentionally remains separate from the lean API runtime.
+# It is published as an immutable image from the same source revision and is
+# the only image allowed to execute schema/data migrators during deployment.
+FROM builder AS migrator
+ARG RELEASE_ID
+ENV RELEASE_ID=${RELEASE_ID}
+LABEL org.opencontainers.image.title="delivery-platform-migrator" \
+      org.opencontainers.image.version="${RELEASE_ID}"
+USER node
+CMD ["sh", "prisma/run-deployment-migrations.sh"]
+
 FROM builder AS runtime-deps
 RUN pnpm prune --prod
 
 # ---- 运行阶段 ----
-FROM ${NODE_IMAGE}
+FROM ${NODE_IMAGE} AS runtime
 ARG RELEASE_ID
 ARG DEBIAN_MIRROR=http://deb.debian.org/debian
 ARG DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security

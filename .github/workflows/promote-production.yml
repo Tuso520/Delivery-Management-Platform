@@ -1,0 +1,51 @@
+name: 推广已验收 Release 到生产
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: 已成功部署测试环境的完整 40 位 commit SHA
+        required: true
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  verify_tested_release:
+    name: 验证测试环境发布凭据
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.verify.outputs.release_id }}
+      frontend_artifact: ${{ steps.verify.outputs.frontend_artifact }}
+    steps:
+      - uses: oras-project/setup-oras@v1
+      - name: 验证不可变提交和测试凭据
+        id: verify
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_SHA: ${{ github.event.inputs.release_sha }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo '::error::release_sha 必须是完整 40 位小写 commit SHA'
+            exit 1
+          }
+          repository="${GITHUB_REPOSITORY,,}"
+          oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<< "$GHCR_TOKEN"
+          oras pull "ghcr.io/$repository/tested-release:sha-$RELEASE_SHA" -o verification
+          test "$(jq -er '.releaseId' verification/test-verification.json)" = "$RELEASE_SHA"
+          test "$(jq -er '.environment' verification/test-verification.json)" = test
+          printf 'release_id=%s\n' "$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+          printf 'frontend_artifact=ghcr.io/%s/frontend-release:sha-%s\n' \
+            "$repository" "$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+
+  deploy_production:
+    name: 人工审批后推广同一 Release
+    needs: verify_tested_release
+    uses: ./.github/workflows/reusable-deploy-release.yml
+    with:
+      environment_name: production
+      release_id: ${{ needs.verify_tested_release.outputs.release_id }}
+      frontend_artifact: ${{ needs.verify_tested_release.outputs.frontend_artifact }}
+    secrets: inherit

@@ -18,6 +18,8 @@
 - [后端实施规范](backend-architecture-refactored.md)
 - [界面体验与 Arco Design 规范](ui-ux.md)
 - [开发规范](development.md)
+- [本地轻量化测试](local-testing-lightweight.md)
+- [发布与服务器架构 v2](deployment-architecture-v2.md)
 - [部署运维](deployment.md)
 - [测试验收](testing.md)
 - [安全说明](security.md)
@@ -35,7 +37,7 @@
 - 前端菜单、路由、页面、状态、API、权限或公共组件变化：同步更新 `frontend-architecture.md`。
 - 前端端到端流程、状态机、角色可达性或异常分支变化：同步更新 `frontend-business-flows.md`。
 - 前后端边界、状态模型、统一文件/审核或迁移规则变化：更新 `frontend-architecture-refactored.md`、`backend-architecture-refactored.md`。
-- 部署、迁移、服务器或数据保护变化：更新 `deployment.md`。
+- 部署、迁移、服务器或数据保护变化：更新 `deployment-architecture-v2.md`；legacy 行为才更新 `deployment.md`。
 - 测试结果和浏览器真实验证记录：更新 `testing.md`。
 - 安全、备份、访问控制或密钥处理变化：更新 `security.md`。
 - 开源依赖、许可证或开源准备变化：更新 `open-source.md`、`open-source-readiness.md` 和根目录 `THIRD_PARTY_NOTICES.md`。

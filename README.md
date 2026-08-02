@@ -12,7 +12,7 @@
 - 在线预览：统一只读预览 Office、PDF、图片、大图、Markdown、XMind、视频和音频；CAD/Visio 等使用异步转换产物。
 - 权限体系：按角色和权限点控制菜单、按钮、接口和项目数据访问范围。
 - 通知集成：站内和飞书通过 Outbox Worker 幂等投递并保留逐通道回执。
-- 部署体系：支持本地模拟、真实依赖测试和服务器 Git 拉取部署，迁移前成对备份 MySQL 与 MinIO。
+- 部署体系：本地轻量模拟与视觉对比、CI 真实依赖验收、不可变 Release 逐环境推广，迁移前成对备份 MySQL 与 MinIO。
 
 ## 技术栈
 
@@ -31,7 +31,8 @@
 ├── docker/                    # 容器辅助配置
 ├── docs/                      # 产品、架构、开发、部署、测试、安全和开源说明
 ├── scripts/                   # 本地测试、Docker 和运维辅助脚本
-├── deploy-git.sh              # 服务器 Git 拉取部署入口
+├── deploy/                     # v2 应用/数据 Compose 与宿主 Nginx 模板
+├── deploy-git.sh              # legacy 备份与迁移期兜底入口
 ├── docker-compose.yml         # 生产近似环境 Compose 配置
 ├── docker-compose.test.yml    # 本地 Docker 测试 Compose 配置
 ├── DEPLOYMENT.md              # 部署快速入口
@@ -43,20 +44,16 @@
 ## 快速启动
 
 ```powershell
-pnpm --dir delivery-platform-server type-check
-pnpm --dir delivery-platform-web build
-$env:LOCAL_TEST_ADMIN_PASSWORD = Read-Host '请输入本地模拟管理员密码'
-$env:LOCAL_TEST_PM_PASSWORD = Read-Host '请输入本地模拟项目经理密码'
-node scripts/local-test-server.mjs
+pwsh.exe -NoLogo -NoProfile -File scripts/local-quality.ps1 -Mode quick
+pwsh.exe -NoLogo -NoProfile -File scripts/local-visual.ps1
 ```
 
-本地模拟访问：
+第二条命令会自动生成进程内临时凭据、启动本地模拟服务、完成四个关键页面的视觉验收并关闭服务。报告路径：
 
-- 平台地址：`http://127.0.0.1:18080`
-- 管理员账号：`admin`
-- 模拟账号只用于页面开发，不是 NestJS/Prisma 种子账号；模拟密码也必须通过上述本地环境变量显式提供，仓库和真实环境均不提供默认密码。
+- `.ai-work/visual-report/index.html`
+- `.ai-work/visual-report/playwright/index.html`
 
-本地 Docker 测试：
+需要隔离真实依赖排障时才使用本地 Docker：
 
 ```powershell
 Copy-Item .env.local.example .env.local
@@ -82,6 +79,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\local-docker.ps1 up -Build
 - [前端实施规范](docs/frontend-architecture-refactored.md)
 - [后端实施规范](docs/backend-architecture-refactored.md)
 - [开发规范](docs/development.md)
+- [本地轻量化测试](docs/local-testing-lightweight.md)
+- [发布与服务器架构 v2](docs/deployment-architecture-v2.md)
 - [部署运维](docs/deployment.md)
 - [测试验收](docs/testing.md)
 - [安全说明](docs/security.md)
@@ -98,20 +97,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\local-docker.ps1 up -Build
 
 ## 生产部署
 
-生产发布采用 Git 拉取部署。代码推送到 GitHub 后，可以通过 GitHub Environment 自动 SSH 到服务器执行 `deploy-git.sh`；首次配置方式见 [部署运维](docs/deployment.md)。
+生产发布采用“构建一次、逐环境推广”：前端为静态发布包，后端和迁移器为 GHCR digest 镜像；测试环境自动部署，生产环境人工审批后复用同一 Release。服务器使用宿主 Nginx，应用层和 MySQL/Redis/MinIO 数据层分离。首次配置和旧架构接管见 [发布与服务器架构 v2](docs/deployment-architecture-v2.md)。
 
-GitHub `test` Environment 使用隔离的重置发布：核验服务器身份后删除该测试
-Compose 项目的 MySQL、Redis、MinIO 历史卷，完成正常部署，再为 30 个测试
-数据集分别补足至少 20 条记录并逐项校验；该流程不会用于生产环境。
+本地默认不启动 WSL 或 Docker，使用 [轻量化测试与视觉对比](docs/local-testing-lightweight.md)。真实依赖集成验收在 GitHub Release 工作流中执行。
 
-也可以在服务器手动执行：
-
-```bash
-cd /www/wwwroot/delivery-platform
-BRANCH=main bash deploy-git.sh deploy
-```
-
-部署脚本会保留服务器独立的 `.env`、备份目录和 Docker 命名卷，并在数据库迁移前成对备份 MySQL 和 MinIO。迁移容器按固定顺序执行 schema、标准/知识内容、项目档案/文件/审核基础数据以及集成 Secret 迁移，并在全部只读严格校验通过后才启动 API 和 Worker。GitHub 部署成功后还会在部署锁内清理未被容器、当前/上一发布或 checksummed v3 备份引用的旧镜像；该清理不使用强制删除，也不清理 Docker volume。
+旧 Git 拉取/重置发布工作流只保留手动兜底，要求显式确认，不用于生产日常更新。v2 每次 migration 前仍会成对备份 MySQL 和 MinIO；数据发生变更后只允许成对恢复数据与匹配 Release。
 
 ## 贡献与安全
 

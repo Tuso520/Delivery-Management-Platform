@@ -8,7 +8,7 @@
 - 英文名：Delivery Management Platform。
 - 定位：面向软件交付中心、项目经理、专业工程师、采购、财务、HSE 和标准管理员的企业级交付管理系统。
 - 范围：工作台、项目台账、项目档案、档案模板、统一文件与审核、标准库、知识库、工具中心、组织权限、系统设置和通知集成。
-- 部署：本地使用模拟服务或 Docker Compose 测试，生产使用 Git 拉取部署。
+- 部署：本地默认使用轻量模拟与视觉对比；CI 构建不可变 Release，测试验收后经 production Environment 审批推广。
 
 ## 技术栈
 
@@ -109,7 +109,7 @@ docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.p
 - 推送目标：`origin/main`。
 - 禁止提交 `.env`、密钥、Token、数据库备份、发布包、截图产物和本地测试日志。
 - README、示例配置和种子说明不得写入可直接使用的默认密码；所有环境的初始化密码只能通过显式环境变量注入，缺失、空白和占位值必须 fail fast，既有账号默认不得自动重置密码。
-- 生产部署采用 Git 拉取部署，流程见 `docs/deployment.md`。
+- 生产部署采用 CI 构建不可变 Release、测试环境验收、production Environment 人工审批后推广同一 Release，流程见 `docs/deployment-architecture-v2.md`。
 
 ## 标准开发流程
 
@@ -131,21 +131,23 @@ docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.p
 2. `docs/frontend-architecture-refactored.md`
 3. `docs/backend-architecture-refactored.md`
 4. `docs/platform-foundation-architecture-v0.1.md`
-5. `docs/final-architecture.md`
-6. `docs/prisma-governance-plan.md`
-7. `docs/architecture-analysis.md`
-8. `docs/cleanup-report.md`
-9. `README.md`
-10. `docs/product.md`
-11. `docs/architecture.md`
-12. `docs/development.md`
-13. `docs/deployment.md`
-14. `docs/testing.md`
-15. `docs/security.md`
-16. `docs/frontend-architecture.md`
-17. `docs/frontend-business-flows.md`
-18. `docs/ui-ux.md`
-19. `docs/open-source.md`
-20. 用户当前消息
+5. `docs/deployment-architecture-v2.md`
+6. `docs/local-testing-lightweight.md`
+7. `docs/final-architecture.md`
+8. `docs/prisma-governance-plan.md`
+9. `docs/architecture-analysis.md`
+10. `docs/cleanup-report.md`
+11. `README.md`
+12. `docs/product.md`
+13. `docs/architecture.md`
+14. `docs/development.md`
+15. `docs/deployment.md`
+16. `docs/testing.md`
+17. `docs/security.md`
+18. `docs/frontend-architecture.md`
+19. `docs/frontend-business-flows.md`
+20. `docs/ui-ux.md`
+21. `docs/open-source.md`
+22. 用户当前消息
 
 如果代码与文档不一致，先按代码核实实际行为，再同步修正文档。

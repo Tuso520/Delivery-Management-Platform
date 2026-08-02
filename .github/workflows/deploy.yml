@@ -1,14 +1,16 @@
-name: 部署
+name: 旧版测试部署（迁移期手动兜底）
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       ref:
         description: 可选当前显式选择的 workflow ref 历史中的 Git ref、tag 或 commit SHA；留空时部署该 ref 的事件提交
         required: false
         default: ""
+      confirm_legacy_reset:
+        description: 输入 YES 才允许执行旧版测试清库部署
+        required: true
+        default: "NO"
 
 permissions:
   contents: read
@@ -34,6 +36,10 @@ jobs:
           REQUESTED_REF: ${{ github.event.inputs.ref }}
           EVENT_SHA: ${{ github.sha }}
         run: |
+          [ "${{ github.event.inputs.confirm_legacy_reset }}" = "YES" ] || {
+            echo "::error::旧版流程会清空测试数据；必须显式输入 YES"
+            exit 1
+          }
           requested="${REQUESTED_REF:-$EVENT_SHA}"
           resolved="$(git rev-parse --verify --end-of-options "${requested}^{commit}")"
           [[ "$resolved" =~ ^[0-9a-f]{40}$ ]] || {
