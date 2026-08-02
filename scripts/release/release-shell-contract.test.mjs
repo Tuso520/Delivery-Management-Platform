@@ -9,6 +9,11 @@ const deployWorkflow = await readFile(
   new URL('../../.github/workflows/reusable-deploy-release.yml', import.meta.url),
   'utf8',
 )
+const serverPreflight = await readFile(new URL('./server-preflight.sh', import.meta.url), 'utf8')
+const preflightWorkflow = await readFile(
+  new URL('../../.github/workflows/server-preflight.yml', import.meta.url),
+  'utf8',
+)
 
 function occursInOrder(source, values) {
   let cursor = -1
@@ -110,4 +115,44 @@ test('remote image pulls use a job-scoped GHCR credential and always log out', (
   ])
   assert.match(deployWorkflow, /GHCR_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/u)
   assert.match(deployWorkflow, /if: \$\{\{ always\(\) \}\}/u)
+})
+
+test('server takeover preflight verifies safety gates without changing runtime state', () => {
+  for (const contract of [
+    'preflight must run as dmpdeploy',
+    'runtime configuration still contains placeholders',
+    'server target identity does not match DEPLOY_TARGET_ID',
+    'declared existing Docker volume was not found',
+    'INTEGRATION_SECRET_ENCRYPTION_KEY must decode to exactly 32 bytes',
+    'sudo -n nginx -t',
+    'check_origin internal',
+    'check_origin public',
+  ]) {
+    assert.match(
+      serverPreflight,
+      new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'),
+    )
+  }
+  assert.doesNotMatch(
+    serverPreflight,
+    /docker compose[^\n]*(?:\bup\b|\bdown\b|\bstart\b|\bstop\b|\brestart\b|\brun\b|\bexec\b)/u,
+  )
+  assert.doesNotMatch(serverPreflight, /docker\s+volume\s+(?:rm|prune)/u)
+})
+
+test('server preflight workflow is manual, environment-bound and cleans temporary credentials', () => {
+  for (const contract of [
+    'workflow_dispatch:',
+    'environment: ${{ inputs.environment_name }}',
+    'DEPLOY_TARGET_ID: ${{ vars.DEPLOY_TARGET_ID }}',
+    'docker manifest inspect',
+    '执行服务器接管预检',
+    'if: ${{ always() }}',
+    'docker logout ghcr.io',
+  ]) {
+    assert.match(
+      preflightWorkflow,
+      new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'),
+    )
+  }
 })

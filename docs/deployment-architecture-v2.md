@@ -235,6 +235,8 @@ Secrets：
 - `test`：日常不要求审批，实现 main 通过后自动部署；首次切换时临时添加审批人。
 - `production`：始终设置 Required reviewers，并禁止管理员绕过。生产发布只能使用“推广已验收 Release 到生产”。
 
+Environment 配置完成后，先手动运行“服务器接管预检”，输入环境名和已通过 Release 验收的完整 SHA。预检会验证 SSH、服务器身份、权限、运行配置、旧数据卷、Compose、Nginx、内外网 ready 和私有 GHCR 镜像读取能力，但不会改变容器或卷状态。预检 PASS 前不得启用 `RELEASE_V2_ENABLED`。
+
 ## 6. 新服务器首次发布
 
 没有旧数据的新服务器可直接执行：
