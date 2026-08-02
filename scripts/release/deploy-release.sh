@@ -11,6 +11,7 @@ DEPLOY_ENV="${DEPLOY_ENV:-}"
 DEPLOY_TARGET_ID="${DEPLOY_TARGET_ID:-}"
 INTERNAL_ORIGIN="${INTERNAL_ORIGIN:-}"
 PUBLIC_ORIGIN="${PUBLIC_ORIGIN:-}"
+NGINX_CONTROL='/usr/local/sbin/dmp-nginx-control'
 
 STATE_DIR=""
 RELEASES_DIR=""
@@ -305,9 +306,9 @@ switch_frontend() {
   local next="$APP_ROOT/.current-${RELEASE_ID}-$$"
   [ -d "$APP_ROOT/$target/frontend" ] || die 'prepared frontend release disappeared'
   ln -s "$target" "$next"
+  sudo -n "$NGINX_CONTROL" check
   mv -Tf "$next" "$current"
-  sudo -n nginx -t
-  sudo -n systemctl reload nginx
+  sudo -n "$NGINX_CONTROL" reload
   log "frontend symlink switched to $target"
 }
 

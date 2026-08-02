@@ -1,0 +1,31 @@
+#!/bin/sh
+set -eu
+
+# Root-owned adapter used by the deployment account. Replace both placeholders,
+# install as /usr/local/sbin/dmp-nginx-control, and keep mode 0755/root:root.
+NGINX_BINARY='__NGINX_BINARY__'
+NGINX_CONFIG='__NGINX_CONFIG__'
+
+fail() {
+    printf '[dmp-nginx-control] %s\n' "$*" >&2
+    exit 1
+}
+
+[ "$#" -eq 1 ] || fail 'usage: dmp-nginx-control check|reload'
+[ "${NGINX_BINARY#/}" != "$NGINX_BINARY" ] || fail 'Nginx binary must be an absolute path'
+[ "${NGINX_CONFIG#/}" != "$NGINX_CONFIG" ] || fail 'Nginx config must be an absolute path'
+[ -x "$NGINX_BINARY" ] || fail 'configured Nginx binary is not executable'
+[ -f "$NGINX_CONFIG" ] || fail 'configured Nginx config is not a regular file'
+
+case "$1" in
+    check)
+        exec "$NGINX_BINARY" -t -c "$NGINX_CONFIG"
+        ;;
+    reload)
+        "$NGINX_BINARY" -t -c "$NGINX_CONFIG"
+        exec "$NGINX_BINARY" -s reload -c "$NGINX_CONFIG"
+        ;;
+    *)
+        fail 'usage: dmp-nginx-control check|reload'
+        ;;
+esac

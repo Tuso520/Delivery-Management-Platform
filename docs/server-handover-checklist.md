@@ -1,6 +1,6 @@
 # 测试与生产服务器接管操作单
 
-状态：等待服务器只读信息；仓库侧不可变 Release 和真实集成验收已通过。
+状态：测试服务器只读摸底已完成；仓库侧不可变 Release 和真实集成验收已通过，自动部署仍关闭。
 
 本文是 [发布与服务器架构 v2](deployment-architecture-v2.md) 的执行工作单。先完整完成测试服务器，再用同一已验收 Release 接管生产。命令默认由有 sudo 权限的人工运维账号执行；`dmpdeploy` 只供 GitHub Actions 发布。
 
@@ -52,6 +52,30 @@ Docker 卷名：
 ```
 
 ## 3. 第二批：账号与目录
+
+### 3.1 测试服务器已确认基线（2026-08-02）
+
+- 公网/私网：`1.117.73.165` / `10.0.0.6`；SSH `22`。
+- 旧 Compose：`delivery-platform-test`，7 个容器健康运行；前端 `18080`，后端 `127.0.0.1:3000`。
+- 旧数据卷：`delivery-platform-test_mysql_data`、`delivery-platform-test_redis_data`、`delivery-platform-test_minio_data`，必须原卷接管。
+- 实际业务数据库镜像是 `mysql:8.0`；宿主 MySQL unit 的失败状态与业务容器无关，接管阶段不升级数据库大版本。
+- 宿主 Nginx 是宝塔 `1.30.3`：二进制 `/www/server/nginx/sbin/nginx`，配置 `/www/server/nginx/conf/nginx.conf`，worker 用户 `www`；systemd unit 为 inactive，禁止使用 `systemctl reload nginx`。
+- 服务器 3.6 GiB 内存且无 Swap；系统盘曾有 44.96 GiB 可回收 Docker build cache。只允许 `docker builder prune --all --force` 清构建缓存，禁止 `docker system prune`、`docker volume prune` 和任何 `down -v`。
+
+构建缓存清理后确认至少 10 GiB 可用，再创建 2 GiB Swap：
+
+```bash
+sudo fallocate -l 2G /swapfile
+sudo chmod 0600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+grep -q '^/swapfile[[:space:]]' /etc/fstab || \
+  printf '/swapfile none swap sw 0 0\n' | sudo tee -a /etc/fstab >/dev/null
+swapon --show
+free -h
+```
+
+若 `/swapfile` 已存在，不重复执行创建命令，先核对 `swapon --show` 和 `/etc/fstab`。
 
 确认第一批结果后，每台服务器执行。命令可重复执行，不会重建已存在账号：
 
@@ -111,20 +135,20 @@ ssh-keyscan -p <ssh-port> -H <ssh-host>
 
 核对后的完整行保存为对应 Environment 的 `DEPLOY_KNOWN_HOSTS`。
 
-## 5. 第四批：受限 Nginx 权限与服务器身份
+## 5. 第四批：受限 Nginx 适配器与服务器身份
 
-先记录真实程序路径：
-
-```bash
-command -v nginx
-command -v systemctl
-```
-
-使用 `sudo visudo -f /etc/sudoers.d/delivery-platform-deploy` 写入真实绝对路径。常见示例：
+将 `deploy/nginx/dmp-nginx-control.template` 中两个占位符替换为本机真实路径，以 `755 root:root` 安装到 `/usr/local/sbin/dmp-nginx-control`。测试服务器固定为：
 
 ```text
-dmpdeploy ALL=(root) NOPASSWD: /usr/sbin/nginx -t
-dmpdeploy ALL=(root) NOPASSWD: /usr/bin/systemctl reload nginx
+__NGINX_BINARY__=/www/server/nginx/sbin/nginx
+__NGINX_CONFIG__=/www/server/nginx/conf/nginx.conf
+```
+
+然后使用 `sudo visudo -f /etc/sudoers.d/delivery-platform-deploy` 写入：
+
+```text
+dmpdeploy ALL=(root) NOPASSWD: /usr/local/sbin/dmp-nginx-control check
+dmpdeploy ALL=(root) NOPASSWD: /usr/local/sbin/dmp-nginx-control reload
 ```
 
 校验：
@@ -132,8 +156,11 @@ dmpdeploy ALL=(root) NOPASSWD: /usr/bin/systemctl reload nginx
 ```bash
 sudo chmod 0440 /etc/sudoers.d/delivery-platform-deploy
 sudo visudo -cf /etc/sudoers.d/delivery-platform-deploy
-sudo -u dmpdeploy sudo -n nginx -t
+sudo stat -c '%a %U:%G %n' /usr/local/sbin/dmp-nginx-control
+sudo -u dmpdeploy sudo -n /usr/local/sbin/dmp-nginx-control check
 ```
+
+适配器必须为 `755 root:root`。它只控制宿主 Nginx 的指定二进制和配置，不会向旧前端容器中的 Nginx master 发送信号。
 
 只在目标身份不存在时生成，不能在后续发布中重建：
 
@@ -233,8 +260,8 @@ docker inspect <minio-container> --format '{{range .Mounts}}{{println .Name .Des
 旧栈仍提供流量时只准备配置，不立即启用指向尚不存在的 `current/frontend`。维护窗口内切换后执行：
 
 ```bash
-sudo nginx -t
-sudo systemctl reload nginx
+sudo /usr/local/sbin/dmp-nginx-control check
+sudo /usr/local/sbin/dmp-nginx-control reload
 ```
 
 ### 8.1 无域名：公网 IP HTTPS
@@ -262,8 +289,8 @@ sudo ln -sfn /opt/certbot/bin/certbot /usr/local/sbin/certbot
 
 ```bash
 sudo install -d -m 0755 /var/www/certbot/.well-known/acme-challenge
-sudo nginx -t
-sudo systemctl reload nginx
+sudo /usr/local/sbin/dmp-nginx-control check
+sudo /usr/local/sbin/dmp-nginx-control reload
 printf 'acme-ready\n' | sudo tee /var/www/certbot/.well-known/acme-challenge/probe >/dev/null
 curl -fsS http://<public-ip>/.well-known/acme-challenge/probe
 sudo rm -f /var/www/certbot/.well-known/acme-challenge/probe
@@ -304,7 +331,7 @@ sudo test -r /etc/letsencrypt/live/<public-ip>/privkey.pem
 
 把 `delivery-platform-app.inc.template` 中的 `__APP_ROOT__` 替换为 `/srv/delivery-platform`、`__BACKEND_PORT__` 替换为 `3000`（若运行配置使用其他宿主端口则填真实值），安装为 `/etc/nginx/snippets/delivery-platform-app.inc`。把 `delivery-platform-ip.conf.template` 中的 `__PUBLIC_IP__` 替换为公网 IP 后，取代引导 vhost。证书存在前禁止启用 443 模板。
 
-安装自动续期单元，把 `__CERTBOT_PATH__` 替换为 `/usr/local/sbin/certbot`，把 `__SYSTEMCTL_PATH__` 替换为 `command -v systemctl` 的真实绝对路径。续期成功且证书实际更新时才 reload Nginx：
+安装自动续期单元，把 `__CERTBOT_PATH__` 替换为 `/usr/local/sbin/certbot`。续期成功且证书实际更新时，deploy hook 通过同一个 `/usr/local/sbin/dmp-nginx-control reload` 适配器重载宿主 Nginx：
 
 ```bash
 sudo install -m 0644 deploy/systemd/delivery-platform-certbot-renew.service.template \
@@ -316,7 +343,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now delivery-platform-certbot-renew.timer
 sudo systemctl start delivery-platform-certbot-renew.service
 sudo systemctl status delivery-platform-certbot-renew.timer --no-pager
-sudo nginx -t
+sudo /usr/local/sbin/dmp-nginx-control check
 ```
 
 最终必须真实 PASS：

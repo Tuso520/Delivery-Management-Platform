@@ -34,6 +34,10 @@ const certbotService = await readFile(
   new URL('../../deploy/systemd/delivery-platform-certbot-renew.service.template', import.meta.url),
   'utf8',
 )
+const nginxControl = await readFile(
+  new URL('../../deploy/nginx/dmp-nginx-control.template', import.meta.url),
+  'utf8',
+)
 
 function occursInOrder(source, values) {
   let cursor = -1
@@ -84,6 +88,20 @@ test('frontend releases are readable by host Nginx without exposing private stat
   ]) {
     assert.match(deploy, new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'))
   }
+})
+
+test('deployment uses one root-owned Nginx adapter across systemd and panel installations', () => {
+  for (const script of [deploy, restore, serverPreflight]) {
+    assert.match(script, /NGINX_CONTROL='\/usr\/local\/sbin\/dmp-nginx-control'/u)
+    assert.doesNotMatch(script, /sudo -n systemctl reload nginx/u)
+  }
+  assert.match(deploy, /sudo -n "\$NGINX_CONTROL" check/u)
+  assert.match(deploy, /sudo -n "\$NGINX_CONTROL" reload/u)
+  assert.match(restore, /sudo -n "\$NGINX_CONTROL" reload/u)
+  assert.match(serverPreflight, /require_mode_owner "\$NGINX_CONTROL" 755 'root:root'/u)
+  assert.match(nginxControl, /"\$NGINX_BINARY" -t -c "\$NGINX_CONFIG"/u)
+  assert.match(nginxControl, /"\$NGINX_BINARY" -s reload -c "\$NGINX_CONFIG"/u)
+  assert.doesNotMatch(nginxControl, /systemctl/u)
 })
 
 test('paired restore is explicit, path-bound, checksummed and fail-closed', () => {
@@ -144,7 +162,7 @@ test('server takeover preflight verifies safety gates without changing runtime s
     'server target identity does not match DEPLOY_TARGET_ID',
     'declared existing Docker volume was not found',
     'INTEGRATION_SECRET_ENCRYPTION_KEY must decode to exactly 32 bytes',
-    'sudo -n nginx -t',
+    'sudo -n "$NGINX_CONTROL" check',
     'check_origin internal',
     'check_origin public',
   ]) {
@@ -203,5 +221,6 @@ test('short-lived IP certificate renewal is checked at least twice daily', () =>
   assert.match(certbotTimer, /OnUnitActiveSec=12h/u)
   assert.match(certbotTimer, /Persistent=true/u)
   assert.match(certbotService, /renew --quiet --deploy-hook/u)
+  assert.match(certbotService, /dmp-nginx-control reload/u)
   assert.doesNotMatch(certbotService, /ExecStartPost/u)
 })
