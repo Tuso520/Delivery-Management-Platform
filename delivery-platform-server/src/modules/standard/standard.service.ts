@@ -12,6 +12,7 @@ import { PrismaService } from '../../database/prisma.service';
 import type { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { FieldConfigurationService } from '../field-configuration/field-configuration.service';
 import { writeOperationLog } from '../operation-log/operation-log.service';
+import { DEFAULT_APPROVAL_TEMPLATE_CODE_BY_BUSINESS_TYPE } from '../platform/workflow/default-approval-template.contract';
 import { ReviewConfigurationService } from '../review/review-configuration.service';
 import { ReviewTaskService } from '../review/review-task.service';
 
@@ -1122,13 +1123,17 @@ export class StandardService {
 
   private async resolveApprovalTemplateId(
     requestedId: string | undefined,
-    businessType: string,
+    businessType: keyof typeof DEFAULT_APPROVAL_TEMPLATE_CODE_BY_BUSINESS_TYPE,
   ): Promise<string | undefined> {
     if (requestedId) return requestedId;
     const template = await this.prisma.approvalTemplate.findFirst({
-      where: { businessType, isEnabled: true },
+      where: {
+        templateCode: DEFAULT_APPROVAL_TEMPLATE_CODE_BY_BUSINESS_TYPE[businessType],
+        businessType,
+        isEnabled: true,
+        deletedAt: null,
+      },
       select: { id: true },
-      orderBy: { updatedAt: 'desc' },
     });
     return template?.id;
   }

@@ -11,6 +11,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import type { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { writeOperationLog } from '../operation-log/operation-log.service';
+import { DEFAULT_APPROVAL_TEMPLATE_CODE_BY_BUSINESS_TYPE } from '../platform/workflow/default-approval-template.contract';
 import { ReviewConfigurationService } from '../review/review-configuration.service';
 import { ReviewTaskService } from '../review/review-task.service';
 import { SystemConfigService } from '../system-config/system-config.service';
@@ -1181,9 +1182,13 @@ export class KnowledgeItemService {
   ): Promise<string | undefined> {
     if (requestedId) return requestedId;
     const template = await this.prisma.approvalTemplate.findFirst({
-      where: { businessType: 'KNOWLEDGE', isEnabled: true },
+      where: {
+        templateCode: DEFAULT_APPROVAL_TEMPLATE_CODE_BY_BUSINESS_TYPE.KNOWLEDGE,
+        businessType: 'KNOWLEDGE',
+        isEnabled: true,
+        deletedAt: null,
+      },
       select: { id: true },
-      orderBy: { updatedAt: 'desc' },
     });
     return template?.id;
   }
