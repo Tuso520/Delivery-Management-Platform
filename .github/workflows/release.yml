@@ -341,6 +341,7 @@ jobs:
           data=(docker compose --env-file /dev/null -f deploy/compose/data.yml)
           "${app[@]}" ps -a || true
           "${data[@]}" ps -a || true
+          "${app[@]}" logs --no-color --tail 200 backend file-worker outbox-worker 2>&1 || true
           docker logs --tail 200 delivery-platform-ci-frontend 2>&1 || true
           docker rm -f delivery-platform-ci-frontend >/dev/null 2>&1 || true
           "${app[@]}" down --remove-orphans || true

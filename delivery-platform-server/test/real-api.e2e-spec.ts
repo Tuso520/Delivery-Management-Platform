@@ -153,7 +153,11 @@ describe('running Delivery Platform API', () => {
       headers: { authorization: `Bearer ${accessToken}` },
     });
     const body = (await response.json()) as ApiEnvelope<unknown>;
-    expect(response.status).toBe(expectedStatus);
+    if (response.status !== expectedStatus) {
+      throw new Error(
+        `GET ${path}: expected ${expectedStatus}, received ${response.status}; response=${JSON.stringify(body)}`,
+      );
+    }
     expect(body.traceId).toEqual(expect.any(String));
     expect(body.timestamp).toEqual(expect.any(String));
     return body;
@@ -174,7 +178,11 @@ describe('running Delivery Platform API', () => {
       },
     });
     const body = (await response.json()) as ApiEnvelope<T>;
-    expect(response.status).toBe(expectedStatus);
+    if (response.status !== expectedStatus) {
+      throw new Error(
+        `${init.method ?? 'GET'} ${path}: expected ${expectedStatus}, received ${response.status}; response=${JSON.stringify(body)}`,
+      );
+    }
     expect(body.traceId).toEqual(expect.any(String));
     expect(body.timestamp).toEqual(expect.any(String));
     return body;
