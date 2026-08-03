@@ -18,7 +18,7 @@ x-backend-environment: &backend-environment
 services:
   backend-migrate:
     image: ${MIGRATION_IMAGE:?MIGRATION_IMAGE must be pinned by digest}
-    pull_policy: always
+    pull_policy: missing
     restart: "no"
     environment:
       <<: *backend-environment
@@ -33,7 +33,7 @@ services:
 
   backend:
     image: ${BACKEND_IMAGE:?BACKEND_IMAGE must be pinned by digest}
-    pull_policy: always
+    pull_policy: missing
     restart: unless-stopped
     ports:
       - "127.0.0.1:${BACKEND_HOST_PORT:-3000}:3000"
@@ -53,7 +53,7 @@ services:
 
   file-worker:
     image: ${BACKEND_IMAGE:?BACKEND_IMAGE must be pinned by digest}
-    pull_policy: always
+    pull_policy: missing
     restart: unless-stopped
     init: true
     stop_grace_period: 330s
@@ -73,7 +73,7 @@ services:
 
   outbox-worker:
     image: ${BACKEND_IMAGE:?BACKEND_IMAGE must be pinned by digest}
-    pull_policy: always
+    pull_policy: missing
     restart: unless-stopped
     init: true
     stop_grace_period: 75s

@@ -5,6 +5,7 @@ import { test } from 'node:test'
 const deploy = await readFile(new URL('./deploy-release.sh', import.meta.url), 'utf8')
 const restore = await readFile(new URL('./restore-release.sh', import.meta.url), 'utf8')
 const dataCompose = await readFile(new URL('../../deploy/compose/data.yml', import.meta.url), 'utf8')
+const appCompose = await readFile(new URL('../../deploy/compose/app.yml', import.meta.url), 'utf8')
 const deployWorkflow = await readFile(
   new URL('../../.github/workflows/reusable-deploy-release.yml', import.meta.url),
   'utf8',
@@ -284,10 +285,13 @@ test('an already-built release can be deployed and attested without rebuilding i
 
 test('runtime and migrator images share production layers without shipping builder toolchains', () => {
   occursInOrder(backendDockerfile, [
-    'FROM ${NODE_IMAGE} AS runtime',
-    'FROM runtime AS migrator',
+    'FROM ${NODE_IMAGE} AS runtime-base',
+    'COPY --chown=node:node --from=runtime-deps /app/node_modules ./node_modules',
+    'FROM runtime-base AS runtime',
+    'FROM runtime-base AS migrator',
   ])
   assert.doesNotMatch(backendDockerfile, /FROM builder AS migrator/u)
+  assert.doesNotMatch(backendDockerfile, /FROM runtime AS migrator/u)
   assert.doesNotMatch(backendDockerfile, /default-mysql-client/u)
   assert.match(
     backendDockerfile,
@@ -299,6 +303,8 @@ test('runtime and migrator images share production layers without shipping build
   for (const workflow of [releaseWorkflow, legacyDeployWorkflow]) {
     assert.doesNotMatch(workflow, /node_modules\/\.bin\/(?:prisma|ts-node)/u)
   }
+  assert.doesNotMatch(appCompose, /pull_policy:\s*always/u)
+  assert.equal(appCompose.match(/pull_policy:\s*missing/gu)?.length, 4)
 })
 
 test('no-domain Nginx entry keeps ACME on HTTP and serves the application over IP HTTPS', () => {
