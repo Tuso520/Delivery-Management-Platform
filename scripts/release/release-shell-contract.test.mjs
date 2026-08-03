@@ -294,6 +294,7 @@ test('runtime and migrator images share production layers without shipping build
     /prisma@5\.22\.0 ts-node@10\.9\.2 typescript@5\.5\.4/u,
   )
   assert.match(backendDockerfile, /\/app\/tsconfig\.json \.\/tsconfig\.json/u)
+  assert.match(backendDockerfile, /\/app\/src \.\/src/u)
   assert.match(backendDockerfile, /npm cache clean --force/u)
   for (const workflow of [releaseWorkflow, legacyDeployWorkflow]) {
     assert.doesNotMatch(workflow, /node_modules\/\.bin\/(?:prisma|ts-node)/u)
