@@ -84,5 +84,6 @@ RUN npm install --global --registry=${NPM_REGISTRY} --no-audit --no-fund \
       prisma@5.22.0 ts-node@10.9.2 typescript@5.5.4 \
   && npm cache clean --force
 COPY --chown=node:node --from=builder /app/tsconfig.json ./tsconfig.json
+COPY --chown=node:node --from=builder /app/src ./src
 USER node
 CMD ["sh", "prisma/run-deployment-migrations.sh"]
