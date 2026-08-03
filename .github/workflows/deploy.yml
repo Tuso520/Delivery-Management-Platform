@@ -293,7 +293,7 @@ jobs:
         run: |
           docker compose --env-file /dev/null -f docker-compose.test.yml -f docker-compose.ci.yml \
             run --rm --no-deps backend-migrate \
-            ./node_modules/.bin/ts-node --transpile-only prisma/verify-runtime-consistency.ts
+            ts-node --transpile-only prisma/verify-runtime-consistency.ts
       - name: 输出容器状态
         if: ${{ always() }}
         run: docker compose --env-file /dev/null -f docker-compose.test.yml -f docker-compose.ci.yml ps -a
