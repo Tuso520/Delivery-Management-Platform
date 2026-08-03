@@ -1,0 +1,122 @@
+name: 安全迁移服务器运行配置
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment_name:
+        description: 目标 GitHub Environment
+        required: true
+        type: choice
+        options:
+          - test
+          - production
+      legacy_compose_project:
+        description: 正在运行的旧 Docker Compose project 名称
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    name: 迁移 ${{ inputs.environment_name }} 运行配置
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment_name }}
+    concurrency:
+      group: runtime-config-bootstrap-${{ inputs.environment_name }}
+      cancel-in-progress: false
+    env:
+      DEPLOY_ENV: ${{ inputs.environment_name }}
+      LEGACY_PROJECT: ${{ inputs.legacy_compose_project }}
+      SERVER_HOST: ${{ vars.DEPLOY_HOST || secrets.DEPLOY_HOST }}
+      SERVER_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+      SERVER_USER: ${{ vars.DEPLOY_USER || secrets.DEPLOY_USER }}
+      SERVER_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      SERVER_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      APP_ROOT: ${{ vars.DEPLOY_APP_ROOT || '/srv/delivery-platform' }}
+      PUBLIC_ORIGIN: ${{ vars.PUBLIC_ORIGIN }}
+      REMOTE_STAGE: /tmp/delivery-runtime-bootstrap-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: 校验迁移参数
+        run: |
+          set -Eeuo pipefail
+          missing=0
+          for name in SERVER_HOST SERVER_USER SERVER_SSH_KEY SERVER_KNOWN_HOSTS APP_ROOT PUBLIC_ORIGIN; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is required for Environment $DEPLOY_ENV"
+              missing=1
+            fi
+          done
+          case "$DEPLOY_ENV" in test|production) ;; *) echo '::error::Environment must be test or production'; missing=1 ;; esac
+          [[ "$LEGACY_PROJECT" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{2,127}$ ]] || {
+            echo '::error::legacy_compose_project is invalid'
+            missing=1
+          }
+          [[ "$PUBLIC_ORIGIN" =~ ^https://[^/]+/?$ ]] || {
+            echo '::error::PUBLIC_ORIGIN must be an HTTPS origin'
+            missing=1
+          }
+          [ "$SERVER_USER" = 'dmpdeploy' ] || {
+            echo '::error::SERVER_USER must be dmpdeploy'
+            missing=1
+          }
+          exit "$missing"
+
+      - uses: actions/checkout@v4
+
+      - name: 配置固定 SSH 主机身份
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$SERVER_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: 上传一次性迁移脚本
+        run: |
+          set -Eeuo pipefail
+          ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=30 \
+            "$SERVER_USER@$SERVER_HOST" "install -d -m 700 '$REMOTE_STAGE'"
+          scp -i ~/.ssh/deploy_key -P "$SERVER_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=30 \
+            scripts/release/bootstrap-runtime-config.sh \
+            "$SERVER_USER@$SERVER_HOST:$REMOTE_STAGE/"
+
+      - name: 从旧容器安全生成运行配置
+        run: |
+          set -Eeuo pipefail
+          ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 \
+            "$SERVER_USER@$SERVER_HOST" 'bash -s' -- \
+            "$APP_ROOT" "$DEPLOY_ENV" "$LEGACY_PROJECT" "$PUBLIC_ORIGIN" "$REMOTE_STAGE" <<'REMOTE'
+          set -Eeuo pipefail
+          APP_ROOT="$1" \
+          DEPLOY_ENV="$2" \
+          LEGACY_PROJECT="$3" \
+          PUBLIC_ORIGIN="$4" \
+          bash "$5/bootstrap-runtime-config.sh"
+          REMOTE
+
+      - name: 清理临时文件
+        if: ${{ always() }}
+        run: |
+          set -Eeuo pipefail
+          if [ ! -f ~/.ssh/deploy_key ]; then
+            exit 0
+          fi
+          ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=30 \
+            "$SERVER_USER@$SERVER_HOST" 'bash -s' -- "$REMOTE_STAGE" <<'REMOTE'
+          set -Eeuo pipefail
+          stage="$1"
+          case "$stage" in
+            /tmp/delivery-runtime-bootstrap-[0-9]*-[0-9]*) ;;
+            *) printf 'unsafe bootstrap stage: %s\n' "$stage" >&2; exit 1 ;;
+          esac
+          rm -f -- "$stage/bootstrap-runtime-config.sh"
+          rmdir -- "$stage" 2>/dev/null || true
+          REMOTE

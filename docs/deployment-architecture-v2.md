@@ -174,7 +174,9 @@ sudo chmod 0600 /srv/delivery-platform/state/target-id
 
 ### 4.5 创建运行配置
 
-把仓库的 `deploy/runtime-config.template` 安全复制到服务器临时位置，再执行：
+接管仍在运行的旧 Docker 栈时，优先手动运行 Actions 中的“安全迁移服务器运行配置”，选择对应 Environment 并填写旧 Compose project 名称。工作流以 `dmpdeploy` 身份运行 `scripts/release/bootstrap-runtime-config.sh`，从旧容器的实际环境和挂载中保留数据库、Redis、MinIO、JWT、集成加密密钥与真实数据卷；它不读取旧 `.env`、不记录秘密、不改动旧容器，并在 `runtime.env` 已存在或值无法无损迁移时 fail closed。完成后仍必须执行服务器接管预检。
+
+新服务器或自动迁移 fail closed 时，把仓库的 `deploy/runtime-config.template` 安全复制到服务器临时位置，再执行：
 
 ```bash
 sudo -u dmpdeploy install -m 0600 /path/to/runtime-config.template \

@@ -14,6 +14,14 @@ const preflightWorkflow = await readFile(
   new URL('../../.github/workflows/server-preflight.yml', import.meta.url),
   'utf8',
 )
+const runtimeBootstrap = await readFile(
+  new URL('./bootstrap-runtime-config.sh', import.meta.url),
+  'utf8',
+)
+const runtimeBootstrapWorkflow = await readFile(
+  new URL('../../.github/workflows/bootstrap-runtime-config.yml', import.meta.url),
+  'utf8',
+)
 const nginxAppSnippet = await readFile(
   new URL('../../deploy/nginx/delivery-platform-app.inc.template', import.meta.url),
   'utf8',
@@ -190,6 +198,40 @@ test('server preflight workflow is manual, environment-bound and cleans temporar
   ]) {
     assert.match(
       preflightWorkflow,
+      new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'),
+    )
+  }
+})
+
+test('runtime bootstrap preserves live credentials without reading or printing legacy dotenv files', () => {
+  for (const contract of [
+    'this one-time bootstrap must run as $DEPLOY_OWNER',
+    'docker inspect',
+    'MYSQL_ROOT_PASSWORD',
+    'INTEGRATION_SECRET_ENCRYPTION_KEY',
+    'runtime.env already exists; refusing to overwrite it',
+    'No secret values were printed; legacy containers were not modified.',
+  ]) {
+    assert.match(
+      runtimeBootstrap,
+      new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'),
+    )
+  }
+  assert.doesNotMatch(runtimeBootstrap, /(?:source|cat|cp)[^\n]*\.env/u)
+  assert.doesNotMatch(runtimeBootstrap, /docker\s+(?:stop|restart|rm|compose\s+(?:up|down))/u)
+})
+
+test('runtime bootstrap workflow is manual, environment-bound and removes its remote script', () => {
+  for (const contract of [
+    'workflow_dispatch:',
+    'environment: ${{ inputs.environment_name }}',
+    'SERVER_USER must be dmpdeploy',
+    '从旧容器安全生成运行配置',
+    'if: ${{ always() }}',
+    'rm -f -- "$stage/bootstrap-runtime-config.sh"',
+  ]) {
+    assert.match(
+      runtimeBootstrapWorkflow,
       new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'),
     )
   }
