@@ -377,6 +377,8 @@ curl -fsS https://<public-ip>/build-info.json
 10. 启用宿主 Nginx v2 配置，然后批准 test Environment 部署。
 11. 部署会再次创建 v2 成对备份、执行 migration、启动 API/Worker、原子切换前端并检查内外网入口。
 
+如果该 SHA 早已完成 Release 构建与真实集成，只是此前因开关为 `false` 跳过部署，则第 4～5 步改为运行“部署已存在 Release 到测试”并填写原 SHA。不得重新构建同一 SHA；该工作流直接验证并复用 GHCR 中原有 Manifest、镜像和前端包。
+
 验收命令：
 
 ```bash

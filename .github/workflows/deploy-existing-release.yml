@@ -1,0 +1,88 @@
+name: 部署已存在 Release 到测试
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: 已完成构建和真实集成验收的完整 40 位 main SHA
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  verify_release:
+    name: 验证已存在的不可变 Release
+    if: ${{ vars.RELEASE_V2_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.verify.outputs.release_id }}
+      frontend_artifact: ${{ steps.verify.outputs.frontend_artifact }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: oras-project/setup-oras@v1
+
+      - name: 校验 main 历史和不可变发布物
+        id: verify
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo '::error::release_sha 必须是完整 40 位小写 commit SHA'
+            exit 1
+          }
+          git fetch --no-tags origin main
+          test "$(git rev-parse --verify --end-of-options "${RELEASE_SHA}^{commit}")" = "$RELEASE_SHA"
+          git merge-base --is-ancestor "$RELEASE_SHA" origin/main
+
+          repository="${GITHUB_REPOSITORY,,}"
+          frontend_artifact="ghcr.io/$repository/frontend-release:sha-$RELEASE_SHA"
+          mkdir -p release-verification
+          oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<< "$GHCR_TOKEN"
+          oras pull "$frontend_artifact" -o release-verification
+          node scripts/release/release-manifest.mjs verify \
+            --manifest release-verification/release-manifest.json \
+            --release-id "$RELEASE_SHA" \
+            --frontend-file release-verification/frontend.tar.gz
+
+          printf 'release_id=%s\n' "$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+          printf 'frontend_artifact=%s\n' "$frontend_artifact" >> "$GITHUB_OUTPUT"
+
+  deploy_test:
+    name: 人工审批后部署已存在 Release
+    needs: verify_release
+    uses: ./.github/workflows/reusable-deploy-release.yml
+    with:
+      environment_name: test
+      release_id: ${{ needs.verify_release.outputs.release_id }}
+      frontend_artifact: ${{ needs.verify_release.outputs.frontend_artifact }}
+    secrets: inherit
+
+  attest_test:
+    name: 记录测试环境验证凭据
+    needs: [verify_release, deploy_test]
+    if: ${{ needs.deploy_test.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: oras-project/setup-oras@v1
+      - name: 发布测试验证凭据
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_SHA: ${{ needs.verify_release.outputs.release_id }}
+        run: |
+          set -Eeuo pipefail
+          repository="${GITHUB_REPOSITORY,,}"
+          printf '{"schemaVersion":1,"releaseId":"%s","environment":"test","runId":"%s"}\n' \
+            "$RELEASE_SHA" "$GITHUB_RUN_ID" > test-verification.json
+          oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<< "$GHCR_TOKEN"
+          oras push "ghcr.io/$repository/tested-release:sha-$RELEASE_SHA" \
+            test-verification.json:application/vnd.delivery-platform.test-verification.v1+json
