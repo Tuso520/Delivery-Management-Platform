@@ -177,7 +177,16 @@ sudo -u dmpdeploy cat /srv/delivery-platform/state/target-id
 
 ## 6. 第五批：运行配置和旧数据卷
 
-从仓库复制 `deploy/runtime-config.template` 到服务器临时路径，再安装：
+旧 Docker 栈仍在线时，优先在 Actions 手动运行“安全迁移服务器运行配置”。测试服务器填写：
+
+- `environment_name=test`
+- `legacy_compose_project=delivery-platform-test`
+
+该工作流只把一次性脚本上传给 `dmpdeploy`，从运行中的 MySQL、Redis、MinIO、backend 和 file-worker 容器读取有效配置，校验原凭据仍可认证，再原子创建 `600 dmpdeploy:dmpdeploy` 的 `runtime.env`。它不读取旧 `.env`、不输出任何配置值、不停止或修改旧容器，并在目标文件已存在时拒绝覆盖。新生成的两个 seed 密码不会重置既有账号，因为脚本固定写入 `SEED_RESET_EXISTING_USER_PASSWORDS=false`。
+
+如果脚本报告旧值包含无法安全迁移的字符、缺少集成加密密钥、容器不唯一或认证失败，立即停止，不要把值发到聊天或 CI。由服务器管理员在本机密码管理器配合下按下面的手工方式处理。
+
+新服务器或无法从旧容器迁移时，从仓库复制 `deploy/runtime-config.template` 到服务器临时路径，再安装：
 
 ```bash
 sudo -u dmpdeploy install -m 0600 /path/to/runtime-config.template \

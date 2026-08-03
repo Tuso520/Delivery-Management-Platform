@@ -31,6 +31,7 @@ jobs:
       - name: Release contract and shell syntax checks
         run: |
           node --test scripts/release/release-manifest.test.mjs scripts/release/release-shell-contract.test.mjs
+          bash -n scripts/release/bootstrap-runtime-config.sh
           bash -n scripts/release/deploy-release.sh
           bash -n scripts/release/restore-release.sh
           sh -n deploy/nginx/dmp-nginx-control.template
