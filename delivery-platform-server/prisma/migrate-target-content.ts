@@ -28,6 +28,7 @@ let actorUserId: string | undefined;
 let actorUsername: string | undefined;
 const plannedStandardFileBackfills = new Set<string>();
 const plannedSourceMappings = new Set<string>();
+const plannedVersionlessStandards = new Set<string>();
 const knowledgeDryRunRollback = new Error('KNOWLEDGE_DRY_RUN_ROLLBACK');
 
 interface SourceMappingPlan {
@@ -1516,8 +1517,8 @@ async function ensureStandardGeneratedFile(input: {
   id: string;
   standardId: string;
   version: string;
-  structuredContent: Prisma.JsonValue;
-  applicability: Prisma.JsonValue | null;
+  structuredContent: unknown;
+  applicability: unknown;
   status: string;
   submittedBy: string;
   createdAt: Date;
@@ -1896,6 +1897,190 @@ async function ensureStandardGeneratedFile(input: {
       'ERROR',
     );
   }
+}
+
+function recoverableVersionlessStandardStatus(status: string): boolean {
+  return ['DRAFT', 'IN_REVIEW', 'PUBLISHED', 'REJECTED'].includes(status);
+}
+
+function markDeterministicVersionlessStandardsPlanned(standardCount: number): void {
+  if (plannedVersionlessStandards.size !== standardCount) return;
+  for (const finding of report.findings) {
+    if (finding.code === 'TARGET_CONTENT_AGGREGATE_WITHOUT_VERSION') {
+      const standardsWithoutVersions = finding.details.standardsWithoutVersions;
+      const knowledgeWithoutVersions = finding.details.knowledgeWithoutVersions;
+      if (standardsWithoutVersions !== standardCount || knowledgeWithoutVersions !== 0) continue;
+      finding.severity = 'WARNING';
+      finding.details = {
+        ...finding.details,
+        deterministicInitialVersionsPlanned: true,
+      };
+      continue;
+    }
+    if (
+      finding.code === 'STANDARD_CURRENT_PUBLISHED_POINTER_INVALID' &&
+      plannedVersionlessStandards.has(finding.entityId) &&
+      finding.details.currentPublishedVersionId === null
+    ) {
+      finding.severity = 'WARNING';
+      finding.details = {
+        ...finding.details,
+        deterministicInitialVersionPlanned: true,
+      };
+    }
+  }
+}
+
+async function migrateVersionlessStandards(): Promise<void> {
+  const standards = await prisma.standard.findMany({
+    where: { versions: { none: {} } },
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      type: true,
+      deliveryStageCode: true,
+      status: true,
+      createdBy: true,
+      createdAt: true,
+      effectiveAt: true,
+    },
+    orderBy: { id: 'asc' },
+  });
+  report.scanned.versionlessStandards = standards.length;
+
+  for (const standard of standards) {
+    if (!recoverableVersionlessStandardStatus(standard.status)) {
+      addFinding(
+        'STANDARD',
+        'Standard',
+        standard.id,
+        'STANDARD_TARGET_MIGRATION_CONFLICT',
+        { reason: 'VERSIONLESS_STANDARD_STATUS_REQUIRES_REVIEW', status: standard.status },
+        'ERROR',
+      );
+      continue;
+    }
+    const version = 'V1.0';
+    const versionId = stableId(`versionless-standard:${standard.id}:${version}`);
+    const versionIdCollision = await prisma.standardVersion.findUnique({
+      where: { id: versionId },
+      select: { standardId: true, version: true },
+    });
+    if (
+      versionIdCollision &&
+      (versionIdCollision.standardId !== standard.id || versionIdCollision.version !== version)
+    ) {
+      addFinding(
+        'STANDARD',
+        'Standard',
+        standard.id,
+        'STANDARD_TARGET_MIGRATION_CONFLICT',
+        { reason: 'VERSIONLESS_STANDARD_VERSION_ID_COLLISION', targetVersionId: versionId },
+        'ERROR',
+      );
+      continue;
+    }
+
+    const structuredContent: Prisma.InputJsonObject = {
+      migrationSource: 'VERSIONLESS_TARGET_STANDARD',
+      recoveredMetadata: {
+        code: standard.code,
+        name: standard.name,
+        type: standard.type,
+        deliveryStageCode: standard.deliveryStageCode,
+      },
+    };
+    const publishedAt = standard.status === 'PUBLISHED' ? standard.effectiveAt : null;
+    if (apply) {
+      try {
+        await prisma.standardVersion.create({
+          data: {
+            id: versionId,
+            standardId: standard.id,
+            version,
+            structuredContent,
+            status: standard.status,
+            revision: 1,
+            effectiveAt: publishedAt,
+            changeDescription: '补齐历史无版本标准的初始版本',
+            submittedBy: standard.createdBy,
+            submittedAt: standard.createdAt,
+            publishedAt,
+            createdAt: standard.createdAt,
+          },
+        });
+      } catch (error: unknown) {
+        addFinding(
+          'STANDARD',
+          'Standard',
+          standard.id,
+          'STANDARD_TARGET_MIGRATION_CONFLICT',
+          {
+            reason: error instanceof Error ? error.message : 'VERSIONLESS_STANDARD_CREATE_FAILED',
+            targetVersionId: versionId,
+          },
+          'ERROR',
+        );
+        continue;
+      }
+    }
+
+    await ensureStandardGeneratedFile({
+      id: versionId,
+      standardId: standard.id,
+      version,
+      structuredContent,
+      applicability: null,
+      status: standard.status,
+      submittedBy: standard.createdBy,
+      createdAt: standard.createdAt,
+      publishedAt,
+      standard: {
+        code: standard.code,
+        name: standard.name,
+        type: standard.type,
+        deliveryStageCode: standard.deliveryStageCode,
+      },
+    });
+
+    if (!apply) {
+      if (plannedStandardFileBackfills.has(versionId)) {
+        plannedVersionlessStandards.add(standard.id);
+        increment('versionlessStandardVersions', report.planned);
+      }
+      continue;
+    }
+
+    const migratedVersion = await prisma.standardVersion.findUnique({
+      where: { id: versionId },
+      select: { fileVersionId: true },
+    });
+    if (!migratedVersion?.fileVersionId) continue;
+    if (standard.status === 'PUBLISHED') {
+      const pointerUpdate = await prisma.standard.updateMany({
+        where: {
+          id: standard.id,
+          OR: [{ currentPublishedVersionId: null }, { currentPublishedVersionId: versionId }],
+        },
+        data: { currentPublishedVersionId: versionId },
+      });
+      if (pointerUpdate.count !== 1) {
+        addFinding(
+          'STANDARD',
+          'Standard',
+          standard.id,
+          'STANDARD_TARGET_MIGRATION_CONFLICT',
+          { reason: 'VERSIONLESS_STANDARD_CURRENT_POINTER_CONFLICT', targetVersionId: versionId },
+          'ERROR',
+        );
+        continue;
+      }
+    }
+    increment('versionlessStandardVersions', report.createdOrVerified);
+  }
+
+  if (!apply) markDeterministicVersionlessStandardsPlanned(standards.length);
 }
 
 async function backfillStandardFiles(): Promise<void> {
@@ -2840,6 +3025,7 @@ async function main(): Promise<void> {
   await migrateChecklists(actorId);
   await migrateDocumentTemplates(actorId);
   await migrateKnowledge();
+  await migrateVersionlessStandards();
   await backfillStandardFiles();
   await backfillTargetAssetChecksums();
   await queueTargetFileProcessing();

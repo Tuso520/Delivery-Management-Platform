@@ -82,6 +82,12 @@ env "${common_env[@]}" \
   TEST_DATA_MIN_COUNT=20 \
   bash "$ROOT_DIR/scripts/test-server-release.sh" seed
 grep -Fq 'prisma/seed-test-data.ts' "$calls" || fail "test-data seed command was not executed"
+grep -Fq 'prisma/migrate-target-content.ts --strict' "$calls" || \
+  fail "post-seed target-content dry-run was not executed"
+grep -Fq 'prisma/migrate-target-content.ts --apply --actor-username=admin' "$calls" || \
+  fail "post-seed target-content apply was not executed"
+grep -Fq 'prisma/migrate-target-content.ts --verify --strict' "$calls" || \
+  fail "post-seed target-content verification was not executed"
 grep -Fq 'prisma/verify-test-data.ts' "$calls" || fail "test-data verifier was not executed"
 
 workflow="$ROOT_DIR/.github/workflows/deploy.yml"
@@ -95,5 +101,20 @@ grep -Fq 'bash "$TEST_RELEASE_SCRIPT" seed </dev/null' "$workflow" || \
 grep -Fq 'bash "$DEPLOY_SCRIPT" deploy </dev/null' "$workflow" || \
   fail "workflow does not isolate deployment script stdin"
 grep -Fq 'TEST_DATA_MIN_COUNT' "$workflow" || fail "workflow does not configure minimum data count"
+
+release_workflow="$ROOT_DIR/.github/workflows/release.yml"
+grep -Fq 'prisma/migrate-target-content.ts --apply --actor-username=admin' "$release_workflow" || \
+  fail "release integration does not repair and verify post-seed target content"
+
+existing_release_workflow="$ROOT_DIR/.github/workflows/deploy-existing-release.yml"
+reusable_release_workflow="$ROOT_DIR/.github/workflows/reusable-deploy-release.yml"
+grep -Fq 'reset_test_data:' "$existing_release_workflow" || \
+  fail "existing Release workflow has no disposable test reset input"
+grep -Fq 'test "$DEPLOY_ENV" = test' "$reusable_release_workflow" || \
+  fail "reusable deployment does not restrict data reset to test"
+grep -Fq 'down --volumes --remove-orphans' "$reusable_release_workflow" || \
+  fail "reusable deployment does not remove disposable test volumes"
+grep -Fq '! docker volume inspect "$volume"' "$reusable_release_workflow" || \
+  fail "reusable deployment does not verify test volume removal"
 
 printf 'test-server release contract tests passed\n'

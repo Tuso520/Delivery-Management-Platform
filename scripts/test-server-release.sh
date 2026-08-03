@@ -116,6 +116,19 @@ seed_test_server() {
     backend-migrate \
     ./node_modules/.bin/ts-node --transpile-only prisma/seed-test-data.ts
 
+  # Test data can deliberately top up aggregate counts. Run the same file-only
+  # content gates again so a seed command can never leave versionless standards
+  # or unverified object-storage bindings for the next deployment.
+  compose run --rm --no-deps backend-migrate \
+    ./node_modules/.bin/ts-node --transpile-only \
+    prisma/migrate-target-content.ts --strict
+  compose run --rm --no-deps backend-migrate \
+    ./node_modules/.bin/ts-node --transpile-only \
+    prisma/migrate-target-content.ts --apply --actor-username=admin
+  compose run --rm --no-deps backend-migrate \
+    ./node_modules/.bin/ts-node --transpile-only \
+    prisma/migrate-target-content.ts --verify --strict
+
   compose run --rm --no-deps \
     -e DEPLOY_ENV=test \
     -e "TEST_DATA_MIN_COUNT=$TEST_DATA_MIN_COUNT" \

@@ -107,6 +107,27 @@ describe('file-only target content schema migration contract', () => {
     expect(migrator).toContain('if (error === knowledgeDryRunRollback) continue');
   });
 
+  it('recovers versionless standards without deleting aggregates or bypassing file checks', () => {
+    const recoveryStart = migrator.indexOf('async function migrateVersionlessStandards');
+    const recoveryEnd = migrator.indexOf('async function backfillStandardFiles', recoveryStart);
+    const recovery = migrator.slice(recoveryStart, recoveryEnd);
+
+    expect(recoveryStart).toBeGreaterThan(-1);
+    expect(recoveryEnd).toBeGreaterThan(recoveryStart);
+    expect(recovery).toContain("where: { versions: { none: {} } }");
+    expect(recovery).toContain("versionless-standard:${standard.id}:${version}");
+    expect(recovery).toContain("migrationSource: 'VERSIONLESS_TARGET_STANDARD'");
+    expect(recovery).toContain('await ensureStandardGeneratedFile');
+    expect(recovery).toContain('plannedStandardFileBackfills.has(versionId)');
+    expect(recovery).toContain('markDeterministicVersionlessStandardsPlanned(standards.length)');
+    expect(migrator).toContain('deterministicInitialVersionsPlanned: true');
+    expect(migrator).toContain('finding.details.currentPublishedVersionId === null');
+    expect(recovery).not.toMatch(/\.(?:delete|deleteMany)\(/u);
+    expect(migrator.indexOf('await migrateVersionlessStandards()')).toBeLessThan(
+      migrator.indexOf('await backfillStandardFiles()'),
+    );
+  });
+
   it('covers soft-deleted knowledge rows and archives deleted attachment file indexes', () => {
     const migrationStart = migrator.indexOf('async function migrateKnowledge');
     const migrationEnd = migrator.indexOf('function standardFileStatus', migrationStart);
