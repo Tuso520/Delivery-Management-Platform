@@ -55,22 +55,22 @@ docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" run --rm --no-deps \
   -e TEST_DATA_MIN_COUNT=20 \
   -e TEST_DATA_SEED=contract-seed \
   backend-migrate \
-  ./node_modules/.bin/ts-node --transpile-only prisma/seed-test-data.ts
+  ts-node --transpile-only prisma/seed-test-data.ts
 docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" run --rm --no-deps \
   backend-migrate \
-  ./node_modules/.bin/ts-node --transpile-only prisma/migrate-target-content.ts --strict
+  ts-node --transpile-only prisma/migrate-target-content.ts --strict
 docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" run --rm --no-deps \
   backend-migrate \
-  ./node_modules/.bin/ts-node --transpile-only prisma/migrate-target-content.ts \
+  ts-node --transpile-only prisma/migrate-target-content.ts \
   --apply --actor-username=admin
 docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" run --rm --no-deps \
   backend-migrate \
-  ./node_modules/.bin/ts-node --transpile-only prisma/migrate-target-content.ts \
+  ts-node --transpile-only prisma/migrate-target-content.ts \
   --verify --strict
 docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" run --rm --no-deps \
   -e DEPLOY_ENV=test \
   -e TEST_DATA_MIN_COUNT=20 \
   backend-migrate \
-  ./node_modules/.bin/ts-node --transpile-only prisma/verify-test-data.ts
+  ts-node --transpile-only prisma/verify-test-data.ts
 
 printf 'test data runtime verification passed\n'

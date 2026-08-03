@@ -50,6 +50,10 @@ const nginxControl = await readFile(
   new URL('../../deploy/nginx/dmp-nginx-control.template', import.meta.url),
   'utf8',
 )
+const backendDockerfile = await readFile(
+  new URL('../../delivery-platform-server/Dockerfile', import.meta.url),
+  'utf8',
+)
 
 function occursInOrder(source, values) {
   let cursor = -1
@@ -89,6 +93,16 @@ test('deployment binds release identity and checksummed paired backups', () => {
   ]) {
     assert.match(deploy, new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'))
   }
+})
+
+test('deployment records pulled runtime and migrator image sizes before downtime', () => {
+  const body = deploy.slice(deploy.indexOf('deploy_release()'))
+  occursInOrder(body, [
+    'pull backend backend-migrate file-worker outbox-worker',
+    'log_image_size backend "$BACKEND_IMAGE"',
+    'log_image_size migrator "$MIGRATION_IMAGE"',
+    'stop_application',
+  ])
 })
 
 test('frontend releases are readable by host Nginx without exposing private state', () => {
@@ -258,6 +272,21 @@ test('an already-built release can be deployed and attested without rebuilding i
   }
   assert.doesNotMatch(deployExistingWorkflow, /docker\/(?:build-push-action|setup-buildx-action)/u)
   assert.doesNotMatch(deployExistingWorkflow, /docker\s+build/u)
+})
+
+test('runtime and migrator images share production layers without shipping builder toolchains', () => {
+  occursInOrder(backendDockerfile, [
+    'FROM ${NODE_IMAGE} AS runtime',
+    'FROM runtime AS migrator',
+  ])
+  assert.doesNotMatch(backendDockerfile, /FROM builder AS migrator/u)
+  assert.doesNotMatch(backendDockerfile, /default-mysql-client/u)
+  assert.match(
+    backendDockerfile,
+    /prisma@5\.22\.0 ts-node@10\.9\.2 typescript@5\.5\.4/u,
+  )
+  assert.match(backendDockerfile, /\/app\/tsconfig\.json \.\/tsconfig\.json/u)
+  assert.match(backendDockerfile, /npm cache clean --force/u)
 })
 
 test('no-domain Nginx entry keeps ACME on HTTP and serves the application over IP HTTPS', () => {

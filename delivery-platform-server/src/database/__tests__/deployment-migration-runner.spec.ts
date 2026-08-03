@@ -157,7 +157,9 @@ describe('deployment migration runner', () => {
     ]) {
       expect(source).toContain(`'${name}'`);
     }
-    expect(source).toContain('./node_modules/.bin/prisma validate');
+    expect(source).toContain('command -v prisma');
+    expect(source).toContain('command -v ts-node');
+    expect(source).toContain('prisma validate');
     expect(source).toContain('[migrate] database target:');
     expect(source).toContain('[migrate] failed stage: %s (exit=%s)');
     expect(source).toContain('current_stage="target content strict dry-run"');

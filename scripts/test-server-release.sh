@@ -114,26 +114,26 @@ seed_test_server() {
     -e "TEST_DATA_MIN_COUNT=$TEST_DATA_MIN_COUNT" \
     -e "TEST_DATA_SEED=${REF:0:12}" \
     backend-migrate \
-    ./node_modules/.bin/ts-node --transpile-only prisma/seed-test-data.ts
+    ts-node --transpile-only prisma/seed-test-data.ts
 
   # Test data can deliberately top up aggregate counts. Run the same file-only
   # content gates again so a seed command can never leave versionless standards
   # or unverified object-storage bindings for the next deployment.
   compose run --rm --no-deps backend-migrate \
-    ./node_modules/.bin/ts-node --transpile-only \
+    ts-node --transpile-only \
     prisma/migrate-target-content.ts --strict
   compose run --rm --no-deps backend-migrate \
-    ./node_modules/.bin/ts-node --transpile-only \
+    ts-node --transpile-only \
     prisma/migrate-target-content.ts --apply --actor-username=admin
   compose run --rm --no-deps backend-migrate \
-    ./node_modules/.bin/ts-node --transpile-only \
+    ts-node --transpile-only \
     prisma/migrate-target-content.ts --verify --strict
 
   compose run --rm --no-deps \
     -e DEPLOY_ENV=test \
     -e "TEST_DATA_MIN_COUNT=$TEST_DATA_MIN_COUNT" \
     backend-migrate \
-    ./node_modules/.bin/ts-node --transpile-only prisma/verify-test-data.ts
+    ts-node --transpile-only prisma/verify-test-data.ts
 
   DEPLOY_SUCCEEDED="YES"
   log_test_release "test data generation and minimum-count verification completed"

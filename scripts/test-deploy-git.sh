@@ -1424,7 +1424,7 @@ test_ciphertext_restore_uses_strict_verify() (
   encrypted_integration_config_count() { printf '1\n'; }
   compose() { record_call "compose $*"; }
   verify_integration_ciphertext_readable
-  assert_calls "compose run --rm --no-deps backend-migrate sh -c ./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts --verify"
+  assert_calls "compose run --rm --no-deps backend-migrate sh -c ts-node --transpile-only prisma/migrate-integration-secrets.ts --verify"
 )
 
 test_start_infra_returns_failure() (

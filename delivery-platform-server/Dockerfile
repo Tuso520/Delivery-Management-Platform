@@ -37,17 +37,6 @@ COPY prisma/ ./prisma/
 RUN pnpm prisma:generate
 RUN pnpm build
 
-# Migration tooling intentionally remains separate from the lean API runtime.
-# It is published as an immutable image from the same source revision and is
-# the only image allowed to execute schema/data migrators during deployment.
-FROM builder AS migrator
-ARG RELEASE_ID
-ENV RELEASE_ID=${RELEASE_ID}
-LABEL org.opencontainers.image.title="delivery-platform-migrator" \
-      org.opencontainers.image.version="${RELEASE_ID}"
-USER node
-CMD ["sh", "prisma/run-deployment-migrations.sh"]
-
 FROM builder AS runtime-deps
 RUN pnpm prune --prod
 
@@ -66,7 +55,7 @@ RUN sed -i \
     -e "s#https\?://deb.debian.org/debian#${DEBIAN_MIRROR}#g" \
     /etc/apt/sources.list.d/debian.sources \
   && apt-get update \
-  && apt-get install -y --no-install-recommends openssl ca-certificates curl default-mysql-client \
+  && apt-get install -y --no-install-recommends openssl ca-certificates curl \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --chown=node:node package.json pnpm-lock.yaml ./
@@ -79,3 +68,21 @@ USER node
 
 EXPOSE 3000
 CMD ["node", "dist/main"]
+
+# The migrator extends the exact production runtime so both GHCR images share
+# the base, application and production-dependency layers on deployment hosts.
+# Only pinned migration CLIs are added; compiler toolchains and the builder's
+# complete development dependency tree never enter a published image.
+FROM runtime AS migrator
+ARG RELEASE_ID
+ARG NPM_REGISTRY=https://registry.npmjs.org
+ENV RELEASE_ID=${RELEASE_ID}
+LABEL org.opencontainers.image.title="delivery-platform-migrator" \
+      org.opencontainers.image.version="${RELEASE_ID}"
+USER root
+RUN npm install --global --registry=${NPM_REGISTRY} --no-audit --no-fund \
+      prisma@5.22.0 ts-node@10.9.2 typescript@5.5.4 \
+  && npm cache clean --force
+COPY --chown=node:node --from=builder /app/tsconfig.json ./tsconfig.json
+USER node
+CMD ["sh", "prisma/run-deployment-migrations.sh"]
