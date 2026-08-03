@@ -465,11 +465,11 @@ test('standard library renders a real long draft, published actions and minimum-
 
     await page.locator('.keyword-input input').clear()
     await page.getByRole('button', { name: '查询', exact: true }).click()
-    const publishedRow = page
-      .locator('.standard-table tbody tr')
-      .filter({ has: page.getByRole('button', { name: '编辑', exact: true }) })
-      .filter({ hasText: /^.*V\d/u })
+    const publishedDateCell = page
+      .locator('.standard-table tbody tr td:nth-child(3)')
+      .filter({ hasText: /^\d{4}-\d{2}-\d{2}$/u })
       .first()
+    const publishedRow = publishedDateCell.locator('..')
     await expect(publishedRow).toBeVisible()
     await expect(publishedRow.getByRole('button', { name: '下载', exact: true })).toHaveCount(0)
     await expect(publishedRow.locator('td').nth(1)).toHaveText(/^V\d/u)
