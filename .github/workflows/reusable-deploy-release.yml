@@ -15,6 +15,11 @@ on:
         description: GHCR 前端 OCI Artifact 引用
         required: true
         type: string
+      reset_test_data:
+        description: 仅测试环境允许删除数据卷后重新部署
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -41,6 +46,7 @@ jobs:
       DEPLOY_TARGET_ID: ${{ vars.DEPLOY_TARGET_ID }}
       INTERNAL_ORIGIN: ${{ vars.INTERNAL_ORIGIN }}
       PUBLIC_ORIGIN: ${{ vars.PUBLIC_ORIGIN }}
+      RESET_TEST_DATA: ${{ inputs.reset_test_data }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -122,7 +128,7 @@ jobs:
             -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
             "$SERVER_USER@$SERVER_HOST" 'bash -s' -- \
             "$APP_ROOT" "$REMOTE_STAGE" "$DEPLOY_ENV" "$DEPLOY_TARGET_ID" \
-            "$INTERNAL_ORIGIN" "$PUBLIC_ORIGIN" <<'REMOTE'
+            "$INTERNAL_ORIGIN" "$PUBLIC_ORIGIN" "$RESET_TEST_DATA" <<'REMOTE'
           set -Eeuo pipefail
           APP_ROOT="$1"
           REMOTE_STAGE="$2"
@@ -130,6 +136,7 @@ jobs:
           DEPLOY_TARGET_ID="$4"
           INTERNAL_ORIGIN="$5"
           PUBLIC_ORIGIN="$6"
+          RESET_TEST_DATA="$7"
 
           test -d "$APP_ROOT" && test ! -L "$APP_ROOT"
           test -f "$APP_ROOT/state/target-id" && test ! -L "$APP_ROOT/state/target-id"
@@ -142,6 +149,46 @@ jobs:
           install -m 700 "$REMOTE_STAGE/restore-release.sh" "$APP_ROOT/control/restore-release.sh"
           install -m 600 "$REMOTE_STAGE/frontend.tar.gz" "$APP_ROOT/incoming/frontend.tar.gz"
           install -m 600 "$REMOTE_STAGE/release-manifest.json" "$APP_ROOT/incoming/release-manifest.json"
+
+          case "$RESET_TEST_DATA" in
+            true)
+              test "$DEPLOY_ENV" = test
+              runtime_env="$APP_ROOT/config/runtime.env"
+              test -f "$runtime_env" && test ! -L "$runtime_env"
+              test "$(stat -c '%a' "$runtime_env")" = 600
+              reset_release_env="$APP_ROOT/incoming/.reset-release-$$.env"
+              trap 'rm -f -- "$reset_release_env"' EXIT
+              release_id="$(jq -er '.shortReleaseId' "$APP_ROOT/incoming/release-manifest.json")"
+              backend_image="$(jq -er '.components.backend.image' "$APP_ROOT/incoming/release-manifest.json")"
+              migration_image="$(jq -er '.components.migrator.image' "$APP_ROOT/incoming/release-manifest.json")"
+              umask 077
+              printf 'RELEASE_ID=%s\nBACKEND_IMAGE=%s\nMIGRATION_IMAGE=%s\n' \
+                "$release_id" "$backend_image" "$migration_image" > "$reset_release_env"
+
+              mapfile -t reset_volumes < <(
+                docker compose --env-file "$runtime_env" -f "$APP_ROOT/control/data.yml" \
+                  config --format json |
+                  jq -er '.volumes | to_entries | map(.value.name) | sort | .[]'
+              )
+              test "${#reset_volumes[@]}" -eq 3
+              for volume in "${reset_volumes[@]}"; do
+                [[ "$volume" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]+$ ]]
+              done
+
+              docker compose --env-file "$runtime_env" --env-file "$reset_release_env" \
+                -f "$APP_ROOT/control/app.yml" down --remove-orphans
+              docker compose --env-file "$runtime_env" -f "$APP_ROOT/control/data.yml" \
+                down --volumes --remove-orphans
+              for volume in "${reset_volumes[@]}"; do
+                ! docker volume inspect "$volume" >/dev/null 2>&1
+              done
+              rm -f -- "$reset_release_env"
+              trap - EXIT
+              printf '[release] disposable test data volumes removed\n'
+              ;;
+            false) ;;
+            *) printf '[release][error] invalid reset_test_data value\n' >&2; exit 1 ;;
+          esac
 
           APP_ROOT="$APP_ROOT" \
           DEPLOY_ENV="$DEPLOY_ENV" \

@@ -87,6 +87,7 @@ UI E2E 默认使用 Playwright 锁定版本的 Chromium，CI 通过 `playwright 
 6. 档案模板聚合状态只能是 `DRAFT / IN_REVIEW / PUBLISHED / REJECTED / DISABLED`。
 7. 集成 Secret 迁移后，公开配置中不得残留明文 Secret；密钥、API 和 Outbox Worker 使用同一个加密密钥。
 8. 标准历史结构化正文必须物化为经流式 checksum 校验的真实 MinIO 文件；每个有效 StandardVersion 都有唯一主文件。KnowledgeVersion 必须严格满足 FILE/MARKDOWN/LINK 三选一，支持文件归属和 published pointer 一致。
+   历史上只有 Standard 聚合、没有 StandardVersion 的记录不得删除：内容迁移必须先为可识别状态确定性规划 `V1.0`，再通过同一 MinIO 对象、checksum、LogicalFile、FileAsset 和 FileVersion 门禁落库；未知状态继续 fail closed。测试数据补齐后必须再次执行 strict dry-run、apply 和只读 strict verify，禁止把无版本聚合留给下一次发布。
 9. UI 翻译退役只允许把 `translations` 原子归档为 `retired_ui_translations_20260713`，部署表计数报告必须证明行数未减少；运行时 Prisma、seed 和 API 不再读写该表。
 10. 迁移失败不得继续启动 API 或 Worker；回滚必须成对恢复数据库和 MinIO。
 11. `_prisma_migrations` 必须恰好包含源码中的 45 个有效迁移，每个迁移完成且 `migration.sql` SHA-256 与数据库记录一致；数据库中不得存在源码缺失的有效迁移。
@@ -115,7 +116,7 @@ UI E2E 默认使用 Playwright 锁定版本的 Chromium，CI 通过 `playwright 
 
 - 前端 Vitest：44 个测试文件、222 个用例全部通过。
 - 前端 ESLint（只读模式）、TypeScript 类型检查和生产构建通过；普通 JavaScript 单块 500 KiB、CSS 450 KiB、独立 Worker 1500 KiB 和总 JavaScript 2600 KiB 预算门禁通过。
-- 后端 Jest：74 个测试套件、548 个用例全部通过。
+- 后端 Jest：74 个测试套件、549 个用例全部通过。
 - 后端 ESLint（只读模式）、TypeScript 类型检查、生产构建和 Prisma schema 校验通过。
 - 代码规则扫描：前后端源码未发现新增无约束 `any`，未发现其他 UI 组件库导入；前端常规业务请求集中在 `src/api/`，统一文件预览组件按只读会话使用受控 `fetch` 获取预览内容。
 - 文档事实、86 个权限/16 个角色、前端循环 0、27 个历史 Prisma Model 生产调用 0、Release Manifest 和发布/恢复顺序契约全部通过。

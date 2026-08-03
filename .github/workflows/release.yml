@@ -279,6 +279,15 @@ jobs:
             -e DEPLOY_ENV=test -e CONFIRM_TEST_DATA_SEED=YES \
             backend-migrate ./node_modules/.bin/ts-node --transpile-only prisma/seed-test-data.ts
           "${app[@]}" run --rm --no-deps \
+            backend-migrate ./node_modules/.bin/ts-node --transpile-only \
+            prisma/migrate-target-content.ts --strict
+          "${app[@]}" run --rm --no-deps \
+            backend-migrate ./node_modules/.bin/ts-node --transpile-only \
+            prisma/migrate-target-content.ts --apply --actor-username=admin
+          "${app[@]}" run --rm --no-deps \
+            backend-migrate ./node_modules/.bin/ts-node --transpile-only \
+            prisma/migrate-target-content.ts --verify --strict
+          "${app[@]}" run --rm --no-deps \
             -e DEPLOY_ENV=test \
             backend-migrate ./node_modules/.bin/ts-node --transpile-only prisma/verify-test-data.ts
           "${app[@]}" up -d --no-deps backend file-worker outbox-worker

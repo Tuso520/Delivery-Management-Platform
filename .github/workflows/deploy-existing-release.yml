@@ -7,6 +7,11 @@ on:
         description: 已完成构建和真实集成验收的完整 40 位 main SHA
         required: true
         type: string
+      reset_test_data:
+        description: 删除测试环境 MySQL/Redis/MinIO 卷后从空数据层部署
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -65,6 +70,7 @@ jobs:
       environment_name: test
       release_id: ${{ needs.verify_release.outputs.release_id }}
       frontend_artifact: ${{ needs.verify_release.outputs.frontend_artifact }}
+      reset_test_data: ${{ inputs.reset_test_data }}
     secrets: inherit
 
   attest_test:
