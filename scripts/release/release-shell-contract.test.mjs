@@ -14,6 +14,10 @@ const preflightWorkflow = await readFile(
   new URL('../../.github/workflows/server-preflight.yml', import.meta.url),
   'utf8',
 )
+const deployExistingWorkflow = await readFile(
+  new URL('../../.github/workflows/deploy-existing-release.yml', import.meta.url),
+  'utf8',
+)
 const runtimeBootstrap = await readFile(
   new URL('./bootstrap-runtime-config.sh', import.meta.url),
   'utf8',
@@ -236,6 +240,24 @@ test('runtime bootstrap workflow is manual, environment-bound and removes its re
       new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'),
     )
   }
+})
+
+test('an already-built release can be deployed and attested without rebuilding it', () => {
+  for (const contract of [
+    'workflow_dispatch:',
+    "if: ${{ vars.RELEASE_V2_ENABLED == 'true' }}",
+    'release-manifest.mjs verify',
+    'uses: ./.github/workflows/reusable-deploy-release.yml',
+    'environment_name: test',
+    'tested-release:sha-$RELEASE_SHA',
+  ]) {
+    assert.match(
+      deployExistingWorkflow,
+      new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'),
+    )
+  }
+  assert.doesNotMatch(deployExistingWorkflow, /docker\/(?:build-push-action|setup-buildx-action)/u)
+  assert.doesNotMatch(deployExistingWorkflow, /docker\s+build/u)
 })
 
 test('no-domain Nginx entry keeps ACME on HTTP and serves the application over IP HTTPS', () => {

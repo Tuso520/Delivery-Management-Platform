@@ -262,6 +262,8 @@ Secrets：
 
 Environment 配置完成后，先手动运行“服务器接管预检”，输入环境名和已通过 Release 验收的完整 SHA。预检会验证 SSH、服务器身份、权限、运行配置、旧数据卷、Compose、Nginx、内外网 ready 和私有 GHCR 镜像读取能力，但不会改变容器或卷状态。预检 PASS 前不得启用 `RELEASE_V2_ENABLED`。
 
+如果目标 Release 已经完成构建和真实集成验收，但当时因 `RELEASE_V2_ENABLED=false` 跳过了测试部署，接管时运行“部署已存在 Release 到测试”，输入同一完整 SHA。该流程先从 GHCR 下载并校验既有 Manifest 和前端包，再调用统一部署流程；它禁止重新构建镜像或静态包，部署成功后发布 production 推广所需的 `tested-release` 凭据。
+
 ## 6. 新服务器首次发布
 
 没有旧数据的新服务器可直接执行：
