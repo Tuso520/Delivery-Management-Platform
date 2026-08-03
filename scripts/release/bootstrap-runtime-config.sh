@@ -50,6 +50,19 @@ container_env_optional() {
     ' || die "legacy container contains duplicate setting: $key"
 }
 
+container_command_value() {
+  local container="$1"
+  local flag="$2"
+  docker inspect --format '{{json .Config.Cmd}}' "$container" | \
+    jq -er --arg flag "$flag" '
+      if type != "array" or ([.[] | select(. == $flag)] | length) != 1 then
+        empty
+      else
+        .[(index($flag) + 1)] | select(type == "string" and length > 0)
+      end
+    ' || die "legacy container command is missing exactly one value after: $flag"
+}
+
 volume_for_destination() {
   local container="$1"
   local destination="$2"
@@ -94,7 +107,7 @@ main() {
   [[ "$PUBLIC_ORIGIN" =~ ^https://[^/]+/?$ ]] || die 'PUBLIC_ORIGIN must be an HTTPS origin'
   PUBLIC_ORIGIN="${PUBLIC_ORIGIN%/}"
 
-  for command in awk base64 curl docker getent grep id install mktemp mv openssl rm stat tr wc; do
+  for command in awk base64 curl docker getent grep id install jq mktemp mv openssl rm stat tr wc; do
     require_command "$command"
   done
   getent passwd "$DEPLOY_OWNER" >/dev/null || die "deployment account does not exist: $DEPLOY_OWNER"
@@ -116,7 +129,10 @@ main() {
   mysql_database="$(container_env_required "$mysql_container" MYSQL_DATABASE)"
   mysql_user="$(container_env_required "$mysql_container" MYSQL_USER)"
   mysql_user_password="$(container_env_required "$mysql_container" MYSQL_PASSWORD)"
-  redis_password="$(container_env_required "$redis_container" REDIS_PASSWORD)"
+  redis_password="$(container_env_optional "$redis_container" REDIS_PASSWORD)"
+  if [ -z "$redis_password" ]; then
+    redis_password="$(container_command_value "$redis_container" --requirepass)"
+  fi
   minio_root_user="$(container_env_required "$minio_container" MINIO_ROOT_USER)"
   minio_root_password="$(container_env_required "$minio_container" MINIO_ROOT_PASSWORD)"
   minio_bucket="$(container_env_required "$backend_container" MINIO_BUCKET)"
