@@ -186,6 +186,17 @@ wait_container_healthy() {
   return 1
 }
 
+log_image_size() {
+  local role="$1"
+  local image="$2"
+  local bytes mib
+  bytes="$(docker image inspect "$image" --format '{{.Size}}')" || \
+    die "cannot inspect the pulled $role image"
+  [[ "$bytes" =~ ^[0-9]+$ ]] || die "invalid $role image size"
+  mib=$(( (bytes + 1048575) / 1048576 ))
+  log "$role image size: ${mib} MiB (${bytes} bytes)"
+}
+
 ensure_data_layer() {
   data_compose config -q
   data_compose up -d mysql redis minio
@@ -365,6 +376,8 @@ deploy_release() {
   ensure_data_layer
   log 'pulling immutable application images while the current release remains online'
   app_compose_with "$RELEASE_ENV_FILE" pull backend backend-migrate file-worker outbox-worker
+  log_image_size backend "$BACKEND_IMAGE"
+  log_image_size migrator "$MIGRATION_IMAGE"
   stop_application
   create_backup
   run_migrations

@@ -240,16 +240,16 @@ Vue Route
 | 后端 ESLint | PASS，0 error；38 个既有 Seed/Verify `console` warning |
 | 后端 TypeScript / Nest Build | PASS / PASS |
 | 后端 Jest | PASS，74 套件 / 548 用例 |
-| 权限、架构、Prisma、文档、Release 门禁 | PASS；86 权限、16 角色、前端循环 0、27 个历史 Model 生产调用 0、发布契约 8/8 |
+| 权限、架构、Prisma、文档、Release 门禁 | PASS；86 权限、16 角色、前端循环 0、27 个历史 Model 生产调用 0、发布契约 20/20 |
 | Release Shell / YAML 静态检查 | PASS；deploy/restore `bash -n`，5 个 workflow 与 2 个 v2 Compose YAML 可解析 |
 | 本地视觉验收 | PASS，5/5；项目台账、项目档案、档案模板、项目弹窗已有三联对比，标准库缺少项目内设计参考图并明确标记 |
 | Compose 配置 | PASS；基础、生产、测试、v2 数据和 v2 应用共 5 组 `config -q`，未启动容器 |
-| v2 镜像构建 / 真实集成 E2E | PENDING，必须由推送后的 Node 20 CI 使用正式 Release 验证 |
-| 测试/生产服务器接管 | PENDING，由用户按 `docs/deployment-architecture-v2.md` 配置服务器与 GitHub Environment 后执行 |
+| v2 镜像构建 / 真实集成 E2E | PASS；Release `b5b5da52e1c4` 的后端、迁移镜像、前端包、Manifest、真实 MySQL/Redis/MinIO、API 与浏览器验收全部通过 |
+| 测试/生产服务器接管 | 测试 PASS：main 自动发布、成对备份、45 个 migration、迁移校验、原子前端切换及内外网检查通过；生产 PENDING，等待按教程提供独立服务器和 Environment 参数 |
 
 ### 8.7 下一步优先级
 
-1. P0：按 v2 教程完成测试服务器接管和首次 Release，取得真实 integration/deploy 证据后再推广生产。
+1. P0：按 v2 教程完成生产服务器一次性接管，配置独立 Environment 参数，并以测试验收凭据人工审批推广同一 Release。
 2. P1：继续拆分 Knowledge、Archive、Project 大页面，目标是页面只保留组合与路由协调。
 3. P1：为审计补偿、Outbox、文件任务和 v2 备份接入积压/容量告警与定期恢复演练。
 4. P2：按治理台账对 27 个历史 Model 做生产只读盘点，再决定分批迁移和删除。
@@ -258,7 +258,7 @@ Vue Route
 ### 8.8 部署与测试架构
 
 - 本地默认使用 `scripts/local-quality.ps1` 和 `scripts/local-visual.ps1`，不启动 WSL、Docker 或真实数据服务；视觉报告同时展示设计参考、本次实现和差异叠加，缺失基准时明确失败降级而不伪造参考图。
-- GitHub 质量检查通过后只构建一次后端 runtime、migrator 和前端静态包；`release-manifest.json` 绑定完整 Git SHA、镜像 digest、前端 checksum 与 migration 数量。
+- GitHub 质量检查通过后只构建一次后端 runtime、migrator 和前端静态包；`release-manifest.json` 绑定完整 Git SHA、镜像 digest、前端 checksum 与 migration 数量。migrator 继承精简 runtime 以复用镜像层，只增加固定版本迁移命令，不携带 builder 工具链。
 - 测试和生产各自保留内部 MySQL、Redis、MinIO，但数据 Compose 与应用 Compose 分离；数据端口只监听 localhost，应用发布不删除命名卷。
 - 宿主 Nginx 直接服务 `current/frontend`，发布脚本在停写、成对备份、migration、API/Worker 稳定后原子切换前端，并同时检查内网和公网 Release ID。
 - 测试服务器由 main 的已验收 Release 自动发布；生产只接受同一测试验证凭据，经 `production` Environment 人工审批后原地切换，不重新构建。

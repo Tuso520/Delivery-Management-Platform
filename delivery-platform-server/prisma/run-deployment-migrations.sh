@@ -25,14 +25,21 @@ trap finish_migration_run EXIT
 
 for required_file in \
   prisma/schema.prisma \
-  prisma/migrations/migration_lock.toml \
-  node_modules/.bin/prisma \
-  node_modules/.bin/ts-node; do
+  prisma/migrations/migration_lock.toml; do
   if [ ! -e "$required_file" ]; then
     printf '[migrate] required migration file is missing: %s\n' "$required_file" >&2
     exit 1
   fi
 done
+
+command -v prisma >/dev/null 2>&1 || {
+  printf '[migrate] required migration command is missing: prisma\n' >&2
+  exit 1
+}
+command -v ts-node >/dev/null 2>&1 || {
+  printf '[migrate] required migration command is missing: ts-node\n' >&2
+  exit 1
+}
 
 node <<'NODE'
 const required = [
@@ -63,18 +70,18 @@ process.stdout.write(
 );
 NODE
 
-./node_modules/.bin/prisma validate
+prisma validate
 
 current_stage="schema preparation"
 node prisma/prepare-migrate.js
 current_stage="Prisma schema migration"
-./node_modules/.bin/prisma migrate deploy
+prisma migrate deploy
 current_stage="applied migration verification"
-./node_modules/.bin/ts-node --transpile-only prisma/verify-applied-migrations.ts
+ts-node --transpile-only prisma/verify-applied-migrations.ts
 
 # Bootstrap the configured migration actor and target reference data first.
 current_stage="first target seed"
-./node_modules/.bin/ts-node --transpile-only prisma/seed.ts
+ts-node --transpile-only prisma/seed.ts
 
 # Stored levels are deterministically rebuilt from parent relations, and a
 # folder with direct files is deterministically split into a folder plus a
@@ -83,7 +90,7 @@ current_stage="first target seed"
 # before any data migrator applies target rows.
 archive_audit_report="$(mktemp)"
 current_stage="archive migration audit"
-./node_modules/.bin/ts-node --transpile-only prisma/archive-migration-audit.ts \
+ts-node --transpile-only prisma/archive-migration-audit.ts \
   > "$archive_audit_report"
 cat "$archive_audit_report"
 # The single-quoted program is JavaScript; its template expression must be
@@ -141,37 +148,37 @@ archive_audit_report=""
 # Every data migrator is dry-run first, applies with an auditable active actor,
 # and later passes a read-only strict gate before application traffic can start.
 current_stage="target content strict dry-run"
-./node_modules/.bin/ts-node --transpile-only prisma/migrate-target-content.ts --strict
+ts-node --transpile-only prisma/migrate-target-content.ts --strict
 current_stage="target content apply"
-./node_modules/.bin/ts-node --transpile-only prisma/migrate-target-content.ts \
+ts-node --transpile-only prisma/migrate-target-content.ts \
   --apply "--actor-username=$actor_username"
 current_stage="target foundation strict dry-run"
-./node_modules/.bin/ts-node --transpile-only prisma/migrate-target-foundation.ts --strict
+ts-node --transpile-only prisma/migrate-target-foundation.ts --strict
 current_stage="target foundation apply"
-./node_modules/.bin/ts-node --transpile-only prisma/migrate-target-foundation.ts \
+ts-node --transpile-only prisma/migrate-target-foundation.ts \
   --apply "--actor-username=$actor_username" --strict
 current_stage="integration secret dry-run"
-./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts
+ts-node --transpile-only prisma/migrate-integration-secrets.ts
 current_stage="integration secret apply"
-./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts \
+ts-node --transpile-only prisma/migrate-integration-secrets.ts \
   --apply "--actor-username=$actor_username"
 
 # A second seed run is an idempotency gate and must not recreate retired data
 # or file-less standard content after the migration has converged.
 seed_count_snapshot="$(mktemp)"
 current_stage="seed count snapshot"
-./node_modules/.bin/ts-node --transpile-only prisma/verify-seed-idempotency.ts \
+ts-node --transpile-only prisma/verify-seed-idempotency.ts \
   --capture "$seed_count_snapshot"
 current_stage="second target seed"
-./node_modules/.bin/ts-node --transpile-only prisma/seed.ts
+ts-node --transpile-only prisma/seed.ts
 current_stage="second seed count verification"
-./node_modules/.bin/ts-node --transpile-only prisma/verify-seed-idempotency.ts \
+ts-node --transpile-only prisma/verify-seed-idempotency.ts \
   --verify "$seed_count_snapshot"
 rm -f "$seed_count_snapshot"
 seed_count_snapshot=""
 current_stage="target content strict verification"
-./node_modules/.bin/ts-node --transpile-only prisma/migrate-target-content.ts --verify --strict
+ts-node --transpile-only prisma/migrate-target-content.ts --verify --strict
 current_stage="target foundation strict verification"
-./node_modules/.bin/ts-node --transpile-only prisma/migrate-target-foundation.ts --verify --strict
+ts-node --transpile-only prisma/migrate-target-foundation.ts --verify --strict
 current_stage="integration secret verification"
-./node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts --verify
+ts-node --transpile-only prisma/migrate-integration-secrets.ts --verify

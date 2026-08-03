@@ -1834,7 +1834,7 @@ verify_integration_ciphertext_readable() {
   ciphertext_count="$(encrypted_integration_config_count)" || return 1
   [ "$ciphertext_count" != "0" ] || return 0
   compose run --rm --no-deps backend-migrate \
-    sh -c './node_modules/.bin/ts-node --transpile-only prisma/migrate-integration-secrets.ts --verify' || return 1
+    sh -c 'ts-node --transpile-only prisma/migrate-integration-secrets.ts --verify' || return 1
 }
 
 backup_database() {
