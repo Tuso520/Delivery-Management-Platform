@@ -18,6 +18,14 @@ const deployExistingWorkflow = await readFile(
   new URL('../../.github/workflows/deploy-existing-release.yml', import.meta.url),
   'utf8',
 )
+const releaseWorkflow = await readFile(
+  new URL('../../.github/workflows/release.yml', import.meta.url),
+  'utf8',
+)
+const legacyDeployWorkflow = await readFile(
+  new URL('../../.github/workflows/deploy.yml', import.meta.url),
+  'utf8',
+)
 const runtimeBootstrap = await readFile(
   new URL('./bootstrap-runtime-config.sh', import.meta.url),
   'utf8',
@@ -287,6 +295,9 @@ test('runtime and migrator images share production layers without shipping build
   )
   assert.match(backendDockerfile, /\/app\/tsconfig\.json \.\/tsconfig\.json/u)
   assert.match(backendDockerfile, /npm cache clean --force/u)
+  for (const workflow of [releaseWorkflow, legacyDeployWorkflow]) {
+    assert.doesNotMatch(workflow, /node_modules\/\.bin\/(?:prisma|ts-node)/u)
+  }
 })
 
 test('no-domain Nginx entry keeps ACME on HTTP and serves the application over IP HTTPS', () => {
