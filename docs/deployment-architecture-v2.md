@@ -1,6 +1,6 @@
 # 发布与服务器架构 v2
 
-状态：实施中；仓库侧发布链路已建立，测试/生产服务器需按本文完成一次性接管后才可启用自动发布。
+状态：仓库侧发布链路已建立；每台目标服务器完成本文的一次性接管后，才可启用对应环境的发布。
 
 本文是“前端静态包 + 后端不可变镜像、服务器内置独立数据层、宿主 Nginx 原地切换”的操作基线。旧版 `deploy-git.sh` 和 `.github/workflows/deploy.yml` 仅用于首发前备份或迁移期人工兜底，不再作为日常发布入口。
 
@@ -318,9 +318,9 @@ docker inspect delivery-minio --format '{{range .Mounts}}{{println .Name .Destin
 4. 批准 GitHub Environment 部署。
 5. 新部署脚本会用原卷启动数据层、再做一次 v2 成对备份、执行 migration、启动 API/Worker、原子切换前端并验证内外网入口。
 
-首发 strict dry-run 若报告 `TARGET_CONTENT_AGGREGATE_WITHOUT_VERSION`，不得启动旧应用或做代码单独回滚。新版内容 migrator 只对状态可识别的无版本 Standard 做无删除恢复：使用稳定 ID 创建 `V1.0`，通过 MinIO 实体、SHA-256、文件索引和 published pointer 校验后才允许继续；任何未知状态、ID 冲突或对象冲突仍阻断。测试数据生成完成后，CI 与服务器 seed 流程会再次执行内容迁移的 strict dry-run、apply、strict verify，避免下一次发布重新遇到同类数据。
+首发 strict dry-run 若报告 `TARGET_CONTENT_AGGREGATE_WITHOUT_VERSION`，不得启动旧应用或做代码单独回滚。新版内容 migrator 只对状态可识别的无版本 Standard 做无删除恢复：使用稳定 ID 创建 `V1.0`，通过 MinIO 实体、SHA-256、文件索引和 published pointer 校验后才允许继续；任何未知状态、ID 冲突或对象冲突仍阻断。CI 的真实集成验收会在生成测试数据后再次执行内容迁移的 strict dry-run、apply、strict verify，避免下一次发布重新遇到同类数据；服务器发布只执行正式基础种子，不生成演示测试数据。
 
-若测试服务器明确为可销毁环境，可手动运行“部署已存在 Release 到测试”，把 `reset_test_data` 设为 `true`。该选项只允许 `test` Environment：作业核对服务器 target-id、runtime 文件权限及 Compose 解析出的三个命名卷，停止应用后执行数据层 `down --volumes --remove-orphans`，逐卷确认已删除，再在同一次发布中创建空数据层、迁移和生成测试数据。production 调用传入该选项会立即失败；生产数据重置不属于自动发布能力。
+若测试服务器明确为可销毁环境，可手动运行“部署已存在 Release 到测试”，把 `reset_test_data` 设为 `true`。该选项只允许 `test` Environment：作业核对服务器 target-id、runtime 文件权限及 Compose 解析出的三个命名卷，停止应用后执行数据层 `down --volumes --remove-orphans`，逐卷确认已删除，再在同一次发布中创建空数据层、执行迁移和正式基础种子。production 调用传入该选项会立即失败；生产数据重置不属于自动发布能力。
 
 旧 Compose 的具体 `-f` 参数必须沿用服务器原来的启动参数。例如原来是：
 
