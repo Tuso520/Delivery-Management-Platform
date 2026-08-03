@@ -40,15 +40,11 @@ RUN pnpm build
 FROM builder AS runtime-deps
 RUN pnpm prune --prod
 
-# ---- 运行阶段 ----
-FROM ${NODE_IMAGE} AS runtime
-ARG RELEASE_ID
+# ---- 稳定运行文件层 ----
+FROM ${NODE_IMAGE} AS runtime-base
 ARG DEBIAN_MIRROR=http://deb.debian.org/debian
 ARG DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security
 WORKDIR /app
-ENV RELEASE_ID=${RELEASE_ID}
-LABEL org.opencontainers.image.title="delivery-platform-backend" \
-      org.opencontainers.image.version="${RELEASE_ID}"
 
 RUN sed -i \
     -e "s#https\?://deb.debian.org/debian-security#${DEBIAN_SECURITY_MIRROR}#g" \
@@ -63,27 +59,34 @@ COPY --chown=node:node --from=builder /app/dist ./dist
 COPY --chown=node:node --from=builder /app/prisma ./prisma
 COPY --chown=node:node --from=runtime-deps /app/node_modules ./node_modules
 
+# Release identity is metadata-only and intentionally follows every stable
+# filesystem layer so unchanged dependencies remain reusable across releases.
+FROM runtime-base AS runtime
+ARG RELEASE_ID
+ENV RELEASE_ID=${RELEASE_ID}
+LABEL org.opencontainers.image.title="delivery-platform-backend" \
+      org.opencontainers.image.version="${RELEASE_ID}"
+
 # 非 root 用户运行
 USER node
 
 EXPOSE 3000
 CMD ["node", "dist/main"]
 
-# The migrator extends the exact production runtime so both GHCR images share
+# The migrator extends the exact production file layers so both GHCR images share
 # the base, application and production-dependency layers on deployment hosts.
 # Only pinned migration CLIs are added; compiler toolchains and the builder's
 # complete development dependency tree never enter a published image.
-FROM runtime AS migrator
-ARG RELEASE_ID
+FROM runtime-base AS migrator
 ARG NPM_REGISTRY=https://registry.npmjs.org
-ENV RELEASE_ID=${RELEASE_ID}
-LABEL org.opencontainers.image.title="delivery-platform-migrator" \
-      org.opencontainers.image.version="${RELEASE_ID}"
-USER root
 RUN npm install --global --registry=${NPM_REGISTRY} --no-audit --no-fund \
       prisma@5.22.0 ts-node@10.9.2 typescript@5.5.4 \
   && npm cache clean --force
 COPY --chown=node:node --from=builder /app/tsconfig.json ./tsconfig.json
 COPY --chown=node:node --from=builder /app/src ./src
+ARG RELEASE_ID
+ENV RELEASE_ID=${RELEASE_ID}
+LABEL org.opencontainers.image.title="delivery-platform-migrator" \
+      org.opencontainers.image.version="${RELEASE_ID}"
 USER node
 CMD ["sh", "prisma/run-deployment-migrations.sh"]
