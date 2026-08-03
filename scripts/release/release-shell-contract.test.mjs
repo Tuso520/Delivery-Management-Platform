@@ -208,6 +208,7 @@ test('runtime bootstrap preserves live credentials without reading or printing l
     'this one-time bootstrap must run as $DEPLOY_OWNER',
     'docker inspect',
     'MYSQL_ROOT_PASSWORD',
+    '--requirepass',
     'INTEGRATION_SECRET_ENCRYPTION_KEY',
     'runtime.env already exists; refusing to overwrite it',
     'No secret values were printed; legacy containers were not modified.',
