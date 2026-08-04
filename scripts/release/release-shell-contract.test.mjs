@@ -221,6 +221,34 @@ test('remote image pulls use a job-scoped GHCR credential and always log out', (
   assert.match(deployWorkflow, /if: \$\{\{ always\(\) \}\}/u)
 })
 
+test('missing immutable images use a checksummed and resumable SSH preload before data reset', () => {
+  occursInOrder(deployWorkflow, [
+    '检查目标服务器不可变镜像缓存',
+    '准备缺失镜像的 SSH 传输包',
+    '上传发布控制文件',
+    '分片上传缺失镜像',
+    'case "$PRELOAD_IMAGE_BUNDLE"',
+    'checksummed SSH image preload completed',
+    'case "$RESET_TEST_DATA"',
+  ])
+  for (const contract of [
+    'docker save "$backend_id" "$migration_id"',
+    'sha256sum release/application-images.tar.gz',
+    'split -b 32M -d -a 4',
+    'test "$(stat -c \'%s\' "$image_bundle_part")" = "$expected_bytes"',
+    'gzip -dc "$image_bundle" | docker load',
+    'timeout --foreground 5m docker pull "$image"',
+    '[[ "$stage" == "/tmp/delivery-release-${release_id}-"* ]]',
+    '清理目标服务器临时发布目录',
+    '清理 Runner 临时 GHCR 凭据',
+  ]) {
+    assert.match(
+      deployWorkflow,
+      new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'),
+    )
+  }
+})
+
 test('server takeover preflight verifies safety gates without changing runtime state', () => {
   for (const contract of [
     'preflight must run as dmpdeploy',
