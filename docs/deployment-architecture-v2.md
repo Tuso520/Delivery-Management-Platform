@@ -353,7 +353,7 @@ sudo -u <nginx-worker-user> test -r /srv/delivery-platform/current/frontend/inde
 
 日常测试发布无需 SSH 登录：main 质量门禁成功后自动构建、真实验收并发布 test。生产操作员从测试环境的 `build-info.json` 取得完整 Release 对应 SHA，在 GitHub Actions 手动运行“推广已验收 Release 到生产”，审批时核对变更单、备份空间和维护窗口。
 
-镜像在当前 Release 在线期间预拉取，下载时间不计入停机窗口。统一部署工作流先按 Manifest digest 检查目标服务器缓存；若缺失，由 GitHub Runner 从 GHCR 拉取一次，将去重后的镜像内容用 `gzip -9` 压缩、记录总字节数和分片数、按 32 MiB 分片并经固定 host key 的 SSH 逐片原子上传。服务器在任何数据清理、备份或 migration 之前校验完整字节数和 SHA-256、执行 `docker load`，再短连 GHCR 将本地层绑定到原始 digest；因此 Compose 和 Release Manifest 仍使用原始不可变 digest，不改用浮动 tag。分片或校验失败只清理受控临时目录，旧 Release 保持在线。目标服务器已存在两个 digest 时跳过整段镜像传输。
+镜像在当前 Release 在线期间预拉取，下载时间不计入停机窗口。统一部署工作流先按 Manifest digest 检查目标服务器缓存；若缺失，由 GitHub Runner 从 GHCR 拉取一次，将去重后的镜像内容用 `gzip -9` 压缩、记录总字节数和分片数、按 32 MiB 分片并经固定 host key 的 SSH 最多四片受控并发上传。每片输出开始/完成进度、最多重试三次，并通过临时文件原子改名。服务器在任何数据清理、备份或 migration 之前校验完整字节数和 SHA-256、执行 `docker load`，再短连 GHCR 将本地层绑定到原始 digest；因此 Compose 和 Release Manifest 仍使用原始不可变 digest，不改用浮动 tag。分片或校验失败只清理受控临时目录，旧 Release 保持在线。目标服务器已存在两个 digest 时跳过整段镜像传输。
 
 测试服务器在缓存失效基线中直接拉取 135 MiB runtime 与 174 MiB migrator 共耗时 13 分 42 秒，而拉取后的备份、迁移校验、幂等 seed、启动和原子切换约 46 秒；另一次稳定层重建受 GHCR 链路波动影响，36 分钟仍未完成并在停机前安全取消，原 Release 始终保持 `ready`。部署脚本仍给直接 digest 拉取设置 20 分钟上限并最多续传重试 3 次，作为 SSH 预载后的二次完整性确认和已有缓存的兼容门禁；首次内容构建 Release `79e41eb29d40` 的部署受 GHCR 冷拉取影响共耗时 40 分 37 秒，第一次 20 分钟超时后由第二次续传完成，切换窗口仅观察到一次 `502`，11 秒内恢复 `ready`。
 

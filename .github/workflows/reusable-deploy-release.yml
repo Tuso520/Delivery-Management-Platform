@@ -173,6 +173,7 @@ jobs:
             local source="$1" name attempt
             name="$(basename -- "$source")"
             [[ "$name" =~ ^image-bundle\.(sha256|bytes|part-[0-9]{4})$ ]]
+            printf 'upload start: %s\n' "$name"
             for attempt in 1 2 3; do
               if scp -i ~/.ssh/deploy_key -P "$SERVER_PORT" \
                 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
@@ -193,6 +194,7 @@ jobs:
           mv -f -- "$stage/.upload-$name" "$stage/$name"
           REMOTE
               then
+                printf 'upload complete: %s\n' "$name"
                 return 0
               fi
               sleep $((attempt * 5))
@@ -203,8 +205,23 @@ jobs:
 
           upload_one release/image-bundle.sha256
           upload_one release/image-bundle.bytes
-          for part in release/image-bundle.part-*; do
-            upload_one "$part"
+          mapfile -t image_parts < <(find release -maxdepth 1 -type f \
+            -name 'image-bundle.part-*' -print | sort)
+          ((${#image_parts[@]} > 0))
+          printf 'uploading %s image parts with concurrency 4\n' "${#image_parts[@]}"
+          for ((offset = 0; offset < ${#image_parts[@]}; offset += 4)); do
+            pids=()
+            for part in "${image_parts[@]:offset:4}"; do
+              upload_one "$part" &
+              pids+=("$!")
+            done
+            upload_failed=0
+            for pid in "${pids[@]}"; do
+              if ! wait "$pid"; then
+                upload_failed=1
+              fi
+            done
+            ((upload_failed == 0)) || exit 1
           done
 
       - name: 执行服务器原地切换
