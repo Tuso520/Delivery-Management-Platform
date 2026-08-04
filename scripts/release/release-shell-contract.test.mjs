@@ -35,6 +35,10 @@ const runtimeBootstrapWorkflow = await readFile(
   new URL('../../.github/workflows/bootstrap-runtime-config.yml', import.meta.url),
   'utf8',
 )
+const runtimeConfigTemplate = await readFile(
+  new URL('../../deploy/runtime-config.template', import.meta.url),
+  'utf8',
+)
 const nginxAppSnippet = await readFile(
   new URL('../../deploy/nginx/delivery-platform-app.inc.template', import.meta.url),
   'utf8',
@@ -274,6 +278,14 @@ test('runtime bootstrap preserves live credentials without reading or printing l
   }
   assert.doesNotMatch(runtimeBootstrap, /(?:source|cat|cp)[^\n]*\.env/u)
   assert.doesNotMatch(runtimeBootstrap, /docker\s+(?:stop|restart|rm|compose\s+(?:up|down))/u)
+})
+
+test('migration count belongs to the immutable release instead of long-lived server configuration', () => {
+  assert.match(deploy, /\.migrations\.expectedCount/u)
+  assert.match(deploy, /printf 'EXPECTED_MIGRATION_COUNT=%s\\n' "\$EXPECTED_MIGRATION_COUNT"/u)
+  for (const longLivedConfig of [runtimeConfigTemplate, runtimeBootstrap, serverPreflight]) {
+    assert.doesNotMatch(longLivedConfig, /EXPECTED_MIGRATION_COUNT/u)
+  }
 })
 
 test('runtime bootstrap workflow is manual, environment-bound and removes its remote script', () => {
