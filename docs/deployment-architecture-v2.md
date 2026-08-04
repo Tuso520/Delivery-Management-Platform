@@ -321,7 +321,7 @@ docker inspect delivery-minio --format '{{range .Mounts}}{{println .Name .Destin
 
 首发 strict dry-run 若报告 `TARGET_CONTENT_AGGREGATE_WITHOUT_VERSION`，不得启动旧应用或做代码单独回滚。新版内容 migrator 只对状态可识别的无版本 Standard 做无删除恢复：使用稳定 ID 创建 `V1.0`，通过 MinIO 实体、SHA-256、文件索引和 published pointer 校验后才允许继续；任何未知状态、ID 冲突或对象冲突仍阻断。CI 的真实集成验收会在生成测试数据后再次执行内容迁移的 strict dry-run、apply、strict verify，避免下一次发布重新遇到同类数据；服务器发布只执行正式基础种子，不生成演示测试数据。
 
-若测试服务器明确为可销毁环境，可手动运行“部署已存在 Release 到测试”，把 `reset_test_data` 设为 `true`。该选项只允许 `test` Environment：作业核对服务器 target-id、runtime 文件权限及 Compose 解析出的三个命名卷，停止应用后执行数据层 `down --volumes --remove-orphans`，逐卷确认已删除，再在同一次发布中创建空数据层、执行迁移和正式基础种子。production 调用传入该选项会立即失败；生产数据重置不属于自动发布能力。
+若测试服务器明确为可销毁环境，可手动运行“部署已存在 Release 到测试”，把 `reset_test_data` 设为 `true`。该选项只允许 `test` Environment：作业核对服务器 target-id、runtime 文件权限及 Compose 解析出的三个命名卷，停止应用后执行数据层 `down --volumes --remove-orphans`，逐卷确认已删除，再在同一次发布中创建空数据层、执行迁移和正式基础种子。远程编排通过 SSH 标准输入传入脚本，因此两个 `docker compose down` 都显式从 `/dev/null` 读取，禁止 Compose 吞掉脚本中后续的重建命令；外部发布号和 `/ready` 另有最长 60 秒的稳定化重试。production 调用传入该选项会立即失败；生产数据重置不属于自动发布能力。
 
 旧 Compose 的具体 `-f` 参数必须沿用服务器原来的启动参数。例如原来是：
 

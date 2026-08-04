@@ -456,9 +456,9 @@ jobs:
                 '
 
               docker compose --env-file "$runtime_env" --env-file "$reset_release_env" \
-                -f "$APP_ROOT/control/app.yml" down --remove-orphans
+                -f "$APP_ROOT/control/app.yml" down --remove-orphans </dev/null
               docker compose --env-file "$runtime_env" -f "$APP_ROOT/control/data.yml" \
-                down --volumes --remove-orphans
+                down --volumes --remove-orphans </dev/null
               for volume in "${reset_volumes[@]}"; do
                 ! docker volume inspect "$volume" >/dev/null 2>&1
               done
@@ -487,10 +487,19 @@ jobs:
         run: |
           set -Eeuo pipefail
           expected="${RELEASE_ID:0:12}"
-          actual="$(curl -fsS --connect-timeout 10 --max-time 30 -H 'Cache-Control: no-cache' \
-            "${PUBLIC_ORIGIN%/}/build-info.json" | jq -r '.releaseId')"
-          test "$actual" = "$expected"
-          curl -fsS --connect-timeout 10 --max-time 30 "${PUBLIC_ORIGIN%/}/api/v1/ready" >/dev/null
+          verified='false'
+          for attempt in {1..12}; do
+            actual="$(curl -fsS --connect-timeout 10 --max-time 15 -H 'Cache-Control: no-cache' \
+              "${PUBLIC_ORIGIN%/}/build-info.json" 2>/dev/null | jq -r '.releaseId' 2>/dev/null || true)"
+            if [ "$actual" = "$expected" ] && \
+              curl -fsS --connect-timeout 10 --max-time 15 \
+                "${PUBLIC_ORIGIN%/}/api/v1/ready" >/dev/null 2>&1; then
+              verified='true'
+              break
+            fi
+            sleep 5
+          done
+          test "$verified" = true
 
       - name: 清理目标服务器临时发布目录
         if: ${{ always() }}
