@@ -29,6 +29,8 @@ Lint 命令会修正可自动修复的格式；执行后必须重新检查工作
 
 真实 Docker/集成测试必须从 `.env.local.example` 创建被 Git 忽略的 `.env.local`，并显式注入非空、非 `CHANGE_ME...` 的 `SEED_ADMIN_PASSWORD` 和 `SEED_DEFAULT_PASSWORD`。测试 Compose 默认不重置既有种子账号；需要验证密码轮换时，必须在隔离数据库中显式设置 `SEED_RESET_EXISTING_USER_PASSWORDS=true`。
 
+正式服务器和测试服务器不得设置 `SEED_INCLUDE_DEMO_DATA=true`。该开关只供 CI 隔离数据库创建权限矩阵所需演示账号和示例项目；服务器空库执行 seed 后应只存在唯一 `admin` 系统账号，飞书用户必须来自管理员手动通讯录同步。
+
 ## 真实 API E2E
 
 `delivery-platform-server/test/real-api.e2e-spec.ts` 只连接已经启动的真实 NestJS、MySQL、Redis 和 MinIO，不使用页面模拟服务。账号通过临时环境变量提供，不写入仓库：
@@ -90,7 +92,7 @@ UI E2E 默认使用 Playwright 锁定版本的 Chromium，CI 通过 `playwright 
    历史上只有 Standard 聚合、没有 StandardVersion 的记录不得删除：内容迁移必须先为可识别状态确定性规划 `V1.0`，再通过同一 MinIO 对象、checksum、LogicalFile、FileAsset 和 FileVersion 门禁落库；未知状态继续 fail closed。测试数据补齐后必须再次执行 strict dry-run、apply 和只读 strict verify，禁止把无版本聚合留给下一次发布。
 9. UI 翻译退役只允许把 `translations` 原子归档为 `retired_ui_translations_20260713`，部署表计数报告必须证明行数未减少；运行时 Prisma、seed 和 API 不再读写该表。
 10. 迁移失败不得继续启动 API 或 Worker；回滚必须成对恢复数据库和 MinIO。
-11. `_prisma_migrations` 必须恰好包含源码中的 45 个有效迁移，每个迁移完成且 `migration.sql` SHA-256 与数据库记录一致；数据库中不得存在源码缺失的有效迁移。
+11. `_prisma_migrations` 必须恰好包含源码中的 46 个有效迁移，每个迁移完成且 `migration.sql` SHA-256 与数据库记录一致；数据库中不得存在源码缺失的有效迁移。
 12. 三组 migrator apply 完成后捕获全部业务表计数，第二次 seed 后逐表比较；任一表新增、减少或消失均阻断应用启动。
 13. 真实浏览器验收必须上传私有 PNG、通过鉴权下载并逐字节回读原文件，等待 File Worker 生成 WebP 缩略图，并确认 `ArchiveFileUploaded` 与 `FileProcessingCompleted` Outbox 事件进入终态。
 
@@ -108,7 +110,7 @@ UI E2E 默认使用 Playwright 锁定版本的 Chromium，CI 通过 `playwright 
 
 ## 2026-08-02 当前仓库侧验收状态
 
-源码静态事实由 `node scripts/verify-doc-facts.mjs` 在每次验收中重新计算。当前仓库扫描范围为 700 个受版本控制或待纳入版本控制的文件；前端 193 个 TypeScript/Vue 文件、24 个 `views/` Vue 文件、26 个运行时 API 文件和 44 个测试文件；后端 248 个 TypeScript 文件、28 个 Controller、42 个 Service、30 个 Module、170 个 HTTP 路由和 45 个 Prisma migration。以上数字只作为本次交付快照，后续发布仍以脚本实时计算结果为准。
+源码静态事实由 `node scripts/verify-doc-facts.mjs` 在每次验收中重新计算。当前仓库扫描范围为 708 个受版本控制或待纳入版本控制的文件；前端 194 个 TypeScript/Vue 文件、24 个 `views/` Vue 文件、27 个运行时 API 文件和 44 个测试文件；后端 252 个 TypeScript 文件、28 个 Controller、43 个 Service、30 个 Module、175 个 HTTP 路由和 46 个 Prisma migration。以上数字只作为本次交付快照，后续发布仍以脚本实时计算结果为准。
 
 发布迁移验收脚本核对应用迁移与校验和、二次 seed 全库表计数以及 MinIO/File Worker/Outbox Worker 一致性。日常本机不再启动这些依赖；相同正式发布物的真实依赖验收由 `.github/workflows/release.yml` 的 integration 作业执行。
 
@@ -124,7 +126,7 @@ UI E2E 默认使用 Playwright 锁定版本的 Chromium，CI 通过 `playwright 
 - 本地视觉验收 5/5 通过：项目台账、项目档案、档案模板、项目弹窗和标准库均使用单浏览器 Worker；前四项生成设计/实现/差异三联图，标准库因项目内尚无节点 `70:322` 参考截图而在报告中明确标记“缺少设计基准”。
 - 本机实际运行 Node.js 24.14.0、pnpm 11.9.0、Docker Compose 5.3.1；本地脚本以直接工具入口完成诊断，正式 CI 仍固定 Node.js 20、pnpm 10.34.4。基础、生产、测试和 v2 应用/数据共五组 `compose config -q` 均 PASS，本轮未启动或修改任何容器，不能替代真实依赖验收。
 
-这些结果只证明仓库侧轻量质量与视觉门禁通过。真实 MySQL、Redis、MinIO、45 个 migration、三个 migrator、API E2E 和浏览器权限矩阵，必须由同一 Release 的 GitHub integration 产生 PASS 后才可部署测试服务器；生产还必须取得测试验证凭据和 Environment 审批。
+这些结果只证明仓库侧轻量质量与视觉门禁通过。真实 MySQL、Redis、MinIO、46 个 migration、三个 migrator、API E2E 和浏览器权限矩阵，必须由同一 Release 的 GitHub integration 产生 PASS 后才可部署测试服务器；生产还必须取得测试验证凭据和 Environment 审批。
 
 ## GitHub 部署验收
 
@@ -132,7 +134,7 @@ UI E2E 默认使用 Playwright 锁定版本的 Chromium，CI 通过 `playwright 
 
 1. `质量检查` 必须在 Node 20、pnpm 10.34.4 下通过源码、文档、Release Shell、前后端测试/构建和三份 Compose config。
 2. Release 必须以完整 40 位 main 历史 SHA 标识；后端与迁移器只能使用 GHCR digest，前端 checksum 和 Manifest 必须一致。
-3. integration 必须使用上述正式发布物启动真实 MySQL、Redis、MinIO、API 和两个 Worker，执行 45 个 migration、三个数据 migrator、二次幂等 seed、真实 API/权限/浏览器 E2E。
+3. integration 必须使用上述正式发布物启动真实 MySQL、Redis、MinIO、API 和两个 Worker，执行 46 个 migration、三个数据 migrator、二次幂等 seed、真实 API/权限/浏览器 E2E。
 4. 测试部署必须核对固定 SSH host key、服务器 `target-id`、`runtime.env` 0600、MySQL/MinIO 成对备份、API/Worker 稳定性以及内外网 `/ready` 和 `build-info.json`。
 5. 只有测试部署成功后才可发布 `tested-release` 凭据；生产工作流必须验证该凭据并等待 `production` Environment 审批，不能重建 Release。
 6. migration 开始后的失败禁止代码单边回退；成对恢复必须显式确认、校验备份 checksum 与源 Release，并恢复 MySQL、MinIO、Redis、后端、Worker 和前端后重新检查内外网入口。

@@ -78,7 +78,8 @@ API、File Worker 和 Outbox Worker 使用同一构建产物，但以独立进�
 ### 通知与外部集成
 
 - 集成只保留飞书；Secret 使用独立密钥 AES-256-GCM 加密，API 只返回掩码。
-- 通讯录同步以数据库租约和 revision 防并发，结果写统一用户与 `ExternalIdentity`，冲突写脱敏同步日志。
+- 通讯录同步以数据库租约和 revision 防并发，组织层级、用户多标识和成员关系直接写统一模型，单用户故障隔离并返回精确计数。
+- 飞书 OAuth 使用 Redis 一次性 state/ticket，登录身份必须已同步、唯一绑定且启用；系统登录态仍由短期 Access Token 与 HttpOnly Refresh Session 管理。
 - Outbox Worker 按通知规则投递 `IN_APP / FEISHU`；`NotificationDelivery` 按事件、用户、通道保存幂等回执。缺身份/配置记录 `SKIPPED`，暂时失败重试，达到上限进入 `DEAD`。
 
 ## 数据迁移边界

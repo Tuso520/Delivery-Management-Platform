@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 import {
   Injectable,
@@ -15,20 +15,13 @@ import { v4 as uuidv4 } from 'uuid';
 import { withTransientPrismaReadRetry } from '../../database/prisma-transient-read';
 import { PrismaService } from '../../database/prisma.service';
 import { RedisService } from '../../database/redis.service';
+import { PermissionResolutionService } from '../permission/permission-resolution.service';
+import { IntegrationService } from '../platform/integration.service';
 import { SystemConfigService } from '../system-config/system-config.service';
 
 import { LoginDto } from './dto/login.dto';
 import { RefreshSessionService, type RefreshSessionContext } from './refresh-session.service';
 import { JwtPayload } from './strategies/jwt.strategy';
-
-interface UserWithRoles {
-  userRoles: Array<{
-    role: {
-      roleCode: string;
-      rolePermissions: Array<{ permission: { permissionCode: string } }>;
-    };
-  }>;
-}
 
 export type AuthUser = Omit<JwtPayload, 'iat' | 'exp' | 'jti'>;
 
@@ -47,23 +40,10 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly redisService: RedisService,
     private readonly refreshSessions: RefreshSessionService,
-    @Optional() private readonly systemConfig?: SystemConfigService,
+    @Optional() private readonly systemConfig: SystemConfigService | undefined,
+    private readonly permissionResolver: PermissionResolutionService,
+    @Optional() private readonly integrationService?: IntegrationService,
   ) {}
-
-  private extractRolesAndPermissions(user: UserWithRoles): {
-    roles: string[];
-    permissions: string[];
-  } {
-    const roles = user.userRoles.map((ur) => ur.role.roleCode);
-    const permissions = [
-      ...new Set(
-        user.userRoles.flatMap((ur) =>
-          ur.role.rolePermissions.map((rp) => rp.permission.permissionCode),
-        ),
-      ),
-    ];
-    return { roles, permissions };
-  }
 
   async validateUser(username: string, password: string): Promise<AuthUser> {
     const user = await withTransientPrismaReadRetry(() => this.prisma.user.findFirst({
@@ -105,7 +85,7 @@ export class AuthService {
       throw new UnauthorizedException('用户名或密码错误');
     }
 
-    const { roles, permissions } = this.extractRolesAndPermissions(user);
+    const { roles, permissions } = await this.resolveRolesAndPermissions(user.id);
     return {
       sub: user.id,
       username: user.username,
@@ -157,12 +137,135 @@ export class AuthService {
     };
   }
 
+  async beginFeishuLogin(redirectPath = '/dashboard'): Promise<{ authorizationUrl: string }> {
+    const integration = this.requireFeishuIntegration();
+    const settings = await integration.getFeishuOAuthSettings();
+    const state = randomBytes(32).toString('base64url');
+    await this.redisService.storeOneTimeJson(
+      'feishu-state',
+      this.hashOpaqueValue(state),
+      {
+        integrationConfigId: settings.integrationConfigId,
+        redirectPath: this.normalizeInternalPath(redirectPath),
+        redirectUri: settings.redirectUri,
+      },
+      5 * 60,
+    );
+    const authorizationUrl = new URL(
+      'https://accounts.feishu.cn/open-apis/authen/v1/authorize',
+    );
+    authorizationUrl.searchParams.set('app_id', settings.appId);
+    authorizationUrl.searchParams.set('redirect_uri', settings.redirectUri);
+    authorizationUrl.searchParams.set('state', state);
+    return { authorizationUrl: authorizationUrl.toString() };
+  }
+
+  async handleFeishuCallback(input: {
+    state: string;
+    code?: string;
+    error?: string;
+  }): Promise<string> {
+    const stateData = await this.redisService.consumeOneTimeJson(
+      'feishu-state',
+      this.hashOpaqueValue(input.state),
+    );
+    if (!stateData) throw new UnauthorizedException('飞书登录状态无效或已使用');
+    if (input.error || !input.code) throw new UnauthorizedException('飞书授权未完成');
+
+    const integrationConfigId = this.requiredStateString(stateData, 'integrationConfigId');
+    const redirectUri = this.requiredStateString(stateData, 'redirectUri');
+    const redirectPath = this.normalizeInternalPath(
+      this.requiredStateString(stateData, 'redirectPath'),
+    );
+    const external = await this.requireFeishuIntegration().exchangeFeishuOAuthCode(
+      integrationConfigId,
+      input.code,
+    );
+    const identityFilters = [
+      external.openId ? { openId: external.openId } : null,
+      external.unionId ? { unionId: external.unionId } : null,
+      external.tenantUserId ? { tenantUserId: external.tenantUserId } : null,
+    ].filter((value): value is NonNullable<typeof value> => Boolean(value));
+    const identities = await this.prisma.externalIdentity.findMany({
+      where: {
+        integrationConfigId,
+        provider: 'FEISHU',
+        isActive: true,
+        OR: identityFilters,
+      },
+      select: {
+        id: true,
+        userId: true,
+        user: { select: { status: true, deletedAt: true } },
+      },
+    });
+    const userIds = [...new Set(identities.map(({ userId }) => userId))];
+    if (userIds.length !== 1 || identities.length === 0) {
+      throw new UnauthorizedException('飞书账号尚未绑定唯一系统用户');
+    }
+    if (identities.some(({ user }) => user.deletedAt || user.status !== 'Active')) {
+      throw new UnauthorizedException('系统账号已停用或离职');
+    }
+    const userId = userIds[0];
+    await this.prisma.externalIdentity.updateMany({
+      where: { id: { in: identities.map(({ id }) => id) } },
+      data: { lastSeenAt: new Date() },
+    });
+
+    const ticket = randomBytes(32).toString('base64url');
+    await this.redisService.storeOneTimeJson(
+      'feishu-ticket',
+      this.hashOpaqueValue(ticket),
+      { userId, redirectPath },
+      60,
+    );
+    const callback = new URL('/login/feishu/callback', redirectUri);
+    callback.searchParams.set('ticket', ticket);
+    return callback.toString();
+  }
+
+  async completeFeishuLogin(
+    ticket: string,
+    context: RefreshSessionContext = {},
+  ): Promise<AuthSessionResult> {
+    const ticketData = await this.redisService.consumeOneTimeJson(
+      'feishu-ticket',
+      this.hashOpaqueValue(ticket),
+    );
+    if (!ticketData) throw new UnauthorizedException('飞书登录票据无效或已使用');
+    const userId = this.requiredStateString(ticketData, 'userId');
+    const user = await this.getProfile(userId);
+    const refresh = await this.refreshSessions.issue(userId, context);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { lastLoginAt: new Date() },
+    });
+    return {
+      accessToken: this.signAccessToken(user),
+      user,
+      defaultRoute: this.normalizeInternalPath(
+        this.requiredStateString(ticketData, 'redirectPath'),
+      ),
+      refreshToken: refresh.token,
+      refreshExpiresAt: refresh.expiresAt,
+    };
+  }
+
   async refresh(
     refreshToken: string,
     context: RefreshSessionContext = {},
   ): Promise<AuthSessionResult> {
     const rotated = await this.refreshSessions.rotate(refreshToken, context);
-    const user = await this.getProfile(rotated.userId);
+    let user: AuthUser;
+    try {
+      user = await this.getProfile(rotated.userId);
+    } catch (error) {
+      // Rotation is intentionally one-time. If the user became inactive or was
+      // removed between issuing and refreshing, revoke the just-created child
+      // session so a failed refresh cannot leave a usable credential behind.
+      await this.refreshSessions.revoke(rotated.token);
+      throw error;
+    }
 
     return {
       accessToken: this.signAccessToken(user),
@@ -221,7 +324,7 @@ export class AuthService {
       throw new NotFoundException('用户不存在');
     }
 
-    const { roles, permissions } = this.extractRolesAndPermissions(user);
+    const { roles, permissions } = await this.resolveRolesAndPermissions(user.id);
     return {
       sub: user.id,
       username: user.username,
@@ -247,10 +350,42 @@ export class AuthService {
     return this.jwtService.sign({ ...user, jti: uuidv4() });
   }
 
+  private async resolveRolesAndPermissions(
+    userId: string,
+  ): Promise<{ roles: string[]; permissions: string[] }> {
+    return this.permissionResolver.resolveForUser(userId);
+  }
+
   private loginAttemptKey(username: string, ipAddress?: string): string {
     return `login:${createHash('sha256')
       .update(`${username.trim().toLowerCase()}\0${ipAddress?.trim() || 'unknown'}`)
       .digest('hex')}`;
+  }
+
+  private requireFeishuIntegration(): IntegrationService {
+    if (!this.integrationService) {
+      throw new HttpException('飞书登录服务不可用', HttpStatus.SERVICE_UNAVAILABLE);
+    }
+    return this.integrationService;
+  }
+
+  private hashOpaqueValue(value: string): string {
+    return createHash('sha256').update(value).digest('hex');
+  }
+
+  private requiredStateString(value: Record<string, unknown>, key: string): string {
+    const candidate = value[key];
+    if (typeof candidate !== 'string' || !candidate) {
+      throw new UnauthorizedException('飞书登录状态无效');
+    }
+    return candidate;
+  }
+
+  private normalizeInternalPath(value: string): string {
+    if (!value.startsWith('/') || value.startsWith('//') || /[\\\r\n]/.test(value)) {
+      return '/dashboard';
+    }
+    return value;
   }
 
   private tooManyLoginAttempts(): HttpException {

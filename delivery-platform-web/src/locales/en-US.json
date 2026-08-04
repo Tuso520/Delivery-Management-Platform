@@ -112,6 +112,7 @@
     "roleWelcome": "{role}, welcome back, {name}",
     "today": "Today is {date}. {description}",
     "defaultDescription": "Here is a summary of the projects and delivery items relevant to you.",
+    "minimumPermission": "No business permissions are assigned to this account. Contact an administrator.",
     "overview": "Project Overview",
     "overviewDescription": "Statistics include only projects within your data scope",
     "tasksDescription": "Pending reviews, rejected revisions, project milestones and unread notifications",
@@ -539,6 +540,8 @@
     "departmentPlaceholder": "Leave blank to use the provider root department",
     "testRecipient": "Test Message Recipient ID",
     "testRecipientPlaceholder": "Used to send test notifications",
+    "oauthRedirectUri": "Feishu OAuth callback URL",
+    "oauthRedirectUriPlaceholder": "For example https://server/api/v1/auth/feishu/callback",
     "descriptionLabel": "Description",
     "logsTitle": "{provider} Sync Logs",
     "success": "Success",
@@ -1443,7 +1446,13 @@
     "usernameRequired": "Please enter username",
     "passwordRequired": "Please enter password",
     "loginSuccess": "Login Successful",
-    "loginFailed": "Login failed, please check username and password"
+    "loginFailed": "Login failed, please check username and password",
+    "adminLogin": "Administrator login",
+    "feishuLogin": "Sign in with Feishu",
+    "feishuStarting": "Opening Feishu authorization",
+    "feishuCompleting": "Verifying Feishu sign-in",
+    "feishuFailed": "Feishu sign-in failed. Try again or contact an administrator.",
+    "loginDivider": "OR"
   },
   "notFound": {
     "title": "Page Unavailable",

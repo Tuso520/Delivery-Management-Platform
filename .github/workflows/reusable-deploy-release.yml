@@ -175,6 +175,28 @@ jobs:
                 [[ "$volume" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]+$ ]]
               done
 
+              printf '[cleanup-before] exact MySQL table counts\n'
+              docker compose --env-file "$runtime_env" -f "$APP_ROOT/control/data.yml" \
+                exec -T mysql sh -ec '
+                  export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"
+                  mysql -N -uroot "$MYSQL_DATABASE" -e \
+                    "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = '\''BASE TABLE'\'' ORDER BY TABLE_NAME" |
+                  while IFS= read -r table; do
+                    case "$table" in (*[!A-Za-z0-9_]*) exit 1;; esac
+                    count="$(mysql -N -uroot "$MYSQL_DATABASE" -e "SELECT COUNT(*) FROM \`$table\`")"
+                    printf "%s=%s\n" "$table" "$count"
+                  done
+                '
+              printf '[cleanup-before] redis_keys='
+              docker compose --env-file "$runtime_env" -f "$APP_ROOT/control/data.yml" \
+                exec -T redis sh -ec 'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli --no-auth-warning DBSIZE'
+              printf '[cleanup-before] minio_files='
+              docker compose --env-file "$runtime_env" -f "$APP_ROOT/control/data.yml" \
+                run --rm --no-deps --entrypoint /bin/sh minio-init -ec '
+                  mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null
+                  mc ls --recursive --json "local/$MINIO_BUCKET" | wc -l
+                '
+
               docker compose --env-file "$runtime_env" --env-file "$reset_release_env" \
                 -f "$APP_ROOT/control/app.yml" down --remove-orphans
               docker compose --env-file "$runtime_env" -f "$APP_ROOT/control/data.yml" \
@@ -195,6 +217,7 @@ jobs:
           DEPLOY_TARGET_ID="$DEPLOY_TARGET_ID" \
           INTERNAL_ORIGIN="$INTERNAL_ORIGIN" \
           PUBLIC_ORIGIN="$PUBLIC_ORIGIN" \
+          RESET_TEST_DATA="$RESET_TEST_DATA" \
           RELEASE_MANIFEST="$APP_ROOT/incoming/release-manifest.json" \
           FRONTEND_BUNDLE="$APP_ROOT/incoming/frontend.tar.gz" \
           bash "$APP_ROOT/control/deploy-release.sh" deploy

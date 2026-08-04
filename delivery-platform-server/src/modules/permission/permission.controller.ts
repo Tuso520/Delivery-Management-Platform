@@ -1,10 +1,12 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Put, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
 
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 
+import { ReplacePermissionAssignmentsDto } from './dto/permission-assignment.dto';
 import { PermissionService } from './permission.service';
 
 @ApiTags('Permissions')
@@ -46,5 +48,27 @@ export class PermissionController {
   })
   async findAll() {
     return this.permissionService.findAll();
+  }
+
+  @Put('users/:userId')
+  @RequirePermissions({ all: ['user:assign_role'] })
+  @ApiOperation({ summary: '替换用户显式允许/禁止权限' })
+  replaceUserOverrides(
+    @Param('userId') userId: string,
+    @Body() dto: ReplacePermissionAssignmentsDto,
+    @CurrentUser('sub') operatorId: string,
+  ) {
+    return this.permissionService.replaceUserOverrides(userId, dto, operatorId);
+  }
+
+  @Put('departments/:departmentId')
+  @RequirePermissions({ all: ['department:manage'] })
+  @ApiOperation({ summary: '替换组织显式允许/禁止权限' })
+  replaceDepartmentGrants(
+    @Param('departmentId') departmentId: string,
+    @Body() dto: ReplacePermissionAssignmentsDto,
+    @CurrentUser('sub') operatorId: string,
+  ) {
+    return this.permissionService.replaceDepartmentGrants(departmentId, dto, operatorId);
   }
 }

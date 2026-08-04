@@ -158,7 +158,9 @@ describe('application navigation', () => {
 
   it('restores the cookie-backed session before deciding navigation', () => {
     expect(permissionSource).toContain('const hasSession = await userStore.ensureSession()')
-    expect(permissionSource).toContain("if (to.path === '/login')")
+    expect(permissionSource).toContain(
+      "if (to.path === '/login' || to.path === '/login/feishu/callback')",
+    )
     expect(permissionSource).toContain('query: { redirect: to.fullPath }')
     expect(permissionSource).not.toContain('await userStore.ensureProfile()')
     expect(permissionSource).toContain("next('/forbidden')")

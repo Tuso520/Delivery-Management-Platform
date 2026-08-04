@@ -2,6 +2,7 @@ import { computed, ref, shallowRef } from 'vue'
 import { defineStore } from 'pinia'
 
 import { authApi } from '@/api/auth'
+import { setSessionRefreshHandler } from '@/api/session-refresh'
 import { useFilePreview } from '@/platform/file-preview/useFilePreview'
 import { queryClient } from '@/query/client'
 import router from '@/router'
@@ -68,9 +69,22 @@ export const useUserStore = defineStore('user', () => {
     useFilePreview().closePreview()
   }
 
+  setSessionRefreshHandler(applySession)
+
   const login = async (loginForm: LoginForm): Promise<void> => {
     try {
       applySession(await authApi.login(loginForm))
+    } catch (error) {
+      resetState()
+      throw error
+    }
+  }
+
+  const completeFeishuLogin = async (ticket: string): Promise<string> => {
+    try {
+      const result = await authApi.completeFeishuLogin(ticket)
+      applySession(result)
+      return result.defaultRoute
     } catch (error) {
       resetState()
       throw error
@@ -144,6 +158,7 @@ export const useUserStore = defineStore('user', () => {
     profileInitialized,
     sessionInitialized,
     login,
+    completeFeishuLogin,
     fetchProfile,
     restoreSession,
     ensureSession,

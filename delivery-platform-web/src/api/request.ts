@@ -8,6 +8,7 @@ import Message from '@arco-design/web-vue/es/message'
 
 import { ApiRequestError } from '@/api/errors'
 import { notifySessionExpired } from '@/api/session-expiration'
+import { publishSessionRefreshed } from '@/api/session-refresh'
 import { attachApiTraceId } from '@/types/api'
 import type { LoginResult } from '@/types/user'
 import { getToken, removeToken, setToken } from '@/utils/auth'
@@ -88,6 +89,7 @@ function refreshAccessToken(): Promise<string> {
           throw new Error('刷新会话未返回访问令牌')
         }
         setToken(result.accessToken)
+        publishSessionRefreshed(result)
         return result.accessToken
       })
       .catch(async (error: unknown) => {

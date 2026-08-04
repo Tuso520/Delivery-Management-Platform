@@ -24,6 +24,7 @@ model User {
   realName          String     @map("real_name") @db.VarChar(50)
   email             String?    @db.VarChar(100)
   phone             String?    @db.VarChar(30)
+  avatarUrl         String?    @map("avatar_url") @db.VarChar(500)
   departmentId      String?    @map("department_id") @db.VarChar(36)
   status            UserStatus @default(Active)
   permissionVersion Int        @default(1) @map("permission_version")
@@ -84,6 +85,8 @@ model User {
   externalContactReviews     ExternalContactCandidate[] @relation("ExternalContactReviewer")
   approvedExternalContacts   ExternalContactCandidate[] @relation("ExternalContactApprovedUser")
   refreshSessions            RefreshSession[]
+  departmentMemberships      UserDepartmentMembership[]
+  permissionOverrides        UserPermissionOverride[]
 
   department Department? @relation(fields: [departmentId], references: [id])
 
@@ -159,7 +162,9 @@ model Permission {
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
 
-  rolePermissions RolePermission[]
+  rolePermissions  RolePermission[]
+  userOverrides    UserPermissionOverride[]
+  departmentGrants DepartmentPermissionGrant[]
 
   @@index([deprecatedAt])
   @@map("permissions")
@@ -190,6 +195,43 @@ model RolePermission {
 
   @@unique([roleId, permissionId])
   @@map("role_permissions")
+}
+
+enum PermissionEffect {
+  ALLOW
+  DENY
+}
+
+model UserPermissionOverride {
+  id           String           @id @default(uuid()) @db.VarChar(36)
+  userId       String           @map("user_id") @db.VarChar(36)
+  permissionId String           @map("permission_id") @db.VarChar(36)
+  effect       PermissionEffect
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, permissionId], map: "user_permission_overrides_user_permission_uq")
+  @@index([userId, effect], map: "user_permission_overrides_user_effect_idx")
+  @@map("user_permission_overrides")
+}
+
+model DepartmentPermissionGrant {
+  id           String           @id @default(uuid()) @db.VarChar(36)
+  departmentId String           @map("department_id") @db.VarChar(36)
+  permissionId String           @map("permission_id") @db.VarChar(36)
+  effect       PermissionEffect
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([departmentId, permissionId], map: "department_permission_grants_department_permission_uq")
+  @@index([departmentId, effect], map: "department_permission_grants_department_effect_idx")
+  @@map("department_permission_grants")
 }
 
 // ============================================================
@@ -259,7 +301,7 @@ model Project {
   retrospectives         ProjectRetrospective[]
   processRecords         ProjectProcessRecord[]
   payments               ProjectPayment[]
-  projectManager         User?                    @relation("ProjectManager", fields: [projectManagerId], references: [id], onDelete: SetNull)
+  projectManager         User?                   @relation("ProjectManager", fields: [projectManagerId], references: [id], onDelete: SetNull)
   archiveTemplate        ArchiveTemplate?        @relation("ProjectArchiveTemplateSnapshot", fields: [archiveTemplateId], references: [id], onDelete: SetNull)
   archiveTemplateVersion ArchiveTemplateVersion? @relation("ProjectArchiveTemplateVersionSnapshot", fields: [archiveTemplateVersionId], references: [id], onDelete: SetNull)
 
@@ -1754,6 +1796,10 @@ model ExternalIdentity {
   provider            String    @db.VarChar(20)
   externalUserId      String    @map("external_user_id") @db.VarChar(100)
   identifierType      String    @map("identifier_type") @db.VarChar(30)
+  openId              String?   @map("open_id") @db.VarChar(100)
+  unionId             String?   @map("union_id") @db.VarChar(100)
+  tenantUserId        String?   @map("tenant_user_id") @db.VarChar(100)
+  tenantKey           String?   @map("tenant_key") @db.VarChar(100)
   isActive            Boolean   @default(true) @map("is_active")
   userProvisioned     Boolean   @default(false) @map("user_provisioned")
   provisionedAt       DateTime  @default(now()) @map("provisioned_at")
@@ -1766,6 +1812,9 @@ model ExternalIdentity {
   user              User              @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@unique([provider, externalUserId], map: "external_identities_provider_external_user_uq")
+  @@unique([provider, openId], map: "external_identities_provider_open_id_uq")
+  @@unique([provider, unionId], map: "external_identities_provider_union_id_uq")
+  @@unique([provider, tenantUserId], map: "external_identities_provider_tenant_user_id_uq")
   @@index([integrationConfigId, isActive], map: "external_identities_config_active_idx")
   @@index([userId, isActive], map: "external_identities_user_active_idx")
   @@map("external_identities")
@@ -1961,23 +2010,23 @@ model Attachment {
 }
 
 model DictionaryCategory {
-  id           String   @id @default(uuid())
-  categoryCode String   @unique @map("category_code") @db.VarChar(50)
-  categoryName String   @map("category_name") @db.VarChar(100)
-  fieldType    String   @default("SINGLE_SELECT") @map("field_type") @db.VarChar(30)
-  required     Boolean  @default(false)
-  defaultValue Json?    @map("default_value")
-  visibleScopes Json    @default("[]") @map("visible_scopes")
-  permissions  Json     @default("{}")
-  description  String?  @db.VarChar(300)
-  isSystem     Boolean  @default(false) @map("is_system")
-  status       String   @default("Active") @db.VarChar(20)
-  sortOrder    Int      @default(0) @map("sort_order")
-  revision     Int      @default(1)
-  createdBy    String?  @map("created_by") @db.VarChar(36)
-  updatedBy    String?  @map("updated_by") @db.VarChar(36)
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id            String   @id @default(uuid())
+  categoryCode  String   @unique @map("category_code") @db.VarChar(50)
+  categoryName  String   @map("category_name") @db.VarChar(100)
+  fieldType     String   @default("SINGLE_SELECT") @map("field_type") @db.VarChar(30)
+  required      Boolean  @default(false)
+  defaultValue  Json?    @map("default_value")
+  visibleScopes Json     @default("[]") @map("visible_scopes")
+  permissions   Json     @default("{}")
+  description   String?  @db.VarChar(300)
+  isSystem      Boolean  @default(false) @map("is_system")
+  status        String   @default("Active") @db.VarChar(20)
+  sortOrder     Int      @default(0) @map("sort_order")
+  revision      Int      @default(1)
+  createdBy     String?  @map("created_by") @db.VarChar(36)
+  updatedBy     String?  @map("updated_by") @db.VarChar(36)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   items DictionaryItem[]
 
@@ -2001,7 +2050,7 @@ model DictionaryItem {
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
-  category          DictionaryCategory  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  category          DictionaryCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   knowledgeCategory KnowledgeCategory?
 
   @@unique([categoryId, itemValue])
@@ -2013,23 +2062,47 @@ model DictionaryItem {
 }
 
 model Department {
-  id             String   @id @default(uuid())
-  departmentCode String   @unique @map("department_code") @db.VarChar(50)
-  departmentName String   @map("department_name") @db.VarChar(100)
-  parentId       String?  @map("parent_id") @db.VarChar(36)
-  managerId      String?  @map("manager_id") @db.VarChar(36)
-  status         String   @default("Active") @db.VarChar(20)
-  sortOrder      Int      @default(0) @map("sort_order")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  id                   String    @id @default(uuid())
+  departmentCode       String    @unique @map("department_code") @db.VarChar(50)
+  departmentName       String    @map("department_name") @db.VarChar(100)
+  parentId             String?   @map("parent_id") @db.VarChar(36)
+  managerId            String?   @map("manager_id") @db.VarChar(36)
+  status               String    @default("Active") @db.VarChar(20)
+  sortOrder            Int       @default(0) @map("sort_order")
+  externalProvider     String?   @map("external_provider") @db.VarChar(20)
+  externalDepartmentId String?   @map("external_department_id") @db.VarChar(100)
+  externalManaged      Boolean   @default(false) @map("external_managed")
+  lastSyncedAt         DateTime? @map("last_synced_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
 
-  parent   Department?  @relation("DepartmentHierarchy", fields: [parentId], references: [id])
-  children Department[] @relation("DepartmentHierarchy")
-  manager  User?        @relation("DepartmentManager", fields: [managerId], references: [id])
-  users    User[]
+  parent           Department?                 @relation("DepartmentHierarchy", fields: [parentId], references: [id])
+  children         Department[]                @relation("DepartmentHierarchy")
+  manager          User?                       @relation("DepartmentManager", fields: [managerId], references: [id])
+  users            User[]
+  memberships      UserDepartmentMembership[]
+  permissionGrants DepartmentPermissionGrant[]
 
+  @@unique([externalProvider, externalDepartmentId], map: "departments_external_provider_id_uq")
   @@index([parentId])
   @@map("departments")
+}
+
+model UserDepartmentMembership {
+  id           String   @id @default(uuid()) @db.VarChar(36)
+  userId       String   @map("user_id") @db.VarChar(36)
+  departmentId String   @map("department_id") @db.VarChar(36)
+  source       String   @default("MANUAL") @db.VarChar(20)
+  isPrimary    Boolean  @default(false) @map("is_primary")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, departmentId], map: "user_department_memberships_user_department_uq")
+  @@index([departmentId, userId], map: "user_department_memberships_department_user_idx")
+  @@map("user_department_memberships")
 }
 
 // ============================================================

@@ -29,9 +29,27 @@ interface IntegrationRecordFixture {
 interface ContactFixture {
   externalUserId: string;
   identifierType: 'OPEN_ID';
+  openId?: string;
+  unionId?: string;
+  tenantUserId?: string;
+  tenantKey?: string;
   realName: string;
   phone?: string;
   email?: string;
+  departmentIds: string[];
+  active: boolean;
+}
+
+interface DirectoryFixture {
+  contacts: ContactFixture[];
+  departments: Array<{
+    externalDepartmentId: string;
+    parentExternalDepartmentId?: string;
+    name: string;
+    order: number;
+    active: boolean;
+  }>;
+  skipped: number;
 }
 
 interface ContactSyncLeaseFixture {
@@ -40,18 +58,24 @@ interface ContactSyncLeaseFixture {
 }
 
 interface IntegrationInternals {
+  fetchFeishuDirectory(
+    token: string,
+    configuration: Record<string, unknown>,
+  ): Promise<DirectoryFixture>;
   acquireContactSyncLease(record: IntegrationRecordFixture): Promise<ContactSyncLeaseFixture>;
   persistUnifiedContacts(
     record: IntegrationRecordFixture,
     provider: 'FEISHU',
-    contacts: ContactFixture[],
+    directory: DirectoryFixture,
     lease: ContactSyncLeaseFixture,
   ): Promise<{
     total: number;
     added: number;
     updated: number;
     disabled: number;
-    conflicts: number;
+    skipped: number;
+    failed: number;
+    departments: number;
   }>;
   encryptSecrets(provider: 'FEISHU', secrets: Record<string, unknown>): string;
 }
@@ -243,6 +267,11 @@ describe('IntegrationService secured configuration', () => {
     const userCreate = jest.fn().mockResolvedValue({ id: 'user-1' });
     const tx = {
       integrationConfig: { updateMany: integrationUpdateMany },
+      department: {
+        findMany: jest.fn().mockResolvedValue([]),
+        upsert: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
       externalIdentity: {
         findUnique: jest.fn().mockResolvedValue(null),
         create: externalIdentityCreate,
@@ -252,10 +281,22 @@ describe('IntegrationService secured configuration', () => {
       },
       user: {
         findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest.fn().mockResolvedValue({
+          status: 'Active',
+          departmentId: null,
+          userRoles: [],
+          departmentMemberships: [],
+        }),
         create: userCreate,
         update: jest.fn(),
         updateMany: jest.fn(),
       },
+      userDepartmentMembership: {
+        deleteMany: jest.fn(),
+        createMany: jest.fn(),
+        updateMany: jest.fn(),
+      },
+      refreshSession: { updateMany: jest.fn() },
     };
     const transaction = jest.fn((run: (client: typeof tx) => Promise<unknown>) => run(tx));
     const prisma = { $transaction: transaction } as unknown as PrismaService;
@@ -265,15 +306,20 @@ describe('IntegrationService secured configuration', () => {
     const result = await internals.persistUnifiedContacts(
       integrationRecordFixture(),
       'FEISHU',
-      [
-        {
+      {
+        contacts: [{
           externalUserId: 'open-id-1',
           identifierType: 'OPEN_ID',
+          openId: 'open-id-1',
           realName: '同步用户',
           email: 'person@example.com',
           phone: '+8613800000000',
-        },
-      ],
+          departmentIds: [],
+          active: true,
+        }],
+        departments: [],
+        skipped: 0,
+      },
       { owner: 'lease-1', revision: 1 },
     );
 
@@ -282,9 +328,11 @@ describe('IntegrationService secured configuration', () => {
       added: 1,
       updated: 0,
       disabled: 0,
-      conflicts: 0,
+      skipped: 0,
+      failed: 0,
+      departments: 0,
     });
-    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(transaction).toHaveBeenCalledTimes(4);
     expect(userCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({
         username: expect.stringMatching(/^fs_[a-f0-9]{40}$/),
@@ -301,6 +349,7 @@ describe('IntegrationService secured configuration', () => {
         identifierType: 'OPEN_ID',
         userProvisioned: true,
       }),
+      select: { id: true },
     });
     expect(integrationUpdateMany).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -315,6 +364,11 @@ describe('IntegrationService secured configuration', () => {
   it('counts ambiguous exact email or phone matches as conflicts', async () => {
     const tx = {
       integrationConfig: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      department: {
+        findMany: jest.fn().mockResolvedValue([]),
+        upsert: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
       externalIdentity: {
         findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn(),
@@ -331,6 +385,12 @@ describe('IntegrationService secured configuration', () => {
         update: jest.fn(),
         updateMany: jest.fn(),
       },
+      userDepartmentMembership: {
+        deleteMany: jest.fn(),
+        createMany: jest.fn(),
+        updateMany: jest.fn(),
+      },
+      refreshSession: { updateMany: jest.fn() },
     };
     const prisma = {
       $transaction: jest.fn((run: (client: typeof tx) => Promise<unknown>) => run(tx)),
@@ -340,19 +400,24 @@ describe('IntegrationService secured configuration', () => {
     const result = await (service as unknown as IntegrationInternals).persistUnifiedContacts(
       integrationRecordFixture(),
       'FEISHU',
-      [
-        {
+      {
+        contacts: [{
           externalUserId: 'open-id-1',
           identifierType: 'OPEN_ID',
+          openId: 'open-id-1',
           realName: '冲突用户',
           email: 'person@example.com',
           phone: '+8613800000000',
-        },
-      ],
+          departmentIds: [],
+          active: true,
+        }],
+        departments: [],
+        skipped: 0,
+      },
       { owner: 'lease-1', revision: 1 },
     );
 
-    expect(result.conflicts).toBe(1);
+    expect(result.skipped).toBe(1);
     expect(tx.user.create).not.toHaveBeenCalled();
     expect(tx.externalIdentity.create).not.toHaveBeenCalled();
   });
@@ -361,19 +426,32 @@ describe('IntegrationService secured configuration', () => {
     const userUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
     const tx = {
       integrationConfig: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      department: {
+        findMany: jest.fn().mockResolvedValue([]),
+        upsert: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
       externalIdentity: {
         findUnique: jest.fn(),
         create: jest.fn(),
         findMany: jest.fn().mockResolvedValue([{ id: 'identity-1', userId: 'user-1' }]),
         update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         count: jest.fn().mockResolvedValueOnce(0).mockResolvedValueOnce(1),
       },
       user: {
         findMany: jest.fn(),
+        findUnique: jest.fn().mockResolvedValue({ userRoles: [] }),
         create: jest.fn(),
         update: jest.fn(),
         updateMany: userUpdateMany,
       },
+      userDepartmentMembership: {
+        deleteMany: jest.fn(),
+        createMany: jest.fn(),
+        updateMany: jest.fn(),
+      },
+      refreshSession: { updateMany: jest.fn() },
     };
     const prisma = {
       $transaction: jest.fn((run: (client: typeof tx) => Promise<unknown>) => run(tx)),
@@ -383,7 +461,7 @@ describe('IntegrationService secured configuration', () => {
     const result = await (service as unknown as IntegrationInternals).persistUnifiedContacts(
       integrationRecordFixture(),
       'FEISHU',
-      [],
+      { contacts: [], departments: [], skipped: 0 },
       { owner: 'lease-1', revision: 1 },
     );
 
@@ -394,7 +472,7 @@ describe('IntegrationService secured configuration', () => {
         deletedAt: null,
         status: { not: 'Locked' },
       },
-      data: { status: 'Inactive' },
+      data: { status: 'Inactive', permissionVersion: { increment: 1 } },
     });
   });
 
@@ -456,6 +534,90 @@ describe('IntegrationService secured configuration', () => {
         { provider: 'FEISHU', receiptId: 'msg-1' },
         { provider: 'FEISHU', receiptId: 'msg-1' },
       ]);
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it('reads the configured root, all children and direct users into one directory snapshot', async () => {
+    const service = new IntegrationService(
+      {} as PrismaService,
+      configService(),
+      operationLog(),
+    );
+    const fetchMock = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(
+        jsonResponse({
+          code: 0,
+          data: { department: { open_department_id: '0', name: '根部门' } },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          code: 0,
+          data: {
+            items: [
+              {
+                open_department_id: 'od-child',
+                parent_department_id: '0',
+                name: '研发部',
+                order: 10,
+              },
+            ],
+            has_more: false,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ code: 0, data: { items: [], has_more: false } }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          code: 0,
+          data: {
+            items: [{ open_id: 'ou-root', name: '根用户', department_ids: ['0'] }],
+            has_more: false,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          code: 0,
+          data: {
+            items: [
+              {
+                open_id: 'ou-child',
+                union_id: 'on-child',
+                user_id: 'tenant-child',
+                name: '研发用户',
+                department_ids: ['od-child'],
+                status: { is_activated: true },
+              },
+            ],
+            has_more: false,
+          },
+        }),
+      );
+    try {
+      const snapshot = await (
+        service as unknown as IntegrationInternals
+      ).fetchFeishuDirectory('tenant-token', { contactDepartmentId: '0' });
+
+      expect(snapshot.departments.map(({ externalDepartmentId }) => externalDepartmentId)).toEqual([
+        '0',
+        'od-child',
+      ]);
+      expect(snapshot.contacts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ externalUserId: 'ou-root', departmentIds: ['0'] }),
+          expect.objectContaining({
+            externalUserId: 'ou-child',
+            openId: 'ou-child',
+            unionId: 'on-child',
+            tenantUserId: 'tenant-child',
+            departmentIds: ['od-child'],
+          }),
+        ]),
+      );
     } finally {
       fetchMock.mockRestore();
     }

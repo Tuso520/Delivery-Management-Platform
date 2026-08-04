@@ -7,6 +7,7 @@ import {
   IsString,
   MaxLength,
   MinLength,
+  IsUrl,
 } from 'class-validator';
 
 import { PaginationDto } from '../../../common/dto/pagination.dto';
@@ -52,6 +53,12 @@ export class UpdateTargetIntegrationDto {
   @IsString()
   @MaxLength(100)
   contactDepartmentId?: string;
+
+  @ApiPropertyOptional({ description: '飞书网页授权回调地址，必须与开放平台配置完全一致' })
+  @IsOptional()
+  @IsUrl({ require_protocol: true, protocols: ['https'] })
+  @MaxLength(500)
+  oauthRedirectUri?: string;
 
   @ApiPropertyOptional({ description: '集成测试消息接收人 ID' })
   @IsOptional()

@@ -23,7 +23,7 @@ flowchart LR
   Production --> ProdData["服务器内部数据层"]
 ```
 
-每个 Release 用完整 40 位 Git commit SHA 标识。前端、后端和迁移器写入同一份 `release-manifest.json`；后端镜像必须使用 `@sha256:`，测试通过后生产环境不重新构建。CI 对 `delivery-platform-server` Git 树计算 SHA-256，并优先复用 GHCR 中对应的 `content-<sha256>` runtime 和 migrator；只有新后端内容才构建，再为当前 Release 创建 `sha-<commit>` 别名并核对两者解析到同一 digest。所有 Release 全局串行，避免相同内容并发首建。迁移镜像继承同一 Release 的精简后端运行镜像，只增加固定版本的 Prisma、ts-node 和 TypeScript 命令层，使用独立 GHA cache scope，不携带 builder 的编译工具链和完整开发依赖。`RELEASE_ID` 由 Release 环境文件在容器启动时注入，不写入 Dockerfile 的 ARG、ENV 或 Label；首次内容构建还固定 `SOURCE_DATE_EPOCH=0`，消除镜像索引、配置和文件元数据中的构建时钟漂移。因此后端内容未变化时不同 Release 引用完全相同的不可变镜像 digest，发布身份仍由 Manifest、前端 `build-info.json` 和运行环境共同绑定。
+每个 Release 用完整 40 位 Git commit SHA 标识。前端、后端和迁移器写入同一份 `release-manifest.json`；后端镜像必须使用 `@sha256:`，测试通过后生产环境不重新构建。Manifest 的 `migrations.expectedCount` 是 v2 迁移数量唯一事实源，部署脚本将其写入 Release 专属环境文件；服务器长期 `runtime.env`、首次配置生成器和接管预检都不得固化该数量。CI 对 `delivery-platform-server` Git 树计算 SHA-256，并优先复用 GHCR 中对应的 `content-<sha256>` runtime 和 migrator；只有新后端内容才构建，再为当前 Release 创建 `sha-<commit>` 别名并核对两者解析到同一 digest。所有 Release 全局串行，避免相同内容并发首建。迁移镜像继承同一 Release 的精简后端运行镜像，只增加固定版本的 Prisma、ts-node 和 TypeScript 命令层，使用独立 GHA cache scope，不携带 builder 的编译工具链和完整开发依赖。`RELEASE_ID` 由 Release 环境文件在容器启动时注入，不写入 Dockerfile 的 ARG、ENV 或 Label；首次内容构建还固定 `SOURCE_DATE_EPOCH=0`，消除镜像索引、配置和文件元数据中的构建时钟漂移。因此后端内容未变化时不同 Release 引用完全相同的不可变镜像 digest，发布身份仍由 Manifest、前端 `build-info.json` 和运行环境共同绑定。
 
 服务器拓扑固定为：
 
@@ -202,7 +202,8 @@ sudo stat -c '%a %U:%G %n' /srv/delivery-platform/config/runtime.env
 应用种子账号由迁移器创建，密码不会写在仓库中：
 
 - `admin` 使用 `SEED_ADMIN_PASSWORD`。
-- `delivery_mgr`、`pm_wang`、`pm_li`、电气、软件、采购、财务、标准管理员和合作方种子账号默认使用 `SEED_DEFAULT_PASSWORD`，也可以通过各角色专用变量分别设置。
+- 服务器 seed 安全默认只创建 `admin`，并跳过示例项目。演示账号和示例项目仅在隔离 CI 通过 `SEED_INCLUDE_DEMO_DATA=true` 显式启用；测试与生产服务器不得启用该变量。
+- 隔离 CI 中的 `delivery_mgr`、`pm_wang`、`pm_li`、电气、软件、采购、财务、标准管理员和合作方演示账号使用 `SEED_DEFAULT_PASSWORD`，也可以通过各角色专用变量分别设置。
 - 既有账号默认不重置密码；`SEED_RESET_EXISTING_USER_PASSWORDS=false` 必须保持不变。只有明确的受控密码轮换窗口才临时设为 `true`，完成后立即恢复为 `false`。
 
 ### 4.6 安装宿主 Nginx 配置
@@ -354,7 +355,7 @@ sudo -u <nginx-worker-user> test -r /srv/delivery-platform/current/frontend/inde
 
 镜像在当前 Release 在线期间预拉取，下载时间不计入停机窗口。测试服务器在缓存失效基线中拉取 135 MiB runtime 与 174 MiB migrator 共耗时 13 分 42 秒，而拉取后的备份、迁移校验、幂等 seed、启动和原子切换约 46 秒；另一次稳定层重建受 GHCR 链路波动影响，36 分钟仍未完成并在停机前安全取消，原 Release 始终保持 `ready`。部署脚本因此给单次拉取设置 20 分钟上限并最多续传重试 3 次；首次内容构建 Release `79e41eb29d40` 的部署受 GHCR 冷拉取影响共耗时 40 分 37 秒，第一次 20 分钟超时后由第二次续传完成，切换窗口仅观察到一次 `502`，11 秒内恢复 `ready`。
 
-同一完整 SHA 的严格复跑证明了日常热路径：runtime 与 migrator 构建均被内容标签命中并跳过，前后两份 Manifest 的镜像 digest 分别稳定为 `sha256:c58245eb2a5bae593565089a1e6859e68dd9c8ce102608a0db60efd542c90d2a` 和 `sha256:966fd1475eb5d07a90dc1a81f8a3081be0b7da959e3a2ceb635182f2224b4de5`；Release 构建 57 秒、真实集成验收 4 分 01 秒、测试部署作业 3 分 50 秒、整条流水线 9 分 09 秒。部署上传控制文件和前端包耗时 2 分 29 秒，服务器端镜像拉取不足 0.2 秒，备份、45 个 migration、三个数据迁移器、幂等 seed、应用启动、健康检查和前端原子切换共 53 秒。工作流按 Release 全局串行且不主动取消正在执行的发布；若人工取消作业或 SSH 会话中断，服务器脚本会把 HUP/INT/TERM 转发给正在拉取的子进程，执行失败清理并释放部署锁。发布性能必须分别记录“预拉取时间”和“停机切换时间”；日常只改前端、文档或部署控制文件时应命中内容镜像，新服务器或后端依赖变化导致的冷拉取仍须提前在维护窗口内完成。
+同一完整 SHA 的严格复跑证明了日常热路径：runtime 与 migrator 构建均被内容标签命中并跳过，前后两份 Manifest 的镜像 digest 分别稳定为 `sha256:c58245eb2a5bae593565089a1e6859e68dd9c8ce102608a0db60efd542c90d2a` 和 `sha256:966fd1475eb5d07a90dc1a81f8a3081be0b7da959e3a2ceb635182f2224b4de5`；Release 构建 57 秒、真实集成验收 4 分 01 秒、测试部署作业 3 分 50 秒、整条流水线 9 分 09 秒。部署上传控制文件和前端包耗时 2 分 29 秒，服务器端镜像拉取不足 0.2 秒，备份、46 个 migration、三个数据迁移器、幂等 seed、应用启动、健康检查和前端原子切换共 53 秒。工作流按 Release 全局串行且不主动取消正在执行的发布；若人工取消作业或 SSH 会话中断，服务器脚本会把 HUP/INT/TERM 转发给正在拉取的子进程，执行失败清理并释放部署锁。发布性能必须分别记录“预拉取时间”和“停机切换时间”；日常只改前端、文档或部署控制文件时应命中内容镜像，新服务器或后端依赖变化导致的冷拉取仍须提前在维护窗口内完成。
 
 状态查看：
 

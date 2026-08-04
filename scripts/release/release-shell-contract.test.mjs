@@ -35,6 +35,10 @@ const runtimeBootstrapWorkflow = await readFile(
   new URL('../../.github/workflows/bootstrap-runtime-config.yml', import.meta.url),
   'utf8',
 )
+const runtimeConfigTemplate = await readFile(
+  new URL('../../deploy/runtime-config.template', import.meta.url),
+  'utf8',
+)
 const nginxAppSnippet = await readFile(
   new URL('../../deploy/nginx/delivery-platform-app.inc.template', import.meta.url),
   'utf8',
@@ -184,6 +188,27 @@ test('v2 scripts never delete Docker volumes or globally prune Docker', () => {
   assert.doesNotMatch(combined, /\bdown\s+-v\b/u)
 })
 
+test('disposable test reset is explicit, environment-bound and limited to three resolved volumes', () => {
+  for (const contract of [
+    'RESET_TEST_DATA="$7"',
+    'test "$DEPLOY_ENV" = test',
+    'test "${#reset_volumes[@]}" -eq 3',
+    '[cleanup-before] exact MySQL table counts',
+    '[cleanup-before] redis_keys=',
+    '[cleanup-before] minio_files=',
+    'down --volumes --remove-orphans',
+    'disposable test data volumes removed',
+  ]) {
+    assert.match(
+      deployWorkflow,
+      new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'),
+    )
+  }
+  assert.match(deploy, /prisma\/verify-clean-test-baseline\.ts/u)
+  assert.match(deploy, /CONFIRM_CLEAN_TEST_BASELINE=YES/u)
+  assert.doesNotMatch(deployWorkflow, /docker\s+volume\s+(?:prune|rm)/u)
+})
+
 test('remote image pulls use a job-scoped GHCR credential and always log out', () => {
   occursInOrder(deployWorkflow, [
     '临时授权目标服务器读取 GHCR',
@@ -253,6 +278,14 @@ test('runtime bootstrap preserves live credentials without reading or printing l
   }
   assert.doesNotMatch(runtimeBootstrap, /(?:source|cat|cp)[^\n]*\.env/u)
   assert.doesNotMatch(runtimeBootstrap, /docker\s+(?:stop|restart|rm|compose\s+(?:up|down))/u)
+})
+
+test('migration count belongs to the immutable release instead of long-lived server configuration', () => {
+  assert.match(deploy, /\.migrations\.expectedCount/u)
+  assert.match(deploy, /printf 'EXPECTED_MIGRATION_COUNT=%s\\n' "\$EXPECTED_MIGRATION_COUNT"/u)
+  for (const longLivedConfig of [runtimeConfigTemplate, runtimeBootstrap, serverPreflight]) {
+    assert.doesNotMatch(longLivedConfig, /EXPECTED_MIGRATION_COUNT/u)
+  }
 })
 
 test('runtime bootstrap workflow is manual, environment-bound and removes its remote script', () => {

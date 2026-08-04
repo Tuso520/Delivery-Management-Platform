@@ -1,4 +1,5 @@
 import type { PrismaService } from '../../../database/prisma.service';
+import type { OperationLogService } from '../../operation-log/operation-log.service';
 import { PermissionService } from '../permission.service';
 
 describe('PermissionService active catalog', () => {
@@ -8,7 +9,8 @@ describe('PermissionService active catalog', () => {
         findMany: jest.fn().mockResolvedValue([]),
       },
     };
-    const service = new PermissionService(prisma as unknown as PrismaService);
+    const operationLog = { log: jest.fn() } as unknown as OperationLogService;
+    const service = new PermissionService(prisma as unknown as PrismaService, operationLog);
 
     await service.findAll();
 

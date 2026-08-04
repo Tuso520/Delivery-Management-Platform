@@ -23,7 +23,7 @@ function validManifest() {
         bytes: 1024,
       },
     },
-    migrations: { expectedCount: 45 },
+    migrations: { expectedCount: 46 },
   }
 }
 

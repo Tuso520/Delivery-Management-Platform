@@ -204,6 +204,11 @@ sudo -u dmpdeploy editor /srv/delivery-platform/config/runtime.env
 - `INTEGRATION_SECRET_ENCRYPTION_KEY` 使用 `openssl rand -base64 32` 生成并长期保存，不能随发布轮换。
 - `SEED_RESET_EXISTING_USER_PASSWORDS=false` 保持不变。
 - `SEED_ADMIN_PASSWORD` 和 `SEED_DEFAULT_PASSWORD` 必须来自密码管理器；既有账号默认不会被重置。
+- 不得设置 `SEED_INCLUDE_DEMO_DATA=true`；测试服务器重建空数据卷后的正式 seed 只创建唯一 `admin`，演示账号与示例项目只允许存在于 CI 隔离数据库。
+
+## 飞书首次启用
+
+测试服务器 Release 健康检查通过后，管理员按 [飞书通讯录同步与 OAuth 登录](feishu-auth-and-org-sync.md) 在系统设置中录入 App ID、App Secret、根部门和 `https://1.117.73.165/api/v1/auth/feishu/callback`。先执行连接测试，再执行全量同步；只有 `failed=0` 且身份绑定唯一后才验收扫码登录。飞书凭据不得写入 GitHub Variable、教程命令、聊天或服务器日志。
 
 只做脱敏校验，不输出配置内容：
 

@@ -6,6 +6,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { withTransientPrismaReadRetry } from '../../../database/prisma-transient-read';
 import { PrismaService } from '../../../database/prisma.service';
 import { RedisService } from '../../../database/redis.service';
+import { PermissionResolutionService } from '../../permission/permission-resolution.service';
 
 export interface JwtPayload {
   sub: string;
@@ -26,6 +27,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     configService: ConfigService,
     private readonly redisService: RedisService,
     private readonly prisma: PrismaService,
+    private readonly permissionResolver: PermissionResolutionService,
   ) {
     const jwtSecret = configService.get<string>('auth.jwtSecret');
 
@@ -93,19 +95,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('权限已变更，请刷新会话');
     }
 
+    const resolved = await this.permissionResolver.resolveForUser(user.id);
+
     return {
       sub: user.id,
       username: user.username,
       realName: user.realName,
       email: user.email,
-      roles: user.userRoles.map(({ role }) => role.roleCode),
-      permissions: [
-        ...new Set(
-          user.userRoles.flatMap(({ role }) =>
-            role.rolePermissions.map(({ permission }) => permission.permissionCode),
-          ),
-        ),
-      ],
+      roles: resolved.roles,
+      permissions: resolved.permissions,
       permissionVersion: user.permissionVersion,
     };
   }

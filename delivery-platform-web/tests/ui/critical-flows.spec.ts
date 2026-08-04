@@ -110,7 +110,7 @@ async function login(
       response.request().method() === 'POST' &&
       response.status() === 200,
   )
-  await page.getByRole('button', { name: /登\s*录/u }).click()
+  await page.locator('.login-button').click()
   const session = (await (await loginResponse).json()) as SessionEnvelope
   await page.waitForURL((url) => !url.hash.startsWith('#/login'))
   return session.data.accessToken

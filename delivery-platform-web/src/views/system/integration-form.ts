@@ -12,6 +12,7 @@ export interface IntegrationEditorForm {
   verificationToken: string
   encryptKey: string
   contactDepartmentId: string
+  oauthRedirectUri: string
   testRecipient: string
 }
 
@@ -29,6 +30,7 @@ export function emptyIntegrationForm(
     verificationToken: '',
     encryptKey: '',
     contactDepartmentId: '',
+    oauthRedirectUri: '',
     testRecipient: '',
   }
 }
@@ -53,6 +55,7 @@ export function hydrateIntegrationForm(
     appId: visibleValue(config.configuration.appId),
     webhookUrl: '',
     contactDepartmentId: visibleValue(config.configuration.contactDepartmentId),
+    oauthRedirectUri: visibleValue(config.configuration.oauthRedirectUri),
     testRecipient: visibleValue(config.configuration.testRecipient),
     // Secret fields stay empty until the user explicitly replaces them.
     appSecret: '',
@@ -84,6 +87,7 @@ export function buildIntegrationUpdate(
 
   assignNonEmpty(payload, 'webhookUrl', form.webhookUrl)
   assignNonEmpty(payload, 'contactDepartmentId', form.contactDepartmentId)
+  assignNonEmpty(payload, 'oauthRedirectUri', form.oauthRedirectUri)
   assignNonEmpty(payload, 'testRecipient', form.testRecipient)
 
   assignNonEmpty(payload, 'appId', form.appId)

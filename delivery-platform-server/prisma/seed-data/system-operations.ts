@@ -58,6 +58,7 @@ const integrations = [
     configValue: {
       appId: '',
       contactDepartmentId: '0',
+      oauthRedirectUri: '',
       testRecipient: '',
     },
   },

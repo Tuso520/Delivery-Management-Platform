@@ -3,12 +3,14 @@ import type { ConfigService } from '@nestjs/config';
 
 import type { PrismaService } from '../../../database/prisma.service';
 import type { RedisService } from '../../../database/redis.service';
+import type { PermissionResolutionService } from '../../permission/permission-resolution.service';
 import { JwtStrategy, type JwtPayload } from '../strategies/jwt.strategy';
 
 describe('JwtStrategy', () => {
   let strategy: JwtStrategy;
   let prisma: { user: { findFirst: jest.Mock } };
   let redis: { isBlacklisted: jest.Mock };
+  let permissionResolver: { resolveForUser: jest.Mock };
 
   const payload: JwtPayload = {
     sub: 'user-1',
@@ -42,10 +44,17 @@ describe('JwtStrategy', () => {
     const config = {
       get: jest.fn().mockReturnValue('unit-test-secret'),
     };
+    permissionResolver = {
+      resolveForUser: jest.fn().mockResolvedValue({
+        roles: ['PROJECT_MANAGER'],
+        permissions: ['project:view'],
+      }),
+    };
     strategy = new JwtStrategy(
       config as unknown as ConfigService,
       redis as unknown as RedisService,
       prisma as unknown as PrismaService,
+      permissionResolver as unknown as PermissionResolutionService,
     );
   });
 

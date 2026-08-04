@@ -512,6 +512,31 @@ describe('deployment seed safety', () => {
     expect(findUnique).not.toHaveBeenCalled();
   });
 
+  it('seeds only the administrator unless demo data is explicitly enabled', async () => {
+    const originalAdminPassword = process.env.SEED_ADMIN_PASSWORD;
+    const originalDemoData = process.env.SEED_INCLUDE_DEMO_DATA;
+    process.env.SEED_ADMIN_PASSWORD = 'unit-test-admin-secret';
+    delete process.env.SEED_INCLUDE_DEMO_DATA;
+    const findUnique = jest.fn().mockResolvedValue({ id: 'user-admin' });
+    const prisma = {
+      user: { findUnique, create: jest.fn(), update: jest.fn() },
+      role: { findUnique: jest.fn().mockResolvedValue({ id: 'role-admin' }) },
+      userRole: { findUnique: jest.fn().mockResolvedValue({ id: 'link-admin' }), create: jest.fn() },
+    } as unknown as PrismaClient;
+
+    try {
+      await seedUsers(prisma);
+    } finally {
+      if (originalAdminPassword === undefined) delete process.env.SEED_ADMIN_PASSWORD;
+      else process.env.SEED_ADMIN_PASSWORD = originalAdminPassword;
+      if (originalDemoData === undefined) delete process.env.SEED_INCLUDE_DEMO_DATA;
+      else process.env.SEED_INCLUDE_DEMO_DATA = originalDemoData;
+    }
+
+    expect(findUnique).toHaveBeenCalledTimes(1);
+    expect(findUnique).toHaveBeenCalledWith({ where: { username: 'admin' } });
+  });
+
   it('seeds target dictionaries without retired workforce domains', async () => {
     const categoryUpsert = jest.fn(({ where }) =>
       Promise.resolve({ id: `category-${where.categoryCode}` }),
@@ -604,10 +629,12 @@ describe('deployment seed safety', () => {
     const originalReset = process.env.SEED_RESET_EXISTING_USER_PASSWORDS;
     const originalAdminPassword = process.env.SEED_ADMIN_PASSWORD;
     const originalDefaultPassword = process.env.SEED_DEFAULT_PASSWORD;
+    const originalDemoData = process.env.SEED_INCLUDE_DEMO_DATA;
     process.env.NODE_ENV = 'development';
     process.env.SEED_RESET_EXISTING_USER_PASSWORDS = 'true';
     process.env.SEED_ADMIN_PASSWORD = 'unit-test-admin-secret';
     process.env.SEED_DEFAULT_PASSWORD = 'unit-test-user-secret';
+    process.env.SEED_INCLUDE_DEMO_DATA = 'true';
     jest.clearAllMocks();
 
     const userUpdate = jest.fn(({ where, data }) =>
@@ -660,6 +687,11 @@ describe('deployment seed safety', () => {
         delete process.env.SEED_DEFAULT_PASSWORD;
       } else {
         process.env.SEED_DEFAULT_PASSWORD = originalDefaultPassword;
+      }
+      if (originalDemoData === undefined) {
+        delete process.env.SEED_INCLUDE_DEMO_DATA;
+      } else {
+        process.env.SEED_INCLUDE_DEMO_DATA = originalDemoData;
       }
     }
 

@@ -203,9 +203,9 @@ main() {
   append_env JWT_SECRET "$jwt_secret"
   append_env JWT_EXPIRES_IN "$jwt_expires_in"
   append_env INTEGRATION_SECRET_ENCRYPTION_KEY "$integration_secret_encryption_key"
-  append_env EXPECTED_MIGRATION_COUNT '45'
   append_env INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME 'admin'
   append_env SEED_RESET_EXISTING_USER_PASSWORDS 'false'
+  append_env SEED_INCLUDE_DEMO_DATA 'false'
   append_env SEED_ADMIN_PASSWORD "$(openssl rand -hex 32)"
   append_env SEED_DEFAULT_PASSWORD "$(openssl rand -hex 32)"
   append_optional_env ONLYOFFICE_DOCS_URL "$onlyoffice_docs_url"

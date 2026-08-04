@@ -237,8 +237,12 @@ const userDefs: UserSeed[] = [
 ];
 
 export async function seedUsers(prisma: PrismaClient): Promise<void> {
+  const selectedUsers =
+    process.env.SEED_INCLUDE_DEMO_DATA?.trim().toLowerCase() === 'true'
+      ? userDefs
+      : userDefs.filter(({ username }) => username === 'admin');
   const passwords = new Map<SeedPasswordKey, string>();
-  for (const { passwordKey } of userDefs) {
+  for (const { passwordKey } of selectedUsers) {
     if (!passwords.has(passwordKey)) {
       passwords.set(passwordKey, resolveSeedPassword(passwordKey));
     }
@@ -254,7 +258,7 @@ export async function seedUsers(prisma: PrismaClient): Promise<void> {
 
   const resetExistingPasswords = shouldResetExistingSeedUserPasswords();
 
-  for (const user of userDefs) {
+  for (const user of selectedUsers) {
     const existingUser = await prisma.user.findUnique({
       where: { username: user.username },
     });

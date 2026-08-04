@@ -25,7 +25,7 @@ async function login(page: Page): Promise<void> {
   await page.goto('/#/login')
   await page.getByPlaceholder('用户名').fill(username)
   await page.getByPlaceholder('密码').fill(password)
-  await page.getByRole('button', { name: /登\s*录/u }).click()
+  await page.locator('.login-button').click()
   await page.waitForURL((url) => !url.hash.startsWith('#/login'))
 }
 
