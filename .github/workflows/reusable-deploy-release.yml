@@ -22,6 +22,7 @@ on:
         type: boolean
 
 permissions:
+  actions: read
   contents: read
   packages: read
 
@@ -137,6 +138,21 @@ jobs:
           printf 'image bundle: %s bytes, %s parts\n' "$bundle_bytes" "$bundle_parts"
           rm -f -- release/application-images.tar.gz
 
+      - name: 创建短期镜像中继制品
+        id: image_relay_artifact
+        if: ${{ steps.image_cache.outputs.preload == 'true' }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-relay-${{ github.run_id }}-${{ inputs.environment_name }}
+          path: |
+            release/image-bundle.sha256
+            release/image-bundle.bytes
+            release/image-bundle.part-*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
       - name: 临时授权目标服务器读取 GHCR
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -165,8 +181,95 @@ jobs:
             "$SERVER_USER@$SERVER_HOST:$remote_stage/"
           printf 'REMOTE_STAGE=%s\n' "$remote_stage" >> "$GITHUB_ENV"
 
-      - name: 分片上传缺失镜像
-        if: ${{ steps.image_cache.outputs.preload == 'true' }}
+      - name: 通过短期 HTTPS 中继下载缺失镜像
+        id: image_relay_download
+        if: >-
+          steps.image_cache.outputs.preload == 'true' &&
+          steps.image_relay_artifact.outcome == 'success'
+        continue-on-error: true
+        env:
+          ARTIFACT_ID: ${{ steps.image_relay_artifact.outputs.artifact-id }}
+          ACTIONS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$ARTIFACT_ID" =~ ^[0-9]+$ ]]
+          headers_file='release/image-relay-headers'
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error \
+            --connect-timeout 30 --max-time 120 \
+            -D "$headers_file" -o /dev/null \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer $ACTIONS_TOKEN" \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip"
+          signed_url="$(awk 'BEGIN { IGNORECASE=1 } /^location:/ {
+            sub(/^[^:]+:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit
+          }' "$headers_file")"
+          rm -f -- "$headers_file"
+          [[ "$signed_url" =~ ^https://[A-Za-z0-9.-]+\.blob\.core\.windows\.net/ ]]
+          signed_url_base64="$(printf '%s' "$signed_url" | base64 -w0)"
+          unset signed_url
+
+          ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            "$SERVER_USER@$SERVER_HOST" 'bash -s' -- \
+            "$REMOTE_STAGE" "$RELEASE_ID" "$signed_url_base64" <<'REMOTE'
+          set -Eeuo pipefail
+          stage="$1"
+          release_id="$2"
+          signed_url_base64="$3"
+          [[ "$stage" == "/tmp/delivery-release-${release_id}-"* ]]
+          [[ "$signed_url_base64" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test -d "$stage" && test ! -L "$stage"
+          signed_url="$(printf '%s' "$signed_url_base64" | base64 -d)"
+          unset signed_url_base64
+          [[ "$signed_url" =~ ^https://[A-Za-z0-9.-]+\.blob\.core\.windows\.net/ ]]
+          artifact_zip="$stage/.upload-image-relay.zip"
+          extract_dir="$stage/.image-relay-extract"
+          rm -rf -- "$extract_dir"
+          install -d -m 700 "$extract_dir"
+          curl --proto '=https' --tlsv1.2 --location --fail --silent --show-error \
+            --retry 3 --retry-all-errors --retry-delay 5 \
+            --connect-timeout 30 --max-time 3600 \
+            -o "$artifact_zip" "$signed_url"
+          unset signed_url
+          test -s "$artifact_zip" && test ! -L "$artifact_zip"
+          python3 - "$artifact_zip" "$extract_dir" <<'PY'
+          import re
+          import sys
+          import zipfile
+          from pathlib import Path
+
+          archive = Path(sys.argv[1])
+          destination = Path(sys.argv[2])
+          allowed = re.compile(r'image-bundle\.(?:sha256|bytes|part-[0-9]{4})')
+          with zipfile.ZipFile(archive) as artifact:
+              members = artifact.infolist()
+              names = [member.filename for member in members]
+              if not members or any(not allowed.fullmatch(name) for name in names):
+                  raise SystemExit('image relay contains an unexpected path')
+              if len(names) != len(set(names)):
+                  raise SystemExit('image relay contains duplicate paths')
+              required = {'image-bundle.sha256', 'image-bundle.bytes', 'image-bundle.part-0000'}
+              if not required.issubset(names):
+                  raise SystemExit('image relay is incomplete')
+              artifact.extractall(destination)
+          PY
+          for source in "$extract_dir"/image-bundle.*; do
+            test -f "$source" && test ! -L "$source"
+            name="$(basename -- "$source")"
+            [[ "$name" =~ ^image-bundle\.(sha256|bytes|part-[0-9]{4})$ ]]
+            mv -f -- "$source" "$stage/$name"
+          done
+          rm -rf -- "$extract_dir"
+          rm -f -- "$artifact_zip"
+          printf 'HTTPS image relay download complete\n'
+          REMOTE
+
+      - name: 通过 SSH 分片回退上传缺失镜像
+        if: >-
+          steps.image_cache.outputs.preload == 'true' &&
+          steps.image_relay_download.outcome != 'success'
         run: |
           set -Eeuo pipefail
           upload_one() {
