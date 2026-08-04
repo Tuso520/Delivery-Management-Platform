@@ -8,7 +8,7 @@
 - 测试和生产服务器拆分为宿主 Nginx、应用 Compose 和内部数据 Compose；前端采用符号链接原子切换，数据端口只绑定 localhost，所有文件继续统一使用 500 MiB 上限。
 - 新增发布前停写、MySQL/MinIO 成对备份、迁移门禁、内外网 Release ID 校验、失败标记和显式成对恢复；恢复时校验 checksum、源 Release、Worker 稳定性和服务器身份，不自动删除备份或 Docker 卷。
 - 新增测试/生产账号、SSH、sudo、目录、内外网地址、Nginx、GitHub Variables/Secrets、首发接管、日常推广和回滚的完整中文教程。
-- 发布镜像构建固定 `SOURCE_DATE_EPOCH=0`，消除仅文档或部署脚本变化时由构建时钟引起的镜像摘要漂移，并保留不可变 Release 与默认来源证明。
+- 发布镜像按后端 Git 树内容 SHA-256 复用，runtime 与 migrator 使用独立构建缓存，首次构建固定 `SOURCE_DATE_EPOCH=0`；仅文档或部署脚本变化时不再重建后端，同时保留不可变 Release 与默认来源证明。
 
 ## 2026-07-28（标准库 Figma 精确对齐）
 
