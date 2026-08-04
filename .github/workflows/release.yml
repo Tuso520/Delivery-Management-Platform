@@ -17,7 +17,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: release-${{ github.event.workflow_run.head_sha || github.event.inputs.ref || github.sha }}
+  group: release-main
   cancel-in-progress: false
 
 jobs:
@@ -87,8 +87,31 @@ jobs:
           printf 'migrator_repository=ghcr.io/%s/migrator\n' "$repository" >> "$GITHUB_OUTPUT"
           printf 'frontend_artifact=ghcr.io/%s/frontend-release:sha-%s\n' "$repository" "$RELEASE_SHA" >> "$GITHUB_OUTPUT"
 
+      - name: 计算后端内容身份并检查 GHCR
+        id: content
+        env:
+          RELEASE_SHA: ${{ needs.resolve.outputs.commit }}
+          BACKEND_REPOSITORY: ${{ steps.names.outputs.backend_repository }}
+          MIGRATOR_REPOSITORY: ${{ steps.names.outputs.migrator_repository }}
+        run: |
+          set -Eeuo pipefail
+          content_sha="$(git ls-tree -r --full-tree "$RELEASE_SHA" -- delivery-platform-server | sha256sum | awk '{print $1}')"
+          [[ "$content_sha" =~ ^[0-9a-f]{64}$ ]]
+          backend_content="$BACKEND_REPOSITORY:content-$content_sha"
+          migrator_content="$MIGRATOR_REPOSITORY:content-$content_sha"
+          backend_exists=false
+          migrator_exists=false
+          docker buildx imagetools inspect "$backend_content" >/dev/null 2>&1 && backend_exists=true
+          docker buildx imagetools inspect "$migrator_content" >/dev/null 2>&1 && migrator_exists=true
+          printf 'content_sha=%s\n' "$content_sha" >> "$GITHUB_OUTPUT"
+          printf 'backend_content=%s\n' "$backend_content" >> "$GITHUB_OUTPUT"
+          printf 'migrator_content=%s\n' "$migrator_content" >> "$GITHUB_OUTPUT"
+          printf 'backend_exists=%s\n' "$backend_exists" >> "$GITHUB_OUTPUT"
+          printf 'migrator_exists=%s\n' "$migrator_exists" >> "$GITHUB_OUTPUT"
+
       - name: 构建并推送后端运行镜像
         id: backend
+        if: ${{ steps.content.outputs.backend_exists != 'true' }}
         uses: docker/build-push-action@v6
         env:
           SOURCE_DATE_EPOCH: "0"
@@ -97,12 +120,15 @@ jobs:
           file: delivery-platform-server/Dockerfile
           target: runtime
           push: true
-          tags: ${{ steps.names.outputs.backend_repository }}:sha-${{ needs.resolve.outputs.commit }}
+          tags: |
+            ${{ steps.content.outputs.backend_content }}
+            ${{ steps.names.outputs.backend_repository }}:sha-${{ needs.resolve.outputs.commit }}
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
 
       - name: 构建并推送迁移镜像
         id: migrator
+        if: ${{ steps.content.outputs.migrator_exists != 'true' }}
         uses: docker/build-push-action@v6
         env:
           SOURCE_DATE_EPOCH: "0"
@@ -111,9 +137,60 @@ jobs:
           file: delivery-platform-server/Dockerfile
           target: migrator
           push: true
-          tags: ${{ steps.names.outputs.migrator_repository }}:sha-${{ needs.resolve.outputs.commit }}
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,mode=max,scope=backend
+          tags: |
+            ${{ steps.content.outputs.migrator_content }}
+            ${{ steps.names.outputs.migrator_repository }}:sha-${{ needs.resolve.outputs.commit }}
+          cache-from: |
+            type=gha,scope=backend
+            type=gha,scope=migrator
+          cache-to: type=gha,mode=max,scope=migrator
+
+      - name: 为复用镜像创建当前 Release 别名
+        if: ${{ steps.content.outputs.backend_exists == 'true' || steps.content.outputs.migrator_exists == 'true' }}
+        env:
+          RELEASE_SHA: ${{ needs.resolve.outputs.commit }}
+          BACKEND_REPOSITORY: ${{ steps.names.outputs.backend_repository }}
+          MIGRATOR_REPOSITORY: ${{ steps.names.outputs.migrator_repository }}
+          BACKEND_CONTENT: ${{ steps.content.outputs.backend_content }}
+          MIGRATOR_CONTENT: ${{ steps.content.outputs.migrator_content }}
+          BACKEND_EXISTS: ${{ steps.content.outputs.backend_exists }}
+          MIGRATOR_EXISTS: ${{ steps.content.outputs.migrator_exists }}
+        run: |
+          set -Eeuo pipefail
+          if [ "$BACKEND_EXISTS" = 'true' ]; then
+            docker buildx imagetools create \
+              --tag "$BACKEND_REPOSITORY:sha-$RELEASE_SHA" "$BACKEND_CONTENT"
+          fi
+          if [ "$MIGRATOR_EXISTS" = 'true' ]; then
+            docker buildx imagetools create \
+              --tag "$MIGRATOR_REPOSITORY:sha-$RELEASE_SHA" "$MIGRATOR_CONTENT"
+          fi
+
+      - name: 解析并核对内容寻址镜像
+        id: images
+        env:
+          RELEASE_SHA: ${{ needs.resolve.outputs.commit }}
+          BACKEND_REPOSITORY: ${{ steps.names.outputs.backend_repository }}
+          MIGRATOR_REPOSITORY: ${{ steps.names.outputs.migrator_repository }}
+          BACKEND_CONTENT: ${{ steps.content.outputs.backend_content }}
+          MIGRATOR_CONTENT: ${{ steps.content.outputs.migrator_content }}
+        run: |
+          set -Eeuo pipefail
+          digest_of() {
+            local reference="$1" digest
+            digest="$(docker buildx imagetools inspect "$reference" | awk '$1 == "Digest:" { print $2; exit }')"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+              echo "::error::cannot resolve immutable digest for $reference"
+              return 1
+            }
+            printf '%s\n' "$digest"
+          }
+          backend_digest="$(digest_of "$BACKEND_CONTENT")"
+          migrator_digest="$(digest_of "$MIGRATOR_CONTENT")"
+          [ "$(digest_of "$BACKEND_REPOSITORY:sha-$RELEASE_SHA")" = "$backend_digest" ]
+          [ "$(digest_of "$MIGRATOR_REPOSITORY:sha-$RELEASE_SHA")" = "$migrator_digest" ]
+          printf 'backend_digest=%s\n' "$backend_digest" >> "$GITHUB_OUTPUT"
+          printf 'migrator_digest=%s\n' "$migrator_digest" >> "$GITHUB_OUTPUT"
 
       - name: 构建前端静态包
         env:
@@ -130,9 +207,9 @@ jobs:
         env:
           RELEASE_SHA: ${{ needs.resolve.outputs.commit }}
           BACKEND_REPOSITORY: ${{ steps.names.outputs.backend_repository }}
-          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
+          BACKEND_DIGEST: ${{ steps.images.outputs.backend_digest }}
           MIGRATOR_REPOSITORY: ${{ steps.names.outputs.migrator_repository }}
-          MIGRATOR_DIGEST: ${{ steps.migrator.outputs.digest }}
+          MIGRATOR_DIGEST: ${{ steps.images.outputs.migrator_digest }}
           FRONTEND_ARTIFACT: ${{ steps.names.outputs.frontend_artifact }}
         run: |
           set -Eeuo pipefail

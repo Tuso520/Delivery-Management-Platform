@@ -314,6 +314,15 @@ test('runtime and migrator images share production layers without shipping build
   assert.doesNotMatch(backendDockerfile, /ARG RELEASE_ID|ENV RELEASE_ID/u)
   assert.doesNotMatch(releaseWorkflow, /build-args:\s*RELEASE_ID/u)
   assert.equal(releaseWorkflow.match(/SOURCE_DATE_EPOCH: "0"/gu)?.length, 2)
+  assert.match(releaseWorkflow, /group: release-main/u)
+  assert.match(releaseWorkflow, /git ls-tree -r --full-tree/u)
+  assert.match(releaseWorkflow, /:content-\$content_sha/u)
+  assert.match(releaseWorkflow, /steps\.content\.outputs\.backend_exists != 'true'/u)
+  assert.match(releaseWorkflow, /steps\.content\.outputs\.migrator_exists != 'true'/u)
+  assert.match(releaseWorkflow, /docker buildx imagetools create/u)
+  assert.match(releaseWorkflow, /cache-to: type=gha,mode=max,scope=migrator/u)
+  assert.match(releaseWorkflow, /steps\.images\.outputs\.backend_digest/u)
+  assert.match(releaseWorkflow, /steps\.images\.outputs\.migrator_digest/u)
   for (const workflow of [releaseWorkflow, legacyDeployWorkflow]) {
     assert.doesNotMatch(workflow, /node_modules\/\.bin\/(?:prisma|ts-node)/u)
   }

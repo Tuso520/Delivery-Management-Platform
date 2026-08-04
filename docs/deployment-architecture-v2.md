@@ -23,7 +23,7 @@ flowchart LR
   Production --> ProdData["服务器内部数据层"]
 ```
 
-每个 Release 用完整 40 位 Git commit SHA 标识。前端、后端和迁移器写入同一份 `release-manifest.json`；后端镜像必须使用 `@sha256:`，测试通过后生产环境不重新构建。迁移镜像继承同一 Release 的精简后端运行镜像，只增加固定版本的 Prisma、ts-node 和 TypeScript 命令层；服务器先拉取后端后，迁移镜像只需补充差异层，不携带 builder 的编译工具链和完整开发依赖。`RELEASE_ID` 由 Release 环境文件在容器启动时注入，不写入 Dockerfile 的 ARG、ENV 或 Label；Buildx 的 runtime 和 migrator 构建固定 `SOURCE_DATE_EPOCH=0`，消除镜像索引、配置和文件元数据中的构建时钟漂移。因此后端内容未变化时不同 Release 可引用完全相同的不可变镜像 digest，发布身份仍由 Manifest、前端 `build-info.json` 和运行环境共同绑定。
+每个 Release 用完整 40 位 Git commit SHA 标识。前端、后端和迁移器写入同一份 `release-manifest.json`；后端镜像必须使用 `@sha256:`，测试通过后生产环境不重新构建。CI 对 `delivery-platform-server` Git 树计算 SHA-256，并优先复用 GHCR 中对应的 `content-<sha256>` runtime 和 migrator；只有新后端内容才构建，再为当前 Release 创建 `sha-<commit>` 别名并核对两者解析到同一 digest。所有 Release 全局串行，避免相同内容并发首建。迁移镜像继承同一 Release 的精简后端运行镜像，只增加固定版本的 Prisma、ts-node 和 TypeScript 命令层，使用独立 GHA cache scope，不携带 builder 的编译工具链和完整开发依赖。`RELEASE_ID` 由 Release 环境文件在容器启动时注入，不写入 Dockerfile 的 ARG、ENV 或 Label；首次内容构建还固定 `SOURCE_DATE_EPOCH=0`，消除镜像索引、配置和文件元数据中的构建时钟漂移。因此后端内容未变化时不同 Release 引用完全相同的不可变镜像 digest，发布身份仍由 Manifest、前端 `build-info.json` 和运行环境共同绑定。
 
 服务器拓扑固定为：
 
