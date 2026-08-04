@@ -9,7 +9,7 @@ router.beforeEach(async (to, from, next) => {
   const userStore = useUserStore()
   const hasSession = await userStore.ensureSession()
 
-  if (to.path === '/login') {
+  if (to.path === '/login' || to.path === '/login/feishu/callback') {
     if (hasSession) {
       const landingPath = getFirstAccessiblePath(
         accessItems,

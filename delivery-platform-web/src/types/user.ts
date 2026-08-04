@@ -19,6 +19,10 @@ export interface LoginResult {
   defaultRoute: string
 }
 
+export interface FeishuLoginStartResult {
+  authorizationUrl: string
+}
+
 export interface UserProfile {
   id?: string
   sub?: string

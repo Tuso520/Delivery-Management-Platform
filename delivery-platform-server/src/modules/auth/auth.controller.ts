@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Query,
   Req,
   Res,
   UseGuards,
@@ -19,6 +20,11 @@ import { Public } from '../../common/decorators/public.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
 import { AuthService, type AuthSessionResult } from './auth.service';
+import {
+  BeginFeishuLoginDto,
+  CompleteFeishuLoginDto,
+  FeishuOAuthCallbackDto,
+} from './dto/feishu-auth.dto';
 import { LoginDto } from './dto/login.dto';
 import type { RefreshSessionContext } from './refresh-session.service';
 import { JwtPayload } from './strategies/jwt.strategy';
@@ -49,6 +55,47 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ): Promise<PublicAuthResult> {
     const result = await this.authService.login(loginDto, this.getSessionContext(request));
+    this.setRefreshCookie(response, result.refreshToken, result.refreshExpiresAt);
+    return this.toPublicResult(result);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @Get('feishu/start')
+  @ApiOperation({ summary: '创建带一次性 state 的飞书扫码登录地址' })
+  beginFeishuLogin(@Query() query: BeginFeishuLoginDto) {
+    return this.authService.beginFeishuLogin(query.redirect);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
+  @Get('feishu/callback')
+  @ApiOperation({ summary: '校验飞书授权回调并签发一次性系统登录票据' })
+  async feishuCallback(
+    @Query() query: FeishuOAuthCallbackDto,
+    @Res() response: Response,
+  ): Promise<void> {
+    try {
+      response.redirect(302, await this.authService.handleFeishuCallback(query));
+    } catch {
+      response.redirect(302, '/login?feishu_error=authorization_failed');
+    }
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @Post('feishu/complete')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '消费一次性票据并建立系统刷新会话' })
+  async completeFeishuLogin(
+    @Body() dto: CompleteFeishuLoginDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<PublicAuthResult> {
+    const result = await this.authService.completeFeishuLogin(
+      dto.ticket,
+      this.getSessionContext(request),
+    );
     this.setRefreshCookie(response, result.refreshToken, result.refreshExpiresAt);
     return this.toPublicResult(result);
   }

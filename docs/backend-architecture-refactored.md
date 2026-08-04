@@ -2000,7 +2000,7 @@ Webhook
 候选人员审批独立工作流
 ```
 
-飞书通讯录同步使用租约和 revision 防并发，匹配结果直接写统一用户与 `ExternalIdentity`；冲突、未匹配和停用项进入脱敏同步日志，不建立候选人审批双轨。Secret 使用 AES-256-GCM 独立密钥加密，API 只返回掩码。
+飞书通讯录同步使用租约和 revision 防并发，递归读取组织层级并按用户独立事务写统一用户、`ExternalIdentity` 和 `UserDepartmentMembership`；单项冲突或失败不回滚整批。OAuth 使用一次性 state 和 ticket，只允许已同步、唯一绑定且启用的身份登录。Secret 使用 AES-256-GCM 独立密钥加密，API 只返回掩码。
 
 ---
 

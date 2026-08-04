@@ -431,6 +431,12 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: 'routes.login', hidden: true },
   },
   {
+    path: '/login/feishu/callback',
+    name: 'FeishuLoginCallback',
+    component: () => import('@/views/login/index.vue'),
+    meta: { title: 'routes.login', hidden: true },
+  },
+  {
     path: '/',
     component: () => import('@/layouts/BasicLayout.vue'),
     redirect: '/dashboard',

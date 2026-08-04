@@ -4,6 +4,8 @@ import * as bcrypt from 'bcrypt';
 
 import type { PrismaService } from '../../../database/prisma.service';
 import type { RedisService } from '../../../database/redis.service';
+import type { PermissionResolutionService } from '../../permission/permission-resolution.service';
+import type { IntegrationService } from '../../platform/integration.service';
 import type { SystemConfigService } from '../../system-config/system-config.service';
 import { AuthService } from '../auth.service';
 import type { RefreshSessionService } from '../refresh-session.service';
@@ -17,15 +19,21 @@ describe('AuthService', () => {
   let service: AuthService;
   let prisma: {
     user: { findFirst: jest.Mock; update: jest.Mock };
+    externalIdentity: { findMany: jest.Mock; updateMany: jest.Mock };
   };
   let jwtService: { sign: jest.Mock; decode: jest.Mock };
-  let redisService: { blacklistToken: jest.Mock };
+  let redisService: {
+    blacklistToken: jest.Mock;
+    storeOneTimeJson: jest.Mock;
+    consumeOneTimeJson: jest.Mock;
+  };
   let refreshSessions: {
     issue: jest.Mock;
     rotate: jest.Mock;
     revoke: jest.Mock;
     revokeAll: jest.Mock;
   };
+  let permissionResolver: { resolveForUser: jest.Mock };
 
   const refreshExpiresAt = new Date('2026-07-18T00:00:00.000Z');
   const mockUser = {
@@ -56,6 +64,10 @@ describe('AuthService', () => {
         findFirst: jest.fn(),
         update: jest.fn(),
       },
+      externalIdentity: {
+        findMany: jest.fn(),
+        updateMany: jest.fn(),
+      },
     };
     jwtService = {
       sign: jest.fn(),
@@ -63,6 +75,8 @@ describe('AuthService', () => {
     };
     redisService = {
       blacklistToken: jest.fn(),
+      storeOneTimeJson: jest.fn(),
+      consumeOneTimeJson: jest.fn(),
     };
     refreshSessions = {
       issue: jest.fn(),
@@ -70,11 +84,19 @@ describe('AuthService', () => {
       revoke: jest.fn(),
       revokeAll: jest.fn(),
     };
+    permissionResolver = {
+      resolveForUser: jest.fn().mockResolvedValue({
+        roles: ['PROJECT_MANAGER'],
+        permissions: ['project:view', 'project:create'],
+      }),
+    };
     service = new AuthService(
       prisma as unknown as PrismaService,
       jwtService as unknown as JwtService,
       redisService as unknown as RedisService,
       refreshSessions as unknown as RefreshSessionService,
+      undefined,
+      permissionResolver as unknown as PermissionResolutionService,
     );
   });
 
@@ -121,6 +143,10 @@ describe('AuthService', () => {
             },
           },
         ],
+      });
+      permissionResolver.resolveForUser.mockResolvedValue({
+        roles: ['PROJECT_MANAGER', 'DELIVERY_MANAGER'],
+        permissions: ['project:view', 'project:create', 'user:view'],
       });
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
@@ -219,6 +245,7 @@ describe('AuthService', () => {
         policyRedis as unknown as RedisService,
         refreshSessions as unknown as RefreshSessionService,
         systemConfig as unknown as SystemConfigService,
+        permissionResolver as unknown as PermissionResolutionService,
       );
 
       const attempt = policyService.login(
@@ -253,6 +280,146 @@ describe('AuthService', () => {
       expect(result.accessToken).toBe('access-token-2');
       expect(result.refreshToken).toBe('refresh-token-2');
       expect(result.user.roles).toEqual(['PROJECT_MANAGER']);
+    });
+
+    it('revokes the rotated child session when the user was disabled', async () => {
+      refreshSessions.rotate.mockResolvedValue({
+        userId: 'user-disabled',
+        token: 'refresh-token-child',
+        expiresAt: refreshExpiresAt,
+      });
+      prisma.user.findFirst.mockResolvedValue(null);
+
+      await expect(service.refresh('refresh-token-parent')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(refreshSessions.revoke).toHaveBeenCalledWith('refresh-token-child');
+      expect(jwtService.sign).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Feishu OAuth login', () => {
+    function createFeishuService() {
+      const integration = {
+        getFeishuOAuthSettings: jest.fn().mockResolvedValue({
+          integrationConfigId: 'integration-1',
+          appId: 'cli_app_id',
+          redirectUri: 'https://test.example.com/api/v1/auth/feishu/callback',
+        }),
+        exchangeFeishuOAuthCode: jest.fn().mockResolvedValue({
+          openId: 'ou_user_1',
+          unionId: 'on_user_1',
+          tenantUserId: 'tenant-user-1',
+        }),
+      };
+      return {
+        integration,
+        service: new AuthService(
+          prisma as unknown as PrismaService,
+          jwtService as unknown as JwtService,
+          redisService as unknown as RedisService,
+          refreshSessions as unknown as RefreshSessionService,
+          undefined,
+          permissionResolver as unknown as PermissionResolutionService,
+          integration as unknown as IntegrationService,
+        ),
+      };
+    }
+
+    it('stores only a hashed one-time state and rejects external redirect paths', async () => {
+      const { service: feishuService } = createFeishuService();
+
+      const result = await feishuService.beginFeishuLogin('//evil.example.com');
+
+      const authorizationUrl = new URL(result.authorizationUrl);
+      const state = authorizationUrl.searchParams.get('state');
+      expect(authorizationUrl.origin).toBe('https://accounts.feishu.cn');
+      expect(authorizationUrl.searchParams.get('app_id')).toBe('cli_app_id');
+      expect(state).toHaveLength(43);
+      expect(redisService.storeOneTimeJson).toHaveBeenCalledWith(
+        'feishu-state',
+        expect.stringMatching(/^[a-f0-9]{64}$/),
+        expect.objectContaining({ redirectPath: '/dashboard' }),
+        300,
+      );
+      expect(redisService.storeOneTimeJson.mock.calls[0][1]).not.toBe(state);
+    });
+
+    it('matches a unique active synced identity and returns a one-minute login ticket', async () => {
+      const { service: feishuService, integration } = createFeishuService();
+      redisService.consumeOneTimeJson.mockResolvedValue({
+        integrationConfigId: 'integration-1',
+        redirectPath: '/project',
+        redirectUri: 'https://test.example.com/api/v1/auth/feishu/callback',
+      });
+      prisma.externalIdentity.findMany.mockResolvedValue([
+        {
+          id: 'identity-1',
+          userId: 'user-1',
+          user: { status: 'Active', deletedAt: null },
+        },
+      ]);
+
+      const callback = await feishuService.handleFeishuCallback({
+        state: 'opaque-state',
+        code: 'one-time-code',
+      });
+
+      expect(integration.exchangeFeishuOAuthCode).toHaveBeenCalledWith(
+        'integration-1',
+        'one-time-code',
+      );
+      expect(prisma.externalIdentity.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ provider: 'FEISHU', isActive: true }),
+        }),
+      );
+      expect(new URL(callback).pathname).toBe('/login/feishu/callback');
+      expect(redisService.storeOneTimeJson).toHaveBeenCalledWith(
+        'feishu-ticket',
+        expect.stringMatching(/^[a-f0-9]{64}$/),
+        { userId: 'user-1', redirectPath: '/project' },
+        60,
+      );
+    });
+
+    it('consumes the one-time ticket and issues the normal refresh-cookie session', async () => {
+      const { service: feishuService } = createFeishuService();
+      redisService.consumeOneTimeJson.mockResolvedValue({
+        userId: 'user-1',
+        redirectPath: '/dashboard',
+      });
+      prisma.user.findFirst.mockResolvedValue(mockUser);
+      refreshSessions.issue.mockResolvedValue({
+        token: 'refresh-token-feishu',
+        expiresAt: refreshExpiresAt,
+      });
+      jwtService.sign.mockReturnValue('access-token-feishu');
+
+      const result = await feishuService.completeFeishuLogin('one-time-ticket');
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          accessToken: 'access-token-feishu',
+          refreshToken: 'refresh-token-feishu',
+          defaultRoute: '/dashboard',
+        }),
+      );
+      expect(redisService.consumeOneTimeJson).toHaveBeenCalledWith(
+        'feishu-ticket',
+        expect.stringMatching(/^[a-f0-9]{64}$/),
+      );
+      expect(refreshSessions.issue).toHaveBeenCalledWith('user-1', {});
+    });
+
+    it('rejects a replayed or expired state before calling Feishu', async () => {
+      const { service: feishuService, integration } = createFeishuService();
+      redisService.consumeOneTimeJson.mockResolvedValue(null);
+
+      await expect(
+        feishuService.handleFeishuCallback({ state: 'used-state', code: 'code' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(integration.exchangeFeishuOAuthCode).not.toHaveBeenCalled();
     });
   });
 

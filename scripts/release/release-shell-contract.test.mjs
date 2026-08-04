@@ -184,6 +184,27 @@ test('v2 scripts never delete Docker volumes or globally prune Docker', () => {
   assert.doesNotMatch(combined, /\bdown\s+-v\b/u)
 })
 
+test('disposable test reset is explicit, environment-bound and limited to three resolved volumes', () => {
+  for (const contract of [
+    'RESET_TEST_DATA="$7"',
+    'test "$DEPLOY_ENV" = test',
+    'test "${#reset_volumes[@]}" -eq 3',
+    '[cleanup-before] exact MySQL table counts',
+    '[cleanup-before] redis_keys=',
+    '[cleanup-before] minio_files=',
+    'down --volumes --remove-orphans',
+    'disposable test data volumes removed',
+  ]) {
+    assert.match(
+      deployWorkflow,
+      new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'),
+    )
+  }
+  assert.match(deploy, /prisma\/verify-clean-test-baseline\.ts/u)
+  assert.match(deploy, /CONFIRM_CLEAN_TEST_BASELINE=YES/u)
+  assert.doesNotMatch(deployWorkflow, /docker\s+volume\s+(?:prune|rm)/u)
+})
+
 test('remote image pulls use a job-scoped GHCR credential and always log out', () => {
   occursInOrder(deployWorkflow, [
     '临时授权目标服务器读取 GHCR',

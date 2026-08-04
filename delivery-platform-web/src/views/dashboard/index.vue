@@ -34,6 +34,15 @@ const queries = useDashboardQueries()
 const { t } = useI18n()
 
 const userInfo = computed(() => userStore.userInfo)
+const hasOnlyMinimumPermission = computed(() => {
+  const user = userInfo.value
+  return Boolean(
+    user
+    && !user.roles.includes('SUPER_ADMIN')
+    && user.permissions.length === 1
+    && user.permissions[0] === 'dashboard:view',
+  )
+})
 const summary = computed(() => queries.projectSummary.data.value ?? EMPTY_SUMMARY)
 const tasks = computed(() => queries.myTasks.data.value ?? [])
 const highRisks = computed(() => queries.highRisks.data.value ?? [])
@@ -146,6 +155,12 @@ function retryRecentActivities(): void {
 
 <template>
   <div class="dashboard-page">
+    <a-alert
+      v-if="hasOnlyMinimumPermission"
+      type="warning"
+      :title="t('dashboard.minimumPermission')"
+      show-icon
+    />
     <DashboardOverviewBand
       :headline="dashboardHeadline"
       :description="dashboardDescription"

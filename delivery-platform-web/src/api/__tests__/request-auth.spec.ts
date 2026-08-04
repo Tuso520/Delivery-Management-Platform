@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => {
     resetState: vi.fn(),
     replace: vi.fn((_path: string) => Promise.resolve()),
     messageError: vi.fn(),
+    refreshHandler: vi.fn(),
     currentRoute: { value: { path: '/dashboard' } },
   }
 })
@@ -61,12 +62,14 @@ vi.mock('@/store/user', () => ({
 
 await import('@/api/request')
 const { setSessionExpirationHandler } = await import('@/api/session-expiration')
+const { setSessionRefreshHandler } = await import('@/api/session-refresh')
 setSessionExpirationHandler(async () => {
   mocks.resetState()
   if (mocks.currentRoute.value.path !== '/login') {
     await mocks.replace('/login')
   }
 })
+setSessionRefreshHandler(mocks.refreshHandler)
 
 type RequestHandler = (config: {
   headers: Record<string, string>
@@ -132,6 +135,7 @@ describe('request authentication', () => {
     mocks.resetState.mockClear()
     mocks.replace.mockClear()
     mocks.messageError.mockClear()
+    mocks.refreshHandler.mockClear()
     mocks.setToken.mockClear()
     mocks.currentRoute.value.path = '/dashboard'
   })
@@ -191,6 +195,8 @@ describe('request authentication', () => {
       skipAuthRefresh: true,
     })
     expect(mocks.setToken).toHaveBeenCalledWith('fresh-token')
+    expect(mocks.refreshHandler).toHaveBeenCalledOnce()
+    expect(mocks.refreshHandler).toHaveBeenCalledWith(refreshedSession)
     expect(firstError.config.headers.Authorization).toBe('Bearer fresh-token')
     expect(secondError.config.headers.Authorization).toBe('Bearer fresh-token')
     expect(mocks.request).toHaveBeenCalledTimes(2)

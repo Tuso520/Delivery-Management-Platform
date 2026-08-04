@@ -74,6 +74,51 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   async clearSecurityCounter(key: string): Promise<void> {
     await this.client.del(`security:${key}`);
   }
+
+  async storeOneTimeJson(
+    namespace: string,
+    idHash: string,
+    value: Record<string, unknown>,
+    ttlSeconds: number,
+  ): Promise<void> {
+    this.assertOneTimeKey(namespace, idHash);
+    const stored = await this.client.set(
+      `one-time:${namespace}:${idHash}`,
+      JSON.stringify(value),
+      'EX',
+      Math.max(1, ttlSeconds),
+      'NX',
+    );
+    if (stored !== 'OK') throw new Error('一次性凭据发生冲突');
+  }
+
+  async consumeOneTimeJson(
+    namespace: string,
+    idHash: string,
+  ): Promise<Record<string, unknown> | null> {
+    this.assertOneTimeKey(namespace, idHash);
+    const key = `one-time:${namespace}:${idHash}`;
+    const value = await this.client.eval(
+      "local value = redis.call('GET', KEYS[1]); if value then redis.call('DEL', KEYS[1]); end; return value",
+      1,
+      key,
+    );
+    if (typeof value !== 'string') return null;
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private assertOneTimeKey(namespace: string, idHash: string): void {
+    if (!/^[a-z0-9-]{1,40}$/.test(namespace) || !/^[a-f0-9]{64}$/.test(idHash)) {
+      throw new Error('一次性凭据键无效');
+    }
+  }
 }
 
 @Global()

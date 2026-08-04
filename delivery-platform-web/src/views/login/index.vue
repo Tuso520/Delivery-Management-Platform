@@ -1,5 +1,5 @@
 ﻿<script setup lang="ts">
-import { computed, reactive, shallowRef, useTemplateRef } from 'vue'
+import { computed, reactive, shallowRef, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Message from '@arco-design/web-vue/es/message'
@@ -12,6 +12,7 @@ import {
   IconUser,
 } from '@arco-design/web-vue/es/icon'
 import type { FormRules } from '@/types/arco'
+import { authApi } from '@/api/auth'
 import { useAuth } from '@/composables/useAuth'
 import { usePublicSystemConfigQuery } from '@/composables/queries/useAdministrationQueries'
 import { getFirstAccessiblePath } from '@/router/access'
@@ -22,13 +23,15 @@ import type { LoginForm } from '@/types/user'
 
 const router = useRouter()
 const route = useRoute()
-const { login, userInfo } = useAuth()
+const { completeFeishuLogin, login, userInfo } = useAuth()
 const localeStore = useLocaleStore()
 const { t } = useI18n()
 const publicConfigQuery = usePublicSystemConfigQuery()
 
 const formRef = useTemplateRef<FormInstance>('loginFormRef')
 const loading = shallowRef(false)
+const feishuLoading = shallowRef(false)
+const isFeishuCallback = computed(() => route.path === '/login/feishu/callback')
 const passwordVisible = shallowRef(false)
 const platformName = computed(
   () => publicConfigQuery.data.value?.['platform.name'] || t('app.title'),
@@ -61,6 +64,12 @@ const copy = computed(() => {
     security: t('login.security'),
     showPassword: t('login.showPassword'),
     hidePassword: t('login.hidePassword'),
+    adminLogin: t('login.adminLogin'),
+    feishuLogin: t('login.feishuLogin'),
+    feishuStarting: t('login.feishuStarting'),
+    feishuCompleting: t('login.feishuCompleting'),
+    feishuFailed: t('login.feishuFailed'),
+    loginDivider: t('login.loginDivider'),
   }
 })
 
@@ -110,6 +119,47 @@ async function handleLogin(): Promise<void> {
     loading.value = false
   }
 }
+
+async function handleFeishuStart(): Promise<void> {
+  feishuLoading.value = true
+  try {
+    const redirect = route.query.redirect as string | undefined
+    const result = await authApi.beginFeishuLogin(
+      redirect ? resolveRedirect(redirect, '/dashboard') : undefined,
+    )
+    Message.info(copy.value.feishuStarting)
+    window.location.assign(result.authorizationUrl)
+  } catch {
+    Message.error(copy.value.feishuFailed)
+    feishuLoading.value = false
+  }
+}
+
+watch([() => route.path, () => route.query.ticket, () => route.query.feishu_error], async () => {
+  if (route.query.feishu_error) {
+    Message.error(copy.value.feishuFailed)
+    await router.replace('/login')
+    return
+  }
+  if (route.path !== '/login/feishu/callback') return
+  const ticket = typeof route.query.ticket === 'string' ? route.query.ticket : ''
+  if (!ticket) {
+    Message.error(copy.value.feishuFailed)
+    await router.replace('/login')
+    return
+  }
+  feishuLoading.value = true
+  try {
+    const defaultRoute = await completeFeishuLogin(ticket)
+    Message.success(copy.value.success)
+    await router.replace(resolveRedirect(defaultRoute, '/dashboard'))
+  } catch {
+    Message.error(copy.value.feishuFailed)
+    await router.replace('/login')
+  } finally {
+    feishuLoading.value = false
+  }
+}, { immediate: true })
 </script>
 
 <template>
@@ -160,6 +210,10 @@ async function handleLogin(): Promise<void> {
           <h2>{{ copy.welcome }}</h2>
           <p>{{ copy.introduction }}</p>
         </header>
+
+        <p class="login-method-title">
+          {{ copy.adminLogin }}
+        </p>
 
         <a-form
           ref="loginFormRef"
@@ -219,6 +273,22 @@ async function handleLogin(): Promise<void> {
             <IconRight />
           </a-button>
         </a-form>
+
+        <div class="login-divider" role="separator">
+          <span>{{ copy.loginDivider }}</span>
+        </div>
+
+        <a-button
+          size="large"
+          class="feishu-login-button"
+          :loading="feishuLoading"
+          :disabled="loading"
+          @click="handleFeishuStart"
+        >
+          {{ feishuLoading
+            ? (isFeishuCallback ? copy.feishuCompleting : copy.feishuStarting)
+            : copy.feishuLogin }}
+        </a-button>
 
         <footer class="login-footer">
           <IconLock />
@@ -425,6 +495,36 @@ async function handleLogin(): Promise<void> {
   margin-top: 9px;
   color: #86909c;
   font-size: 14px;
+}
+
+.login-method-title {
+  margin: 24px 0 12px;
+  color: var(--color-text-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0;
+  color: var(--color-text-3);
+  font-size: 12px;
+}
+
+.login-divider::before,
+.login-divider::after {
+  flex: 1;
+  height: 1px;
+  background: var(--color-border-2);
+  content: '';
+}
+
+.feishu-login-button {
+  width: 100%;
+  color: rgb(var(--primary-6));
+  border-color: rgb(var(--primary-6));
 }
 
 .login-form :deep(.arco-form-item) {

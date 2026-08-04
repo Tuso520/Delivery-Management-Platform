@@ -48,6 +48,7 @@ export interface IntegrationConfiguration {
   verificationToken?: string | null
   encryptKey?: string | null
   contactDepartmentId?: string | null
+  oauthRedirectUri?: string | null
   testRecipient?: string | null
 }
 
@@ -72,6 +73,7 @@ export interface UpdateIntegrationDto {
   verificationToken?: string
   encryptKey?: string
   contactDepartmentId?: string
+  oauthRedirectUri?: string
   testRecipient?: string
 }
 

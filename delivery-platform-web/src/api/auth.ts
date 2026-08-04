@@ -1,5 +1,10 @@
 import request, { refreshSessionRequest } from './request'
-import type { LoginForm, LoginResult, UserProfile } from '@/types/user'
+import type {
+  FeishuLoginStartResult,
+  LoginForm,
+  LoginResult,
+  UserProfile,
+} from '@/types/user'
 
 export const authApi = {
   /**
@@ -23,5 +28,20 @@ export const authApi = {
 
   refreshToken() {
     return refreshSessionRequest()
+  },
+
+  beginFeishuLogin(redirect?: string) {
+    return request.get<FeishuLoginStartResult>('/auth/feishu/start', {
+      params: redirect ? { redirect } : undefined,
+      silent: true,
+      skipAuthRefresh: true,
+    })
+  },
+
+  completeFeishuLogin(ticket: string) {
+    return request.post<LoginResult>('/auth/feishu/complete', { ticket }, {
+      silent: true,
+      skipAuthRefresh: true,
+    })
   },
 }

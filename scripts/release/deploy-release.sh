@@ -11,6 +11,7 @@ DEPLOY_ENV="${DEPLOY_ENV:-}"
 DEPLOY_TARGET_ID="${DEPLOY_TARGET_ID:-}"
 INTERNAL_ORIGIN="${INTERNAL_ORIGIN:-}"
 PUBLIC_ORIGIN="${PUBLIC_ORIGIN:-}"
+RESET_TEST_DATA="${RESET_TEST_DATA:-false}"
 NGINX_CONTROL='/usr/local/sbin/dmp-nginx-control'
 
 STATE_DIR=""
@@ -23,6 +24,7 @@ BACKEND_IMAGE=""
 MIGRATION_IMAGE=""
 FRONTEND_SHA256=""
 FRONTEND_BYTES=""
+EXPECTED_MIGRATION_COUNT=""
 RELEASE_ENV_FILE=""
 MINIO_STOPPED="NO"
 APPLICATION_STOPPED="NO"
@@ -141,6 +143,8 @@ read_manifest() {
   MIGRATION_IMAGE="$(jq -er '.components.migrator.image' "$RELEASE_MANIFEST")" || die 'migrator image is missing'
   FRONTEND_SHA256="$(jq -er '.components.frontend.sha256' "$RELEASE_MANIFEST")" || die 'frontend checksum is missing'
   FRONTEND_BYTES="$(jq -er '.components.frontend.bytes' "$RELEASE_MANIFEST")" || die 'frontend size is missing'
+  EXPECTED_MIGRATION_COUNT="$(jq -er '.migrations.expectedCount' "$RELEASE_MANIFEST")" || \
+    die 'manifest migration count is missing'
 
   [[ "$RELEASE_ID" =~ ^[0-9a-f]{40}$ ]] || die 'manifest releaseId is invalid'
   [ "$SHORT_RELEASE_ID" = "${RELEASE_ID:0:12}" ] || die 'manifest shortReleaseId is inconsistent'
@@ -150,6 +154,8 @@ read_manifest() {
     die 'migrator image is not an immutable GHCR digest reference'
   [[ "$FRONTEND_SHA256" =~ ^[0-9a-f]{64}$ ]] || die 'frontend checksum is invalid'
   [[ "$FRONTEND_BYTES" =~ ^[1-9][0-9]*$ ]] || die 'frontend size is invalid'
+  [[ "$EXPECTED_MIGRATION_COUNT" =~ ^[1-9][0-9]*$ ]] || \
+    die 'manifest migration count is invalid'
   [ "$(sha256sum "$FRONTEND_BUNDLE" | awk '{print $1}')" = "$FRONTEND_SHA256" ] || \
     die 'frontend bundle checksum mismatch'
   [ "$(stat -c '%s' "$FRONTEND_BUNDLE")" = "$FRONTEND_BYTES" ] || \
@@ -161,6 +167,7 @@ read_manifest() {
     printf 'RELEASE_ID=%s\n' "$SHORT_RELEASE_ID"
     printf 'BACKEND_IMAGE=%s\n' "$BACKEND_IMAGE"
     printf 'MIGRATION_IMAGE=%s\n' "$MIGRATION_IMAGE"
+    printf 'EXPECTED_MIGRATION_COUNT=%s\n' "$EXPECTED_MIGRATION_COUNT"
   } > "$RELEASE_ENV_FILE.part"
   mv -f "$RELEASE_ENV_FILE.part" "$RELEASE_ENV_FILE"
 }
@@ -311,6 +318,17 @@ run_migrations() {
   app_compose_with "$RELEASE_ENV_FILE" run --rm --no-deps backend-migrate
 }
 
+verify_clean_test_baseline() {
+  [ "$RESET_TEST_DATA" = 'true' ] || return 0
+  [ "$DEPLOY_ENV" = 'test' ] || die 'clean baseline verification is test-only'
+  log 'verifying clean test baseline and all foreign-key relations'
+  app_compose_with "$RELEASE_ENV_FILE" run --rm --no-deps \
+    -e DEPLOY_ENV=test \
+    -e CONFIRM_CLEAN_TEST_BASELINE=YES \
+    -e "DEPLOY_TARGET_ID=$DEPLOY_TARGET_ID" \
+    backend-migrate ts-node --transpile-only prisma/verify-clean-test-baseline.ts
+}
+
 wait_backend_ready() {
   local backend_id host_port attempts=60
   backend_id="$(app_compose_with "$RELEASE_ENV_FILE" ps -q backend)"
@@ -416,6 +434,7 @@ deploy_release() {
   stop_application
   create_backup
   run_migrations
+  verify_clean_test_baseline
   start_application
   switch_frontend
   check_origin internal "$INTERNAL_ORIGIN"

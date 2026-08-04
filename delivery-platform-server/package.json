@@ -37,6 +37,7 @@
     "prisma:seed": "ts-node prisma/seed.ts",
     "prisma:seed-test-data": "ts-node prisma/seed-test-data.ts",
     "prisma:verify-test-data": "ts-node prisma/verify-test-data.ts",
+    "prisma:verify-clean-test-baseline": "ts-node prisma/verify-clean-test-baseline.ts",
     "deploy": "pnpm prisma:generate && pnpm build && pnpm start:prod",
     "type-check": "tsc --noEmit"
   },

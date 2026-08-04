@@ -6,6 +6,8 @@ import { PassportModule } from '@nestjs/passport';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 
 import { RedisModule } from '../../database/redis.service';
+import { PermissionModule } from '../permission/permission.module';
+import { IntegrationModule } from '../platform/integration.module';
 import { SystemConfigModule } from '../system-config/system-config.module';
 
 import { AuthController } from './auth.controller';
@@ -18,6 +20,8 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     PassportModule.register({ defaultStrategy: 'jwt' }),
     RedisModule,
     SystemConfigModule,
+    PermissionModule,
+    IntegrationModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

@@ -47,8 +47,12 @@ async function main(): Promise<void> {
   console.log('[10/11] 统一知识库');
   await seedTargetKnowledge(prisma);
 
-  console.log('[11/11] 示例项目与两级档案快照');
-  await seedProjects(prisma);
+  if (process.env.SEED_INCLUDE_DEMO_DATA?.trim().toLowerCase() === 'true') {
+    console.log('[11/11] 示例项目与两级档案快照');
+    await seedProjects(prisma);
+  } else {
+    console.log('[11/11] 已跳过示例项目（SEED_INCLUDE_DEMO_DATA 未启用）');
+  }
 
   console.log('目标架构种子数据初始化完成。');
 }

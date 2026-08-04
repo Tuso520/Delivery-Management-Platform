@@ -20,7 +20,7 @@ const aliases: Record<Provider, readonly string[]> = {
   FEISHU: ['FEISHU', 'feishu'],
 };
 const publicFields: Record<Provider, readonly string[]> = {
-  FEISHU: ['appId', 'contactDepartmentId', 'testRecipient'],
+  FEISHU: ['appId', 'contactDepartmentId', 'oauthRedirectUri', 'testRecipient'],
 };
 const secretFields: Record<Provider, readonly string[]> = {
   FEISHU: ['appSecret'],

@@ -186,7 +186,7 @@ flowchart LR
 ### 3.3 配置、依赖、测试与文档
 
 - 前后端是两个独立 pnpm workspace 和锁文件，没有根工作区，依赖升级和统一质量门禁成本较高。
-- 两端 `pnpm-workspace.yaml` 的 `allowBuilds` 值为字面占位文本，同时又存在 `onlyBuiltDependencies`，安装脚本策略不明确。
+- 后端 `pnpm-workspace.yaml` 已将原字面占位和冲突的 `onlyBuiltDependencies` 收敛为显式 `allowBuilds`：只允许 Nest、Prisma 和 bcrypt 所需构建脚本，明确拒绝 `@scarf/scarf`；前端仅允许 watcher、esbuild 和 vue-demi。
 - 两端 `lint` 脚本都带 `--fix`，不能作为只读检查命令。
 - 前端 coverage 配置使用 V8 provider，但依赖清单没有 `@vitest/coverage-v8`。
 - `tsconfig.node.json` 未覆盖 `vitest.config.ts`、UI Playwright 配置和 `tests/ui/`。

@@ -112,6 +112,7 @@
     "roleWelcome": "{role}，欢迎回来，{name}",
     "today": "今天是 {date}，{description}",
     "defaultDescription": "这里汇总与你相关的项目与交付事项。",
+    "minimumPermission": "当前账号尚未分配业务权限，请联系管理员开放权限。",
     "overview": "项目概览",
     "overviewDescription": "统计仅包含当前账号数据范围内的项目",
     "tasksDescription": "待审核、驳回修改、项目节点与未读系统通知",
@@ -539,6 +540,8 @@
     "departmentPlaceholder": "留空使用服务商根部门",
     "testRecipient": "测试消息接收人 ID",
     "testRecipientPlaceholder": "用于发送测试通知",
+    "oauthRedirectUri": "飞书登录回调地址",
+    "oauthRedirectUriPlaceholder": "例如 https://服务器地址/api/v1/auth/feishu/callback",
     "descriptionLabel": "说明",
     "logsTitle": "{provider}同步日志",
     "success": "成功",
@@ -1443,7 +1446,13 @@
     "usernameRequired": "请输入用户名",
     "passwordRequired": "请输入密码",
     "loginSuccess": "登录成功",
-    "loginFailed": "登录失败，请检查用户名和密码"
+    "loginFailed": "登录失败，请检查用户名和密码",
+    "adminLogin": "管理员账号登录",
+    "feishuLogin": "飞书扫码登录",
+    "feishuStarting": "正在打开飞书授权页面",
+    "feishuCompleting": "正在验证飞书登录",
+    "feishuFailed": "飞书登录失败，请重新扫码或联系管理员",
+    "loginDivider": "或"
   },
   "notFound": {
     "title": "页面不可用",

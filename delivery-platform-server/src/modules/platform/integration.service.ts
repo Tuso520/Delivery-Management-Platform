@@ -29,7 +29,7 @@ const ACTION_NOTIFICATION_TEST = 'NOTIFICATION_TEST';
 const CONTACT_SYNC_LEASE_MS = 5 * 60_000;
 
 const PUBLIC_FIELDS: Record<TargetIntegrationProvider, readonly string[]> = {
-  FEISHU: ['appId', 'contactDepartmentId', 'testRecipient'],
+  FEISHU: ['appId', 'contactDepartmentId', 'oauthRedirectUri', 'testRecipient'],
 };
 
 const SECRET_FIELDS: Record<TargetIntegrationProvider, readonly string[]> = {
@@ -52,10 +52,31 @@ interface IntegrationRecord {
 
 interface NormalizedExternalContact {
   externalUserId: string;
-  identifierType: 'OPEN_ID';
+  identifierType: 'OPEN_ID' | 'UNION_ID' | 'USER_ID';
+  openId?: string;
+  unionId?: string;
+  tenantUserId?: string;
+  tenantKey?: string;
   realName: string;
   phone?: string;
   email?: string;
+  avatarUrl?: string;
+  departmentIds: string[];
+  active: boolean;
+}
+
+interface NormalizedExternalDepartment {
+  externalDepartmentId: string;
+  parentExternalDepartmentId?: string;
+  name: string;
+  order: number;
+  active: boolean;
+}
+
+interface FeishuDirectorySnapshot {
+  contacts: NormalizedExternalContact[];
+  departments: NormalizedExternalDepartment[];
+  skipped: number;
 }
 
 interface ContactSyncSummary {
@@ -63,7 +84,22 @@ interface ContactSyncSummary {
   added: number;
   updated: number;
   disabled: number;
-  conflicts: number;
+  skipped: number;
+  failed: number;
+  departments: number;
+}
+
+export interface FeishuOAuthSettings {
+  integrationConfigId: string;
+  appId: string;
+  redirectUri: string;
+}
+
+export interface FeishuOAuthIdentity {
+  openId?: string;
+  unionId?: string;
+  tenantUserId?: string;
+  tenantKey?: string;
 }
 
 interface ContactSyncLease {
@@ -125,6 +161,80 @@ export class IntegrationService {
     const record = await this.findRecordByProvider(provider);
     if (!record) throw new NotFoundException('接口集成配置不存在');
     return this.toResponse(provider, record);
+  }
+
+  async getFeishuOAuthSettings(): Promise<FeishuOAuthSettings> {
+    const record = await this.findRecordByProvider('FEISHU');
+    if (!record || !record.isEnabled) {
+      throw new ServiceUnavailableException('飞书登录尚未启用');
+    }
+    const configuration = await this.loadSecureConfiguration('FEISHU', record);
+    const redirectUri = this.requiredString(configuration, 'oauthRedirectUri');
+    let parsed: URL;
+    try {
+      parsed = new URL(redirectUri);
+    } catch {
+      throw new ServiceUnavailableException('飞书登录回调地址无效');
+    }
+    if (parsed.protocol !== 'https:') {
+      throw new ServiceUnavailableException('飞书登录回调地址必须使用 HTTPS');
+    }
+    return {
+      integrationConfigId: record.id,
+      appId: this.requiredString(configuration, 'appId'),
+      redirectUri: parsed.toString(),
+    };
+  }
+
+  async exchangeFeishuOAuthCode(
+    integrationConfigId: string,
+    code: string,
+  ): Promise<FeishuOAuthIdentity> {
+    const record = await this.findRecordByProvider('FEISHU');
+    if (!record || record.id !== integrationConfigId || !record.isEnabled) {
+      throw new IntegrationDeliveryError('FEISHU_LOGIN_CONFIGURATION_CHANGED', false);
+    }
+    const configuration = await this.loadSecureConfiguration('FEISHU', record);
+    const tokenPayload = await this.fetchJson(
+      'https://open.feishu.cn/open-apis/authen/v2/oauth/token',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json; charset=utf-8' },
+        body: JSON.stringify({
+          grant_type: 'authorization_code',
+          client_id: this.requiredString(configuration, 'appId'),
+          client_secret: this.requiredString(configuration, 'appSecret'),
+          code,
+          redirect_uri: this.requiredString(configuration, 'oauthRedirectUri'),
+        }),
+      },
+    );
+    if (this.numberFrom(tokenPayload.code, -1) !== 0) {
+      throw new IntegrationDeliveryError('FEISHU_LOGIN_CODE_REJECTED', false);
+    }
+    const accessToken = this.stringFrom(tokenPayload.access_token);
+    if (!accessToken) {
+      throw new IntegrationDeliveryError('FEISHU_LOGIN_TOKEN_INVALID', false);
+    }
+
+    const userPayload = await this.fetchJson(
+      'https://open.feishu.cn/open-apis/authen/v1/user_info',
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (this.numberFrom(userPayload.code, -1) !== 0) {
+      throw new IntegrationDeliveryError('FEISHU_LOGIN_USER_INFO_REJECTED', false);
+    }
+    const data = this.asRecord(userPayload.data);
+    const identity: FeishuOAuthIdentity = {
+      openId: this.optionalString(data.open_id),
+      unionId: this.optionalString(data.union_id),
+      tenantUserId: this.optionalString(data.user_id),
+      tenantKey: this.optionalString(data.tenant_key),
+    };
+    if (!identity.openId && !identity.unionId && !identity.tenantUserId) {
+      throw new IntegrationDeliveryError('FEISHU_LOGIN_IDENTITY_INVALID', false);
+    }
+    return identity;
   }
 
   async update(providerValue: string, dto: UpdateTargetIntegrationDto, userId: string) {
@@ -221,8 +331,8 @@ export class IntegrationService {
       async (record, configuration) => {
         const lease = await this.acquireContactSyncLease(record);
         try {
-          const contacts = await this.fetchContacts(provider, configuration);
-          return await this.persistUnifiedContacts(record, provider, contacts, lease);
+          const directory = await this.fetchContacts(provider, configuration);
+          return await this.persistUnifiedContacts(record, provider, directory, lease);
         } finally {
           await this.releaseContactSyncLease(record.id, lease);
         }
@@ -423,24 +533,125 @@ export class IntegrationService {
   private async fetchContacts(
     provider: TargetIntegrationProvider,
     configuration: Record<string, unknown>,
-  ): Promise<NormalizedExternalContact[]> {
+  ): Promise<FeishuDirectorySnapshot> {
     const token = await this.acquireAccessToken(provider, configuration);
-    return this.fetchFeishuContacts(token, configuration);
+    return this.fetchFeishuDirectory(token, configuration);
   }
 
-  private async fetchFeishuContacts(
+  private async fetchFeishuDirectory(
     token: string,
     configuration: Record<string, unknown>,
-  ): Promise<NormalizedExternalContact[]> {
+  ): Promise<FeishuDirectorySnapshot> {
+    const rootDepartmentId = this.optionalString(configuration.contactDepartmentId) ?? '0';
+    const departments = await this.fetchFeishuDepartments(token, rootDepartmentId);
+    const contactDepartments = [
+      rootDepartmentId,
+      ...departments.map(({ externalDepartmentId }) => externalDepartmentId),
+    ];
+    const contacts = new Map<string, NormalizedExternalContact>();
+    let skipped = 0;
+    for (const departmentId of new Set(contactDepartments)) {
+      const result = await this.fetchFeishuDepartmentContacts(token, departmentId);
+      skipped += result.skipped;
+      for (const contact of result.contacts) {
+        const existing = contacts.get(contact.externalUserId);
+        if (!existing) {
+          contacts.set(contact.externalUserId, contact);
+          continue;
+        }
+        existing.departmentIds = [
+          ...new Set([...existing.departmentIds, ...contact.departmentIds]),
+        ];
+        existing.active = existing.active || contact.active;
+      }
+    }
+    return { contacts: [...contacts.values()], departments, skipped };
+  }
+
+  private async fetchFeishuDepartments(
+    token: string,
+    rootDepartmentId: string,
+  ): Promise<NormalizedExternalDepartment[]> {
+    const departments = new Map<string, NormalizedExternalDepartment>();
+    const rootDepartment = await this.fetchFeishuDepartment(token, rootDepartmentId);
+    departments.set(rootDepartment.externalDepartmentId, rootDepartment);
+    const queue = [rootDepartmentId];
+    const visited = new Set<string>();
+    while (queue.length > 0) {
+      const parentId = queue.shift()!;
+      if (visited.has(parentId)) continue;
+      visited.add(parentId);
+      if (visited.size > 10_000) {
+        throw new IntegrationDeliveryError('INTEGRATION_DEPARTMENT_LIMIT_EXCEEDED', false);
+      }
+      let pageToken = '';
+      for (let page = 0; page < 100; page += 1) {
+        const url = new URL(
+          `https://open.feishu.cn/open-apis/contact/v3/departments/${encodeURIComponent(parentId)}/children`,
+        );
+        url.searchParams.set('department_id_type', 'open_department_id');
+        url.searchParams.set('user_id_type', 'user_id');
+        url.searchParams.set('page_size', '50');
+        if (pageToken) url.searchParams.set('page_token', pageToken);
+        const payload = await this.fetchJson(url.toString(), {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (this.numberFrom(payload.code, -1) !== 0) {
+          throw new IntegrationDeliveryError('INTEGRATION_DEPARTMENT_SYNC_REJECTED', false);
+        }
+        const data = this.asRecord(payload.data);
+        const items = Array.isArray(data.items) ? data.items : [];
+        for (const item of items) {
+          const department = this.normalizeFeishuDepartment(item, parentId);
+          if (!department) continue;
+          departments.set(department.externalDepartmentId, department);
+          queue.push(department.externalDepartmentId);
+        }
+        if (data.has_more !== true) break;
+        pageToken = this.stringFrom(data.page_token);
+        if (!pageToken || page === 99) {
+          throw new IntegrationDeliveryError('INTEGRATION_DEPARTMENT_RESPONSE_INVALID', true);
+        }
+      }
+    }
+    return [...departments.values()];
+  }
+
+  private async fetchFeishuDepartment(
+    token: string,
+    departmentId: string,
+  ): Promise<NormalizedExternalDepartment> {
+    const url = new URL(
+      `https://open.feishu.cn/open-apis/contact/v3/departments/${encodeURIComponent(departmentId)}`,
+    );
+    url.searchParams.set('department_id_type', 'open_department_id');
+    url.searchParams.set('user_id_type', 'user_id');
+    const payload = await this.fetchJson(url.toString(), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (this.numberFrom(payload.code, -1) !== 0) {
+      throw new IntegrationDeliveryError('INTEGRATION_ROOT_DEPARTMENT_REJECTED', false);
+    }
+    const data = this.asRecord(payload.data);
+    const department = this.normalizeFeishuDepartment(data.department ?? data, '0');
+    if (!department) {
+      throw new IntegrationDeliveryError('INTEGRATION_ROOT_DEPARTMENT_INVALID', false);
+    }
+    return department;
+  }
+
+  private async fetchFeishuDepartmentContacts(
+    token: string,
+    departmentId: string,
+  ): Promise<{ contacts: NormalizedExternalContact[]; skipped: number }> {
     const contacts: NormalizedExternalContact[] = [];
+    let skipped = 0;
     let pageToken = '';
     for (let page = 0; page < 100; page += 1) {
       const url = new URL('https://open.feishu.cn/open-apis/contact/v3/users/find_by_department');
-      url.searchParams.set(
-        'department_id',
-        this.optionalString(configuration.contactDepartmentId) ?? '0',
-      );
-      url.searchParams.set('user_id_type', 'open_id');
+      url.searchParams.set('department_id', departmentId);
+      url.searchParams.set('department_id_type', 'open_department_id');
+      url.searchParams.set('user_id_type', 'user_id');
       url.searchParams.set('page_size', '50');
       if (pageToken) url.searchParams.set('page_token', pageToken);
       const payload = await this.fetchJson(url.toString(), {
@@ -453,8 +664,9 @@ export class IntegrationService {
       const data = this.asRecord(payload.data);
       const items = Array.isArray(data.items) ? data.items : [];
       for (const item of items) {
-        const contact = this.normalizeFeishuContact(item);
+        const contact = this.normalizeFeishuContact(item, departmentId);
         if (contact) contacts.push(contact);
+        else skipped += 1;
       }
       if (data.has_more !== true) break;
       pageToken = this.stringFrom(data.page_token);
@@ -465,7 +677,7 @@ export class IntegrationService {
         throw new IntegrationDeliveryError('INTEGRATION_CONTACT_SYNC_PAGE_LIMIT_EXCEEDED', false);
       }
     }
-    return contacts;
+    return { contacts, skipped };
   }
 
   private async sendNotificationWithConfiguration(
@@ -547,172 +759,72 @@ export class IntegrationService {
   private async persistUnifiedContacts(
     record: IntegrationRecord,
     provider: TargetIntegrationProvider,
-    contacts: NormalizedExternalContact[],
+    directory: FeishuDirectorySnapshot,
     lease: ContactSyncLease,
   ): Promise<ContactSyncSummary> {
     const uniqueContacts = new Map<string, NormalizedExternalContact>();
-    let conflicts = 0;
-    for (const contact of contacts) {
-      if (uniqueContacts.has(contact.externalUserId)) conflicts += 1;
-      uniqueContacts.set(contact.externalUserId, contact);
+    let skipped = directory.skipped;
+    for (const contact of directory.contacts) {
+      const existing = uniqueContacts.get(contact.externalUserId);
+      if (existing) {
+        existing.departmentIds = [
+          ...new Set([...existing.departmentIds, ...contact.departmentIds]),
+        ];
+        skipped += 1;
+      } else {
+        uniqueContacts.set(contact.externalUserId, contact);
+      }
     }
     const provisionedPasswordHash =
       uniqueContacts.size > 0 ? await bcrypt.hash(randomBytes(32).toString('base64url'), 10) : null;
     const syncTime = new Date();
-    return this.prisma.$transaction(async (tx) => {
-      const guarded = await tx.integrationConfig.updateMany({
-        where: {
-          id: record.id,
-          contactSyncLeaseOwner: lease.owner,
-          contactSyncRevision: lease.revision,
-          contactSyncLeaseExpiresAt: { gt: syncTime },
-        },
-        data: {
-          contactSyncLeaseExpiresAt: new Date(syncTime.getTime() + CONTACT_SYNC_LEASE_MS),
-        },
-      });
-      if (guarded.count !== 1) {
-        throw new ConflictException('通讯录同步租约已失效，请重新执行');
-      }
+    const departmentMap = await this.persistExternalDepartments(
+      record,
+      provider,
+      directory.departments,
+      lease,
+      syncTime,
+    );
+    const touchedIdentityIds = new Set<string>();
+    const protectedIdentityIds = new Set<string>();
+    let added = 0;
+    let updated = 0;
+    let failed = 0;
 
-      let added = 0;
-      let updated = 0;
-      for (const contact of uniqueContacts.values()) {
-        const identity = await tx.externalIdentity.findUnique({
-          where: {
-            provider_externalUserId: {
-              provider,
-              externalUserId: contact.externalUserId,
-            },
-          },
-          include: { user: true },
-        });
-
-        if (identity) {
-          const conflictingUsers = await this.findExactUserMatches(tx, contact, identity.userId);
-          await tx.externalIdentity.update({
-            where: { id: identity.id },
-            data: {
-              integrationConfigId: record.id,
-              identifierType: contact.identifierType,
-              isActive: true,
-              lastSeenAt: syncTime,
-              deactivatedAt: null,
-            },
-          });
-          if (conflictingUsers.length > 0) {
-            conflicts += 1;
-            updated += 1;
-            continue;
-          }
-          const userWasProvisioned =
-            identity.userProvisioned ||
-            (await tx.externalIdentity.count({
-              where: { userId: identity.userId, userProvisioned: true },
-            })) > 0;
-          await tx.user.update({
-            where: { id: identity.userId },
-            data: {
-              realName: contact.realName,
-              ...(contact.email !== undefined && { email: contact.email }),
-              ...(contact.phone !== undefined && { phone: contact.phone }),
-              ...(userWasProvisioned &&
-                identity.user.status === 'Inactive' && { status: 'Active' }),
-            },
-          });
-          updated += 1;
-          continue;
-        }
-
-        const matches = await this.findExactUserMatches(tx, contact);
-        if (matches.length > 1) {
-          conflicts += 1;
-          continue;
-        }
-
-        let userId: string;
-        let userProvisioned = false;
-        if (matches.length === 1) {
-          userId = matches[0].id;
-          await tx.user.update({
-            where: { id: userId },
-            data: {
-              realName: contact.realName,
-              ...(contact.email !== undefined && { email: contact.email }),
-              ...(contact.phone !== undefined && { phone: contact.phone }),
-            },
-          });
-          updated += 1;
-        } else {
-          if (!provisionedPasswordHash) {
-            throw new ServiceUnavailableException('自动创建用户凭据初始化失败');
-          }
-          const user = await tx.user.create({
-            data: {
-              username: this.provisionedUsername(provider, contact.externalUserId),
-              password: provisionedPasswordHash,
-              realName: contact.realName,
-              email: contact.email ?? null,
-              phone: contact.phone ?? null,
-              status: 'Active',
-            },
-            select: { id: true },
-          });
-          userId = user.id;
-          userProvisioned = true;
-          added += 1;
-        }
-
-        await tx.externalIdentity.create({
-          data: {
-            integrationConfigId: record.id,
-            userId,
+    for (const contact of uniqueContacts.values()) {
+      try {
+        const result = await this.prisma.$transaction((tx) =>
+          this.persistOneContact(
+            tx,
+            record,
             provider,
-            externalUserId: contact.externalUserId,
-            identifierType: contact.identifierType,
-            isActive: true,
-            userProvisioned,
-            lastSeenAt: syncTime,
-          },
-        });
+            contact,
+            lease,
+            syncTime,
+            departmentMap,
+            provisionedPasswordHash,
+          ),
+        );
+        result.identityIds.forEach((id) => touchedIdentityIds.add(id));
+        if (result.action === 'added') added += 1;
+        else if (result.action === 'updated') updated += 1;
+        else skipped += 1;
+      } catch {
+        failed += 1;
+        const identities = await this.findExistingIdentities(this.prisma, provider, contact);
+        identities.forEach(({ id }) => protectedIdentityIds.add(id));
       }
+    }
 
-      const returnedIds = Array.from(uniqueContacts.keys());
-      const missingIdentities = await tx.externalIdentity.findMany({
-        where: {
-          integrationConfigId: record.id,
-          provider,
-          isActive: true,
-          ...(returnedIds.length > 0 && {
-            externalUserId: { notIn: returnedIds },
-          }),
-        },
-        select: { id: true, userId: true },
-      });
-      const affectedUserIds = new Set<string>();
-      for (const identity of missingIdentities) {
-        await tx.externalIdentity.update({
-          where: { id: identity.id },
-          data: { isActive: false, deactivatedAt: syncTime },
-        });
-        affectedUserIds.add(identity.userId);
-      }
+    const disabled = await this.disableMissingIdentities(
+      record,
+      provider,
+      lease,
+      syncTime,
+      [...touchedIdentityIds, ...protectedIdentityIds],
+    );
 
-      for (const userId of affectedUserIds) {
-        const [activeIdentities, provisionedIdentities] = await Promise.all([
-          tx.externalIdentity.count({ where: { userId, isActive: true } }),
-          tx.externalIdentity.count({
-            where: { userId, userProvisioned: true },
-          }),
-        ]);
-        if (activeIdentities === 0 && provisionedIdentities > 0) {
-          await tx.user.updateMany({
-            where: { id: userId, deletedAt: null, status: { not: 'Locked' } },
-            data: { status: 'Inactive' },
-          });
-        }
-      }
-
+    await this.prisma.$transaction(async (tx) => {
       const released = await tx.integrationConfig.updateMany({
         where: {
           id: record.id,
@@ -729,15 +841,368 @@ export class IntegrationService {
       if (released.count !== 1) {
         throw new ConflictException('通讯录同步租约已被其他任务接管');
       }
-
-      return {
-        total: uniqueContacts.size,
-        added,
-        updated,
-        disabled: missingIdentities.length,
-        conflicts,
-      };
     });
+
+    return {
+      total: uniqueContacts.size,
+      added,
+      updated,
+      disabled,
+      skipped,
+      failed,
+      departments: departmentMap.size,
+    };
+  }
+
+  private async persistExternalDepartments(
+    record: IntegrationRecord,
+    provider: TargetIntegrationProvider,
+    departments: NormalizedExternalDepartment[],
+    lease: ContactSyncLease,
+    syncTime: Date,
+  ): Promise<Map<string, string>> {
+    return this.prisma.$transaction(async (tx) => {
+      await this.guardContactSyncLease(tx, record.id, lease, syncTime);
+      const existing = await tx.department.findMany({
+        where: { externalProvider: provider },
+        select: { id: true, externalDepartmentId: true },
+      });
+      const mapped = new Map(
+        existing
+          .filter(({ externalDepartmentId }) => Boolean(externalDepartmentId))
+          .map(({ id, externalDepartmentId }) => [externalDepartmentId!, id]),
+      );
+      const pending = new Map(
+        departments.map((department) => [department.externalDepartmentId, department]),
+      );
+      for (let depth = 0; pending.size > 0 && depth < 100; depth += 1) {
+        let progressed = false;
+        for (const [externalId, department] of [...pending]) {
+          const parentExternalId = department.parentExternalDepartmentId;
+          if (parentExternalId && pending.has(parentExternalId)) continue;
+          const saved = await tx.department.upsert({
+            where: {
+              externalProvider_externalDepartmentId: {
+                externalProvider: provider,
+                externalDepartmentId: externalId,
+              },
+            },
+            create: {
+              departmentCode: this.externalDepartmentCode(provider, externalId),
+              departmentName: department.name,
+              parentId: parentExternalId ? mapped.get(parentExternalId) ?? null : null,
+              status: department.active ? 'Active' : 'Inactive',
+              sortOrder: department.order,
+              externalProvider: provider,
+              externalDepartmentId: externalId,
+              externalManaged: true,
+              lastSyncedAt: syncTime,
+            },
+            update: {
+              departmentName: department.name,
+              parentId: parentExternalId ? mapped.get(parentExternalId) ?? null : null,
+              status: department.active ? 'Active' : 'Inactive',
+              sortOrder: department.order,
+              externalManaged: true,
+              lastSyncedAt: syncTime,
+            },
+            select: { id: true },
+          });
+          mapped.set(externalId, saved.id);
+          pending.delete(externalId);
+          progressed = true;
+        }
+        if (!progressed) throw new ConflictException('飞书部门层级存在环或缺失父部门');
+      }
+      if (pending.size > 0) throw new ConflictException('飞书部门层级超过安全上限');
+      const returnedIds = departments.map(({ externalDepartmentId }) => externalDepartmentId);
+      await tx.department.updateMany({
+        where: {
+          externalProvider: provider,
+          externalManaged: true,
+          ...(returnedIds.length > 0 && { externalDepartmentId: { notIn: returnedIds } }),
+        },
+        data: { status: 'Inactive', lastSyncedAt: syncTime },
+      });
+      return mapped;
+    });
+  }
+
+  private async persistOneContact(
+    tx: Prisma.TransactionClient,
+    record: IntegrationRecord,
+    provider: TargetIntegrationProvider,
+    contact: NormalizedExternalContact,
+    lease: ContactSyncLease,
+    syncTime: Date,
+    departmentMap: Map<string, string>,
+    provisionedPasswordHash: string | null,
+  ): Promise<{ action: 'added' | 'updated' | 'skipped'; identityIds: string[] }> {
+    await this.guardContactSyncLease(tx, record.id, lease, syncTime);
+    const identities = await this.findExistingIdentities(tx, provider, contact);
+    const identityUserIds = [...new Set(identities.map(({ userId }) => userId))];
+    if (identityUserIds.length > 1 || identities.length > 1) {
+      return { action: 'skipped', identityIds: identities.map(({ id }) => id) };
+    }
+
+    let userId: string;
+    let userProvisioned = false;
+    let action: 'added' | 'updated' = 'updated';
+    if (identities.length === 1) {
+      userId = identities[0].userId;
+      userProvisioned = identities[0].userProvisioned;
+      const conflicts = await this.findExactUserMatches(tx, contact, userId);
+      if (conflicts.length > 0) {
+        return { action: 'skipped', identityIds: [identities[0].id] };
+      }
+    } else {
+      const matches = await this.findExactUserMatches(tx, contact);
+      if (matches.length > 1 || !contact.active) {
+        return { action: 'skipped', identityIds: [] };
+      }
+      if (matches.length === 1) {
+        userId = matches[0].id;
+      } else {
+        if (!provisionedPasswordHash) {
+          throw new ServiceUnavailableException('自动创建用户凭据初始化失败');
+        }
+        const created = await tx.user.create({
+          data: {
+            username: this.provisionedUsername(provider, contact.externalUserId),
+            password: provisionedPasswordHash,
+            realName: contact.realName,
+            email: contact.email ?? null,
+            phone: contact.phone ?? null,
+            avatarUrl: contact.avatarUrl ?? null,
+            status: 'Active',
+          },
+          select: { id: true },
+        });
+        userId = created.id;
+        userProvisioned = true;
+        action = 'added';
+      }
+    }
+
+    const user = await tx.user.findUnique({
+      where: { id: userId },
+      select: {
+        status: true,
+        departmentId: true,
+        userRoles: { select: { role: { select: { roleCode: true } } } },
+        departmentMemberships: {
+          where: { source: 'FEISHU' },
+          select: { departmentId: true },
+        },
+      },
+    });
+    if (!user) throw new NotFoundException('同步目标用户不存在');
+    const isSuperAdmin = user.userRoles.some(({ role }) => role.roleCode === 'SUPER_ADMIN');
+    const mappedDepartments = [
+      ...new Set(
+        contact.departmentIds
+          .map((externalId) => departmentMap.get(externalId))
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const currentMemberships = new Set(
+      user.departmentMemberships.map(({ departmentId }) => departmentId),
+    );
+    const membershipChanged =
+      mappedDepartments.length !== currentMemberships.size ||
+      mappedDepartments.some((id) => !currentMemberships.has(id));
+    const nextStatus =
+      !contact.active && userProvisioned && !isSuperAdmin
+        ? 'Inactive'
+        : contact.active && userProvisioned && user.status === 'Inactive'
+          ? 'Active'
+          : user.status;
+    const primaryDepartmentId = mappedDepartments[0] ?? null;
+    const securityChanged =
+      membershipChanged || user.departmentId !== primaryDepartmentId || user.status !== nextStatus;
+
+    await tx.user.update({
+      where: { id: userId },
+      data: {
+        realName: contact.realName,
+        ...(contact.email !== undefined && { email: contact.email }),
+        ...(contact.phone !== undefined && { phone: contact.phone }),
+        ...(contact.avatarUrl !== undefined && { avatarUrl: contact.avatarUrl }),
+        ...(mappedDepartments.length > 0 || userProvisioned
+          ? { departmentId: primaryDepartmentId }
+          : {}),
+        status: nextStatus,
+        ...(securityChanged && { permissionVersion: { increment: 1 } }),
+      },
+    });
+    await tx.userDepartmentMembership.deleteMany({
+      where: {
+        userId,
+        source: 'FEISHU',
+        ...(mappedDepartments.length > 0 && { departmentId: { notIn: mappedDepartments } }),
+      },
+    });
+    if (mappedDepartments.length > 0) {
+      await tx.userDepartmentMembership.createMany({
+        data: mappedDepartments.map((departmentId, index) => ({
+          userId,
+          departmentId,
+          source: 'FEISHU',
+          isPrimary: index === 0,
+        })),
+        skipDuplicates: true,
+      });
+      await tx.userDepartmentMembership.updateMany({
+        where: { userId, source: 'FEISHU' },
+        data: { isPrimary: false },
+      });
+      await tx.userDepartmentMembership.updateMany({
+        where: { userId, source: 'FEISHU', departmentId: primaryDepartmentId! },
+        data: { isPrimary: true },
+      });
+    }
+
+    let identityId: string;
+    if (identities.length === 1) {
+      identityId = identities[0].id;
+      await tx.externalIdentity.update({
+        where: { id: identityId },
+        data: this.externalIdentityUpdate(record.id, contact, syncTime),
+      });
+    } else {
+      const identity = await tx.externalIdentity.create({
+        data: {
+          integrationConfigId: record.id,
+          userId,
+          provider,
+          externalUserId: contact.externalUserId,
+          identifierType: contact.identifierType,
+          openId: contact.openId,
+          unionId: contact.unionId,
+          tenantUserId: contact.tenantUserId,
+          tenantKey: contact.tenantKey,
+          isActive: contact.active,
+          userProvisioned,
+          lastSeenAt: syncTime,
+          deactivatedAt: contact.active ? null : syncTime,
+        },
+        select: { id: true },
+      });
+      identityId = identity.id;
+    }
+    if (!contact.active && userProvisioned && !isSuperAdmin) {
+      await tx.refreshSession.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: syncTime, revokeReason: 'FEISHU_USER_INACTIVE' },
+      });
+    }
+    return { action, identityIds: [identityId] };
+  }
+
+  private async disableMissingIdentities(
+    record: IntegrationRecord,
+    provider: TargetIntegrationProvider,
+    lease: ContactSyncLease,
+    syncTime: Date,
+    protectedIds: string[],
+  ): Promise<number> {
+    return this.prisma.$transaction(async (tx) => {
+      await this.guardContactSyncLease(tx, record.id, lease, syncTime);
+      const missing = await tx.externalIdentity.findMany({
+        where: {
+          integrationConfigId: record.id,
+          provider,
+          isActive: true,
+          ...(protectedIds.length > 0 && { id: { notIn: protectedIds } }),
+        },
+        select: { id: true, userId: true, userProvisioned: true },
+      });
+      if (missing.length > 0) {
+        await tx.externalIdentity.updateMany({
+          where: { id: { in: missing.map(({ id }) => id) } },
+          data: { isActive: false, deactivatedAt: syncTime },
+        });
+      }
+      for (const userId of new Set(missing.map(({ userId }) => userId))) {
+        const [activeIdentities, provisionedIdentities, user] = await Promise.all([
+          tx.externalIdentity.count({ where: { userId, isActive: true } }),
+          tx.externalIdentity.count({ where: { userId, userProvisioned: true } }),
+          tx.user.findUnique({
+            where: { id: userId },
+            select: { userRoles: { select: { role: { select: { roleCode: true } } } } },
+          }),
+        ]);
+        const isSuperAdmin = user?.userRoles.some(({ role }) => role.roleCode === 'SUPER_ADMIN');
+        if (activeIdentities === 0 && provisionedIdentities > 0 && !isSuperAdmin) {
+          await tx.user.updateMany({
+            where: { id: userId, deletedAt: null, status: { not: 'Locked' } },
+            data: { status: 'Inactive', permissionVersion: { increment: 1 } },
+          });
+          await tx.refreshSession.updateMany({
+            where: { userId, revokedAt: null },
+            data: { revokedAt: syncTime, revokeReason: 'FEISHU_USER_MISSING' },
+          });
+        }
+      }
+      return missing.length;
+    });
+  }
+
+  private async guardContactSyncLease(
+    tx: Prisma.TransactionClient,
+    integrationConfigId: string,
+    lease: ContactSyncLease,
+    _syncTime: Date,
+  ): Promise<void> {
+    const now = new Date();
+    const guarded = await tx.integrationConfig.updateMany({
+      where: {
+        id: integrationConfigId,
+        contactSyncLeaseOwner: lease.owner,
+        contactSyncRevision: lease.revision,
+        contactSyncLeaseExpiresAt: { gt: now },
+      },
+      data: { contactSyncLeaseExpiresAt: new Date(now.getTime() + CONTACT_SYNC_LEASE_MS) },
+    });
+    if (guarded.count !== 1) {
+      throw new ConflictException('通讯录同步租约已失效，请重新执行');
+    }
+  }
+
+  private findExistingIdentities(
+    tx: Prisma.TransactionClient | PrismaService,
+    provider: TargetIntegrationProvider,
+    contact: NormalizedExternalContact,
+  ) {
+    const filters: Prisma.ExternalIdentityWhereInput[] = [
+      { externalUserId: contact.externalUserId },
+      ...(contact.openId ? [{ openId: contact.openId }] : []),
+      ...(contact.unionId ? [{ unionId: contact.unionId }] : []),
+      ...(contact.tenantUserId ? [{ tenantUserId: contact.tenantUserId }] : []),
+    ];
+    return tx.externalIdentity.findMany({
+      where: { provider, OR: filters },
+      select: { id: true, userId: true, userProvisioned: true },
+    });
+  }
+
+  private externalIdentityUpdate(
+    integrationConfigId: string,
+    contact: NormalizedExternalContact,
+    syncTime: Date,
+  ): Prisma.ExternalIdentityUpdateInput {
+    return {
+      integrationConfig: { connect: { id: integrationConfigId } },
+      externalUserId: contact.externalUserId,
+      identifierType: contact.identifierType,
+      openId: contact.openId,
+      unionId: contact.unionId,
+      tenantUserId: contact.tenantUserId,
+      tenantKey: contact.tenantKey,
+      isActive: contact.active,
+      lastSeenAt: syncTime,
+      deactivatedAt: contact.active ? null : syncTime,
+    };
   }
 
   private async findExactUserMatches(
@@ -765,17 +1230,63 @@ export class IntegrationService {
     );
   }
 
-  private normalizeFeishuContact(value: unknown): NormalizedExternalContact | null {
+  private normalizeFeishuDepartment(
+    value: unknown,
+    fallbackParentId: string,
+  ): NormalizedExternalDepartment | null {
     const item = this.asRecord(value);
-    const externalUserId = this.stringFrom(item.open_id ?? item.user_id);
+    const externalDepartmentId = this.stringFrom(
+      item.open_department_id ?? item.department_id,
+    );
+    const name = this.stringFrom(item.name);
+    if (!externalDepartmentId || !name) return null;
+    const status = this.asRecord(item.status);
+    return {
+      externalDepartmentId,
+      parentExternalDepartmentId:
+        this.optionalString(item.parent_department_id) ??
+        (fallbackParentId === '0' ? undefined : fallbackParentId),
+      name,
+      order: this.numberFrom(item.order, 0),
+      active: status.is_deleted !== true,
+    };
+  }
+
+  private normalizeFeishuContact(
+    value: unknown,
+    fallbackDepartmentId: string,
+  ): NormalizedExternalContact | null {
+    const item = this.asRecord(value);
+    const openId = this.optionalString(item.open_id);
+    const unionId = this.optionalString(item.union_id);
+    const tenantUserId = this.optionalString(item.user_id);
+    const externalUserId = openId ?? unionId ?? tenantUserId ?? '';
     const realName = this.stringFrom(item.name);
     if (!externalUserId || !realName) return null;
+    const status = this.asRecord(item.status);
+    const avatar = this.asRecord(item.avatar);
+    const suppliedDepartmentIds = Array.isArray(item.department_ids)
+      ? item.department_ids.filter((id): id is string => typeof id === 'string' && Boolean(id))
+      : [];
     return {
       externalUserId,
-      identifierType: 'OPEN_ID',
+      identifierType: openId ? 'OPEN_ID' : unionId ? 'UNION_ID' : 'USER_ID',
+      openId,
+      unionId,
+      tenantUserId,
+      tenantKey: this.optionalString(item.tenant_key),
       realName,
       phone: this.normalizePhone(item.mobile),
       email: this.normalizeEmail(item.email),
+      avatarUrl: this.optionalString(
+        avatar.avatar_origin ?? avatar.avatar_640 ?? item.avatar_url,
+      ),
+      departmentIds: [...new Set([...suppliedDepartmentIds, fallbackDepartmentId])],
+      active:
+        status.is_activated !== false &&
+        status.is_exited !== true &&
+        status.is_resigned !== true &&
+        status.is_frozen !== true,
     };
   }
 
@@ -932,7 +1443,7 @@ export class IntegrationService {
       isEnabled: record.isEnabled,
       description: record.description,
       configuration,
-      capabilities: ['CONTACT_SYNC', 'NOTIFICATION'],
+      capabilities: ['CONTACT_SYNC', 'NOTIFICATION', 'OAUTH_LOGIN'],
       updatedAt: record.updatedAt,
     };
   }
@@ -998,6 +1509,16 @@ export class IntegrationService {
       .digest('hex')
       .slice(0, 40);
     return `fs_${digest}`;
+  }
+
+  private externalDepartmentCode(
+    provider: TargetIntegrationProvider,
+    externalDepartmentId: string,
+  ): string {
+    return `${provider}_${createHash('sha256')
+      .update(externalDepartmentId)
+      .digest('hex')
+      .slice(0, 24)}`;
   }
 
   private feishuDeliveryUuid(idempotencyKey: string): string {

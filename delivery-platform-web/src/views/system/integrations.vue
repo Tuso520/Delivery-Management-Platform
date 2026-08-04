@@ -514,6 +514,13 @@ function redactText(value?: string | null): string {
               :placeholder="t('integrations.testRecipientPlaceholder')"
             />
           </a-form-item>
+          <a-form-item :label="t('integrations.oauthRedirectUri')">
+            <a-input
+              v-model="form.oauthRedirectUri"
+              :placeholder="t('integrations.oauthRedirectUriPlaceholder')"
+              :max-length="500"
+            />
+          </a-form-item>
         </div>
         <a-form-item :label="t('integrations.descriptionLabel')">
           <a-textarea

@@ -245,8 +245,8 @@ Vue Route
 | 本地视觉验收 | PASS，5/5；项目台账、项目档案、档案模板、项目弹窗已有三联对比，标准库缺少项目内设计参考图并明确标记 |
 | Compose 配置 | PASS；基础、生产、测试、v2 数据和 v2 应用共 5 组 `config -q`，未启动容器 |
 | v2 镜像构建 / 真实集成 E2E | PASS；Release `79e41eb29d40` 的后端、迁移镜像、前端包、Manifest、真实 MySQL/Redis/MinIO、API 与浏览器验收全部通过；同一 SHA 复跑时两个镜像构建均跳过且两份 Manifest digest 完全一致 |
-| 测试/生产服务器接管 | 测试 PASS：main 自动发布、成对备份、45 个 migration、迁移校验、原子前端切换及内外网检查通过；生产 PENDING，等待按教程提供独立服务器和 Environment 参数 |
-| 测试数据基线 | PASS：测试环境已获授权清除历史数据，三个数据卷受控重建；空库执行 45 个 migration、正式基础 seed 和真实 E2E，不恢复 legacy 数据 |
+| 测试/生产服务器接管 | 测试 PASS：main 自动发布、成对备份、46 个 migration、迁移校验、原子前端切换及内外网检查通过；生产 PENDING，等待按教程提供独立服务器和 Environment 参数 |
+| 测试数据基线 | PASS：测试环境已获授权清除历史数据，三个数据卷受控重建；空库执行 46 个 migration、正式基础 seed 和真实 E2E，不恢复 legacy 数据 |
 | 发布耗时与容错 | PASS：backend 135 MiB、migrator 174 MiB。Release `79e41eb29d40` 首次内容冷拉取使部署耗时 40 分 37 秒，第一次 20 分钟超时后续传成功，切换后 11 秒内恢复 ready；同 SHA 热复跑时 Release 构建 57 秒、真实集成 4 分 01 秒、部署作业 3 分 50 秒、镜像拉取不足 0.2 秒、服务器切换 53 秒、全流程 9 分 09 秒。另一次超过 36 分钟的拉取在停机前取消且旧 Release 持续 ready；当前脚本单次上限 20 分钟，最多重试 3 次 |
 
 ### 8.7 下一步优先级

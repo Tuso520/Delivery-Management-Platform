@@ -16,6 +16,9 @@ export function useAuth() {
     await userStore.logout()
   }
 
+  const completeFeishuLogin = (ticket: string): Promise<string> =>
+    userStore.completeFeishuLogin(ticket)
+
   const refreshProfile = async (): Promise<void> => {
     await userStore.fetchProfile()
   }
@@ -24,6 +27,7 @@ export function useAuth() {
     isLoggedIn,
     userInfo,
     login,
+    completeFeishuLogin,
     logout,
     refreshProfile,
   }
