@@ -307,7 +307,8 @@ test('runtime and migrator images share production layers without shipping build
     backendDockerfile.indexOf('FROM builder AS runtime-deps'),
   )
   assert.doesNotMatch(builderStage, /ARG RELEASE_ID/u)
-  assert.equal(backendDockerfile.match(/ARG RELEASE_ID/gu)?.length, 3)
+  assert.doesNotMatch(backendDockerfile, /ARG RELEASE_ID|ENV RELEASE_ID/u)
+  assert.doesNotMatch(releaseWorkflow, /build-args:\s*RELEASE_ID/u)
   for (const workflow of [releaseWorkflow, legacyDeployWorkflow]) {
     assert.doesNotMatch(workflow, /node_modules\/\.bin\/(?:prisma|ts-node)/u)
   }
