@@ -67,6 +67,10 @@ const backendDockerfile = await readFile(
   new URL('../../delivery-platform-server/Dockerfile', import.meta.url),
   'utf8',
 )
+const cleanTestBaseline = await readFile(
+  new URL('../../delivery-platform-server/prisma/verify-clean-test-baseline.ts', import.meta.url),
+  'utf8',
+)
 
 function occursInOrder(source, values) {
   let cursor = -1
@@ -264,6 +268,24 @@ test('missing immutable images use a checksummed and resumable SSH preload befor
   ]) {
     assert.match(
       deployWorkflow,
+      new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'),
+    )
+  }
+})
+
+test('clean test baseline permits only the two mandatory migration audit records', () => {
+  assert.doesNotMatch(cleanTestBaseline, /EMPTY_RUNTIME_TABLES[\s\S]*'operation_logs'/u)
+  for (const contract of [
+    "['integration_secret_migration', 'IntegrationConfig']",
+    "['target_foundation_apply', 'Migration']",
+    "migrationAudits.length !== expectedMigrationAudits.size",
+    "audit.module !== 'migration'",
+    "audit.userId !== users[0].id",
+    "audit.result !== 'success'",
+    "throw new Error('clean test baseline contains unexpected operation logs')",
+  ]) {
+    assert.match(
+      cleanTestBaseline,
       new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'),
     )
   }
