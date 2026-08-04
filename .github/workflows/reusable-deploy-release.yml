@@ -126,12 +126,15 @@ jobs:
           migration_id="$(docker image inspect "$migration_image" --format '{{.Id}}')"
           [[ "$backend_id" =~ ^sha256:[0-9a-f]{64}$ ]]
           [[ "$migration_id" =~ ^sha256:[0-9a-f]{64}$ ]]
-          docker save "$backend_id" "$migration_id" | gzip -1 > release/application-images.tar.gz
+          docker save "$backend_id" "$migration_id" | gzip -9 > release/application-images.tar.gz
           gzip -t release/application-images.tar.gz
           sha256sum release/application-images.tar.gz | awk '{print $1}' > release/image-bundle.sha256
           stat -c '%s' release/application-images.tar.gz > release/image-bundle.bytes
           split -b 32M -d -a 4 release/application-images.tar.gz release/image-bundle.part-
           test -s release/image-bundle.part-0000
+          bundle_bytes="$(cat release/image-bundle.bytes)"
+          bundle_parts="$(find release -maxdepth 1 -type f -name 'image-bundle.part-*' | wc -l)"
+          printf 'image bundle: %s bytes, %s parts\n' "$bundle_bytes" "$bundle_parts"
           rm -f -- release/application-images.tar.gz
 
       - name: 临时授权目标服务器读取 GHCR

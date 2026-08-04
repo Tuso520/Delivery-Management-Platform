@@ -233,8 +233,10 @@ test('missing immutable images use a checksummed and resumable SSH preload befor
   ])
   for (const contract of [
     'docker save "$backend_id" "$migration_id"',
+    'gzip -9 > release/application-images.tar.gz',
     'sha256sum release/application-images.tar.gz',
     'split -b 32M -d -a 4',
+    "printf 'image bundle: %s bytes, %s parts\\n'",
     'test "$(stat -c \'%s\' "$image_bundle_part")" = "$expected_bytes"',
     'gzip -dc "$image_bundle" | docker load',
     'timeout --foreground 5m docker pull "$image"',
