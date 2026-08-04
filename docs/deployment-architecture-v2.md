@@ -1,6 +1,6 @@
 # 发布与服务器架构 v2
 
-状态：仓库侧发布链路已建立；每台目标服务器完成本文的一次性接管后，才可启用对应环境的发布。
+状态：仓库侧发布链路已建立，测试服务器已完成接管并自动发布；生产服务器完成本文的一次性准备后再启用发布。
 
 本文是“前端静态包 + 后端不可变镜像、服务器内置独立数据层、宿主 Nginx 原地切换”的操作基线。旧版 `deploy-git.sh` 和 `.github/workflows/deploy.yml` 仅用于首发前备份或迁移期人工兜底，不再作为日常发布入口。
 
@@ -23,7 +23,7 @@ flowchart LR
   Production --> ProdData["服务器内部数据层"]
 ```
 
-每个 Release 用完整 40 位 Git commit SHA 标识。前端、后端和迁移器写入同一份 `release-manifest.json`；后端镜像必须使用 `@sha256:`，测试通过后生产环境不重新构建。迁移镜像继承同一 Release 的精简后端运行镜像，只增加固定版本的 Prisma、ts-node 和 TypeScript 命令层；服务器先拉取后端后，迁移镜像只需补充差异层，不携带 builder 的编译工具链和完整开发依赖。
+每个 Release 用完整 40 位 Git commit SHA 标识。前端、后端和迁移器写入同一份 `release-manifest.json`；后端镜像必须使用 `@sha256:`，测试通过后生产环境不重新构建。迁移镜像继承同一 Release 的精简后端运行镜像，只增加固定版本的 Prisma、ts-node 和 TypeScript 命令层；服务器先拉取后端后，迁移镜像只需补充差异层，不携带 builder 的编译工具链和完整开发依赖。`RELEASE_ID` 只进入 runtime/migrator 最终元数据层，不能进入 builder 或稳定文件层；因此依赖和源码未变化时，目标服务器复用已有层，只下载新的清单与元数据。
 
 服务器拓扑固定为：
 
@@ -329,7 +329,7 @@ docker compose --env-file <server-runtime-file> \
   -f docker-compose.yml -f docker-compose.prod.yml down --remove-orphans
 ```
 
-只允许 `down --remove-orphans`；禁止 `down -v`、`docker volume prune`、删除旧备份或删除三个已识别卷。
+生产和日常发布只允许 `down --remove-orphans`；禁止 `down -v`、`docker volume prune`、删除旧备份或删除三个已识别卷。唯一例外是已明确授权为可销毁的 test 环境，通过第 7.4 节受控工作流设置 `reset_test_data=true`；不得人工全局清卷。
 
 ### 7.5 首发验收
 
@@ -351,6 +351,8 @@ sudo -u <nginx-worker-user> test -r /srv/delivery-platform/current/frontend/inde
 ## 8. 日常发布和回滚
 
 日常测试发布无需 SSH 登录：main 质量门禁成功后自动构建、真实验收并发布 test。生产操作员从测试环境的 `build-info.json` 取得完整 Release 对应 SHA，在 GitHub Actions 手动运行“推广已验收 Release 到生产”，审批时核对变更单、备份空间和维护窗口。
+
+镜像在当前 Release 在线期间预拉取，下载时间不计入停机窗口。测试服务器在缓存失效基线中拉取 135 MiB runtime 与 174 MiB migrator 共耗时 13 分 42 秒，而拉取后的备份、迁移校验、幂等 seed、启动和原子切换约 46 秒；另一次稳定层重建受 GHCR 链路波动影响，36 分钟仍未完成并在停机前安全取消，原 Release 始终保持 `ready`。部署脚本因此给单次拉取设置 20 分钟上限并最多续传重试 3 次。发布性能必须分别记录“预拉取时间”和“停机切换时间”；日常增量 Release 应命中稳定层，新服务器或基础镜像/依赖变化导致的冷拉取应提前在维护窗口前完成。
 
 状态查看：
 
