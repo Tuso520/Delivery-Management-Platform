@@ -96,7 +96,6 @@ jobs:
           target: runtime
           push: true
           tags: ${{ steps.names.outputs.backend_repository }}:sha-${{ needs.resolve.outputs.commit }}
-          build-args: RELEASE_ID=${{ needs.resolve.outputs.short_commit }}
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
 
@@ -109,7 +108,6 @@ jobs:
           target: migrator
           push: true
           tags: ${{ steps.names.outputs.migrator_repository }}:sha-${{ needs.resolve.outputs.commit }}
-          build-args: RELEASE_ID=${{ needs.resolve.outputs.short_commit }}
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
 

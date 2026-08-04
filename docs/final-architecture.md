@@ -260,7 +260,7 @@ Vue Route
 ### 8.8 部署与测试架构
 
 - 本地默认使用 `scripts/local-quality.ps1` 和 `scripts/local-visual.ps1`，不启动 WSL、Docker 或真实数据服务；视觉报告同时展示设计参考、本次实现和差异叠加，缺失基准时明确失败降级而不伪造参考图。
-- GitHub 质量检查通过后只构建一次后端 runtime、migrator 和前端静态包；`release-manifest.json` 绑定完整 Git SHA、镜像 digest、前端 checksum 与 migration 数量。migrator 继承精简 runtime 以复用镜像层，只增加固定版本迁移命令，不携带 builder 工具链；每次变化的 Release ID 位于全部稳定文件层之后，避免仅发布元数据变化时重建依赖和应用层。
+- GitHub 质量检查通过后只构建一次后端 runtime、migrator 和前端静态包；`release-manifest.json` 绑定完整 Git SHA、镜像 digest、前端 checksum 与 migration 数量。migrator 继承精简 runtime 以复用镜像层，只增加固定版本迁移命令，不携带 builder 工具链；Release ID 只在容器启动时注入，不写入镜像配置，因此后端内容相同时跨 Release 复用完全相同的不可变 digest。
 - 测试和生产各自保留内部 MySQL、Redis、MinIO，但数据 Compose 与应用 Compose 分离；数据端口只监听 localhost，应用发布不删除命名卷。
 - 宿主 Nginx 直接服务 `current/frontend`，发布脚本在停写、成对备份、migration、API/Worker 稳定后原子切换前端，并同时检查内网和公网 Release ID。
 - 测试服务器由 main 的已验收 Release 自动发布；生产只接受同一测试验证凭据，经 `production` Environment 人工审批后原地切换，不重新构建。

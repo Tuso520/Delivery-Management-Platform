@@ -3,7 +3,6 @@
 # Debian 软件源默认使用上游地址，也允许构建环境显式覆盖。
 # ============================================================
 
-ARG RELEASE_ID=development
 ARG NODE_IMAGE=node:20-bookworm-slim@sha256:3d0f05455dea2c82e2f76e7e2543964c30f6b7d673fc1a83286736d44fe4c41c
 
 FROM ${NODE_IMAGE} AS builder
@@ -58,13 +57,8 @@ COPY --chown=node:node --from=builder /app/dist ./dist
 COPY --chown=node:node --from=builder /app/prisma ./prisma
 COPY --chown=node:node --from=runtime-deps /app/node_modules ./node_modules
 
-# Release identity is metadata-only and intentionally follows every stable
-# filesystem layer so unchanged dependencies remain reusable across releases.
 FROM runtime-base AS runtime
-ARG RELEASE_ID
-ENV RELEASE_ID=${RELEASE_ID}
-LABEL org.opencontainers.image.title="delivery-platform-backend" \
-      org.opencontainers.image.version="${RELEASE_ID}"
+LABEL org.opencontainers.image.title="delivery-platform-backend"
 
 # 非 root 用户运行
 USER node
@@ -83,9 +77,6 @@ RUN npm install --global --registry=${NPM_REGISTRY} --no-audit --no-fund \
   && npm cache clean --force
 COPY --chown=node:node --from=builder /app/tsconfig.json ./tsconfig.json
 COPY --chown=node:node --from=builder /app/src ./src
-ARG RELEASE_ID
-ENV RELEASE_ID=${RELEASE_ID}
-LABEL org.opencontainers.image.title="delivery-platform-migrator" \
-      org.opencontainers.image.version="${RELEASE_ID}"
+LABEL org.opencontainers.image.title="delivery-platform-migrator"
 USER node
 CMD ["sh", "prisma/run-deployment-migrations.sh"]
