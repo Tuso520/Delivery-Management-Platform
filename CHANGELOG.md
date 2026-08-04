@@ -9,6 +9,7 @@
 - 新增发布前停写、MySQL/MinIO 成对备份、迁移门禁、内外网 Release ID 校验、失败标记和显式成对恢复；恢复时校验 checksum、源 Release、Worker 稳定性和服务器身份，不自动删除备份或 Docker 卷。
 - 新增测试/生产账号、SSH、sudo、目录、内外网地址、Nginx、GitHub Variables/Secrets、首发接管、日常推广和回滚的完整中文教程。
 - 发布镜像按后端 Git 树内容 SHA-256 复用，runtime 与 migrator 使用独立构建缓存，首次构建固定 `SOURCE_DATE_EPOCH=0`；仅文档或部署脚本变化时不再重建后端，同时保留不可变 Release 与默认来源证明。
+- Release `79e41eb29d40` 的同 SHA 复跑已验证内容复用：runtime 与 migrator 构建均跳过、两份 Manifest 的镜像 digest 完全一致，测试服务器拉取不足 0.2 秒、切换 53 秒、整条流水线 9 分 09 秒；首次内容冷拉取仍受 GHCR 链路质量影响，并由在线预拉取、20 分钟超时续传和停机前失败保护控制风险。
 
 ## 2026-07-28（标准库 Figma 精确对齐）
 
