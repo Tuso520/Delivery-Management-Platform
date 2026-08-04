@@ -1,6 +1,6 @@
 # 测试与生产服务器接管操作单
 
-状态：测试服务器只读摸底已完成；仓库侧不可变 Release 和真实集成验收已通过，自动部署仍关闭。
+状态：测试服务器 v2 接管、空库重建、不可变 Release 真实集成验收和自动部署均已通过；生产服务器尚待按本文准备。
 
 本文是 [发布与服务器架构 v2](deployment-architecture-v2.md) 的执行工作单。先完整完成测试服务器，再用同一已验收 Release 接管生产。命令默认由有 sudo 权限的人工运维账号执行；`dmpdeploy` 只供 GitHub Actions 发布。
 
@@ -8,8 +8,8 @@
 
 - 不在聊天、工单或 CI 日志中发送密码、私钥、Token、数据库备份、完整 `runtime.env` 或旧 `.env`。
 - 只回传主机名、版本、端口、容器名、镜像名、卷名、目录权限、健康状态和 SHA；公网地址可按组织要求脱敏。
-- 首次测试接管完成前保持仓库变量 `RELEASE_V2_ENABLED=false`。
-- 停止旧栈时禁止 `down -v`，禁止 `docker volume prune`，禁止删除旧目录、旧卷和备份。
+- 测试环境已由所有者明确授权为可销毁环境；只允许通过受控的 `reset_test_data=true` 工作流重建三个测试数据卷，不手工全局清卷。
+- 生产停止旧栈时禁止 `down -v`，禁止 `docker volume prune`，禁止删除旧目录、旧卷和备份。
 - production 始终保留 Environment 审批；测试接管和生产接管都必须安排维护窗口。
 
 ## 2. 第一批：两台服务器只读摸底
@@ -57,8 +57,8 @@ Docker 卷名：
 
 - 公网/私网：`1.117.73.165` / `10.0.0.6`；SSH `22`。
 - 旧 Compose：`delivery-platform-test`，7 个容器健康运行；前端 `18080`，后端 `127.0.0.1:3000`。
-- 旧数据卷：`delivery-platform-test_mysql_data`、`delivery-platform-test_redis_data`、`delivery-platform-test_minio_data`，必须原卷接管。
-- 实际业务数据库镜像是 `mysql:8.0`；宿主 MySQL unit 的失败状态与业务容器无关，接管阶段不升级数据库大版本。
+- 测试数据卷：`delivery-platform-test_mysql_data`、`delivery-platform-test_redis_data`、`delivery-platform-test_minio_data`；原历史数据已获授权删除，并已通过受控发布重建为空数据层。
+- 测试数据库按 `runtime.env` 固定为 `mysql:8.0`；空库启动后执行 Prisma migration 和正式基础 seed，不执行 legacy 数据恢复或历史模型回灌。
 - 宿主 Nginx 是宝塔 `1.30.3`：二进制 `/www/server/nginx/sbin/nginx`，配置 `/www/server/nginx/conf/nginx.conf`，worker 用户 `www`；systemd unit 为 inactive，禁止使用 `systemctl reload nginx`。
 - 服务器 3.6 GiB 内存且无 Swap；系统盘曾有 44.96 GiB 可回收 Docker build cache。只允许 `docker builder prune --all --force` 清构建缓存，禁止 `docker system prune`、`docker volume prune` 和任何 `down -v`。
 
@@ -175,7 +175,9 @@ sudo -u dmpdeploy cat /srv/delivery-platform/state/target-id
 
 最后一行不是密码，但仍只保存到对应 Environment Variable `DEPLOY_TARGET_ID`，不要跨环境复用。
 
-## 6. 第五批：运行配置和旧数据卷
+## 6. 第五批：运行配置和数据卷
+
+测试服务器当前采用全新数据基线：保留既有 `runtime.env` 凭据和稳定卷名，但不保留旧业务数据。再次需要清空测试数据时，只能手动运行“部署已存在 Release 到测试”并设置 `reset_test_data=true`；脚本会核对 `test` Environment、target-id、Compose 解析出的精确卷名和发布清单后再重建。生产永远不允许该选项。
 
 旧 Docker 栈仍在线时，优先在 Actions 手动运行“安全迁移服务器运行配置”。测试服务器填写：
 
@@ -197,7 +199,7 @@ sudo -u dmpdeploy editor /srv/delivery-platform/config/runtime.env
 配置规则：
 
 - test 的项目、网络和卷前缀使用 `delivery-platform-test-*`；production 使用 `delivery-platform-production-*`。
-- 旧栈接管必须把 MySQL、Redis、MinIO 的真实命名卷写入三个 `*_VOLUME_NAME`，不能换成空卷。
+- 生产旧栈接管必须把 MySQL、Redis、MinIO 的真实命名卷写入三个 `*_VOLUME_NAME`，不能换成空卷；全新生产服务器则先按空库流程建卷、migration 和正式基础 seed。
 - `CORS_ORIGIN` 写公网 HTTPS origin；测试和生产的所有密码、JWT、MinIO、Redis、数据库凭据必须不同。
 - `INTEGRATION_SECRET_ENCRYPTION_KEY` 使用 `openssl rand -base64 32` 生成并长期保存，不能随发布轮换。
 - `SEED_RESET_EXISTING_USER_PASSWORDS=false` 保持不变。
@@ -227,7 +229,7 @@ docker inspect <minio-container> --format '{{range .Mounts}}{{println .Name .Des
 在仓库 GitHub 页面执行：
 
 1. `Settings → Environments → New environment`，分别创建 `test`、`production`。
-2. `test` 首次接管期间临时设置 Required reviewers；接管稳定后移除，实现自动发布。
+2. `test` 不设置 Required reviewers，实现 main 验收通过后自动发布；当前已完成该设置。
 3. `production` 永久设置 Required reviewers，并禁止管理员绕过。
 4. 两个 Environment 分别创建以下 Variables：
 
@@ -242,7 +244,7 @@ docker inspect <minio-container> --format '{{range .Mounts}}{{println .Name .Des
 | `PUBLIC_ORIGIN` | 本环境公网 HTTPS origin |
 
 5. 两个 Environment 分别创建 Secrets：`DEPLOY_SSH_KEY`、`DEPLOY_KNOWN_HOSTS`。
-6. `Settings → Secrets and variables → Actions → Variables` 创建仓库变量 `RELEASE_V2_ENABLED=false`。
+6. `Settings → Secrets and variables → Actions → Variables` 创建仓库变量 `RELEASE_V2_ENABLED`；准备阶段为 `false`，接管完成后改为 `true`。测试服务器当前已启用。
 
 不创建长期 GHCR PAT。每次部署使用该 job 的短期 `GITHUB_TOKEN`，经固定 host key 的 SSH 标准输入临时登录目标服务器；流程结束无论成功失败都执行 `docker logout ghcr.io`，退出凭据失败会使发布 job 失败。
 
@@ -363,19 +365,19 @@ curl -fsS https://<public-ip>/api/v1/ready
 curl -fsS https://<public-ip>/build-info.json
 ```
 
-## 9. 第八批：测试服务器首次接管
+## 9. 第八批：测试服务器首次接管（已完成）
+
+当前测试服务器已完成账号、目录、固定 host key、Nginx、IP HTTPS、证书续期、空数据层重建和自动发布。以下步骤保留为重建服务器时的标准操作；无需再迁移或备份现有测试历史数据。
 
 1. 保持旧服务在线，确认目标 SHA 的 quality、build、integration 全部 PASS。
-2. 给 `test` Environment 设置临时审批人。
+2. 如需人工观察首发，可临时给 `test` Environment 设置审批人；稳定后必须移除。
 3. 把仓库 Variable `RELEASE_V2_ENABLED` 改为 `true`。
 4. 在 Actions 手动运行“构建并发布不可变 Release”，`ref` 填完整 40 位 main SHA。
 5. 等待“自动部署测试服务器”进入审批，不要提前停旧服务。
-6. 在旧应用目录执行 `bash deploy-git.sh status` 和 `bash deploy-git.sh backup`，验证 MySQL gzip、MinIO tar 和 checksums。
-7. 记录旧 Compose 的完整启动参数和三个真实卷名。
-8. 在维护窗口执行旧 Compose 的 `down --remove-orphans`，绝对不要加 `-v`。
-9. 再次 `docker volume inspect <volume>`，确认三个旧卷存在。
-10. 启用宿主 Nginx v2 配置，然后批准 test Environment 部署。
-11. 部署会再次创建 v2 成对备份、执行 migration、启动 API/Worker、原子切换前端并检查内外网入口。
+6. 可销毁测试环境无需 legacy 备份；运行“部署已存在 Release 到测试”，填写原 SHA 并设置 `reset_test_data=true`。
+7. 工作流核对三个精确测试卷后停止应用、删除并重建数据层，执行 migration 和正式基础 seed。
+8. 启用宿主 Nginx v2 配置；如设置了临时审批人，此时批准部署。
+9. 部署启动 API/Worker、原子切换前端并检查内外网入口；通过后移除 test 审批人，恢复自动发布。
 
 如果该 SHA 早已完成 Release 构建与真实集成，只是此前因开关为 `false` 跳过部署，则第 4～5 步改为运行“部署已存在 Release 到测试”并填写原 SHA。不得重新构建同一 SHA；该工作流直接验证并复用 GHCR 中原有 Manifest、镜像和前端包。
 
@@ -412,7 +414,7 @@ sudo -u <nginx-worker-user> test -r /srv/delivery-platform/current/frontend/inde
 | runtime.env 为 0600 |  |  |
 | SSH host key 已线下核对 |  |  |
 | Nginx 配置检查 |  |  |
-| 旧数据卷已确认 |  |  |
+| 数据卷策略已确认 | 空库重建 |  |
 | legacy 成对备份路径 |  |  |
 | Release 完整 SHA |  |  |
 | backend / migrator digest |  |  |

@@ -7,7 +7,6 @@ ARG RELEASE_ID=development
 ARG NODE_IMAGE=node:20-bookworm-slim@sha256:3d0f05455dea2c82e2f76e7e2543964c30f6b7d673fc1a83286736d44fe4c41c
 
 FROM ${NODE_IMAGE} AS builder
-ARG RELEASE_ID
 ARG NPM_REGISTRY=https://registry.npmjs.org
 ARG DEBIAN_MIRROR=http://deb.debian.org/debian
 ARG DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security

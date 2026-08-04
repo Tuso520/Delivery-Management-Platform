@@ -300,6 +300,12 @@ test('runtime and migrator images share production layers without shipping build
   assert.match(backendDockerfile, /\/app\/tsconfig\.json \.\/tsconfig\.json/u)
   assert.match(backendDockerfile, /\/app\/src \.\/src/u)
   assert.match(backendDockerfile, /npm cache clean --force/u)
+  const builderStage = backendDockerfile.slice(
+    backendDockerfile.indexOf('FROM ${NODE_IMAGE} AS builder'),
+    backendDockerfile.indexOf('FROM builder AS runtime-deps'),
+  )
+  assert.doesNotMatch(builderStage, /ARG RELEASE_ID/u)
+  assert.equal(backendDockerfile.match(/ARG RELEASE_ID/gu)?.length, 3)
   for (const workflow of [releaseWorkflow, legacyDeployWorkflow]) {
     assert.doesNotMatch(workflow, /node_modules\/\.bin\/(?:prisma|ts-node)/u)
   }
