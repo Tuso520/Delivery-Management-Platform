@@ -90,6 +90,8 @@ jobs:
       - name: 构建并推送后端运行镜像
         id: backend
         uses: docker/build-push-action@v6
+        env:
+          SOURCE_DATE_EPOCH: "0"
         with:
           context: delivery-platform-server
           file: delivery-platform-server/Dockerfile
@@ -102,6 +104,8 @@ jobs:
       - name: 构建并推送迁移镜像
         id: migrator
         uses: docker/build-push-action@v6
+        env:
+          SOURCE_DATE_EPOCH: "0"
         with:
           context: delivery-platform-server
           file: delivery-platform-server/Dockerfile
