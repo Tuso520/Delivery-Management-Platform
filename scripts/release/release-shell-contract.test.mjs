@@ -313,6 +313,7 @@ test('runtime and migrator images share production layers without shipping build
   assert.doesNotMatch(builderStage, /ARG RELEASE_ID/u)
   assert.doesNotMatch(backendDockerfile, /ARG RELEASE_ID|ENV RELEASE_ID/u)
   assert.doesNotMatch(releaseWorkflow, /build-args:\s*RELEASE_ID/u)
+  assert.equal(releaseWorkflow.match(/SOURCE_DATE_EPOCH: "0"/gu)?.length, 2)
   for (const workflow of [releaseWorkflow, legacyDeployWorkflow]) {
     assert.doesNotMatch(workflow, /node_modules\/\.bin\/(?:prisma|ts-node)/u)
   }
