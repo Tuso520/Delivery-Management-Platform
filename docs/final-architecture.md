@@ -244,9 +244,10 @@ Vue Route
 | Release Shell / YAML 静态检查 | PASS；deploy/restore `bash -n`，5 个 workflow 与 2 个 v2 Compose YAML 可解析 |
 | 本地视觉验收 | PASS，5/5；项目台账、项目档案、档案模板、项目弹窗已有三联对比，标准库缺少项目内设计参考图并明确标记 |
 | Compose 配置 | PASS；基础、生产、测试、v2 数据和 v2 应用共 5 组 `config -q`，未启动容器 |
-| v2 镜像构建 / 真实集成 E2E | PASS；Release `4c4f97074794` 的后端、迁移镜像、前端包、Manifest、真实 MySQL/Redis/MinIO、API 与浏览器验收全部通过 |
+| v2 镜像构建 / 真实集成 E2E | PASS；Release `f99fa08b6336` 的后端、迁移镜像、前端包、Manifest、真实 MySQL/Redis/MinIO、API 与浏览器验收全部通过 |
 | 测试/生产服务器接管 | 测试 PASS：main 自动发布、成对备份、45 个 migration、迁移校验、原子前端切换及内外网检查通过；生产 PENDING，等待按教程提供独立服务器和 Environment 参数 |
-| 测试服务器冷拉取基线 | backend 135 MiB、migrator 174 MiB；GHCR 冷拉取 17 分 04 秒，拉取结束后的成对备份、迁移、启动和原子切换约 47 秒；后端文件层已改为跨 Release 稳定复用 |
+| 测试数据基线 | PASS：测试环境已获授权清除历史数据，三个数据卷受控重建；空库执行 45 个 migration、正式基础 seed 和真实 E2E，不恢复 legacy 数据 |
+| 发布耗时基线 | PASS：backend 135 MiB、migrator 174 MiB；两次缓存失效拉取分别为 17 分 04 秒和 13 分 42 秒，下载后的备份、迁移、启动和原子切换约 46～47 秒。另一次稳定层重建因 GHCR 波动超过 36 分钟，在停机前取消且旧 Release 持续 ready；已增加 20 分钟超时和最多 3 次续传重试，稳定层热更新另行连续验证 |
 
 ### 8.7 下一步优先级
 
@@ -259,7 +260,7 @@ Vue Route
 ### 8.8 部署与测试架构
 
 - 本地默认使用 `scripts/local-quality.ps1` 和 `scripts/local-visual.ps1`，不启动 WSL、Docker 或真实数据服务；视觉报告同时展示设计参考、本次实现和差异叠加，缺失基准时明确失败降级而不伪造参考图。
-- GitHub 质量检查通过后只构建一次后端 runtime、migrator 和前端静态包；`release-manifest.json` 绑定完整 Git SHA、镜像 digest、前端 checksum 与 migration 数量。migrator 继承精简 runtime 以复用镜像层，只增加固定版本迁移命令，不携带 builder 工具链。
+- GitHub 质量检查通过后只构建一次后端 runtime、migrator 和前端静态包；`release-manifest.json` 绑定完整 Git SHA、镜像 digest、前端 checksum 与 migration 数量。migrator 继承精简 runtime 以复用镜像层，只增加固定版本迁移命令，不携带 builder 工具链；每次变化的 Release ID 位于全部稳定文件层之后，避免仅发布元数据变化时重建依赖和应用层。
 - 测试和生产各自保留内部 MySQL、Redis、MinIO，但数据 Compose 与应用 Compose 分离；数据端口只监听 localhost，应用发布不删除命名卷。
 - 宿主 Nginx 直接服务 `current/frontend`，发布脚本在停写、成对备份、migration、API/Worker 稳定后原子切换前端，并同时检查内网和公网 Release ID。
 - 测试服务器由 main 的已验收 Release 自动发布；生产只接受同一测试验证凭据，经 `production` Environment 人工审批后原地切换，不重新构建。

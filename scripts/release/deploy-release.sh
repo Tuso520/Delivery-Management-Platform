@@ -97,6 +97,21 @@ app_compose_with() {
     -f "$APP_COMPOSE_FILE" "$@"
 }
 
+pull_application_images() {
+  local attempt
+  for attempt in 1 2 3; do
+    if timeout --foreground 20m \
+      docker compose --env-file "$RUNTIME_ENV_FILE" --env-file "$RELEASE_ENV_FILE" \
+        -f "$APP_COMPOSE_FILE" pull \
+        backend backend-migrate file-worker outbox-worker; then
+      return 0
+    fi
+    warn "immutable image pull attempt $attempt failed or timed out"
+    [ "$attempt" -lt 3 ] || die 'immutable image pull failed after 3 attempts'
+    sleep $((attempt * 5))
+  done
+}
+
 read_manifest() {
   RELEASE_MANIFEST="$(canonical_file "$RELEASE_MANIFEST")" || die 'release manifest is missing or unsafe'
   FRONTEND_BUNDLE="$(canonical_file "$FRONTEND_BUNDLE")" || die 'frontend bundle is missing or unsafe'
@@ -375,7 +390,7 @@ deploy_release() {
   app_compose_with "$RELEASE_ENV_FILE" config -q
   ensure_data_layer
   log 'pulling immutable application images while the current release remains online'
-  app_compose_with "$RELEASE_ENV_FILE" pull backend backend-migrate file-worker outbox-worker
+  pull_application_images
   log_image_size backend "$BACKEND_IMAGE"
   log_image_size migrator "$MIGRATION_IMAGE"
   stop_application
@@ -407,7 +422,7 @@ show_status() {
 
 main() {
   trap on_exit EXIT
-  for command in docker jq sha256sum tar gzip curl flock realpath stat sudo; do
+  for command in docker jq sha256sum tar gzip curl flock realpath stat sudo timeout; do
     require_command "$command"
   done
   case "${1:-deploy}" in

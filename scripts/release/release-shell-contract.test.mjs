@@ -107,11 +107,13 @@ test('deployment binds release identity and checksummed paired backups', () => {
 test('deployment records pulled runtime and migrator image sizes before downtime', () => {
   const body = deploy.slice(deploy.indexOf('deploy_release()'))
   occursInOrder(body, [
-    'pull backend backend-migrate file-worker outbox-worker',
+    'pull_application_images',
     'log_image_size backend "$BACKEND_IMAGE"',
     'log_image_size migrator "$MIGRATION_IMAGE"',
     'stop_application',
   ])
+  assert.match(deploy, /timeout --foreground 20m/u)
+  assert.match(deploy, /immutable image pull failed after 3 attempts/u)
 })
 
 test('frontend releases are readable by host Nginx without exposing private state', () => {
