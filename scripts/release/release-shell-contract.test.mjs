@@ -255,6 +255,7 @@ test('missing immutable images use a checksummed and resumable SSH preload befor
     'timeout --foreground 5m docker pull "$image"',
     '-f "$APP_ROOT/control/app.yml" down --remove-orphans </dev/null',
     'down --volumes --remove-orphans </dev/null',
+    `'bash -c '\\''script="$(cat)"; exec bash -c "$script" "$@"'\\'' buffer' --`,
     "for attempt in {1..12}; do",
     "test \"$verified\" = true",
     '[[ "$stage" == "/tmp/delivery-release-${release_id}-"* ]]',
