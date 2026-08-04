@@ -29,6 +29,7 @@ APPLICATION_STOPPED="NO"
 DATABASE_MUTATION_STARTED="NO"
 DEPLOY_ACTIVE="NO"
 DEPLOY_SUCCEEDED="NO"
+PULL_PID=""
 
 log() { printf '[release] %s\n' "$*"; }
 warn() { printf '[release][warn] %s\n' "$*" >&2; }
@@ -97,13 +98,32 @@ app_compose_with() {
     -f "$APP_COMPOSE_FILE" "$@"
 }
 
+on_signal() {
+  local signal="$1"
+  local status="$2"
+  warn "received $signal; cancelling the active deployment"
+  if [[ "$PULL_PID" =~ ^[1-9][0-9]*$ ]] && kill -0 "$PULL_PID" 2>/dev/null; then
+    kill -TERM "$PULL_PID" 2>/dev/null || true
+    wait "$PULL_PID" 2>/dev/null || true
+  fi
+  exit "$status"
+}
+
 pull_application_images() {
-  local attempt
+  local attempt pull_status
   for attempt in 1 2 3; do
-    if timeout --foreground 20m \
+    timeout --foreground 20m \
       docker compose --env-file "$RUNTIME_ENV_FILE" --env-file "$RELEASE_ENV_FILE" \
         -f "$APP_COMPOSE_FILE" pull \
-        backend backend-migrate file-worker outbox-worker; then
+        backend backend-migrate file-worker outbox-worker &
+    PULL_PID="$!"
+    if wait "$PULL_PID"; then
+      pull_status=0
+    else
+      pull_status="$?"
+    fi
+    PULL_PID=""
+    if [ "$pull_status" -eq 0 ]; then
       return 0
     fi
     warn "immutable image pull attempt $attempt failed or timed out"
@@ -422,6 +442,9 @@ show_status() {
 
 main() {
   trap on_exit EXIT
+  trap 'on_signal HUP 129' HUP
+  trap 'on_signal INT 130' INT
+  trap 'on_signal TERM 143' TERM
   for command in docker jq sha256sum tar gzip curl flock realpath stat sudo timeout; do
     require_command "$command"
   done

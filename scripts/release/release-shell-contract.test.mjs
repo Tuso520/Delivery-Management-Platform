@@ -114,6 +114,10 @@ test('deployment records pulled runtime and migrator image sizes before downtime
   ])
   assert.match(deploy, /timeout --foreground 20m/u)
   assert.match(deploy, /immutable image pull failed after 3 attempts/u)
+  assert.match(deploy, /PULL_PID="\$!"/u)
+  assert.match(deploy, /kill -TERM "\$PULL_PID"/u)
+  assert.match(deploy, /trap 'on_signal HUP 129' HUP/u)
+  assert.match(deploy, /trap 'on_signal TERM 143' TERM/u)
 })
 
 test('frontend releases are readable by host Nginx without exposing private state', () => {
