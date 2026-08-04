@@ -244,8 +244,9 @@ Vue Route
 | Release Shell / YAML 静态检查 | PASS；deploy/restore `bash -n`，5 个 workflow 与 2 个 v2 Compose YAML 可解析 |
 | 本地视觉验收 | PASS，5/5；项目台账、项目档案、档案模板、项目弹窗已有三联对比，标准库缺少项目内设计参考图并明确标记 |
 | Compose 配置 | PASS；基础、生产、测试、v2 数据和 v2 应用共 5 组 `config -q`，未启动容器 |
-| v2 镜像构建 / 真实集成 E2E | PASS；Release `b5b5da52e1c4` 的后端、迁移镜像、前端包、Manifest、真实 MySQL/Redis/MinIO、API 与浏览器验收全部通过 |
+| v2 镜像构建 / 真实集成 E2E | PASS；Release `4c4f97074794` 的后端、迁移镜像、前端包、Manifest、真实 MySQL/Redis/MinIO、API 与浏览器验收全部通过 |
 | 测试/生产服务器接管 | 测试 PASS：main 自动发布、成对备份、45 个 migration、迁移校验、原子前端切换及内外网检查通过；生产 PENDING，等待按教程提供独立服务器和 Environment 参数 |
+| 测试服务器冷拉取基线 | backend 135 MiB、migrator 174 MiB；GHCR 冷拉取 17 分 04 秒，拉取结束后的成对备份、迁移、启动和原子切换约 47 秒；后端文件层已改为跨 Release 稳定复用 |
 
 ### 8.7 下一步优先级
 
