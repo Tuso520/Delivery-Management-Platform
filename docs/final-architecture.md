@@ -244,10 +244,10 @@ Vue Route
 | Release Shell / YAML 静态检查 | PASS；deploy/restore `bash -n`，5 个 workflow 与 2 个 v2 Compose YAML 可解析 |
 | 本地视觉验收 | PASS，5/5；项目台账、项目档案、档案模板、项目弹窗已有三联对比，标准库缺少项目内设计参考图并明确标记 |
 | Compose 配置 | PASS；基础、生产、测试、v2 数据和 v2 应用共 5 组 `config -q`，未启动容器 |
-| v2 镜像构建 / 真实集成 E2E | PASS；Release `f99fa08b6336` 的后端、迁移镜像、前端包、Manifest、真实 MySQL/Redis/MinIO、API 与浏览器验收全部通过 |
+| v2 镜像构建 / 真实集成 E2E | PASS；Release `1192e3aa76db` 的后端、迁移镜像、前端包、Manifest、真实 MySQL/Redis/MinIO、API 与浏览器验收全部通过 |
 | 测试/生产服务器接管 | 测试 PASS：main 自动发布、成对备份、45 个 migration、迁移校验、原子前端切换及内外网检查通过；生产 PENDING，等待按教程提供独立服务器和 Environment 参数 |
 | 测试数据基线 | PASS：测试环境已获授权清除历史数据，三个数据卷受控重建；空库执行 45 个 migration、正式基础 seed 和真实 E2E，不恢复 legacy 数据 |
-| 发布耗时基线 | PASS：backend 135 MiB、migrator 174 MiB；两次缓存失效拉取分别为 17 分 04 秒和 13 分 42 秒，下载后的备份、迁移、启动和原子切换约 46～47 秒。另一次稳定层重建因 GHCR 波动超过 36 分钟，在停机前取消且旧 Release 持续 ready；已增加 20 分钟超时和最多 3 次续传重试，稳定层热更新另行连续验证 |
+| 发布耗时与容错 | PASS：backend 135 MiB、migrator 174 MiB；两次缓存失效拉取分别为 17 分 04 秒和 13 分 42 秒，下载后的备份、迁移、启动和原子切换约 46～49 秒。Release `1192e3aa76db` 首次连接失败后自动续传约 4 分钟完成；另一次超过 36 分钟的拉取在停机前取消且旧 Release 持续 ready。当前脚本单次上限 20 分钟，最多重试 3 次 |
 
 ### 8.7 下一步优先级
 
