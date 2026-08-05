@@ -40,7 +40,6 @@ const EMPTY_RUNTIME_TABLES = [
   'notifications',
   'notification_deliveries',
   'okr_objectives',
-  'operation_logs',
   'outbox_events',
   'performance_scores',
   'project_archive_entries',
@@ -164,6 +163,7 @@ async function main(): Promise<void> {
   const users = await prisma.user.findMany({
     where: { deletedAt: null },
     select: {
+      id: true,
       username: true,
       status: true,
       userRoles: { select: { role: { select: { roleCode: true } } } },
@@ -176,6 +176,42 @@ async function main(): Promise<void> {
     !users[0].userRoles.some(({ role }) => role.roleCode === 'SUPER_ADMIN')
   ) {
     throw new Error('clean test baseline must contain one active SUPER_ADMIN named admin');
+  }
+
+  const migrationAudits = await prisma.operationLog.findMany({
+    select: {
+      userId: true,
+      module: true,
+      action: true,
+      targetType: true,
+      targetId: true,
+      result: true,
+      traceId: true,
+    },
+    orderBy: { action: 'asc' },
+  });
+  const expectedMigrationAudits = new Map([
+    ['integration_secret_migration', 'IntegrationConfig'],
+    ['target_foundation_apply', 'Migration'],
+  ]);
+  if (
+    migrationAudits.length !== expectedMigrationAudits.size ||
+    migrationAudits.some(
+      (audit) =>
+        audit.module !== 'migration' ||
+        !expectedMigrationAudits.has(audit.action) ||
+        audit.targetType !== expectedMigrationAudits.get(audit.action) ||
+        audit.userId !== users[0].id ||
+        audit.targetId !== users[0].id ||
+        audit.result !== 'success' ||
+        !audit.traceId?.startsWith(
+          audit.action === 'integration_secret_migration'
+            ? 'integration-secret-migration:'
+            : 'target-foundation:',
+        ),
+    )
+  ) {
+    throw new Error('clean test baseline contains unexpected operation logs');
   }
 
   const counts = await tableCounts(guardrails.database);
@@ -207,6 +243,7 @@ async function main(): Promise<void> {
         databaseName: guardrails.database,
         users: users.length,
         adminRoles: users[0].userRoles.map(({ role }) => role.roleCode),
+        migrationAuditLogs: migrationAudits.map(({ action, result }) => ({ action, result })),
         tableCounts: counts,
         foreignKeyOrphans: orphans,
       },

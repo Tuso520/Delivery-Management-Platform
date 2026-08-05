@@ -22,6 +22,7 @@ on:
         type: boolean
 
 permissions:
+  actions: read
   contents: read
   packages: read
 
@@ -92,6 +93,66 @@ jobs:
           printf '%s\n' "$SERVER_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      - name: 检查目标服务器不可变镜像缓存
+        id: image_cache
+        run: |
+          set -Eeuo pipefail
+          backend_image="$(jq -er '.components.backend.image' release/release-manifest.json)"
+          migration_image="$(jq -er '.components.migrator.image' release/release-manifest.json)"
+          if ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            "$SERVER_USER@$SERVER_HOST" 'bash -s' -- "$backend_image" "$migration_image" <<'REMOTE'
+          set -Eeuo pipefail
+          docker image inspect "$1" "$2" >/dev/null 2>&1
+          REMOTE
+          then
+            printf 'preload=false\n' >> "$GITHUB_OUTPUT"
+          else
+            printf 'preload=true\n' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 准备缺失镜像的 SSH 传输包
+        if: ${{ steps.image_cache.outputs.preload == 'true' }}
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          backend_image="$(jq -er '.components.backend.image' release/release-manifest.json)"
+          migration_image="$(jq -er '.components.migrator.image' release/release-manifest.json)"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          timeout --foreground 20m docker pull "$backend_image"
+          timeout --foreground 20m docker pull "$migration_image"
+          backend_id="$(docker image inspect "$backend_image" --format '{{.Id}}')"
+          migration_id="$(docker image inspect "$migration_image" --format '{{.Id}}')"
+          [[ "$backend_id" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$migration_id" =~ ^sha256:[0-9a-f]{64}$ ]]
+          docker save "$backend_id" "$migration_id" | gzip -9 > release/application-images.tar.gz
+          gzip -t release/application-images.tar.gz
+          sha256sum release/application-images.tar.gz | awk '{print $1}' > release/image-bundle.sha256
+          stat -c '%s' release/application-images.tar.gz > release/image-bundle.bytes
+          split -b 32M -d -a 4 release/application-images.tar.gz release/image-bundle.part-
+          test -s release/image-bundle.part-0000
+          bundle_bytes="$(cat release/image-bundle.bytes)"
+          bundle_parts="$(find release -maxdepth 1 -type f -name 'image-bundle.part-*' | wc -l)"
+          printf 'image bundle: %s bytes, %s parts\n' "$bundle_bytes" "$bundle_parts"
+          rm -f -- release/application-images.tar.gz
+
+      - name: 创建短期镜像中继制品
+        id: image_relay_artifact
+        if: ${{ steps.image_cache.outputs.preload == 'true' }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-relay-${{ github.run_id }}-${{ inputs.environment_name }}
+          path: |
+            release/image-bundle.sha256
+            release/image-bundle.bytes
+            release/image-bundle.part-*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
       - name: 临时授权目标服务器读取 GHCR
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -120,15 +181,164 @@ jobs:
             "$SERVER_USER@$SERVER_HOST:$remote_stage/"
           printf 'REMOTE_STAGE=%s\n' "$remote_stage" >> "$GITHUB_ENV"
 
+      - name: 通过短期 HTTPS 中继下载缺失镜像
+        id: image_relay_download
+        if: >-
+          steps.image_cache.outputs.preload == 'true' &&
+          steps.image_relay_artifact.outcome == 'success'
+        continue-on-error: true
+        env:
+          ARTIFACT_ID: ${{ steps.image_relay_artifact.outputs.artifact-id }}
+          ACTIONS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$ARTIFACT_ID" =~ ^[0-9]+$ ]]
+          headers_file='release/image-relay-headers'
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error \
+            --connect-timeout 30 --max-time 120 \
+            -D "$headers_file" -o /dev/null \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer $ACTIONS_TOKEN" \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip"
+          signed_url="$(awk 'BEGIN { IGNORECASE=1 } /^location:/ {
+            sub(/^[^:]+:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit
+          }' "$headers_file")"
+          rm -f -- "$headers_file"
+          [[ "$signed_url" =~ ^https://[A-Za-z0-9.-]+\.blob\.core\.windows\.net/ ]]
+          signed_url_base64="$(printf '%s' "$signed_url" | base64 -w0)"
+          unset signed_url
+
+          ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            "$SERVER_USER@$SERVER_HOST" 'bash -s' -- \
+            "$REMOTE_STAGE" "$RELEASE_ID" "$signed_url_base64" <<'REMOTE'
+          set -Eeuo pipefail
+          stage="$1"
+          release_id="$2"
+          signed_url_base64="$3"
+          [[ "$stage" == "/tmp/delivery-release-${release_id}-"* ]]
+          [[ "$signed_url_base64" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test -d "$stage" && test ! -L "$stage"
+          signed_url="$(printf '%s' "$signed_url_base64" | base64 -d)"
+          unset signed_url_base64
+          [[ "$signed_url" =~ ^https://[A-Za-z0-9.-]+\.blob\.core\.windows\.net/ ]]
+          artifact_zip="$stage/.upload-image-relay.zip"
+          extract_dir="$stage/.image-relay-extract"
+          rm -rf -- "$extract_dir"
+          install -d -m 700 "$extract_dir"
+          curl --proto '=https' --tlsv1.2 --location --fail --silent --show-error \
+            --retry 3 --retry-all-errors --retry-delay 5 \
+            --connect-timeout 30 --max-time 3600 \
+            -o "$artifact_zip" "$signed_url"
+          unset signed_url
+          test -s "$artifact_zip" && test ! -L "$artifact_zip"
+          python3 - "$artifact_zip" "$extract_dir" <<'PY'
+          import re
+          import sys
+          import zipfile
+          from pathlib import Path
+
+          archive = Path(sys.argv[1])
+          destination = Path(sys.argv[2])
+          allowed = re.compile(r'image-bundle\.(?:sha256|bytes|part-[0-9]{4})')
+          with zipfile.ZipFile(archive) as artifact:
+              members = artifact.infolist()
+              names = [member.filename for member in members]
+              if not members or any(not allowed.fullmatch(name) for name in names):
+                  raise SystemExit('image relay contains an unexpected path')
+              if len(names) != len(set(names)):
+                  raise SystemExit('image relay contains duplicate paths')
+              required = {'image-bundle.sha256', 'image-bundle.bytes', 'image-bundle.part-0000'}
+              if not required.issubset(names):
+                  raise SystemExit('image relay is incomplete')
+              artifact.extractall(destination)
+          PY
+          for source in "$extract_dir"/image-bundle.*; do
+            test -f "$source" && test ! -L "$source"
+            name="$(basename -- "$source")"
+            [[ "$name" =~ ^image-bundle\.(sha256|bytes|part-[0-9]{4})$ ]]
+            mv -f -- "$source" "$stage/$name"
+          done
+          rm -rf -- "$extract_dir"
+          rm -f -- "$artifact_zip"
+          printf 'HTTPS image relay download complete\n'
+          REMOTE
+
+      - name: 通过 SSH 分片回退上传缺失镜像
+        if: >-
+          steps.image_cache.outputs.preload == 'true' &&
+          steps.image_relay_download.outcome != 'success'
+        run: |
+          set -Eeuo pipefail
+          upload_one() {
+            local source="$1" name attempt
+            name="$(basename -- "$source")"
+            [[ "$name" =~ ^image-bundle\.(sha256|bytes|part-[0-9]{4})$ ]]
+            printf 'upload start: %s\n' "$name"
+            for attempt in 1 2 3; do
+              if scp -i ~/.ssh/deploy_key -P "$SERVER_PORT" \
+                -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+                -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+                "$source" "$SERVER_USER@$SERVER_HOST:$REMOTE_STAGE/.upload-$name" && \
+                ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
+                  -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+                  -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+                  "$SERVER_USER@$SERVER_HOST" 'bash -s' -- "$REMOTE_STAGE" "$RELEASE_ID" "$name" <<'REMOTE'
+          set -Eeuo pipefail
+          stage="$1"
+          release_id="$2"
+          name="$3"
+          [[ "$stage" == "/tmp/delivery-release-${release_id}-"* ]]
+          [[ "$name" =~ ^image-bundle\.(sha256|bytes|part-[0-9]{4})$ ]]
+          test -d "$stage" && test ! -L "$stage"
+          test -f "$stage/.upload-$name" && test ! -L "$stage/.upload-$name"
+          mv -f -- "$stage/.upload-$name" "$stage/$name"
+          REMOTE
+              then
+                printf 'upload complete: %s\n' "$name"
+                return 0
+              fi
+              sleep $((attempt * 5))
+            done
+            printf '::error::SSH image bundle upload failed: %s\n' "$name" >&2
+            return 1
+          }
+
+          upload_one release/image-bundle.sha256
+          upload_one release/image-bundle.bytes
+          mapfile -t image_parts < <(find release -maxdepth 1 -type f \
+            -name 'image-bundle.part-*' -print | sort)
+          ((${#image_parts[@]} > 0))
+          printf 'uploading %s image parts with concurrency 4\n' "${#image_parts[@]}"
+          for ((offset = 0; offset < ${#image_parts[@]}; offset += 4)); do
+            pids=()
+            for part in "${image_parts[@]:offset:4}"; do
+              upload_one "$part" &
+              pids+=("$!")
+            done
+            upload_failed=0
+            for pid in "${pids[@]}"; do
+              if ! wait "$pid"; then
+                upload_failed=1
+              fi
+            done
+            ((upload_failed == 0)) || exit 1
+          done
+
       - name: 执行服务器原地切换
+        env:
+          PRELOAD_IMAGE_BUNDLE: ${{ steps.image_cache.outputs.preload }}
         run: |
           set -Eeuo pipefail
           ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
-            "$SERVER_USER@$SERVER_HOST" 'bash -s' -- \
+            "$SERVER_USER@$SERVER_HOST" \
+            'bash -c '\''script="$(cat)"; exec bash -c "$script" "$@"'\'' buffer' -- \
             "$APP_ROOT" "$REMOTE_STAGE" "$DEPLOY_ENV" "$DEPLOY_TARGET_ID" \
-            "$INTERNAL_ORIGIN" "$PUBLIC_ORIGIN" "$RESET_TEST_DATA" <<'REMOTE'
+            "$INTERNAL_ORIGIN" "$PUBLIC_ORIGIN" "$RESET_TEST_DATA" "$PRELOAD_IMAGE_BUNDLE" <<'REMOTE'
           set -Eeuo pipefail
           APP_ROOT="$1"
           REMOTE_STAGE="$2"
@@ -137,6 +347,7 @@ jobs:
           INTERNAL_ORIGIN="$5"
           PUBLIC_ORIGIN="$6"
           RESET_TEST_DATA="$7"
+          PRELOAD_IMAGE_BUNDLE="$8"
 
           test -d "$APP_ROOT" && test ! -L "$APP_ROOT"
           test -f "$APP_ROOT/state/target-id" && test ! -L "$APP_ROOT/state/target-id"
@@ -149,6 +360,54 @@ jobs:
           install -m 700 "$REMOTE_STAGE/restore-release.sh" "$APP_ROOT/control/restore-release.sh"
           install -m 600 "$REMOTE_STAGE/frontend.tar.gz" "$APP_ROOT/incoming/frontend.tar.gz"
           install -m 600 "$REMOTE_STAGE/release-manifest.json" "$APP_ROOT/incoming/release-manifest.json"
+
+          case "$PRELOAD_IMAGE_BUNDLE" in
+            true)
+              expected_sha="$(tr -d '\r\n' < "$REMOTE_STAGE/image-bundle.sha256")"
+              expected_bytes="$(tr -d '\r\n' < "$REMOTE_STAGE/image-bundle.bytes")"
+              [[ "$expected_sha" =~ ^[0-9a-f]{64}$ ]]
+              [[ "$expected_bytes" =~ ^[1-9][0-9]*$ ]]
+              mapfile -t image_parts < <(
+                find "$REMOTE_STAGE" -maxdepth 1 -type f -name 'image-bundle.part-*' \
+                  -printf '%f\n' | sort
+              )
+              test "${#image_parts[@]}" -gt 0
+              image_bundle="$APP_ROOT/incoming/application-images.tar.gz"
+              image_bundle_part="$image_bundle.part"
+              trap 'rm -f -- "$image_bundle_part" "$image_bundle"' EXIT
+              : > "$image_bundle_part"
+              for part in "${image_parts[@]}"; do
+                [[ "$part" =~ ^image-bundle\.part-[0-9]{4}$ ]]
+                test -f "$REMOTE_STAGE/$part" && test ! -L "$REMOTE_STAGE/$part"
+                cat -- "$REMOTE_STAGE/$part" >> "$image_bundle_part"
+              done
+              test "$(stat -c '%s' "$image_bundle_part")" = "$expected_bytes"
+              test "$(sha256sum "$image_bundle_part" | awk '{print $1}')" = "$expected_sha"
+              gzip -t "$image_bundle_part"
+              mv -f -- "$image_bundle_part" "$image_bundle"
+              gzip -dc "$image_bundle" | docker load
+
+              backend_image="$(jq -er '.components.backend.image' "$APP_ROOT/incoming/release-manifest.json")"
+              migration_image="$(jq -er '.components.migrator.image' "$APP_ROOT/incoming/release-manifest.json")"
+              for image in "$backend_image" "$migration_image"; do
+                pulled='false'
+                for attempt in 1 2 3; do
+                  if timeout --foreground 5m docker pull "$image"; then
+                    pulled='true'
+                    break
+                  fi
+                  sleep $((attempt * 5))
+                done
+                test "$pulled" = true
+                docker image inspect "$image" >/dev/null
+              done
+              rm -f -- "$image_bundle"
+              trap - EXIT
+              printf '[release] checksummed SSH image preload completed\n'
+              ;;
+            false) ;;
+            *) printf '[release][error] invalid image preload state\n' >&2; exit 1 ;;
+          esac
 
           case "$RESET_TEST_DATA" in
             true)
@@ -198,9 +457,9 @@ jobs:
                 '
 
               docker compose --env-file "$runtime_env" --env-file "$reset_release_env" \
-                -f "$APP_ROOT/control/app.yml" down --remove-orphans
+                -f "$APP_ROOT/control/app.yml" down --remove-orphans </dev/null
               docker compose --env-file "$runtime_env" -f "$APP_ROOT/control/data.yml" \
-                down --volumes --remove-orphans
+                down --volumes --remove-orphans </dev/null
               for volume in "${reset_volumes[@]}"; do
                 ! docker volume inspect "$volume" >/dev/null 2>&1
               done
@@ -229,10 +488,39 @@ jobs:
         run: |
           set -Eeuo pipefail
           expected="${RELEASE_ID:0:12}"
-          actual="$(curl -fsS --connect-timeout 10 --max-time 30 -H 'Cache-Control: no-cache' \
-            "${PUBLIC_ORIGIN%/}/build-info.json" | jq -r '.releaseId')"
-          test "$actual" = "$expected"
-          curl -fsS --connect-timeout 10 --max-time 30 "${PUBLIC_ORIGIN%/}/api/v1/ready" >/dev/null
+          verified='false'
+          for attempt in {1..12}; do
+            actual="$(curl -fsS --connect-timeout 10 --max-time 15 -H 'Cache-Control: no-cache' \
+              "${PUBLIC_ORIGIN%/}/build-info.json" 2>/dev/null | jq -r '.releaseId' 2>/dev/null || true)"
+            if [ "$actual" = "$expected" ] && \
+              curl -fsS --connect-timeout 10 --max-time 15 \
+                "${PUBLIC_ORIGIN%/}/api/v1/ready" >/dev/null 2>&1; then
+              verified='true'
+              break
+            fi
+            sleep 5
+          done
+          test "$verified" = true
+
+      - name: 清理目标服务器临时发布目录
+        if: ${{ always() }}
+        run: |
+          set -Eeuo pipefail
+          if [ -n "${REMOTE_STAGE:-}" ]; then
+            ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o ConnectTimeout=30 \
+              "$SERVER_USER@$SERVER_HOST" 'bash -s' -- "$REMOTE_STAGE" "$RELEASE_ID" <<'REMOTE'
+          set -Eeuo pipefail
+          stage="$1"
+          release_id="$2"
+          [[ "$stage" == "/tmp/delivery-release-${release_id}-"* ]]
+          if [ -e "$stage" ] || [ -L "$stage" ]; then
+            test -d "$stage" && test ! -L "$stage"
+            rm -rf -- "$stage"
+          fi
+          REMOTE
+          fi
 
       - name: 清理目标服务器临时 GHCR 凭据
         if: ${{ always() }}
@@ -241,3 +529,7 @@ jobs:
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o ConnectTimeout=30 \
             "$SERVER_USER@$SERVER_HOST" 'docker logout ghcr.io'
+
+      - name: 清理 Runner 临时 GHCR 凭据
+        if: ${{ always() && steps.image_cache.outputs.preload == 'true' }}
+        run: docker logout ghcr.io

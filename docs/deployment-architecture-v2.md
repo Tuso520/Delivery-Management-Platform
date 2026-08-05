@@ -321,7 +321,7 @@ docker inspect delivery-minio --format '{{range .Mounts}}{{println .Name .Destin
 
 首发 strict dry-run 若报告 `TARGET_CONTENT_AGGREGATE_WITHOUT_VERSION`，不得启动旧应用或做代码单独回滚。新版内容 migrator 只对状态可识别的无版本 Standard 做无删除恢复：使用稳定 ID 创建 `V1.0`，通过 MinIO 实体、SHA-256、文件索引和 published pointer 校验后才允许继续；任何未知状态、ID 冲突或对象冲突仍阻断。CI 的真实集成验收会在生成测试数据后再次执行内容迁移的 strict dry-run、apply、strict verify，避免下一次发布重新遇到同类数据；服务器发布只执行正式基础种子，不生成演示测试数据。
 
-若测试服务器明确为可销毁环境，可手动运行“部署已存在 Release 到测试”，把 `reset_test_data` 设为 `true`。该选项只允许 `test` Environment：作业核对服务器 target-id、runtime 文件权限及 Compose 解析出的三个命名卷，停止应用后执行数据层 `down --volumes --remove-orphans`，逐卷确认已删除，再在同一次发布中创建空数据层、执行迁移和正式基础种子。production 调用传入该选项会立即失败；生产数据重置不属于自动发布能力。
+若测试服务器明确为可销毁环境，可手动运行“部署已存在 Release 到测试”，把 `reset_test_data` 设为 `true`。该选项只允许 `test` Environment：作业核对服务器 target-id、runtime 文件权限及 Compose 解析出的三个命名卷，停止应用后执行数据层 `down --volumes --remove-orphans`，逐卷确认已删除，再在同一次发布中创建空数据层、执行迁移和正式基础种子。远程编排先把 SSH 标准输入中的完整脚本缓冲完毕，再以无输入的独立 Bash 执行；两个 `docker compose down` 也显式从 `/dev/null` 读取，禁止任何 Compose 子进程吞掉后续重建命令。清洁基线必须只有一个启用的 `admin` 超级管理员，所有业务运行表为空、所有外键无孤儿；唯一允许的两条操作日志是内容/目标基础迁移器在当次 apply 中强制写入且字段严格匹配的成功审计。外部发布号和 `/ready` 另有最长 60 秒的稳定化重试。production 调用传入该选项会立即失败；生产数据重置不属于自动发布能力。
 
 旧 Compose 的具体 `-f` 参数必须沿用服务器原来的启动参数。例如原来是：
 
@@ -353,7 +353,9 @@ sudo -u <nginx-worker-user> test -r /srv/delivery-platform/current/frontend/inde
 
 日常测试发布无需 SSH 登录：main 质量门禁成功后自动构建、真实验收并发布 test。生产操作员从测试环境的 `build-info.json` 取得完整 Release 对应 SHA，在 GitHub Actions 手动运行“推广已验收 Release 到生产”，审批时核对变更单、备份空间和维护窗口。
 
-镜像在当前 Release 在线期间预拉取，下载时间不计入停机窗口。测试服务器在缓存失效基线中拉取 135 MiB runtime 与 174 MiB migrator 共耗时 13 分 42 秒，而拉取后的备份、迁移校验、幂等 seed、启动和原子切换约 46 秒；另一次稳定层重建受 GHCR 链路波动影响，36 分钟仍未完成并在停机前安全取消，原 Release 始终保持 `ready`。部署脚本因此给单次拉取设置 20 分钟上限并最多续传重试 3 次；首次内容构建 Release `79e41eb29d40` 的部署受 GHCR 冷拉取影响共耗时 40 分 37 秒，第一次 20 分钟超时后由第二次续传完成，切换窗口仅观察到一次 `502`，11 秒内恢复 `ready`。
+镜像在当前 Release 在线期间预拉取，下载时间不计入停机窗口。统一部署工作流先按 Manifest digest 检查目标服务器缓存；若缺失，由 GitHub Runner 从 GHCR 拉取一次，将去重后的镜像内容用 `gzip -9` 压缩、记录总字节数和分片数，并创建保留一天的私有 Actions 临时中继制品。服务器只接受 GitHub API 当次签发且主机属于 Azure Blob 的短时 HTTPS 地址，下载后的 ZIP 只能包含白名单镜像分片；随后仍按总字节数、SHA-256 与 gzip 完整性校验。中继创建或下载失败时，工作流回退到固定 host key 的 SSH 传输：按 32 MiB 分片、最多四片受控并发，每片输出开始/完成进度、最多重试三次，并通过临时文件原子改名。服务器在任何数据清理、备份或 migration 之前完成校验、执行 `docker load`，再短连 GHCR 将本地层绑定到原始 digest；因此 Compose 和 Release Manifest 始终使用原始不可变 digest，不改用浮动 tag。任一传输或校验失败只清理受控临时目录，旧 Release 保持在线。目标服务器已存在两个 digest 时跳过整段镜像传输。
+
+测试服务器在缓存失效基线中直接拉取 135 MiB runtime 与 174 MiB migrator 共耗时 13 分 42 秒，而拉取后的备份、迁移校验、幂等 seed、启动和原子切换约 46 秒；另一次稳定层重建受 GHCR 链路波动影响，36 分钟仍未完成并在停机前安全取消，原 Release 始终保持 `ready`。部署脚本仍给直接 digest 拉取设置 20 分钟上限并最多续传重试 3 次，作为 SSH 预载后的二次完整性确认和已有缓存的兼容门禁；首次内容构建 Release `79e41eb29d40` 的部署受 GHCR 冷拉取影响共耗时 40 分 37 秒，第一次 20 分钟超时后由第二次续传完成，切换窗口仅观察到一次 `502`，11 秒内恢复 `ready`。
 
 同一完整 SHA 的严格复跑证明了日常热路径：runtime 与 migrator 构建均被内容标签命中并跳过，前后两份 Manifest 的镜像 digest 分别稳定为 `sha256:c58245eb2a5bae593565089a1e6859e68dd9c8ce102608a0db60efd542c90d2a` 和 `sha256:966fd1475eb5d07a90dc1a81f8a3081be0b7da959e3a2ceb635182f2224b4de5`；Release 构建 57 秒、真实集成验收 4 分 01 秒、测试部署作业 3 分 50 秒、整条流水线 9 分 09 秒。部署上传控制文件和前端包耗时 2 分 29 秒，服务器端镜像拉取不足 0.2 秒，备份、46 个 migration、三个数据迁移器、幂等 seed、应用启动、健康检查和前端原子切换共 53 秒。工作流按 Release 全局串行且不主动取消正在执行的发布；若人工取消作业或 SSH 会话中断，服务器脚本会把 HUP/INT/TERM 转发给正在拉取的子进程，执行失败清理并释放部署锁。发布性能必须分别记录“预拉取时间”和“停机切换时间”；日常只改前端、文档或部署控制文件时应命中内容镜像，新服务器或后端依赖变化导致的冷拉取仍须提前在维护窗口内完成。
 

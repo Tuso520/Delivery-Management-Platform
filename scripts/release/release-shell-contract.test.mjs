@@ -67,6 +67,10 @@ const backendDockerfile = await readFile(
   new URL('../../delivery-platform-server/Dockerfile', import.meta.url),
   'utf8',
 )
+const cleanTestBaseline = await readFile(
+  new URL('../../delivery-platform-server/prisma/verify-clean-test-baseline.ts', import.meta.url),
+  'utf8',
+)
 
 function occursInOrder(source, values) {
   let cursor = -1
@@ -219,6 +223,72 @@ test('remote image pulls use a job-scoped GHCR credential and always log out', (
   ])
   assert.match(deployWorkflow, /GHCR_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/u)
   assert.match(deployWorkflow, /if: \$\{\{ always\(\) \}\}/u)
+})
+
+test('missing immutable images use a checksummed and resumable SSH preload before data reset', () => {
+  occursInOrder(deployWorkflow, [
+    '检查目标服务器不可变镜像缓存',
+    '准备缺失镜像的 SSH 传输包',
+    '创建短期镜像中继制品',
+    '上传发布控制文件',
+    '通过短期 HTTPS 中继下载缺失镜像',
+    '通过 SSH 分片回退上传缺失镜像',
+    'case "$PRELOAD_IMAGE_BUNDLE"',
+    'checksummed SSH image preload completed',
+    'case "$RESET_TEST_DATA"',
+  ])
+  for (const contract of [
+    'docker save "$backend_id" "$migration_id"',
+    'gzip -9 > release/application-images.tar.gz',
+    'sha256sum release/application-images.tar.gz',
+    'split -b 32M -d -a 4',
+    "printf 'image bundle: %s bytes, %s parts\\n'",
+    'uses: actions/upload-artifact@v4',
+    'retention-days: 1',
+    'steps.image_relay_artifact.outputs.artifact-id',
+    'actions/artifacts/$ARTIFACT_ID/zip',
+    "[[ \"$signed_url\" =~ ^https://[A-Za-z0-9.-]+\\.blob\\.core\\.windows\\.net/ ]]",
+    "allowed = re.compile(r'image-bundle\\.(?:sha256|bytes|part-[0-9]{4})')",
+    "printf 'HTTPS image relay download complete\\n'",
+    "steps.image_relay_download.outcome != 'success'",
+    "printf 'uploading %s image parts with concurrency 4\\n'",
+    '"${image_parts[@]:offset:4}"',
+    "printf 'upload complete: %s\\n'",
+    'test "$(stat -c \'%s\' "$image_bundle_part")" = "$expected_bytes"',
+    'gzip -dc "$image_bundle" | docker load',
+    'timeout --foreground 5m docker pull "$image"',
+    '-f "$APP_ROOT/control/app.yml" down --remove-orphans </dev/null',
+    'down --volumes --remove-orphans </dev/null',
+    `'bash -c '\\''script="$(cat)"; exec bash -c "$script" "$@"'\\'' buffer' --`,
+    "for attempt in {1..12}; do",
+    "test \"$verified\" = true",
+    '[[ "$stage" == "/tmp/delivery-release-${release_id}-"* ]]',
+    '清理目标服务器临时发布目录',
+    '清理 Runner 临时 GHCR 凭据',
+  ]) {
+    assert.match(
+      deployWorkflow,
+      new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'),
+    )
+  }
+})
+
+test('clean test baseline permits only the two mandatory migration audit records', () => {
+  assert.doesNotMatch(cleanTestBaseline, /EMPTY_RUNTIME_TABLES[\s\S]*'operation_logs'/u)
+  for (const contract of [
+    "['integration_secret_migration', 'IntegrationConfig']",
+    "['target_foundation_apply', 'Migration']",
+    "migrationAudits.length !== expectedMigrationAudits.size",
+    "audit.module !== 'migration'",
+    "audit.userId !== users[0].id",
+    "audit.result !== 'success'",
+    "throw new Error('clean test baseline contains unexpected operation logs')",
+  ]) {
+    assert.match(
+      cleanTestBaseline,
+      new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'),
+    )
+  }
 })
 
 test('server takeover preflight verifies safety gates without changing runtime state', () => {
