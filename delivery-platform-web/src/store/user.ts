@@ -2,6 +2,7 @@ import { computed, ref, shallowRef } from 'vue'
 import { defineStore } from 'pinia'
 
 import { authApi } from '@/api/auth'
+import { isExplicitSessionRejection } from '@/api/session-error'
 import { setSessionRefreshHandler } from '@/api/session-refresh'
 import { useFilePreview } from '@/platform/file-preview/useFilePreview'
 import { queryClient } from '@/query/client'
@@ -111,9 +112,13 @@ export const useUserStore = defineStore('user', () => {
       try {
         applySession(await authApi.refreshToken())
         return true
-      } catch {
-        resetState()
-        return false
+      } catch (error) {
+        if (isExplicitSessionRejection(error)) {
+          resetState()
+          return false
+        }
+        sessionInitialized.value = false
+        throw error
       }
     })().finally(() => {
       sessionRestorePromise = null
@@ -130,9 +135,12 @@ export const useUserStore = defineStore('user', () => {
       try {
         await fetchProfile()
         return isLoggedIn.value
-      } catch {
-        resetState()
-        return false
+      } catch (error) {
+        if (isExplicitSessionRejection(error)) {
+          resetState()
+          return false
+        }
+        throw error
       }
     }
 

@@ -7,6 +7,11 @@
     "profile": "Profile",
     "systemSetting": "System Settings"
   },
+  "sessionRecovery": {
+    "title": "Unable to restore your session",
+    "description": "The server or network is temporarily unavailable. Your session was not cleared. Check the connection and try again.",
+    "retry": "Reconnect"
+  },
   "menu": {
     "workspace": "Workspace",
     "dashboard": "Dashboard",
