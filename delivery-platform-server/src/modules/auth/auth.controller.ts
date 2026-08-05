@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  HttpException,
   HttpStatus,
   Post,
   Query,
@@ -117,7 +118,9 @@ export class AuthController {
       this.setRefreshCookie(response, result.refreshToken, result.refreshExpiresAt);
       return this.toPublicResult(result);
     } catch (error) {
-      this.clearRefreshCookie(response);
+      if (this.isExplicitSessionRejection(error)) {
+        this.clearRefreshCookie(response);
+      }
       throw error;
     }
   }
@@ -231,5 +234,14 @@ export class AuthController {
 
   private isProduction(): boolean {
     return this.configService.get<string>('app.nodeEnv') === 'production';
+  }
+
+  private isExplicitSessionRejection(error: unknown): boolean {
+    if (!(error instanceof HttpException)) return false;
+    return [
+      HttpStatus.UNAUTHORIZED,
+      HttpStatus.FORBIDDEN,
+      HttpStatus.NOT_FOUND,
+    ].includes(error.getStatus());
   }
 }

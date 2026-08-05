@@ -1,3 +1,4 @@
+import { ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
 
@@ -92,6 +93,32 @@ describe('AuthController refresh cookie policy', () => {
       }),
     );
     expect(response.cookie).toHaveBeenCalled();
+  });
+
+  it('clears the refresh cookie when the refresh session is explicitly rejected', async () => {
+    const { authService, controller, response } = createController();
+    jest.mocked(authService.refresh).mockRejectedValue(new UnauthorizedException());
+
+    await expect(
+      controller.refresh(request('delivery_refresh_token=invalid'), response),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(response.clearCookie).toHaveBeenCalledWith(
+      'delivery_refresh_token',
+      expect.objectContaining({ path: '/api/v1/auth' }),
+    );
+  });
+
+  it('preserves the refresh cookie when refresh fails transiently', async () => {
+    const { authService, controller, response } = createController();
+    jest.mocked(authService.refresh).mockRejectedValue(new ServiceUnavailableException());
+
+    await expect(
+      controller.refresh(request('delivery_refresh_token=still-valid'), response),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+
+    expect(response.clearCookie).not.toHaveBeenCalled();
+    expect(response.cookie).not.toHaveBeenCalled();
   });
 
   it('clears the refresh cookie during current-device logout', async () => {
