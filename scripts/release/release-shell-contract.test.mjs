@@ -229,6 +229,7 @@ test('missing immutable images use a checksummed and resumable SSH preload befor
   occursInOrder(deployWorkflow, [
     '检查目标服务器不可变镜像缓存',
     '准备缺失镜像的 SSH 传输包',
+    '检查目标服务器可复用镜像内容',
     '创建短期镜像中继制品',
     '上传发布控制文件',
     '通过短期 HTTPS 中继下载缺失镜像',
@@ -240,6 +241,8 @@ test('missing immutable images use a checksummed and resumable SSH preload befor
   for (const contract of [
     'docker image tag "$backend_image" "$backend_transfer_tag"',
     'docker image tag "$migration_image" "$migration_transfer_tag"',
+    'rootfsSha256: $backendRootfsSha256',
+    'rootfsSha256: $migratorRootfsSha256',
     'release/image-bundle.map.json',
     'docker save "$backend_transfer_tag" "$migration_transfer_tag"',
     'gzip -9 > release/application-images.tar.gz',
@@ -254,15 +257,19 @@ test('missing immutable images use a checksummed and resumable SSH preload befor
     "allowed = re.compile(r'image-bundle\\.(?:sha256|bytes|map\\.json|part-[0-9]{4})')",
     "printf 'HTTPS image relay download complete\\n'",
     "steps.image_relay_download.outcome != 'success'",
+    "steps.content_image_cache.outputs.reuse != 'true'",
+    'find_matching_relay backend "$1"',
+    'find_matching_relay migrator "$2"',
+    'docker image inspect "$tag" --format \'{{json .RootFS.Layers}}\'',
     "printf 'uploading %s image parts with concurrency 4\\n'",
     '"${image_parts[@]:offset:4}"',
     "printf 'upload complete: %s\\n'",
     'test "$(stat -c \'%s\' "$image_bundle_part")" = "$expected_bytes"',
     'gzip -dc "$image_bundle" | docker load',
-    'test "$(docker image inspect "$backend_transfer_tag" --format \'{{.Id}}\')" = "$backend_id"',
-    'test "$(docker image inspect "$migration_transfer_tag" --format \'{{.Id}}\')" = "$migration_id"',
+    'test "$loaded_backend_rootfs_sha256" = "$backend_rootfs_sha256"',
+    'test "$loaded_migration_rootfs_sha256" = "$migration_rootfs_sha256"',
     'timeout --foreground 2m docker pull "$image"',
-    'test "$(docker image inspect "$image" --format \'{{.Id}}\')" = "$expected_id"',
+    'docker image inspect "$image" >/dev/null',
     '-f "$APP_ROOT/control/app.yml" down --remove-orphans </dev/null',
     'down --volumes --remove-orphans </dev/null',
     `'bash -c '\\''script="$(cat)"; exec bash -c "$script" "$@"'\\'' buffer' --`,
@@ -278,6 +285,10 @@ test('missing immutable images use a checksummed and resumable SSH preload befor
     )
   }
   assert.doesNotMatch(deployWorkflow, /docker save "\$backend_id" "\$migration_id"/u)
+  assert.doesNotMatch(deployWorkflow, /= "\$expected_id"/u)
+  assert.doesNotMatch(deployWorkflow, /imageId/u)
+  assert.doesNotMatch(deployWorkflow, /--max-time 3600/u)
+  assert.ok((deployWorkflow.match(/--max-time 120/gu) ?? []).length >= 2)
 })
 
 test('clean test baseline permits only the two mandatory migration audit records', () => {
