@@ -127,7 +127,36 @@ jobs:
           migration_id="$(docker image inspect "$migration_image" --format '{{.Id}}')"
           [[ "$backend_id" =~ ^sha256:[0-9a-f]{64}$ ]]
           [[ "$migration_id" =~ ^sha256:[0-9a-f]{64}$ ]]
-          docker save "$backend_id" "$migration_id" | gzip -9 > release/application-images.tar.gz
+          backend_transfer_tag="delivery-platform-relay/backend:${RELEASE_ID}"
+          migration_transfer_tag="delivery-platform-relay/migrator:${RELEASE_ID}"
+          docker image tag "$backend_image" "$backend_transfer_tag"
+          docker image tag "$migration_image" "$migration_transfer_tag"
+          jq -n \
+            --arg backendSource "$backend_image" \
+            --arg backendTransferTag "$backend_transfer_tag" \
+            --arg backendId "$backend_id" \
+            --arg migratorSource "$migration_image" \
+            --arg migratorTransferTag "$migration_transfer_tag" \
+            --arg migratorId "$migration_id" \
+            '{
+              schemaVersion: 1,
+              images: {
+                backend: {
+                  source: $backendSource,
+                  transferTag: $backendTransferTag,
+                  imageId: $backendId
+                },
+                migrator: {
+                  source: $migratorSource,
+                  transferTag: $migratorTransferTag,
+                  imageId: $migratorId
+                }
+              }
+            }' > release/image-bundle.map.json
+          jq -e '.schemaVersion == 1 and (.images | keys == ["backend", "migrator"])' \
+            release/image-bundle.map.json >/dev/null
+          docker save "$backend_transfer_tag" "$migration_transfer_tag" | \
+            gzip -9 > release/application-images.tar.gz
           gzip -t release/application-images.tar.gz
           sha256sum release/application-images.tar.gz | awk '{print $1}' > release/image-bundle.sha256
           stat -c '%s' release/application-images.tar.gz > release/image-bundle.bytes
@@ -148,6 +177,7 @@ jobs:
           path: |
             release/image-bundle.sha256
             release/image-bundle.bytes
+            release/image-bundle.map.json
             release/image-bundle.part-*
           if-no-files-found: error
           compression-level: 0
@@ -242,7 +272,7 @@ jobs:
 
           archive = Path(sys.argv[1])
           destination = Path(sys.argv[2])
-          allowed = re.compile(r'image-bundle\.(?:sha256|bytes|part-[0-9]{4})')
+          allowed = re.compile(r'image-bundle\.(?:sha256|bytes|map\.json|part-[0-9]{4})')
           with zipfile.ZipFile(archive) as artifact:
               members = artifact.infolist()
               names = [member.filename for member in members]
@@ -250,7 +280,12 @@ jobs:
                   raise SystemExit('image relay contains an unexpected path')
               if len(names) != len(set(names)):
                   raise SystemExit('image relay contains duplicate paths')
-              required = {'image-bundle.sha256', 'image-bundle.bytes', 'image-bundle.part-0000'}
+              required = {
+                  'image-bundle.sha256',
+                  'image-bundle.bytes',
+                  'image-bundle.map.json',
+                  'image-bundle.part-0000',
+              }
               if not required.issubset(names):
                   raise SystemExit('image relay is incomplete')
               artifact.extractall(destination)
@@ -258,7 +293,7 @@ jobs:
           for source in "$extract_dir"/image-bundle.*; do
             test -f "$source" && test ! -L "$source"
             name="$(basename -- "$source")"
-            [[ "$name" =~ ^image-bundle\.(sha256|bytes|part-[0-9]{4})$ ]]
+            [[ "$name" =~ ^image-bundle\.(sha256|bytes|map\.json|part-[0-9]{4})$ ]]
             mv -f -- "$source" "$stage/$name"
           done
           rm -rf -- "$extract_dir"
@@ -275,7 +310,7 @@ jobs:
           upload_one() {
             local source="$1" name attempt
             name="$(basename -- "$source")"
-            [[ "$name" =~ ^image-bundle\.(sha256|bytes|part-[0-9]{4})$ ]]
+            [[ "$name" =~ ^image-bundle\.(sha256|bytes|map\.json|part-[0-9]{4})$ ]]
             printf 'upload start: %s\n' "$name"
             for attempt in 1 2 3; do
               if scp -i ~/.ssh/deploy_key -P "$SERVER_PORT" \
@@ -291,7 +326,7 @@ jobs:
           release_id="$2"
           name="$3"
           [[ "$stage" == "/tmp/delivery-release-${release_id}-"* ]]
-          [[ "$name" =~ ^image-bundle\.(sha256|bytes|part-[0-9]{4})$ ]]
+          [[ "$name" =~ ^image-bundle\.(sha256|bytes|map\.json|part-[0-9]{4})$ ]]
           test -d "$stage" && test ! -L "$stage"
           test -f "$stage/.upload-$name" && test ! -L "$stage/.upload-$name"
           mv -f -- "$stage/.upload-$name" "$stage/$name"
@@ -308,6 +343,7 @@ jobs:
 
           upload_one release/image-bundle.sha256
           upload_one release/image-bundle.bytes
+          upload_one release/image-bundle.map.json
           mapfile -t image_parts < <(find release -maxdepth 1 -type f \
             -name 'image-bundle.part-*' -print | sort)
           ((${#image_parts[@]} > 0))
@@ -360,13 +396,19 @@ jobs:
           install -m 700 "$REMOTE_STAGE/restore-release.sh" "$APP_ROOT/control/restore-release.sh"
           install -m 600 "$REMOTE_STAGE/frontend.tar.gz" "$APP_ROOT/incoming/frontend.tar.gz"
           install -m 600 "$REMOTE_STAGE/release-manifest.json" "$APP_ROOT/incoming/release-manifest.json"
+          manifest_release_id="$(jq -er '.releaseId' "$APP_ROOT/incoming/release-manifest.json")"
+          [[ "$manifest_release_id" =~ ^[0-9a-f]{40}$ ]]
 
           case "$PRELOAD_IMAGE_BUNDLE" in
             true)
               expected_sha="$(tr -d '\r\n' < "$REMOTE_STAGE/image-bundle.sha256")"
               expected_bytes="$(tr -d '\r\n' < "$REMOTE_STAGE/image-bundle.bytes")"
+              bundle_map="$REMOTE_STAGE/image-bundle.map.json"
               [[ "$expected_sha" =~ ^[0-9a-f]{64}$ ]]
               [[ "$expected_bytes" =~ ^[1-9][0-9]*$ ]]
+              test -f "$bundle_map" && test ! -L "$bundle_map"
+              test "$(jq -er '.schemaVersion' "$bundle_map")" = 1
+              test "$(jq -er '.images | keys | join(",")' "$bundle_map")" = 'backend,migrator'
               mapfile -t image_parts < <(
                 find "$REMOTE_STAGE" -maxdepth 1 -type f -name 'image-bundle.part-*' \
                   -printf '%f\n' | sort
@@ -389,21 +431,41 @@ jobs:
 
               backend_image="$(jq -er '.components.backend.image' "$APP_ROOT/incoming/release-manifest.json")"
               migration_image="$(jq -er '.components.migrator.image' "$APP_ROOT/incoming/release-manifest.json")"
-              for image in "$backend_image" "$migration_image"; do
+              backend_source="$(jq -er '.images.backend.source' "$bundle_map")"
+              migration_source="$(jq -er '.images.migrator.source' "$bundle_map")"
+              backend_transfer_tag="$(jq -er '.images.backend.transferTag' "$bundle_map")"
+              migration_transfer_tag="$(jq -er '.images.migrator.transferTag' "$bundle_map")"
+              backend_id="$(jq -er '.images.backend.imageId' "$bundle_map")"
+              migration_id="$(jq -er '.images.migrator.imageId' "$bundle_map")"
+              test "$backend_source" = "$backend_image"
+              test "$migration_source" = "$migration_image"
+              test "$backend_transfer_tag" = "delivery-platform-relay/backend:${manifest_release_id}"
+              test "$migration_transfer_tag" = "delivery-platform-relay/migrator:${manifest_release_id}"
+              [[ "$backend_id" =~ ^sha256:[0-9a-f]{64}$ ]]
+              [[ "$migration_id" =~ ^sha256:[0-9a-f]{64}$ ]]
+              test "$(docker image inspect "$backend_transfer_tag" --format '{{.Id}}')" = "$backend_id"
+              test "$(docker image inspect "$migration_transfer_tag" --format '{{.Id}}')" = "$migration_id"
+
+              images=("$backend_image" "$migration_image")
+              image_ids=("$backend_id" "$migration_id")
+              for index in "${!images[@]}"; do
+                image="${images[$index]}"
+                expected_id="${image_ids[$index]}"
                 pulled='false'
-                for attempt in 1 2 3; do
-                  if timeout --foreground 5m docker pull "$image"; then
+                for attempt in 1 2; do
+                  if timeout --foreground 2m docker pull "$image"; then
                     pulled='true'
                     break
                   fi
                   sleep $((attempt * 5))
                 done
                 test "$pulled" = true
-                docker image inspect "$image" >/dev/null
+                test "$(docker image inspect "$image" --format '{{.Id}}')" = "$expected_id"
               done
+              docker image rm "$backend_transfer_tag" "$migration_transfer_tag" >/dev/null 2>&1 || true
               rm -f -- "$image_bundle"
               trap - EXIT
-              printf '[release] checksummed SSH image preload completed\n'
+              printf '[release] checksummed SSH image preload completed with verified identities\n'
               ;;
             false) ;;
             *) printf '[release][error] invalid image preload state\n' >&2; exit 1 ;;
