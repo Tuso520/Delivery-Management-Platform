@@ -238,7 +238,10 @@ test('missing immutable images use a checksummed and resumable SSH preload befor
     'case "$RESET_TEST_DATA"',
   ])
   for (const contract of [
-    'docker save "$backend_id" "$migration_id"',
+    'docker image tag "$backend_image" "$backend_transfer_tag"',
+    'docker image tag "$migration_image" "$migration_transfer_tag"',
+    'release/image-bundle.map.json',
+    'docker save "$backend_transfer_tag" "$migration_transfer_tag"',
     'gzip -9 > release/application-images.tar.gz',
     'sha256sum release/application-images.tar.gz',
     'split -b 32M -d -a 4',
@@ -248,7 +251,7 @@ test('missing immutable images use a checksummed and resumable SSH preload befor
     'steps.image_relay_artifact.outputs.artifact-id',
     'actions/artifacts/$ARTIFACT_ID/zip',
     "[[ \"$signed_url\" =~ ^https://[A-Za-z0-9.-]+\\.blob\\.core\\.windows\\.net/ ]]",
-    "allowed = re.compile(r'image-bundle\\.(?:sha256|bytes|part-[0-9]{4})')",
+    "allowed = re.compile(r'image-bundle\\.(?:sha256|bytes|map\\.json|part-[0-9]{4})')",
     "printf 'HTTPS image relay download complete\\n'",
     "steps.image_relay_download.outcome != 'success'",
     "printf 'uploading %s image parts with concurrency 4\\n'",
@@ -256,7 +259,10 @@ test('missing immutable images use a checksummed and resumable SSH preload befor
     "printf 'upload complete: %s\\n'",
     'test "$(stat -c \'%s\' "$image_bundle_part")" = "$expected_bytes"',
     'gzip -dc "$image_bundle" | docker load',
-    'timeout --foreground 5m docker pull "$image"',
+    'test "$(docker image inspect "$backend_transfer_tag" --format \'{{.Id}}\')" = "$backend_id"',
+    'test "$(docker image inspect "$migration_transfer_tag" --format \'{{.Id}}\')" = "$migration_id"',
+    'timeout --foreground 2m docker pull "$image"',
+    'test "$(docker image inspect "$image" --format \'{{.Id}}\')" = "$expected_id"',
     '-f "$APP_ROOT/control/app.yml" down --remove-orphans </dev/null',
     'down --volumes --remove-orphans </dev/null',
     `'bash -c '\\''script="$(cat)"; exec bash -c "$script" "$@"'\\'' buffer' --`,
@@ -271,6 +277,7 @@ test('missing immutable images use a checksummed and resumable SSH preload befor
       new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'),
     )
   }
+  assert.doesNotMatch(deployWorkflow, /docker save "\$backend_id" "\$migration_id"/u)
 })
 
 test('clean test baseline permits only the two mandatory migration audit records', () => {
