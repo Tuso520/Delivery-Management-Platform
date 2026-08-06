@@ -437,6 +437,12 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: 'routes.login', hidden: true },
   },
   {
+    path: '/session-recovery',
+    name: 'SessionRecovery',
+    component: () => import('@/views/SessionRecovery.vue'),
+    meta: { title: 'sessionRecovery.title', hidden: true },
+  },
+  {
     path: '/',
     component: () => import('@/layouts/BasicLayout.vue'),
     redirect: '/dashboard',

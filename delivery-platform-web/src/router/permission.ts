@@ -7,7 +7,20 @@ import Message from '@arco-design/web-vue/es/message'
 
 router.beforeEach(async (to, from, next) => {
   const userStore = useUserStore()
-  const hasSession = await userStore.ensureSession()
+
+  if (to.path === '/session-recovery') {
+    next()
+    return
+  }
+
+  let hasSession: boolean
+  try {
+    hasSession = await userStore.ensureSession()
+  } catch {
+    Message.error('暂时无法恢复登录状态，请检查网络后重试')
+    next({ path: '/session-recovery', query: { redirect: to.fullPath } })
+    return
+  }
 
   if (to.path === '/login' || to.path === '/login/feishu/callback') {
     if (hasSession) {

@@ -203,7 +203,7 @@ describe('request authentication', () => {
   })
 
   it('clears the session once when the shared refresh attempt fails', async () => {
-    mocks.post.mockRejectedValue(new Error('refresh rejected'))
+    mocks.post.mockRejectedValue({ response: { status: 401 } })
     const firstError = unauthorized('/projects')
     const secondError = unauthorized('/files')
 
@@ -219,6 +219,26 @@ describe('request authentication', () => {
     expect(mocks.resetState).toHaveBeenCalledOnce()
     expect(mocks.replace).toHaveBeenCalledWith('/login')
     expect(mocks.messageError).toHaveBeenCalledWith('登录已过期，请重新登录')
+  })
+
+  it('keeps the session when the shared refresh attempt fails transiently', async () => {
+    mocks.post.mockRejectedValue({ response: { status: 503 } })
+    const firstError = unauthorized('/projects')
+    const secondError = unauthorized('/files')
+
+    const results = await Promise.allSettled([
+      rejectionHandler(firstError),
+      rejectionHandler(secondError),
+    ])
+
+    expect(results[0]).toMatchObject({ status: 'rejected', reason: firstError })
+    expect(results[1]).toMatchObject({ status: 'rejected', reason: secondError })
+    expect(mocks.post).toHaveBeenCalledOnce()
+    expect(mocks.removeToken).not.toHaveBeenCalled()
+    expect(mocks.resetState).not.toHaveBeenCalled()
+    expect(mocks.replace).not.toHaveBeenCalled()
+    expect(mocks.messageError).toHaveBeenCalledOnce()
+    expect(mocks.messageError).toHaveBeenCalledWith('会话刷新暂时失败，请检查网络后重试')
   })
 
   it('does not refresh or reset a rejected login request', async () => {

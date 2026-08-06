@@ -7,6 +7,11 @@
     "profile": "个人中心",
     "systemSetting": "系统设置"
   },
+  "sessionRecovery": {
+    "title": "暂时无法恢复登录状态",
+    "description": "服务器或网络暂时不可用。系统没有清除您的登录会话，请检查网络后重试。",
+    "retry": "重新连接"
+  },
   "menu": {
     "workspace": "工作台",
     "dashboard": "数据看板",

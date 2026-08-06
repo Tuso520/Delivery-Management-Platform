@@ -157,7 +157,9 @@ describe('application navigation', () => {
   })
 
   it('restores the cookie-backed session before deciding navigation', () => {
-    expect(permissionSource).toContain('const hasSession = await userStore.ensureSession()')
+    expect(permissionSource).toContain('hasSession = await userStore.ensureSession()')
+    expect(permissionSource).toContain("to.path === '/session-recovery'")
+    expect(permissionSource).toContain("next({ path: '/session-recovery'")
     expect(permissionSource).toContain(
       "if (to.path === '/login' || to.path === '/login/feishu/callback')",
     )

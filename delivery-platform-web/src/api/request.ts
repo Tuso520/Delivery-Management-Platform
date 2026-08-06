@@ -7,6 +7,7 @@ import type {
 import Message from '@arco-design/web-vue/es/message'
 
 import { ApiRequestError } from '@/api/errors'
+import { isExplicitSessionRejection } from '@/api/session-error'
 import { notifySessionExpired } from '@/api/session-expiration'
 import { publishSessionRefreshed } from '@/api/session-refresh'
 import { attachApiTraceId } from '@/types/api'
@@ -93,7 +94,11 @@ function refreshAccessToken(): Promise<string> {
         return result.accessToken
       })
       .catch(async (error: unknown) => {
-        await expireSession()
+        if (isExplicitSessionRejection(error)) {
+          await expireSession()
+        } else {
+          Message.error('会话刷新暂时失败，请检查网络后重试')
+        }
         throw error
       })
       .finally(() => {

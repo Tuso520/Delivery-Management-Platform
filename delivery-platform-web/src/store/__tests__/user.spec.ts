@@ -115,7 +115,7 @@ describe('useUserStore', () => {
   })
 
   it('marks the browser anonymous when refresh-cookie restoration fails', async () => {
-    vi.mocked(authApi.refreshToken).mockRejectedValue(new Error('unauthorized'))
+    vi.mocked(authApi.refreshToken).mockRejectedValue({ response: { status: 401 } })
 
     const store = useUserStore()
 
@@ -124,6 +124,23 @@ describe('useUserStore', () => {
     expect(authApi.refreshToken).toHaveBeenCalledOnce()
     expect(store.sessionInitialized).toBe(true)
     expect(store.isLoggedIn).toBe(false)
+  })
+
+  it('keeps session restoration retryable after a transient failure', async () => {
+    vi.mocked(authApi.refreshToken)
+      .mockRejectedValueOnce({ response: { status: 503 } })
+      .mockResolvedValueOnce(sessionResult({ accessToken: 'retried-token' }))
+
+    const store = useUserStore()
+
+    await expect(store.ensureSession()).rejects.toEqual({ response: { status: 503 } })
+    expect(store.sessionInitialized).toBe(false)
+    expect(store.isLoggedIn).toBe(false)
+
+    await expect(store.ensureSession()).resolves.toBe(true)
+    expect(authApi.refreshToken).toHaveBeenCalledTimes(2)
+    expect(store.token).toBe('retried-token')
+    expect(store.isLoggedIn).toBe(true)
   })
 
   it('hydrates the profile when an in-memory token already exists', async () => {
