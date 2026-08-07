@@ -1339,8 +1339,11 @@ export class IntegrationService {
     }
 
     if (url.includes('/contact/')) {
-      if (providerCode === 41050 || providerCode === 99991672 || status === 403) {
-        return 'FEISHU_CONTACT_SCOPE_REQUIRED';
+      if (providerCode === 99991672) {
+        return 'FEISHU_CONTACT_API_SCOPE_REQUIRED';
+      }
+      if (providerCode === 41050 || providerCode === 40004 || status === 403) {
+        return 'FEISHU_CONTACT_DATA_SCOPE_REQUIRED';
       }
       return providerCode === undefined
         ? `FEISHU_CONTACT_HTTP_${status}`

@@ -819,9 +819,25 @@ describe('IntegrationService secured configuration', () => {
     }
   });
 
-  it.each([41050, 99991672])(
-    'maps Feishu contact scope rejection %s to an actionable stable error code',
-    async (providerCode) => {
+  it.each([
+    {
+      providerCode: 99991672,
+      status: 400,
+      expectedCode: 'FEISHU_CONTACT_API_SCOPE_REQUIRED',
+    },
+    {
+      providerCode: 41050,
+      status: 400,
+      expectedCode: 'FEISHU_CONTACT_DATA_SCOPE_REQUIRED',
+    },
+    {
+      providerCode: 40004,
+      status: 403,
+      expectedCode: 'FEISHU_CONTACT_DATA_SCOPE_REQUIRED',
+    },
+  ])(
+    'maps Feishu contact rejection $providerCode to $expectedCode',
+    async ({ providerCode, status, expectedCode }) => {
       const service = new IntegrationService(
         {} as PrismaService,
         configService(),
@@ -829,7 +845,7 @@ describe('IntegrationService secured configuration', () => {
       );
       const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValueOnce(
         new Response(JSON.stringify({ code: providerCode, msg: 'access denied' }), {
-          status: 400,
+          status,
           headers: { 'content-type': 'application/json' },
         }),
       );
@@ -839,7 +855,7 @@ describe('IntegrationService secured configuration', () => {
             'tenant-token',
             { contactDepartmentId: '0' },
           ),
-        ).rejects.toMatchObject({ code: 'FEISHU_CONTACT_SCOPE_REQUIRED', retryable: false });
+        ).rejects.toMatchObject({ code: expectedCode, retryable: false });
       } finally {
         fetchMock.mockRestore();
       }
