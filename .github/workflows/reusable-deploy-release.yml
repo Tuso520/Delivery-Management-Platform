@@ -123,10 +123,16 @@ jobs:
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           timeout --foreground 20m docker pull "$backend_image"
           timeout --foreground 20m docker pull "$migration_image"
-          backend_id="$(docker image inspect "$backend_image" --format '{{.Id}}')"
-          migration_id="$(docker image inspect "$migration_image" --format '{{.Id}}')"
-          [[ "$backend_id" =~ ^sha256:[0-9a-f]{64}$ ]]
-          [[ "$migration_id" =~ ^sha256:[0-9a-f]{64}$ ]]
+          backend_rootfs_sha256="$(
+            docker image inspect "$backend_image" --format '{{json .RootFS.Layers}}' |
+              sha256sum | awk '{print $1}'
+          )"
+          migration_rootfs_sha256="$(
+            docker image inspect "$migration_image" --format '{{json .RootFS.Layers}}' |
+              sha256sum | awk '{print $1}'
+          )"
+          [[ "$backend_rootfs_sha256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$migration_rootfs_sha256" =~ ^[0-9a-f]{64}$ ]]
           backend_transfer_tag="delivery-platform-relay/backend:${RELEASE_ID}"
           migration_transfer_tag="delivery-platform-relay/migrator:${RELEASE_ID}"
           docker image tag "$backend_image" "$backend_transfer_tag"
@@ -134,22 +140,22 @@ jobs:
           jq -n \
             --arg backendSource "$backend_image" \
             --arg backendTransferTag "$backend_transfer_tag" \
-            --arg backendId "$backend_id" \
+            --arg backendRootfsSha256 "$backend_rootfs_sha256" \
             --arg migratorSource "$migration_image" \
             --arg migratorTransferTag "$migration_transfer_tag" \
-            --arg migratorId "$migration_id" \
+            --arg migratorRootfsSha256 "$migration_rootfs_sha256" \
             '{
               schemaVersion: 1,
               images: {
                 backend: {
                   source: $backendSource,
                   transferTag: $backendTransferTag,
-                  imageId: $backendId
+                  rootfsSha256: $backendRootfsSha256
                 },
                 migrator: {
                   source: $migratorSource,
                   transferTag: $migratorTransferTag,
-                  imageId: $migratorId
+                  rootfsSha256: $migratorRootfsSha256
                 }
               }
             }' > release/image-bundle.map.json
@@ -167,9 +173,50 @@ jobs:
           printf 'image bundle: %s bytes, %s parts\n' "$bundle_bytes" "$bundle_parts"
           rm -f -- release/application-images.tar.gz
 
+      - name: 检查目标服务器可复用镜像内容
+        id: content_image_cache
+        if: ${{ steps.image_cache.outputs.preload == 'true' }}
+        run: |
+          set -Eeuo pipefail
+          backend_rootfs_sha256="$(jq -er '.images.backend.rootfsSha256' release/image-bundle.map.json)"
+          migration_rootfs_sha256="$(jq -er '.images.migrator.rootfsSha256' release/image-bundle.map.json)"
+          if ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            "$SERVER_USER@$SERVER_HOST" 'bash -s' -- \
+            "$backend_rootfs_sha256" "$migration_rootfs_sha256" <<'REMOTE'
+          set -Eeuo pipefail
+          find_matching_relay() {
+            local role="$1" expected="$2" tag actual
+            while IFS= read -r tag; do
+              [[ "$tag" =~ ^delivery-platform-relay/${role}:[0-9a-f]{40}$ ]] || continue
+              actual="$(
+                docker image inspect "$tag" --format '{{json .RootFS.Layers}}' |
+                  sha256sum | awk '{print $1}'
+              )"
+              if [ "$actual" = "$expected" ]; then
+                printf '%s\n' "$tag"
+                return 0
+              fi
+            done < <(docker image ls --format '{{.Repository}}:{{.Tag}}')
+            return 1
+          }
+          backend_tag="$(find_matching_relay backend "$1")"
+          migration_tag="$(find_matching_relay migrator "$2")"
+          docker image inspect "$backend_tag" "$migration_tag" >/dev/null
+          printf '[release] reusable image layers found: %s, %s\n' "$backend_tag" "$migration_tag"
+          REMOTE
+          then
+            printf 'reuse=true\n' >> "$GITHUB_OUTPUT"
+          else
+            printf 'reuse=false\n' >> "$GITHUB_OUTPUT"
+          fi
+
       - name: 创建短期镜像中继制品
         id: image_relay_artifact
-        if: ${{ steps.image_cache.outputs.preload == 'true' }}
+        if: >-
+          steps.image_cache.outputs.preload == 'true' &&
+          steps.content_image_cache.outputs.reuse != 'true'
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
@@ -215,6 +262,7 @@ jobs:
         id: image_relay_download
         if: >-
           steps.image_cache.outputs.preload == 'true' &&
+          steps.content_image_cache.outputs.reuse != 'true' &&
           steps.image_relay_artifact.outcome == 'success'
         continue-on-error: true
         env:
@@ -259,8 +307,8 @@ jobs:
           rm -rf -- "$extract_dir"
           install -d -m 700 "$extract_dir"
           curl --proto '=https' --tlsv1.2 --location --fail --silent --show-error \
-            --retry 3 --retry-all-errors --retry-delay 5 \
-            --connect-timeout 30 --max-time 3600 \
+            --retry 1 --retry-all-errors --retry-delay 5 \
+            --connect-timeout 30 --max-time 120 \
             -o "$artifact_zip" "$signed_url"
           unset signed_url
           test -s "$artifact_zip" && test ! -L "$artifact_zip"
@@ -304,6 +352,7 @@ jobs:
       - name: 通过 SSH 分片回退上传缺失镜像
         if: >-
           steps.image_cache.outputs.preload == 'true' &&
+          steps.content_image_cache.outputs.reuse != 'true' &&
           steps.image_relay_download.outcome != 'success'
         run: |
           set -Eeuo pipefail
@@ -365,7 +414,9 @@ jobs:
 
       - name: 执行服务器原地切换
         env:
-          PRELOAD_IMAGE_BUNDLE: ${{ steps.image_cache.outputs.preload }}
+          PRELOAD_IMAGE_BUNDLE: >-
+            ${{ steps.image_cache.outputs.preload == 'true' &&
+                steps.content_image_cache.outputs.reuse != 'true' }}
         run: |
           set -Eeuo pipefail
           ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
@@ -435,22 +486,27 @@ jobs:
               migration_source="$(jq -er '.images.migrator.source' "$bundle_map")"
               backend_transfer_tag="$(jq -er '.images.backend.transferTag' "$bundle_map")"
               migration_transfer_tag="$(jq -er '.images.migrator.transferTag' "$bundle_map")"
-              backend_id="$(jq -er '.images.backend.imageId' "$bundle_map")"
-              migration_id="$(jq -er '.images.migrator.imageId' "$bundle_map")"
+              backend_rootfs_sha256="$(jq -er '.images.backend.rootfsSha256' "$bundle_map")"
+              migration_rootfs_sha256="$(jq -er '.images.migrator.rootfsSha256' "$bundle_map")"
               test "$backend_source" = "$backend_image"
               test "$migration_source" = "$migration_image"
               test "$backend_transfer_tag" = "delivery-platform-relay/backend:${manifest_release_id}"
               test "$migration_transfer_tag" = "delivery-platform-relay/migrator:${manifest_release_id}"
-              [[ "$backend_id" =~ ^sha256:[0-9a-f]{64}$ ]]
-              [[ "$migration_id" =~ ^sha256:[0-9a-f]{64}$ ]]
-              test "$(docker image inspect "$backend_transfer_tag" --format '{{.Id}}')" = "$backend_id"
-              test "$(docker image inspect "$migration_transfer_tag" --format '{{.Id}}')" = "$migration_id"
+              [[ "$backend_rootfs_sha256" =~ ^[0-9a-f]{64}$ ]]
+              [[ "$migration_rootfs_sha256" =~ ^[0-9a-f]{64}$ ]]
+              loaded_backend_rootfs_sha256="$(
+                docker image inspect "$backend_transfer_tag" --format '{{json .RootFS.Layers}}' |
+                  sha256sum | awk '{print $1}'
+              )"
+              loaded_migration_rootfs_sha256="$(
+                docker image inspect "$migration_transfer_tag" --format '{{json .RootFS.Layers}}' |
+                  sha256sum | awk '{print $1}'
+              )"
+              test "$loaded_backend_rootfs_sha256" = "$backend_rootfs_sha256"
+              test "$loaded_migration_rootfs_sha256" = "$migration_rootfs_sha256"
 
               images=("$backend_image" "$migration_image")
-              image_ids=("$backend_id" "$migration_id")
-              for index in "${!images[@]}"; do
-                image="${images[$index]}"
-                expected_id="${image_ids[$index]}"
+              for image in "${images[@]}"; do
                 pulled='false'
                 for attempt in 1 2; do
                   if timeout --foreground 2m docker pull "$image"; then
@@ -460,7 +516,7 @@ jobs:
                   sleep $((attempt * 5))
                 done
                 test "$pulled" = true
-                test "$(docker image inspect "$image" --format '{{.Id}}')" = "$expected_id"
+                docker image inspect "$image" >/dev/null
               done
               docker image rm "$backend_transfer_tag" "$migration_transfer_tag" >/dev/null 2>&1 || true
               rm -f -- "$image_bundle"
