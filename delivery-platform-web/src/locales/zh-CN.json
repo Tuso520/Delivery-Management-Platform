@@ -551,7 +551,7 @@
     "callbackCopyFailed": "复制失败，请手动复制回调地址",
     "guideTitle": "完成三项能力只需一套企业自建应用",
     "guideCredentials": "在飞书开放平台“凭证与基础信息”复制 App ID 和 App Secret。",
-    "guidePermissions": "申请并发布通讯录部门、用户基础信息、手机号、邮箱和 user_id 只读权限。",
+    "guidePermissions": "申请通讯录部门、用户基础信息、手机号、邮箱和 user_id 只读权限；根部门 0 必须把数据权限设为全部成员，并启用机器人及 im:message:send_as_bot，随后发布版本。",
     "guideCallback": "把下方 HTTPS 回调地址逐字登记到飞书“安全设置 → 重定向 URL”。",
     "guideValidation": "保存并启用后，依次执行连接测试、同步通讯录和测试通知；同步成功后登录页即可扫码。",
     "descriptionLabel": "说明",
@@ -561,7 +561,8 @@
     "summaryUnavailable": "执行统计不可用",
     "validation": {
       "name": "请输入配置名称",
-      "credentials": "启用集成前请完整填写 App ID、App Secret 和 HTTPS 登录回调地址"
+      "credentials": "启用集成前请完整填写 App ID、App Secret 和 HTTPS 登录回调地址",
+      "testRecipient": "请先配置测试消息接收人的 open_id（ou_...）"
     },
     "saved": "集成配置已保存，Secret 不会在页面回显",
     "operationFailed": "集成操作失败，请查看同步日志",
