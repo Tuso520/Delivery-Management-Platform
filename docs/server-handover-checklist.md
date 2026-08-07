@@ -210,6 +210,10 @@ sudo -u dmpdeploy editor /srv/delivery-platform/config/runtime.env
 
 测试服务器 Release 健康检查通过后，管理员按 [飞书通讯录同步与 OAuth 登录](feishu-auth-and-org-sync.md) 在系统设置中录入 App ID、App Secret、根部门和 `https://1.117.73.165/api/v1/auth/feishu/callback`。先执行连接测试，再执行全量同步；只有 `failed=0` 且身份绑定唯一后才验收扫码登录。飞书凭据不得写入 GitHub Variable、教程命令、聊天或服务器日志。
 
+## 测试管理员凭据恢复
+
+测试环境唯一系统账号为 `admin`。密码遗失时，不读取服务器运行配置，也不把密码作为 workflow input：先在 GitHub `test` Environment 创建或更新 Secret `TEST_ADMIN_PASSWORD`（20–72 位），再手动运行“轮换测试环境管理员密码”，传入测试服务器当前部署的完整 main SHA。工作流固定校验 target-id、Release Manifest 和 SSH Host Key，通过标准输入把 Secret 交给一次性维护脚本，更新 bcrypt 密码、提升权限版本、撤销旧 Refresh Session，并真实验证 `SUPER_ADMIN` 与 `integration:manage`。成功日志只包含 `TEST_ADMIN_PASSWORD_ROTATION_PASS`，不会显示密码。
+
 只做脱敏校验，不输出配置内容：
 
 ```bash

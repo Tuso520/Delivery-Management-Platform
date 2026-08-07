@@ -116,13 +116,17 @@ describe('IntegrationService secured configuration', () => {
         configName: '飞书集成',
         appId: 'app-1',
         appSecret: 'real-secret-value',
+        oauthRedirectUri: 'https://delivery.example.com/api/v1/auth/feishu/callback',
         isEnabled: true,
       },
       'admin-1',
     );
 
     const persisted = create.mock.calls[0][0].data as Record<string, unknown>;
-    expect(persisted.configValue).toEqual({ appId: 'app-1' });
+    expect(persisted.configValue).toEqual({
+      appId: 'app-1',
+      oauthRedirectUri: 'https://delivery.example.com/api/v1/auth/feishu/callback',
+    });
     expect(String(persisted.encryptedConfig)).toMatch(/^v1:/);
     expect(String(persisted.encryptedConfig)).not.toContain('real-secret-value');
     expect(result.configuration).toEqual(
@@ -167,6 +171,21 @@ describe('IntegrationService secured configuration', () => {
     await expect(
       service.update('FEISHU', { appId: 'app-1', appSecret: '******' }, 'admin-1'),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects enabling Feishu without the HTTPS OAuth callback required by QR login', async () => {
+    const prisma = {
+      integrationConfig: { findFirst: jest.fn().mockResolvedValue(null) },
+    } as unknown as PrismaService;
+    const service = new IntegrationService(prisma, configService(), operationLog());
+
+    await expect(
+      service.update(
+        'FEISHU',
+        { appId: 'app-1', appSecret: 'real-secret-value', isEnabled: true },
+        'admin-1',
+      ),
+    ).rejects.toThrow('HTTPS 登录回调地址');
   });
 
   it('fails a sensitive test safely when the encryption key is unavailable', async () => {
@@ -484,7 +503,10 @@ describe('IntegrationService secured configuration', () => {
     const internals = service as unknown as IntegrationInternals;
     const record = integrationRecordFixture({
       provider: 'FEISHU',
-      configValue: { appId: 'app-id' },
+      configValue: {
+        appId: 'app-id',
+        oauthRedirectUri: 'https://delivery.example.com/api/v1/auth/feishu/callback',
+      },
       encryptedConfig: internals.encryptSecrets('FEISHU', {
         appSecret: 'test-secret',
       }),

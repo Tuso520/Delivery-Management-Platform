@@ -481,7 +481,7 @@
   },
   "integrations": {
     "title": "接口集成",
-    "description": "飞书用于通讯录同步与通知发送。",
+    "description": "统一配置飞书通讯录同步、扫码登录与通知发送。",
     "refresh": "刷新",
     "readOnly": "当前为只读模式",
     "readOnlyHint": "你可以查看配置状态和同步日志，但不能修改凭据、测试或同步通讯录。",
@@ -513,7 +513,8 @@
     },
     "capabilities": {
       "CONTACT_SYNC": "通讯录同步",
-      "NOTIFICATION": "通知发送"
+      "NOTIFICATION": "通知发送",
+      "OAUTH_LOGIN": "扫码登录"
     },
     "actions": {
       "CONNECTION_TEST": "连接测试",
@@ -534,19 +535,25 @@
     "enabled": "启用",
     "appId": "App ID",
     "appSecretField": "App Secret",
-    "verificationToken": "Verification Token",
-    "encryptKey": "Encrypt Key",
     "replaceSecretPlaceholder": "留空表示不更换",
     "configuredReplaceHint": "已配置（******），更换时请重新输入。",
     "notConfiguredHint": "尚未配置。",
-    "webhook": "机器人 Webhook",
-    "webhookOptionalHint": "可选，仅允许飞书官方 HTTPS 地址。",
     "departmentId": "通讯录部门 ID",
-    "departmentPlaceholder": "留空使用服务商根部门",
+    "departmentPlaceholder": "默认 0，表示企业根部门",
     "testRecipient": "测试消息接收人 ID",
-    "testRecipientPlaceholder": "用于发送测试通知",
+    "testRecipientPlaceholder": "填写接收人的 open_id，用于测试通知",
     "oauthRedirectUri": "飞书登录回调地址",
     "oauthRedirectUriPlaceholder": "例如 https://服务器地址/api/v1/auth/feishu/callback",
+    "recommendedCallback": "当前环境建议值：{uri}",
+    "useRecommendedCallback": "使用建议值",
+    "copyCallback": "复制",
+    "callbackCopied": "回调地址已复制",
+    "callbackCopyFailed": "复制失败，请手动复制回调地址",
+    "guideTitle": "完成三项能力只需一套企业自建应用",
+    "guideCredentials": "在飞书开放平台“凭证与基础信息”复制 App ID 和 App Secret。",
+    "guidePermissions": "申请并发布通讯录部门、用户基础信息、手机号、邮箱和 user_id 只读权限。",
+    "guideCallback": "把下方 HTTPS 回调地址逐字登记到飞书“安全设置 → 重定向 URL”。",
+    "guideValidation": "保存并启用后，依次执行连接测试、同步通讯录和测试通知；同步成功后登录页即可扫码。",
     "descriptionLabel": "说明",
     "logsTitle": "{provider}同步日志",
     "success": "成功",
@@ -554,7 +561,7 @@
     "summaryUnavailable": "执行统计不可用",
     "validation": {
       "name": "请输入配置名称",
-      "credentials": "启用集成前请完整填写身份凭据"
+      "credentials": "启用集成前请完整填写 App ID、App Secret 和 HTTPS 登录回调地址"
     },
     "saved": "集成配置已保存，Secret 不会在页面回显",
     "operationFailed": "集成操作失败，请查看同步日志",

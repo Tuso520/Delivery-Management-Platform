@@ -44,9 +44,6 @@ export type IntegrationProvider = 'FEISHU'
 export interface IntegrationConfiguration {
   appId?: string | null
   appSecret?: string | null
-  webhookUrl?: string | null
-  verificationToken?: string | null
-  encryptKey?: string | null
   contactDepartmentId?: string | null
   oauthRedirectUri?: string | null
   testRecipient?: string | null
@@ -69,9 +66,6 @@ export interface UpdateIntegrationDto {
   isEnabled?: boolean
   appId?: string
   appSecret?: string
-  webhookUrl?: string
-  verificationToken?: string
-  encryptKey?: string
   contactDepartmentId?: string
   oauthRedirectUri?: string
   testRecipient?: string

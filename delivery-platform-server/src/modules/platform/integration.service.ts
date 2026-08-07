@@ -1419,10 +1419,22 @@ export class IntegrationService {
     publicConfig: Record<string, unknown>,
     secrets: Record<string, unknown>,
   ): void {
-    const missingPublic = !this.optionalString(publicConfig.appId);
+    const appId = this.optionalString(publicConfig.appId);
+    const oauthRedirectUri = this.optionalString(publicConfig.oauthRedirectUri);
     const hasRequiredSecret = Boolean(this.optionalString(secrets.appSecret));
-    if (missingPublic || !hasRequiredSecret) {
-      throw new BadRequestException('启用或调用集成前必须完整配置身份凭据');
+    if (!appId || !oauthRedirectUri || !hasRequiredSecret) {
+      throw new BadRequestException(
+        '启用或调用飞书集成前必须完整配置 App ID、App Secret 和 HTTPS 登录回调地址',
+      );
+    }
+    let redirectUri: URL;
+    try {
+      redirectUri = new URL(oauthRedirectUri);
+    } catch {
+      throw new BadRequestException('飞书登录回调地址无效');
+    }
+    if (redirectUri.protocol !== 'https:') {
+      throw new BadRequestException('飞书登录回调地址必须使用 HTTPS');
     }
   }
 
