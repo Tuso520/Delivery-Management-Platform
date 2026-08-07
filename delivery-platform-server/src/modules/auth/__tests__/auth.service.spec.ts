@@ -421,6 +421,82 @@ describe('AuthService', () => {
       ).rejects.toBeInstanceOf(UnauthorizedException);
       expect(integration.exchangeFeishuOAuthCode).not.toHaveBeenCalled();
     });
+
+    it('consumes the state and rejects an explicit Feishu authorization failure', async () => {
+      const { service: feishuService, integration } = createFeishuService();
+      redisService.consumeOneTimeJson.mockResolvedValue({
+        integrationConfigId: 'integration-1',
+        redirectPath: '/dashboard',
+        redirectUri: 'https://test.example.com/api/v1/auth/feishu/callback',
+      });
+
+      await expect(
+        feishuService.handleFeishuCallback({
+          state: 'authorized-state',
+          error: 'access_denied',
+        }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(integration.exchangeFeishuOAuthCode).not.toHaveBeenCalled();
+      expect(redisService.consumeOneTimeJson).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects inactive and non-unique Feishu identity bindings', async () => {
+      const { service: feishuService } = createFeishuService();
+      redisService.consumeOneTimeJson.mockResolvedValue({
+        integrationConfigId: 'integration-1',
+        redirectPath: '/dashboard',
+        redirectUri: 'https://test.example.com/api/v1/auth/feishu/callback',
+      });
+      prisma.externalIdentity.findMany.mockResolvedValueOnce([
+        {
+          id: 'identity-inactive',
+          userId: 'user-inactive',
+          user: { status: 'Inactive', deletedAt: null },
+        },
+      ]);
+
+      await expect(
+        feishuService.handleFeishuCallback({ state: 'state-inactive', code: 'code' }),
+      ).rejects.toThrow('系统账号已停用或离职');
+
+      redisService.consumeOneTimeJson.mockResolvedValue({
+        integrationConfigId: 'integration-1',
+        redirectPath: '/dashboard',
+        redirectUri: 'https://test.example.com/api/v1/auth/feishu/callback',
+      });
+      prisma.externalIdentity.findMany.mockResolvedValueOnce([
+        {
+          id: 'identity-1',
+          userId: 'user-1',
+          user: { status: 'Active', deletedAt: null },
+        },
+        {
+          id: 'identity-2',
+          userId: 'user-2',
+          user: { status: 'Active', deletedAt: null },
+        },
+      ]);
+
+      await expect(
+        feishuService.handleFeishuCallback({ state: 'state-ambiguous', code: 'code' }),
+      ).rejects.toThrow('飞书账号尚未绑定唯一系统用户');
+      expect(redisService.storeOneTimeJson).not.toHaveBeenCalledWith(
+        'feishu-ticket',
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
+    it('rejects an expired or replayed Feishu login ticket before issuing a session', async () => {
+      const { service: feishuService } = createFeishuService();
+      redisService.consumeOneTimeJson.mockResolvedValue(null);
+
+      await expect(
+        feishuService.completeFeishuLogin('expired-ticket'),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(refreshSessions.issue).not.toHaveBeenCalled();
+    });
   });
 
   describe('logout', () => {

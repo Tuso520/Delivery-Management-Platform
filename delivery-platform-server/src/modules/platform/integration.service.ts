@@ -1299,7 +1299,7 @@ export class IntegrationService {
       if (!response.ok) {
         const retryable = response.status === 429 || response.status >= 500;
         throw new IntegrationDeliveryError(
-          retryable ? 'INTEGRATION_UPSTREAM_TEMPORARY' : 'INTEGRATION_UPSTREAM_REJECTED',
+          this.upstreamHttpErrorCode(url, response.status, body, retryable),
           retryable,
         );
       }
@@ -1317,6 +1317,48 @@ export class IntegrationService {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  private upstreamHttpErrorCode(
+    url: string,
+    status: number,
+    body: string,
+    retryable: boolean,
+  ): string {
+    if (retryable) return 'INTEGRATION_UPSTREAM_TEMPORARY';
+
+    let providerCode: number | undefined;
+    try {
+      const parsed = this.asRecord(body ? JSON.parse(body) : {});
+      const candidate = parsed.code;
+      if (typeof candidate === 'number' && Number.isInteger(candidate)) {
+        providerCode = candidate;
+      }
+    } catch {
+      // The stable diagnostic below intentionally excludes the upstream body.
+    }
+
+    if (url.includes('/contact/')) {
+      if (providerCode === 41050 || status === 403) {
+        return 'FEISHU_CONTACT_SCOPE_REQUIRED';
+      }
+      return providerCode === undefined
+        ? `FEISHU_CONTACT_HTTP_${status}`
+        : `FEISHU_CONTACT_HTTP_${status}_CODE_${providerCode}`;
+    }
+    if (url.includes('/im/v1/messages')) {
+      return providerCode === undefined
+        ? `FEISHU_MESSAGE_HTTP_${status}`
+        : `FEISHU_MESSAGE_HTTP_${status}_CODE_${providerCode}`;
+    }
+    if (url.includes('/authen/')) {
+      return providerCode === undefined
+        ? `FEISHU_OAUTH_HTTP_${status}`
+        : `FEISHU_OAUTH_HTTP_${status}_CODE_${providerCode}`;
+    }
+    return providerCode === undefined
+      ? `INTEGRATION_UPSTREAM_HTTP_${status}`
+      : `INTEGRATION_UPSTREAM_HTTP_${status}_CODE_${providerCode}`;
   }
 
   private encryptSecrets(

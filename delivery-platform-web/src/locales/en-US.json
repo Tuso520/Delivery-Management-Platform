@@ -551,7 +551,7 @@
     "callbackCopyFailed": "Copy failed. Copy the callback URL manually.",
     "guideTitle": "One internal app enables all three capabilities",
     "guideCredentials": "Copy the App ID and App Secret from Credentials & Basic Info in Feishu Open Platform.",
-    "guidePermissions": "Request and publish read-only permissions for departments, user profiles, phone, email, and user_id.",
+    "guidePermissions": "Request read-only department, user profile, phone, email, and user_id scopes. Root department 0 requires the All Members data scope; also enable the bot and im:message:send_as_bot, then publish a version.",
     "guideCallback": "Register the exact HTTPS callback below under Security Settings → Redirect URLs in Feishu.",
     "guideValidation": "Save and enable, then run connection test, contact sync, and notification test. QR sign-in is available after a successful sync.",
     "descriptionLabel": "Description",
@@ -561,7 +561,8 @@
     "summaryUnavailable": "Execution summary is unavailable",
     "validation": {
       "name": "Enter a configuration name",
-      "credentials": "Complete the App ID, App Secret, and HTTPS OAuth callback before enabling this integration"
+      "credentials": "Complete the App ID, App Secret, and HTTPS OAuth callback before enabling this integration",
+      "testRecipient": "Configure the test recipient open_id (ou_...) first"
     },
     "saved": "Integration configuration saved. Secrets are never displayed on this page.",
     "operationFailed": "Integration operation failed. Check the sync logs.",

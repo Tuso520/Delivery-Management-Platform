@@ -380,6 +380,180 @@ describe('IntegrationService secured configuration', () => {
     );
   });
 
+  it('replays the same directory snapshot without duplicating users or identities', async () => {
+    let identity: { id: string; userId: string; userProvisioned: boolean } | null = null;
+    const integrationUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const userCreate = jest.fn().mockImplementation(async () => ({ id: 'user-1' }));
+    const identityCreate = jest.fn().mockImplementation(async () => {
+      identity = { id: 'identity-1', userId: 'user-1', userProvisioned: true };
+      return { id: 'identity-1' };
+    });
+    const identityFindMany = jest.fn().mockImplementation(
+      async ({ where }: { where: Record<string, unknown> }) => {
+        if ('integrationConfigId' in where) return [];
+        return identity ? [identity] : [];
+      },
+    );
+    const tx = {
+      integrationConfig: { updateMany: integrationUpdateMany },
+      department: {
+        findMany: jest.fn().mockResolvedValue([]),
+        upsert: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      externalIdentity: {
+        create: identityCreate,
+        findMany: identityFindMany,
+        update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        count: jest.fn(),
+      },
+      user: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest.fn().mockResolvedValue({
+          status: 'Active',
+          departmentId: null,
+          userRoles: [],
+          departmentMemberships: [],
+        }),
+        create: userCreate,
+        update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn(),
+      },
+      userDepartmentMembership: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+        createMany: jest.fn().mockResolvedValue({ count: 0 }),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      refreshSession: { updateMany: jest.fn() },
+    };
+    const prisma = {
+      $transaction: jest.fn((run: (client: typeof tx) => Promise<unknown>) => run(tx)),
+    } as unknown as PrismaService;
+    const service = new IntegrationService(prisma, configService(), operationLog());
+    const internals = service as unknown as IntegrationInternals;
+    const directory: DirectoryFixture = {
+      contacts: [{
+        externalUserId: 'open-id-idempotent',
+        identifierType: 'OPEN_ID',
+        openId: 'open-id-idempotent',
+        realName: '幂等用户',
+        email: 'idempotent@example.com',
+        departmentIds: [],
+        active: true,
+      }],
+      departments: [],
+      skipped: 0,
+    };
+
+    const first = await internals.persistUnifiedContacts(
+      integrationRecordFixture(),
+      'FEISHU',
+      directory,
+      { owner: 'lease-first', revision: 1 },
+    );
+    const second = await internals.persistUnifiedContacts(
+      integrationRecordFixture(),
+      'FEISHU',
+      directory,
+      { owner: 'lease-second', revision: 2 },
+    );
+
+    expect(first).toEqual(expect.objectContaining({ added: 1, updated: 0, failed: 0 }));
+    expect(second).toEqual(expect.objectContaining({ added: 0, updated: 1, failed: 0 }));
+    expect(userCreate).toHaveBeenCalledTimes(1);
+    expect(identityCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('continues the batch and reports a failed contact when one user transaction fails', async () => {
+    let transactionCall = 0;
+    const userCreate = jest.fn().mockResolvedValue({ id: 'user-success' });
+    const identityCreate = jest.fn().mockResolvedValue({ id: 'identity-success' });
+    const tx = {
+      integrationConfig: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      department: {
+        findMany: jest.fn().mockResolvedValue([]),
+        upsert: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      externalIdentity: {
+        create: identityCreate,
+        findMany: jest.fn().mockResolvedValue([]),
+        update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        count: jest.fn(),
+      },
+      user: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest.fn().mockResolvedValue({
+          status: 'Active',
+          departmentId: null,
+          userRoles: [],
+          departmentMemberships: [],
+        }),
+        create: userCreate,
+        update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn(),
+      },
+      userDepartmentMembership: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+        createMany: jest.fn().mockResolvedValue({ count: 0 }),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      refreshSession: { updateMany: jest.fn() },
+    };
+    const prisma = {
+      $transaction: jest.fn((run: (client: typeof tx) => Promise<unknown>) => {
+        transactionCall += 1;
+        if (transactionCall === 2) return Promise.reject(new Error('single contact failed'));
+        return run(tx);
+      }),
+      externalIdentity: { findMany: jest.fn().mockResolvedValue([]) },
+    } as unknown as PrismaService;
+    const service = new IntegrationService(prisma, configService(), operationLog());
+
+    const result = await (service as unknown as IntegrationInternals).persistUnifiedContacts(
+      integrationRecordFixture(),
+      'FEISHU',
+      {
+        contacts: [
+          {
+            externalUserId: 'open-id-failed',
+            identifierType: 'OPEN_ID',
+            openId: 'open-id-failed',
+            realName: '失败用户',
+            departmentIds: [],
+            active: true,
+          },
+          {
+            externalUserId: 'open-id-success',
+            identifierType: 'OPEN_ID',
+            openId: 'open-id-success',
+            realName: '成功用户',
+            departmentIds: [],
+            active: true,
+          },
+        ],
+        departments: [],
+        skipped: 0,
+      },
+      { owner: 'lease-1', revision: 1 },
+    );
+
+    expect(result).toEqual(expect.objectContaining({
+      total: 2,
+      added: 1,
+      failed: 1,
+      disabled: 0,
+    }));
+    expect(userCreate).toHaveBeenCalledTimes(1);
+    expect(userCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ realName: '成功用户' }),
+      select: { id: true },
+    });
+    expect(identityCreate).toHaveBeenCalledTimes(1);
+  });
+
   it('counts ambiguous exact email or phone matches as conflicts', async () => {
     const tx = {
       integrationConfig: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
@@ -640,6 +814,30 @@ describe('IntegrationService secured configuration', () => {
           }),
         ]),
       );
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it('maps Feishu contact data-scope rejection to an actionable stable error code', async () => {
+    const service = new IntegrationService(
+      {} as PrismaService,
+      configService(),
+      operationLog(),
+    );
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ code: 41050, msg: 'no department authority' }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    try {
+      await expect(
+        (service as unknown as IntegrationInternals).fetchFeishuDirectory(
+          'tenant-token',
+          { contactDepartmentId: '0' },
+        ),
+      ).rejects.toMatchObject({ code: 'FEISHU_CONTACT_SCOPE_REQUIRED', retryable: false });
     } finally {
       fetchMock.mockRestore();
     }

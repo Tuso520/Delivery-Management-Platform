@@ -222,6 +222,11 @@ function actionKey(provider: IntegrationProvider, action: IntegrationAction): st
 
 async function runAction(row: IntegrationRow, action: IntegrationAction): Promise<void> {
   if (!canManage.value || !row.config) return
+  if (action === 'notification' && !row.config.configuration.testRecipient?.trim()) {
+    Message.warning(t('integrations.validation.testRecipient'))
+    openEditor(row)
+    return
+  }
   try {
     const result: IntegrationActionResult = await integrationActionMutation.mutateAsync({
       provider: row.provider,
