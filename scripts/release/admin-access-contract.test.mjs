@@ -16,6 +16,8 @@ test('administrator recovery is hard-wired to test and a fixed main release', ()
 test('administrator password crosses SSH only through standard input and is never logged', () => {
   assert.match(workflow, /printf '%s\\n' "\$TEST_ADMIN_PASSWORD" \| ssh/u)
   assert.match(rotation, /IFS= read -r ADMIN_PASSWORD/u)
+  assert.match(rotation, /import \{ PrismaClient \} from '@prisma\/client'/u)
+  assert.doesNotMatch(rotation, /require\(/u)
   assert.doesNotMatch(workflow, /echo .*\$TEST_ADMIN_PASSWORD/u)
   assert.doesNotMatch(rotation, /echo .*ADMIN_PASSWORD/u)
   assert.doesNotMatch(rotation, /printf .*ADMIN_PASSWORD/u)
