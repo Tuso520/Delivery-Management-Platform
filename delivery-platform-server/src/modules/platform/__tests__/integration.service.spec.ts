@@ -819,30 +819,32 @@ describe('IntegrationService secured configuration', () => {
     }
   });
 
-  it('maps Feishu contact data-scope rejection to an actionable stable error code', async () => {
-    const service = new IntegrationService(
-      {} as PrismaService,
-      configService(),
-      operationLog(),
-    );
-    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValueOnce(
-      new Response(JSON.stringify({ code: 41050, msg: 'no department authority' }), {
-        status: 400,
-        headers: { 'content-type': 'application/json' },
-      }),
-    );
-    try {
-      await expect(
-        (service as unknown as IntegrationInternals).fetchFeishuDirectory(
-          'tenant-token',
-          { contactDepartmentId: '0' },
-        ),
-      ).rejects.toMatchObject({ code: 'FEISHU_CONTACT_SCOPE_REQUIRED', retryable: false });
-    } finally {
-      fetchMock.mockRestore();
-    }
-  });
-
+  it.each([41050, 99991672])(
+    'maps Feishu contact scope rejection %s to an actionable stable error code',
+    async (providerCode) => {
+      const service = new IntegrationService(
+        {} as PrismaService,
+        configService(),
+        operationLog(),
+      );
+      const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValueOnce(
+        new Response(JSON.stringify({ code: providerCode, msg: 'access denied' }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+      try {
+        await expect(
+          (service as unknown as IntegrationInternals).fetchFeishuDirectory(
+            'tenant-token',
+            { contactDepartmentId: '0' },
+          ),
+        ).rejects.toMatchObject({ code: 'FEISHU_CONTACT_SCOPE_REQUIRED', retryable: false });
+      } finally {
+        fetchMock.mockRestore();
+      }
+    },
+  );
 });
 
 function integrationRecordFixture(
