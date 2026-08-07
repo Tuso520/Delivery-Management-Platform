@@ -41,8 +41,8 @@ app_compose() {
 app_compose run --rm --no-deps -T \
   -e DMP_NEW_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
   --entrypoint node backend-migrate - <<'NODE'
-const { PrismaClient } = require('@prisma/client');
-const bcrypt = require('bcrypt');
+import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 const password = process.env.DMP_NEW_ADMIN_PASSWORD;
