@@ -10,6 +10,10 @@ FEISHU_BACKUP_PATH="${6:-}"
 RESTORE_FEISHU_CONFIG="${7:-false}"
 SYNC_FEISHU="${8:-false}"
 
+if [ "$FEISHU_BACKUP_PATH" = '-' ]; then
+  FEISHU_BACKUP_PATH=''
+fi
+
 log() { printf '[test-acceptance] %s\n' "$*"; }
 die() { printf '[test-acceptance][error] %s\n' "$*" >&2; exit 1; }
 
@@ -19,6 +23,11 @@ require_command() {
 
 case "$RESTORE_FEISHU_CONFIG" in true|false) ;; *) die 'restore_feishu_config must be true or false' ;; esac
 case "$SYNC_FEISHU" in true|false) ;; *) die 'sync_feishu must be true or false' ;; esac
+IFS= read -r ADMIN_PASSWORD || die 'administrator password was not provided on standard input'
+[ "${#ADMIN_PASSWORD}" -ge 20 ] && [ "${#ADMIN_PASSWORD}" -le 72 ] || \
+  die 'administrator password length must be between 20 and 72 characters'
+[[ "$ADMIN_PASSWORD" =~ ^[A-Za-z0-9._~!@%+=:-]+$ ]] || \
+  die 'administrator password contains unsupported characters'
 [[ "$EXPECTED_RELEASE_ID" =~ ^[0-9a-f]{40}$ ]] || die 'expected release must be a full lowercase commit SHA'
 [[ "$DEPLOY_TARGET_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{5,127}$ ]] || die 'invalid deploy target identity'
 [[ "$INTERNAL_ORIGIN" =~ ^http://127\.0\.0\.1:[0-9]+$ ]] || die 'internal origin must use loopback HTTP'
@@ -167,9 +176,12 @@ if [ "$RESTORE_FEISHU_CONFIG" = 'true' ]; then
   log 'restored only the encrypted Feishu platform configuration from backup'
 fi
 
-app_compose run --rm --no-deps -T -e SYNC_FEISHU="$SYNC_FEISHU" --entrypoint node backend-migrate - <<'NODE'
+app_compose run --rm --no-deps -T \
+  -e SYNC_FEISHU="$SYNC_FEISHU" \
+  -e DMP_TEST_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
+  --entrypoint node backend-migrate - <<'NODE'
 const baseUrl = 'http://backend:3000/api/v1';
-const password = process.env.SEED_ADMIN_PASSWORD;
+const password = process.env.DMP_TEST_ADMIN_PASSWORD;
 const syncFeishu = process.env.SYNC_FEISHU === 'true';
 
 function fail(message) {
@@ -204,7 +216,7 @@ function refreshCookie(response, label) {
   return raw.split(';', 1)[0];
 }
 
-if (!password) fail('SEED_ADMIN_PASSWORD is unavailable inside the migration verifier container');
+if (!password) fail('administrator password is unavailable inside the migration verifier container');
 
 const login = await jsonRequest('/auth/login', {
   method: 'POST',
@@ -297,6 +309,8 @@ console.log(JSON.stringify({
   feishuSync: feishuSummary,
 }));
 NODE
+
+unset ADMIN_PASSWORD
 
 if [ "$SYNC_FEISHU" = 'true' ]; then
   data_compose exec -T mysql sh -ec '
