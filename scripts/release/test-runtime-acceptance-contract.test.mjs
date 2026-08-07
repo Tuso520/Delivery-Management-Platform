@@ -58,6 +58,9 @@ test('deployed authentication, refresh, permission and Feishu gates are explicit
     "if (replay.response.status !== 401)",
     "if (afterLogout.response.status !== 401)",
     "if (feishuSummary.failed !== 0)",
+    "diagnostic=${diagnostic}",
+    "'/integrations/FEISHU/sync-logs?page=1&pageSize=1&action=CONTACT_SYNC&status=FAILED'",
+    "/^[A-Z][A-Z0-9_]{2,199}$/",
     "authorizationUrl.searchParams.get('state')",
     'FEISHU_RUNTIME_COUNTS users=',
   ]) {

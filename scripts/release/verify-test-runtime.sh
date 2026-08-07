@@ -216,6 +216,18 @@ function refreshCookie(response, label) {
   return raw.split(';', 1)[0];
 }
 
+async function latestFeishuFailureDiagnostic(accessToken) {
+  const logs = await jsonRequest(
+    '/integrations/FEISHU/sync-logs?page=1&pageSize=1&action=CONTACT_SYNC&status=FAILED',
+    { headers: { authorization: `Bearer ${accessToken}` } },
+  );
+  if (logs.response.status !== 200 || logs.body?.code !== 0) return 'DIAGNOSTIC_UNAVAILABLE';
+  const reason = logs.body?.data?.items?.[0]?.errorReason;
+  return typeof reason === 'string' && /^[A-Z][A-Z0-9_]{2,199}$/.test(reason)
+    ? reason
+    : 'DIAGNOSTIC_UNAVAILABLE';
+}
+
 if (!password) fail('administrator password is unavailable inside the migration verifier container');
 
 const login = await jsonRequest('/auth/login', {
@@ -268,6 +280,10 @@ if (syncFeishu) {
     method: 'POST',
     headers: { authorization: `Bearer ${refreshedSession.accessToken}` },
   });
+  if (sync.response.status !== 201) {
+    const diagnostic = await latestFeishuFailureDiagnostic(refreshedSession.accessToken);
+    fail(`Feishu contact sync: HTTP ${sync.response.status} diagnostic=${diagnostic}`);
+  }
   feishuSummary = requireEnvelope(sync, 201, 'Feishu contact sync');
   for (const field of ['total', 'added', 'updated', 'disabled', 'skipped', 'failed', 'departments']) {
     if (!Number.isInteger(feishuSummary?.[field]) || feishuSummary[field] < 0) {
