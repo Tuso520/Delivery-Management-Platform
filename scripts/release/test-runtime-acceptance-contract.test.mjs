@@ -13,13 +13,26 @@ test('runtime acceptance is hard-wired to the test Environment and strict SSH id
   assert.doesNotMatch(workflow, /ssh-keyscan/u)
 })
 
-test('runtime acceptance never prints or reads runtime secrets directly', () => {
+test('optional backup path keeps remote positional arguments aligned', () => {
+  assert.match(workflow, /feishu_backup_path_arg="\$\{FEISHU_BACKUP_PATH:--\}"/u)
+  assert.match(workflow, /printf -v remote_command 'test -f %q && test ! -L %q && exec bash %q/u)
+  assert.match(workflow, /"\$feishu_backup_path_arg" \\\n\s+"\$RESTORE_FEISHU_CONFIG" "\$SYNC_FEISHU"/u)
+  assert.match(verifier, /if \[ "\$FEISHU_BACKUP_PATH" = '-' \]; then\s+FEISHU_BACKUP_PATH=''\s+fi/u)
+})
+
+test('runtime acceptance consumes the rotated administrator secret through standard input', () => {
   assert.match(verifier, /stat -c '%a' "\$RUNTIME_ENV"/u)
   assert.match(verifier, /--env-file "\$RUNTIME_ENV"/u)
+  assert.match(workflow, /TEST_ADMIN_PASSWORD: \$\{\{ secrets\.TEST_ADMIN_PASSWORD \}\}/u)
+  assert.match(workflow, /printf '%s\\n' "\$TEST_ADMIN_PASSWORD" \| ssh/u)
+  assert.match(verifier, /IFS= read -r ADMIN_PASSWORD/u)
+  assert.match(verifier, /DMP_TEST_ADMIN_PASSWORD/u)
   assert.doesNotMatch(verifier, /cat .*runtime\.env/u)
   assert.doesNotMatch(verifier, /source .*runtime\.env/u)
-  assert.doesNotMatch(verifier, /printf .*SEED_ADMIN_PASSWORD/u)
-  assert.doesNotMatch(verifier, /echo .*SEED_ADMIN_PASSWORD/u)
+  assert.doesNotMatch(verifier, /SEED_ADMIN_PASSWORD/u)
+  assert.doesNotMatch(workflow, /echo[^\n]*"\$TEST_ADMIN_PASSWORD"/u)
+  assert.doesNotMatch(verifier, /echo .*ADMIN_PASSWORD/u)
+  assert.doesNotMatch(verifier, /printf .*ADMIN_PASSWORD/u)
 })
 
 test('backup restore is scoped to one encrypted Feishu configuration', () => {
