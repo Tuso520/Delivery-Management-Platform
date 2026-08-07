@@ -1339,7 +1339,7 @@ export class IntegrationService {
     }
 
     if (url.includes('/contact/')) {
-      if (providerCode === 41050 || status === 403) {
+      if (providerCode === 41050 || providerCode === 99991672 || status === 403) {
         return 'FEISHU_CONTACT_SCOPE_REQUIRED';
       }
       return providerCode === undefined
@@ -1347,6 +1347,9 @@ export class IntegrationService {
         : `FEISHU_CONTACT_HTTP_${status}_CODE_${providerCode}`;
     }
     if (url.includes('/im/v1/messages')) {
+      if (providerCode === 99991672 || status === 403) {
+        return 'FEISHU_MESSAGE_SCOPE_REQUIRED';
+      }
       return providerCode === undefined
         ? `FEISHU_MESSAGE_HTTP_${status}`
         : `FEISHU_MESSAGE_HTTP_${status}_CODE_${providerCode}`;

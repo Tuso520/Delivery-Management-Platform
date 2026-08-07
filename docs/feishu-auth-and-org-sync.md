@@ -48,9 +48,9 @@ OAuth 登录只接受已经同步且唯一绑定的启用用户。浏览器 stat
 ## 故障排查
 
 - OAuth 回调失败：核对 HTTPS 证书、回调地址精确匹配、应用版本是否发布，以及 state 是否已过期或重复使用。
-- `FEISHU_CONTACT_SCOPE_REQUIRED`：核对应用 API 权限和通讯录数据权限；根部门 `0` 必须选择“全部成员”，然后发布新版本并完成管理员审批。
+- `FEISHU_CONTACT_SCOPE_REQUIRED`（含飞书业务码 `41050`、`99991672`）：核对应用 API 权限和通讯录数据权限；根部门 `0` 必须选择“全部成员”，然后发布新版本并完成管理员审批。
 - 通知测试提示缺少 `testRecipient`：在系统飞书配置中填写接收人的 `open_id`（`ou_...`）。
-- 通知被飞书拒绝：确认机器人能力、`im:message:send_as_bot`、应用已发布，以及接收人在机器人可用范围内。
+- `FEISHU_MESSAGE_SCOPE_REQUIRED` 或通知被飞书拒绝：确认机器人能力、`im:message:send_as_bot`、应用已发布，以及接收人在机器人可用范围内。
 - 用户无法登录：先确认最近一次同步中该身份唯一、启用，且系统用户未停用或删除。
 - Secret 无法解密：核对服务器 `INTEGRATION_SECRET_ENCRYPTION_KEY` 是否保持同一 32 字节 Base64 值；不得通过重新填写日志或明文数据库字段绕过。
 - 网络/限流：同步日志只记录稳定错误码，不记录 token、secret 或飞书原始敏感响应；稍后由管理员重新触发全量同步。
