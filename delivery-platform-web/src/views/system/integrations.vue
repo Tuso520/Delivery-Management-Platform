@@ -47,6 +47,10 @@ const { hasPermission } = usePermission()
 const queryClient = useQueryClient()
 const { t, locale } = useI18n()
 const canManage = computed(() => hasPermission('integration:manage'))
+const recommendedCallbackUri = computed(() => {
+  if (typeof window === 'undefined') return ''
+  return `${window.location.origin}/api/v1/auth/feishu/callback`
+})
 
 const providerOptions = computed<Array<{ provider: IntegrationProvider; label: string }>>(() => [
   { provider: 'FEISHU', label: t('integrations.providers.FEISHU') },
@@ -171,8 +175,22 @@ function requiredCredentialMissing(): boolean {
   if (!form.value.isEnabled) return false
   return (
     !form.value.appId.trim() ||
+    !form.value.oauthRedirectUri.trim() ||
     (!hasConfiguredSecret(config, 'appSecret') && !form.value.appSecret.trim())
   )
+}
+
+function useRecommendedCallbackUri(): void {
+  form.value.oauthRedirectUri = recommendedCallbackUri.value
+}
+
+async function copyRecommendedCallbackUri(): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(recommendedCallbackUri.value)
+    Message.success(t('integrations.callbackCopied'))
+  } catch {
+    Message.warning(t('integrations.callbackCopyFailed'))
+  }
 }
 
 async function saveIntegration(): Promise<void> {
@@ -250,7 +268,7 @@ function providerLabel(provider: IntegrationProvider): string {
 }
 
 function capabilityLabel(capability: string): string {
-  return ['CONTACT_SYNC', 'NOTIFICATION'].includes(capability)
+  return ['CONTACT_SYNC', 'NOTIFICATION', 'OAUTH_LOGIN'].includes(capability)
     ? t(`integrations.capabilities.${capability}`)
     : capability
 }
@@ -345,7 +363,11 @@ function redactText(value?: string | null): string {
       <template #capabilities="{ record }">
         <a-space size="mini" wrap>
           <a-tag
-            v-for="capability in record.config?.capabilities || ['CONTACT_SYNC', 'NOTIFICATION']"
+            v-for="capability in record.config?.capabilities || [
+              'CONTACT_SYNC',
+              'NOTIFICATION',
+              'OAUTH_LOGIN',
+            ]"
             :key="capability"
           >
             {{ capabilityLabel(capability) }}
@@ -429,6 +451,14 @@ function redactText(value?: string | null): string {
       :cancel-text="t('common.cancel')"
       @ok="saveIntegration"
     >
+      <a-alert class="editor-guide" type="info" :title="t('integrations.guideTitle')">
+        <ol class="editor-guide__steps">
+          <li>{{ t('integrations.guideCredentials') }}</li>
+          <li>{{ t('integrations.guidePermissions') }}</li>
+          <li>{{ t('integrations.guideCallback') }}</li>
+          <li>{{ t('integrations.guideValidation') }}</li>
+        </ol>
+      </a-alert>
       <a-form :model="form" layout="vertical">
         <div class="form-grid">
           <a-form-item :label="t('integrations.columns.configName')" required>
@@ -457,48 +487,6 @@ function redactText(value?: string | null): string {
               }}
             </template>
           </a-form-item>
-          <a-form-item :label="t('integrations.webhook')">
-            <a-input
-              v-model="form.webhookUrl"
-              type="password"
-              :placeholder="t('integrations.replaceSecretPlaceholder')"
-            />
-            <template #extra>
-              {{
-                hasConfiguredSecret(selectedConfig, 'webhookUrl')
-                  ? t('integrations.configuredReplaceHint')
-                  : t('integrations.webhookOptionalHint')
-              }}
-            </template>
-          </a-form-item>
-          <a-form-item :label="t('integrations.verificationToken')">
-            <a-input
-              v-model="form.verificationToken"
-              type="password"
-              :placeholder="t('integrations.replaceSecretPlaceholder')"
-            />
-            <template #extra>
-              {{
-                hasConfiguredSecret(selectedConfig, 'verificationToken')
-                  ? t('integrations.configuredReplaceHint')
-                  : t('integrations.notConfiguredHint')
-              }}
-            </template>
-          </a-form-item>
-          <a-form-item :label="t('integrations.encryptKey')">
-            <a-input
-              v-model="form.encryptKey"
-              type="password"
-              :placeholder="t('integrations.replaceSecretPlaceholder')"
-            />
-            <template #extra>
-              {{
-                hasConfiguredSecret(selectedConfig, 'encryptKey')
-                  ? t('integrations.configuredReplaceHint')
-                  : t('integrations.notConfiguredHint')
-              }}
-            </template>
-          </a-form-item>
         </div>
 
         <div class="form-grid">
@@ -514,12 +502,25 @@ function redactText(value?: string | null): string {
               :placeholder="t('integrations.testRecipientPlaceholder')"
             />
           </a-form-item>
-          <a-form-item :label="t('integrations.oauthRedirectUri')">
+          <a-form-item :label="t('integrations.oauthRedirectUri')" required>
             <a-input
               v-model="form.oauthRedirectUri"
               :placeholder="t('integrations.oauthRedirectUriPlaceholder')"
               :max-length="500"
             />
+            <template #extra>
+              <div class="callback-helper">
+                <span>{{ t('integrations.recommendedCallback', { uri: recommendedCallbackUri }) }}</span>
+                <a-space size="mini">
+                  <a-button type="text" size="mini" @click="useRecommendedCallbackUri">
+                    {{ t('integrations.useRecommendedCallback') }}
+                  </a-button>
+                  <a-button type="text" size="mini" @click="copyRecommendedCallbackUri">
+                    {{ t('integrations.copyCallback') }}
+                  </a-button>
+                </a-space>
+              </div>
+            </template>
           </a-form-item>
         </div>
         <a-form-item :label="t('integrations.descriptionLabel')">
@@ -614,6 +615,26 @@ function redactText(value?: string | null): string {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0 16px;
+}
+
+.editor-guide {
+  margin-bottom: 16px;
+}
+
+.editor-guide__steps {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  color: var(--color-text-2);
+}
+
+.editor-guide__steps li + li {
+  margin-top: 4px;
+}
+
+.callback-helper {
+  display: grid;
+  gap: 4px;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 720px) {

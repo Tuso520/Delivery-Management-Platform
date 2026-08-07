@@ -481,7 +481,7 @@
   },
   "integrations": {
     "title": "Integrations",
-    "description": "Feishu is available for contact synchronization and notifications.",
+    "description": "Configure Feishu contact synchronization, QR sign-in, and notifications in one place.",
     "refresh": "Refresh",
     "readOnly": "Read-only Mode",
     "readOnlyHint": "You can view configuration status and sync logs but cannot edit credentials, test connections or sync contacts.",
@@ -513,7 +513,8 @@
     },
     "capabilities": {
       "CONTACT_SYNC": "Contact Sync",
-      "NOTIFICATION": "Notifications"
+      "NOTIFICATION": "Notifications",
+      "OAUTH_LOGIN": "QR Sign-in"
     },
     "actions": {
       "CONNECTION_TEST": "Connection Test",
@@ -534,19 +535,25 @@
     "enabled": "Enabled",
     "appId": "App ID",
     "appSecretField": "App Secret",
-    "verificationToken": "Verification Token",
-    "encryptKey": "Encrypt Key",
     "replaceSecretPlaceholder": "Leave blank to keep the current value",
     "configuredReplaceHint": "Configured (******). Enter a new value to replace it.",
     "notConfiguredHint": "Not configured.",
-    "webhook": "Bot Webhook",
-    "webhookOptionalHint": "Optional; only official Feishu HTTPS addresses are allowed.",
     "departmentId": "Contact Department ID",
-    "departmentPlaceholder": "Leave blank to use the provider root department",
+    "departmentPlaceholder": "Defaults to 0, the tenant root department",
     "testRecipient": "Test Message Recipient ID",
-    "testRecipientPlaceholder": "Used to send test notifications",
+    "testRecipientPlaceholder": "Enter the recipient open_id for notification testing",
     "oauthRedirectUri": "Feishu OAuth callback URL",
     "oauthRedirectUriPlaceholder": "For example https://server/api/v1/auth/feishu/callback",
+    "recommendedCallback": "Recommended for this environment: {uri}",
+    "useRecommendedCallback": "Use recommended",
+    "copyCallback": "Copy",
+    "callbackCopied": "Callback URL copied",
+    "callbackCopyFailed": "Copy failed. Copy the callback URL manually.",
+    "guideTitle": "One internal app enables all three capabilities",
+    "guideCredentials": "Copy the App ID and App Secret from Credentials & Basic Info in Feishu Open Platform.",
+    "guidePermissions": "Request and publish read-only permissions for departments, user profiles, phone, email, and user_id.",
+    "guideCallback": "Register the exact HTTPS callback below under Security Settings → Redirect URLs in Feishu.",
+    "guideValidation": "Save and enable, then run connection test, contact sync, and notification test. QR sign-in is available after a successful sync.",
     "descriptionLabel": "Description",
     "logsTitle": "{provider} Sync Logs",
     "success": "Success",
@@ -554,7 +561,7 @@
     "summaryUnavailable": "Execution summary is unavailable",
     "validation": {
       "name": "Enter a configuration name",
-      "credentials": "Complete the identity credentials before enabling this integration"
+      "credentials": "Complete the App ID, App Secret, and HTTPS OAuth callback before enabling this integration"
     },
     "saved": "Integration configuration saved. Secrets are never displayed on this page.",
     "operationFailed": "Integration operation failed. Check the sync logs.",

@@ -17,10 +17,8 @@ function feishuConfig(): IntegrationConfig {
     configuration: {
       appId: 'cli_app_123',
       appSecret: MASKED_SECRET,
-      webhookUrl: MASKED_SECRET,
-      verificationToken: 'unexpected-plaintext-token',
-      encryptKey: MASKED_SECRET,
       contactDepartmentId: '0',
+      oauthRedirectUri: 'https://example.com/api/v1/auth/feishu/callback',
       testRecipient: 'ou_123',
     },
     capabilities: ['CONTACT_SYNC', 'NOTIFICATION'],
@@ -34,23 +32,17 @@ describe('integration secret form safety', () => {
 
     expect(form.appId).toBe('cli_app_123')
     expect(form.appSecret).toBe('')
-    expect(form.webhookUrl).toBe('')
-    expect(form.verificationToken).toBe('')
-    expect(form.encryptKey).toBe('')
+    expect(form.oauthRedirectUri).toBe('https://example.com/api/v1/auth/feishu/callback')
   })
 
   it('omits masked and blank secrets from an update payload', () => {
     const form = hydrateIntegrationForm('FEISHU', feishuConfig())
     form.appSecret = MASKED_SECRET
-    form.webhookUrl = '   '
 
     const payload = buildIntegrationUpdate('FEISHU', form)
 
     expect(payload.appId).toBe('cli_app_123')
     expect(payload).not.toHaveProperty('appSecret')
-    expect(payload).not.toHaveProperty('webhookUrl')
-    expect(payload).not.toHaveProperty('verificationToken')
-    expect(payload).not.toHaveProperty('encryptKey')
   })
 
   it('sends a secret only after the user re-enters a new plaintext value', () => {

@@ -30,10 +30,11 @@ jobs:
         run: node scripts/check-prisma-runtime-boundaries.mjs
       - name: Release contract and shell syntax checks
         run: |
-          node --test scripts/release/release-manifest.test.mjs scripts/release/release-shell-contract.test.mjs scripts/release/test-runtime-acceptance-contract.test.mjs
+          node --test scripts/release/release-manifest.test.mjs scripts/release/release-shell-contract.test.mjs scripts/release/test-runtime-acceptance-contract.test.mjs scripts/release/admin-access-contract.test.mjs
           bash -n scripts/release/bootstrap-runtime-config.sh
           bash -n scripts/release/deploy-release.sh
           bash -n scripts/release/restore-release.sh
+          bash -n scripts/release/rotate-test-admin-password.sh
           sh -n deploy/nginx/dmp-nginx-control.template
       - name: 安装后端依赖
         working-directory: delivery-platform-server
