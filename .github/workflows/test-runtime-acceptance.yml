@@ -1,0 +1,138 @@
+name: 测试服务器运行时验收
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: 已部署到测试环境的完整 40 位 main SHA
+        required: true
+        type: string
+      feishu_backup_path:
+        description: 可选的本项目重置前备份绝对目录；仅恢复已加密飞书平台配置
+        required: false
+        type: string
+      restore_feishu_config:
+        description: 从指定备份只恢复飞书平台配置
+        required: true
+        default: false
+        type: boolean
+      sync_feishu:
+        description: 测试连接、全量同步通讯录并验证 OAuth state
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    name: 验收 test 运行时
+    runs-on: ubuntu-latest
+    environment: test
+    concurrency:
+      group: test-runtime-acceptance
+      cancel-in-progress: false
+    env:
+      RELEASE_SHA: ${{ inputs.release_sha }}
+      FEISHU_BACKUP_PATH: ${{ inputs.feishu_backup_path }}
+      RESTORE_FEISHU_CONFIG: ${{ inputs.restore_feishu_config }}
+      SYNC_FEISHU: ${{ inputs.sync_feishu }}
+      SERVER_HOST: ${{ vars.DEPLOY_HOST || secrets.DEPLOY_HOST }}
+      SERVER_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+      SERVER_USER: ${{ vars.DEPLOY_USER || secrets.DEPLOY_USER }}
+      SERVER_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      SERVER_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      APP_ROOT: ${{ vars.DEPLOY_APP_ROOT || '/srv/delivery-platform' }}
+      DEPLOY_TARGET_ID: ${{ vars.DEPLOY_TARGET_ID }}
+      INTERNAL_ORIGIN: ${{ vars.INTERNAL_ORIGIN }}
+      PUBLIC_ORIGIN: ${{ vars.PUBLIC_ORIGIN }}
+      REMOTE_STAGE: /tmp/delivery-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: 校验验收参数
+        run: |
+          set -Eeuo pipefail
+          missing=0
+          for name in SERVER_HOST SERVER_USER SERVER_SSH_KEY SERVER_KNOWN_HOSTS APP_ROOT DEPLOY_TARGET_ID INTERNAL_ORIGIN PUBLIC_ORIGIN; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is required for Environment test"
+              missing=1
+            fi
+          done
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::release_sha 必须是完整 40 位小写 SHA'; missing=1; }
+          case "$RESTORE_FEISHU_CONFIG" in true|false) ;; *) echo '::error::restore_feishu_config 非法'; missing=1 ;; esac
+          case "$SYNC_FEISHU" in true|false) ;; *) echo '::error::sync_feishu 非法'; missing=1 ;; esac
+          if [ "$RESTORE_FEISHU_CONFIG" = 'true' ] && [ -z "$FEISHU_BACKUP_PATH" ]; then
+            echo '::error::恢复飞书配置时必须提供 feishu_backup_path'
+            missing=1
+          fi
+          exit "$missing"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 0
+
+      - name: 校验 Release 属于 main 历史
+        run: |
+          set -Eeuo pipefail
+          git fetch --no-tags origin main
+          test "$(git rev-parse --verify --end-of-options "${RELEASE_SHA}^{commit}")" = "$RELEASE_SHA"
+          git merge-base --is-ancestor "$RELEASE_SHA" origin/main
+
+      - name: 配置固定 SSH 主机身份
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$SERVER_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: 上传固定提交的验收脚本
+        run: |
+          set -Eeuo pipefail
+          ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=30 \
+            "$SERVER_USER@$SERVER_HOST" "install -d -m 700 '$REMOTE_STAGE'"
+          scp -i ~/.ssh/deploy_key -P "$SERVER_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=30 \
+            scripts/release/verify-test-runtime.sh \
+            "$SERVER_USER@$SERVER_HOST:$REMOTE_STAGE/verify-test-runtime.sh"
+
+      - name: 执行测试服务器运行时验收
+        run: |
+          set -Eeuo pipefail
+          ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            "$SERVER_USER@$SERVER_HOST" 'bash -s' -- \
+            "$REMOTE_STAGE/verify-test-runtime.sh" "$APP_ROOT" "$DEPLOY_TARGET_ID" \
+            "$RELEASE_SHA" "$INTERNAL_ORIGIN" "$PUBLIC_ORIGIN" "$FEISHU_BACKUP_PATH" \
+            "$RESTORE_FEISHU_CONFIG" "$SYNC_FEISHU" <<'REMOTE'
+          set -Eeuo pipefail
+          script="$1"
+          shift
+          [ -f "$script" ] && [ ! -L "$script" ] || exit 1
+          exec bash "$script" "$@"
+          REMOTE
+
+      - name: 清理临时验收文件
+        if: ${{ always() }}
+        run: |
+          set -Eeuo pipefail
+          if [ ! -f ~/.ssh/deploy_key ]; then
+            exit 0
+          fi
+          ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=30 \
+            "$SERVER_USER@$SERVER_HOST" 'bash -s' -- "$REMOTE_STAGE" <<'REMOTE'
+          set -Eeuo pipefail
+          stage="$1"
+          case "$stage" in
+            /tmp/delivery-acceptance-[0-9]*-[0-9]*) ;;
+            *) printf 'unsafe acceptance stage: %s\n' "$stage" >&2; exit 1 ;;
+          esac
+          rm -f -- "$stage/verify-test-runtime.sh"
+          rmdir -- "$stage" 2>/dev/null || true
+          REMOTE

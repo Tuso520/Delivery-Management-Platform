@@ -36,7 +36,8 @@ Invoke-Checked '文档事实' { node (Join-Path $projectRoot 'scripts/verify-doc
 Invoke-Checked '发布契约' {
   node --test `
     (Join-Path $projectRoot 'scripts/release/release-manifest.test.mjs') `
-    (Join-Path $projectRoot 'scripts/release/release-shell-contract.test.mjs')
+    (Join-Path $projectRoot 'scripts/release/release-shell-contract.test.mjs') `
+    (Join-Path $projectRoot 'scripts/release/test-runtime-acceptance-contract.test.mjs')
 }
 Invoke-Checked '前端 ESLint（只读）' {
   & (Join-Path $webBin 'eslint.cmd') --ext .vue,.ts (Join-Path $webRoot 'src')
