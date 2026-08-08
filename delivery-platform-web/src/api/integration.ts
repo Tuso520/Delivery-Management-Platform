@@ -2,6 +2,7 @@ import request from './request'
 import type {
   IntegrationActionResult,
   IntegrationConfig,
+  IntegrationNotificationRecipientPage,
   IntegrationProvider,
   IntegrationSyncLog,
   IntegrationSyncLogPage,
@@ -27,6 +28,16 @@ export const integrationApi = {
 
   testNotification(provider: IntegrationProvider) {
     return request.post<IntegrationActionResult>(`/integrations/${provider}/test-notification`)
+  },
+
+  getNotificationRecipients(
+    provider: IntegrationProvider,
+    params: { page: number; pageSize: number; keyword?: string },
+  ) {
+    return request.get<IntegrationNotificationRecipientPage>(
+      `/integrations/${provider}/notification-recipients`,
+      { params },
+    )
   },
 
   getSyncLogs(

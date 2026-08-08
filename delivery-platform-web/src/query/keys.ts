@@ -114,6 +114,8 @@ export const queryKeys = {
     approvalTemplates: <T extends QueryParams>(params: T) =>
       ['settings', 'approval-templates', snapshot(params)] as const,
     integrations: () => ['settings', 'integrations'] as const,
+    integrationRecipients: <T extends QueryParams>(provider: string, params: T) =>
+      ['settings', 'integrations', provider, 'notification-recipients', snapshot(params)] as const,
     integrationLogLists: (provider: string) =>
       ['settings', 'integrations', provider, 'logs'] as const,
     integrationLogs: <T extends QueryParams>(provider: string, params: T) =>
