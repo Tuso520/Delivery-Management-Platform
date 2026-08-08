@@ -296,7 +296,7 @@ if (syncFeishu) {
   const oauth = await jsonRequest('/auth/feishu/start?redirect=%2Fdashboard');
   const oauthData = requireEnvelope(oauth, 200, 'Feishu OAuth start');
   const authorizationUrl = new URL(oauthData.authorizationUrl);
-  if (authorizationUrl.protocol !== 'https:' || authorizationUrl.hostname !== 'open.feishu.cn') {
+  if (authorizationUrl.protocol !== 'https:' || authorizationUrl.hostname !== 'accounts.feishu.cn') {
     fail('Feishu authorization URL is not an official HTTPS endpoint');
   }
   if (!authorizationUrl.searchParams.get('state')) fail('Feishu authorization state is missing');
