@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsBoolean,
+  IsEmail,
   IsIn,
   IsNotEmpty,
   IsOptional,
@@ -65,6 +66,12 @@ export class UpdateTargetIntegrationDto {
   @IsString()
   @MaxLength(200)
   testRecipient?: string;
+
+  @ApiPropertyOptional({ description: '集成测试消息接收人邮箱，未填写 open_id 时自动解析' })
+  @IsOptional()
+  @IsEmail()
+  @MaxLength(320)
+  testRecipientEmail?: string;
 }
 
 export class QueryIntegrationSyncLogDto extends PaginationDto {

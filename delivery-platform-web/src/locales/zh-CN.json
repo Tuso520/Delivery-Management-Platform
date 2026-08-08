@@ -542,6 +542,8 @@
     "departmentPlaceholder": "默认 0，表示企业根部门",
     "testRecipient": "测试消息接收人 ID",
     "testRecipientPlaceholder": "填写接收人的 open_id，用于测试通知",
+    "testRecipientEmail": "测试消息接收人邮箱",
+    "testRecipientEmailPlaceholder": "未填写 open_id 时，可填写用户邮箱自动解析",
     "oauthRedirectUri": "飞书登录回调地址",
     "oauthRedirectUriPlaceholder": "例如 https://服务器地址/api/v1/auth/feishu/callback",
     "recommendedCallback": "当前环境建议值：{uri}",
@@ -562,7 +564,7 @@
     "validation": {
       "name": "请输入配置名称",
       "credentials": "启用集成前请完整填写 App ID、App Secret 和 HTTPS 登录回调地址",
-      "testRecipient": "请先配置测试消息接收人的 open_id（ou_...）"
+      "testRecipient": "请先配置测试消息接收人的 open_id（ou_...）或用户邮箱"
     },
     "saved": "集成配置已保存，Secret 不会在页面回显",
     "operationFailed": "集成操作失败，请查看同步日志",
