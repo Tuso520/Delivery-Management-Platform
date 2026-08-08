@@ -12,6 +12,8 @@
 
 OAuth 登录只接受已经同步且唯一绑定的启用用户。浏览器 state 有效期 5 分钟，回调后立即原子消费；登录 ticket 有效期 60 秒，也只能消费一次。飞书 token 仅用于服务端读取当前身份，系统最终仍签发自己的短期 Access Token 和 HttpOnly Refresh Cookie。
 
+前端使用 Hash 路由。飞书只回调后端登记地址 `/api/v1/auth/feishu/callback`；后端校验并消费 state 后，必须跳转到 `/#/login/feishu/callback?ticket=...`，由前端消费一次性 ticket。普通路径 `/login/feishu/callback?ticket=...` 无法命中 Hash 路由，属于错误契约。
+
 ## 飞书开放平台配置
 
 1. 在飞书开放平台创建企业自建应用，并限制应用可用范围。

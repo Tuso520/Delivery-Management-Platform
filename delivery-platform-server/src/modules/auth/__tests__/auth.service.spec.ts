@@ -374,7 +374,12 @@ describe('AuthService', () => {
           where: expect.objectContaining({ provider: 'FEISHU', isActive: true }),
         }),
       );
-      expect(new URL(callback).pathname).toBe('/login/feishu/callback');
+      const callbackUrl = new URL(callback);
+      expect(callbackUrl.pathname).toBe('/');
+      expect(callbackUrl.search).toBe('');
+      expect(callbackUrl.hash).toMatch(
+        /^#\/login\/feishu\/callback\?ticket=[A-Za-z0-9_-]{43}$/,
+      );
       expect(redisService.storeOneTimeJson).toHaveBeenCalledWith(
         'feishu-ticket',
         expect.stringMatching(/^[a-f0-9]{64}$/),

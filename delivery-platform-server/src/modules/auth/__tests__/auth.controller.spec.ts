@@ -27,6 +27,9 @@ describe('AuthController refresh cookie policy', () => {
       login: jest.fn().mockResolvedValue(session),
       refresh: jest.fn().mockResolvedValue(session),
       logout: jest.fn().mockResolvedValue({ message: '登出成功' }),
+      handleFeishuCallback: jest
+        .fn()
+        .mockResolvedValue('https://test.example.com/#/login/feishu/callback?ticket=opaque'),
     } as unknown as AuthService;
     const configService = {
       get: jest.fn().mockImplementation((key: string) => {
@@ -38,6 +41,7 @@ describe('AuthController refresh cookie policy', () => {
     const response = {
       cookie: jest.fn(),
       clearCookie: jest.fn(),
+      redirect: jest.fn(),
     } as unknown as Response;
     return {
       authService,
@@ -134,6 +138,36 @@ describe('AuthController refresh cookie policy', () => {
         sameSite: 'lax',
         path: '/api/v1/auth',
       }),
+    );
+  });
+
+  it('redirects a successful Feishu callback to the hash-router ticket route', async () => {
+    const { authService, controller, response } = createController();
+
+    await controller.feishuCallback(
+      { state: 'opaque-state', code: 'one-time-code' },
+      response,
+    );
+
+    expect(authService.handleFeishuCallback).toHaveBeenCalledWith({
+      state: 'opaque-state',
+      code: 'one-time-code',
+    });
+    expect(response.redirect).toHaveBeenCalledWith(
+      302,
+      'https://test.example.com/#/login/feishu/callback?ticket=opaque',
+    );
+  });
+
+  it('redirects a rejected Feishu callback to the hash-router error route', async () => {
+    const { authService, controller, response } = createController();
+    jest.mocked(authService.handleFeishuCallback).mockRejectedValue(new UnauthorizedException());
+
+    await controller.feishuCallback({ state: 'invalid-state' }, response);
+
+    expect(response.redirect).toHaveBeenCalledWith(
+      302,
+      '/#/login?feishu_error=authorization_failed',
     );
   });
 });
