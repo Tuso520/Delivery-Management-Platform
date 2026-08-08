@@ -63,6 +63,8 @@ test('deployed authentication, refresh, permission and Feishu gates are explicit
     "/^[A-Z][A-Z0-9_]{2,199}$/",
     "authorizationUrl.hostname !== 'accounts.feishu.cn'",
     "authorizationUrl.searchParams.get('state')",
+    "external_identities WHERE provider = '\\''FEISHU'\\'' AND is_active = 1 AND deactivated_at IS NULL",
+    "user_department_memberships WHERE source = '\\''FEISHU'\\''",
     'FEISHU_RUNTIME_COUNTS users=',
   ]) {
     assert.ok(verifier.includes(contract), `missing runtime contract: ${contract}`)

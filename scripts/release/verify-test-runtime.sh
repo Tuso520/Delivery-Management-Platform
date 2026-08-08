@@ -334,8 +334,8 @@ if [ "$SYNC_FEISHU" = 'true' ]; then
     mysql -N -uroot "$MYSQL_DATABASE" -e "
       SELECT CONCAT(
         '\''FEISHU_RUNTIME_COUNTS users='\'', (SELECT COUNT(*) FROM users WHERE deleted_at IS NULL),
-        '\'' identities='\'', (SELECT COUNT(*) FROM external_identities WHERE source = '\''FEISHU'\'' AND deactivated_at IS NULL),
-        '\'' memberships='\'', (SELECT COUNT(*) FROM user_department_memberships WHERE source = '\''FEISHU'\'' AND revoked_at IS NULL),
+        '\'' identities='\'', (SELECT COUNT(*) FROM external_identities WHERE provider = '\''FEISHU'\'' AND is_active = 1 AND deactivated_at IS NULL),
+        '\'' memberships='\'', (SELECT COUNT(*) FROM user_department_memberships WHERE source = '\''FEISHU'\''),
         '\'' admin_super_roles='\'', (
           SELECT COUNT(*) FROM user_roles ur
           JOIN users u ON u.id = ur.user_id
