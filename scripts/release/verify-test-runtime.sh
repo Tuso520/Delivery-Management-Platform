@@ -216,9 +216,10 @@ function refreshCookie(response, label) {
   return raw.split(';', 1)[0];
 }
 
-async function latestFeishuFailureDiagnostic(accessToken) {
+async function latestFeishuFailureDiagnostic(accessToken, action) {
+  if (!['CONTACT_SYNC', 'NOTIFICATION_TEST'].includes(action)) return 'DIAGNOSTIC_UNAVAILABLE';
   const logs = await jsonRequest(
-    '/integrations/FEISHU/sync-logs?page=1&pageSize=1&action=CONTACT_SYNC&status=FAILED',
+    `/integrations/FEISHU/sync-logs?page=1&pageSize=1&action=${encodeURIComponent(action)}&status=FAILED`,
     { headers: { authorization: `Bearer ${accessToken}` } },
   );
   if (logs.response.status !== 200 || logs.body?.code !== 0) return 'DIAGNOSTIC_UNAVAILABLE';
@@ -269,6 +270,7 @@ const replay = await jsonRequest('/auth/refresh', { method: 'POST', headers: { c
 if (replay.response.status !== 401) fail(`old refresh cookie replay returned ${replay.response.status}`);
 
 let feishuSummary = null;
+let feishuNotification = null;
 if (syncFeishu) {
   if (!integrationData?.isEnabled) fail('Feishu integration is not enabled');
   const connection = await jsonRequest('/integrations/FEISHU/test', {
@@ -281,7 +283,10 @@ if (syncFeishu) {
     headers: { authorization: `Bearer ${refreshedSession.accessToken}` },
   });
   if (sync.response.status !== 201) {
-    const diagnostic = await latestFeishuFailureDiagnostic(refreshedSession.accessToken);
+    const diagnostic = await latestFeishuFailureDiagnostic(
+      refreshedSession.accessToken,
+      'CONTACT_SYNC',
+    );
     fail(`Feishu contact sync: HTTP ${sync.response.status} diagnostic=${diagnostic}`);
   }
   feishuSummary = requireEnvelope(sync, 201, 'Feishu contact sync');
@@ -300,6 +305,22 @@ if (syncFeishu) {
     fail('Feishu authorization URL is not an official HTTPS endpoint');
   }
   if (!authorizationUrl.searchParams.get('state')) fail('Feishu authorization state is missing');
+
+  const notification = await jsonRequest('/integrations/FEISHU/test-notification', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${refreshedSession.accessToken}` },
+  });
+  if (notification.response.status !== 201) {
+    const diagnostic = await latestFeishuFailureDiagnostic(
+      refreshedSession.accessToken,
+      'NOTIFICATION_TEST',
+    );
+    fail(`Feishu notification test: HTTP ${notification.response.status} diagnostic=${diagnostic}`);
+  }
+  feishuNotification = requireEnvelope(notification, 201, 'Feishu notification test');
+  if (feishuNotification?.sent !== true || feishuNotification?.provider !== 'FEISHU') {
+    fail('Feishu notification test returned an invalid result');
+  }
 }
 
 const logout = await jsonRequest('/auth/logout', {
@@ -323,6 +344,7 @@ console.log(JSON.stringify({
   logoutRevocation: 'PASS',
   feishuEnabled: Boolean(integrationData?.isEnabled),
   feishuSync: feishuSummary,
+  feishuNotification,
 }));
 NODE
 
