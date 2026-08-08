@@ -22,7 +22,7 @@ on:
         default: false
         type: boolean
       feishu_test_recipient_email:
-        description: 可选；从已同步用户解析 open_id，并更新飞书测试通知接收人
+        description: 可选；由飞书官方接口解析 open_id，并更新飞书测试通知接收人邮箱
         required: false
         type: string
 

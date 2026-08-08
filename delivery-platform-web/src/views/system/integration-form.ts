@@ -11,6 +11,7 @@ export interface IntegrationEditorForm {
   contactDepartmentId: string
   oauthRedirectUri: string
   testRecipient: string
+  testRecipientEmail: string
 }
 
 export function emptyIntegrationForm(
@@ -26,6 +27,7 @@ export function emptyIntegrationForm(
     contactDepartmentId: '',
     oauthRedirectUri: '',
     testRecipient: '',
+    testRecipientEmail: '',
   }
 }
 
@@ -50,6 +52,7 @@ export function hydrateIntegrationForm(
     contactDepartmentId: visibleValue(config.configuration.contactDepartmentId),
     oauthRedirectUri: visibleValue(config.configuration.oauthRedirectUri),
     testRecipient: visibleValue(config.configuration.testRecipient),
+    testRecipientEmail: visibleValue(config.configuration.testRecipientEmail),
     // Secret fields stay empty until the user explicitly replaces them.
     appSecret: '',
   }
@@ -79,6 +82,7 @@ export function buildIntegrationUpdate(
   assignNonEmpty(payload, 'contactDepartmentId', form.contactDepartmentId)
   assignNonEmpty(payload, 'oauthRedirectUri', form.oauthRedirectUri)
   assignNonEmpty(payload, 'testRecipient', form.testRecipient)
+  assignNonEmpty(payload, 'testRecipientEmail', form.testRecipientEmail)
 
   assignNonEmpty(payload, 'appId', form.appId)
   assignNonEmpty(payload, 'appSecret', form.appSecret)

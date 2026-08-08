@@ -31,7 +31,13 @@ const FEISHU_ROOT_DEPARTMENT_ID = '0';
 const FEISHU_ROOT_DEPARTMENT_NAME = '企业根部门';
 
 const PUBLIC_FIELDS: Record<TargetIntegrationProvider, readonly string[]> = {
-  FEISHU: ['appId', 'contactDepartmentId', 'oauthRedirectUri', 'testRecipient'],
+  FEISHU: [
+    'appId',
+    'contactDepartmentId',
+    'oauthRedirectUri',
+    'testRecipient',
+    'testRecipientEmail',
+  ],
 };
 
 const SECRET_FIELDS: Record<TargetIntegrationProvider, readonly string[]> = {
@@ -349,9 +355,10 @@ export class IntegrationService {
       ACTION_NOTIFICATION_TEST,
       userId,
       async (record, configuration) => {
+        const recipientId = await this.resolveFeishuNotificationRecipient(configuration);
         await this.sendNotificationWithConfiguration(configuration, {
           provider,
-          recipientId: this.requiredString(configuration, 'testRecipient'),
+          recipientId,
           identifierType: 'OPEN_ID',
           title: '交付管理平台',
           content: '接口集成测试成功。',
@@ -719,6 +726,54 @@ export class IntegrationService {
       provider,
       receiptId: this.optionalString(data.message_id) ?? null,
     };
+  }
+
+  private async resolveFeishuNotificationRecipient(
+    configuration: Record<string, unknown>,
+  ): Promise<string> {
+    const configuredOpenId = this.optionalString(configuration.testRecipient);
+    if (configuredOpenId) return configuredOpenId;
+
+    const email = this.optionalString(configuration.testRecipientEmail);
+    if (!email) {
+      throw new IntegrationDeliveryError('INTEGRATION_TEST_RECIPIENT_REQUIRED', false);
+    }
+
+    const token = await this.acquireAccessToken('FEISHU', configuration);
+    const url = new URL('https://open.feishu.cn/open-apis/contact/v3/users/batch_get_id');
+    url.searchParams.set('user_id_type', 'open_id');
+    const payload = await this.fetchJson(url.toString(), {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ emails: [email], include_resigned: false }),
+    });
+    if (this.numberFrom(payload.code, -1) !== 0) {
+      throw new IntegrationDeliveryError('INTEGRATION_RECIPIENT_LOOKUP_REJECTED', false);
+    }
+
+    const data = this.asRecord(payload.data);
+    const users = Array.isArray(data.user_list) ? data.user_list : [];
+    const matches = users
+      .map((item) => this.asRecord(item))
+      .filter((item) => {
+        const status = this.asRecord(item.status);
+        return (
+          status.is_resigned !== true &&
+          status.is_exited !== true &&
+          status.is_unjoin !== true &&
+          status.is_activated !== false
+        );
+      })
+      .map((item) => this.optionalString(item.user_id))
+      .filter((value): value is string => Boolean(value));
+    const uniqueOpenIds = [...new Set(matches)];
+    if (uniqueOpenIds.length !== 1 || !uniqueOpenIds[0].startsWith('ou_')) {
+      throw new IntegrationDeliveryError('INTEGRATION_TEST_RECIPIENT_NOT_FOUND', false);
+    }
+    return uniqueOpenIds[0];
   }
 
   private async acquireContactSyncLease(record: IntegrationRecord): Promise<ContactSyncLease> {

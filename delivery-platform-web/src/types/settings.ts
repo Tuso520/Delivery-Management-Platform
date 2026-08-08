@@ -47,6 +47,7 @@ export interface IntegrationConfiguration {
   contactDepartmentId?: string | null
   oauthRedirectUri?: string | null
   testRecipient?: string | null
+  testRecipientEmail?: string | null
 }
 
 export interface IntegrationConfig {
@@ -69,6 +70,7 @@ export interface UpdateIntegrationDto {
   contactDepartmentId?: string
   oauthRedirectUri?: string
   testRecipient?: string
+  testRecipientEmail?: string
 }
 
 export interface IntegrationActionResult {

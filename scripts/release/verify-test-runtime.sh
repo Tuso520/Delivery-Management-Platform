@@ -182,38 +182,15 @@ if [ "$RESTORE_FEISHU_CONFIG" = 'true' ]; then
   log 'restored only the encrypted Feishu platform configuration from backup'
 fi
 
-FEISHU_TEST_RECIPIENT=''
-if [ -n "$FEISHU_TEST_RECIPIENT_EMAIL" ]; then
-  recipient_lookup="$(data_compose exec -T mysql sh -ec '
-    export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"
-    mysql -N -uroot "$MYSQL_DATABASE" -e "
-      SELECT CONCAT(COUNT(*), '\''|'\'', COALESCE(MIN(e.open_id), '\'''\''))
-      FROM users u
-      JOIN external_identities e ON e.user_id = u.id
-      WHERE LOWER(u.email) = LOWER('\''$1'\'')
-        AND u.deleted_at IS NULL
-        AND e.provider = '\''FEISHU'\''
-        AND e.is_active = 1
-        AND e.deactivated_at IS NULL
-        AND e.open_id IS NOT NULL
-        AND e.open_id <> '\'''\'';
-    "
-  ' sh "$FEISHU_TEST_RECIPIENT_EMAIL")"
-  IFS='|' read -r recipient_count FEISHU_TEST_RECIPIENT <<< "$recipient_lookup"
-  [ "$recipient_count" = '1' ] || die 'Feishu test recipient email must resolve to exactly one active identity'
-  [[ "$FEISHU_TEST_RECIPIENT" =~ ^ou_[A-Za-z0-9_-]+$ ]] || die 'resolved Feishu test recipient is invalid'
-  log 'resolved one active Feishu notification test recipient'
-fi
-
 app_compose run --rm --no-deps -T \
   -e SYNC_FEISHU="$SYNC_FEISHU" \
-  -e FEISHU_TEST_RECIPIENT="$FEISHU_TEST_RECIPIENT" \
+  -e FEISHU_TEST_RECIPIENT_EMAIL="$FEISHU_TEST_RECIPIENT_EMAIL" \
   -e DMP_TEST_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
   --entrypoint node backend-migrate - <<'NODE'
 const baseUrl = 'http://backend:3000/api/v1';
 const password = process.env.DMP_TEST_ADMIN_PASSWORD;
 const syncFeishu = process.env.SYNC_FEISHU === 'true';
-const configuredTestRecipient = process.env.FEISHU_TEST_RECIPIENT || '';
+const configuredTestRecipientEmail = process.env.FEISHU_TEST_RECIPIENT_EMAIL || '';
 
 function fail(message) {
   throw new Error(message);
@@ -288,18 +265,18 @@ const integration = await jsonRequest('/integrations/FEISHU', {
 });
 let integrationData = requireEnvelope(integration, 200, 'integration permission');
 
-if (configuredTestRecipient) {
+if (configuredTestRecipientEmail) {
   const updateIntegration = await jsonRequest('/integrations/FEISHU', {
     method: 'PATCH',
     headers: {
       authorization: `Bearer ${session.accessToken}`,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ testRecipient: configuredTestRecipient }),
+    body: JSON.stringify({ testRecipientEmail: configuredTestRecipientEmail }),
   });
   integrationData = requireEnvelope(updateIntegration, 200, 'Feishu test recipient update');
-  if (integrationData?.configuration?.testRecipient !== configuredTestRecipient) {
-    fail('Feishu test recipient update was not persisted');
+  if (integrationData?.configuration?.testRecipientEmail !== configuredTestRecipientEmail) {
+    fail('Feishu test recipient email update was not persisted');
   }
 }
 

@@ -78,6 +78,7 @@ interface IntegrationInternals {
     departments: number;
   }>;
   encryptSecrets(provider: 'FEISHU', secrets: Record<string, unknown>): string;
+  resolveFeishuNotificationRecipient(configuration: Record<string, unknown>): Promise<string>;
 }
 
 describe('IntegrationService secured configuration', () => {
@@ -867,6 +868,52 @@ describe('IntegrationService secured configuration', () => {
       }
     },
   );
+
+  it('resolves a notification recipient open_id from the configured email', async () => {
+    const service = new IntegrationService(
+      {} as PrismaService,
+      configService(),
+      operationLog(),
+    );
+    const fetchMock = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({ code: 0, tenant_access_token: 'tenant-token' }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          code: 0,
+          data: {
+            user_list: [
+              {
+                user_id: 'ou_recipient',
+                email: 'recipient@example.com',
+                status: { is_resigned: false, is_exited: false, is_unjoin: false },
+              },
+            ],
+          },
+        }),
+      );
+    try {
+      await expect(
+        (service as unknown as IntegrationInternals).resolveFeishuNotificationRecipient({
+          appId: 'app-1',
+          appSecret: 'secret-1',
+          testRecipientEmail: 'recipient@example.com',
+        }),
+      ).resolves.toBe('ou_recipient');
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining('/contact/v3/users/batch_get_id?user_id_type=open_id'),
+        expect.objectContaining({
+          body: JSON.stringify({
+            emails: ['recipient@example.com'],
+            include_resigned: false,
+          }),
+        }),
+      );
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
 });
 
 function integrationRecordFixture(

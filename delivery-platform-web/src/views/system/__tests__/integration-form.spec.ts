@@ -20,6 +20,7 @@ function feishuConfig(): IntegrationConfig {
       contactDepartmentId: '0',
       oauthRedirectUri: 'https://example.com/api/v1/auth/feishu/callback',
       testRecipient: 'ou_123',
+      testRecipientEmail: 'recipient@example.com',
     },
     capabilities: ['CONTACT_SYNC', 'NOTIFICATION'],
     updatedAt: '2026-07-11T00:00:00.000Z',
@@ -32,6 +33,7 @@ describe('integration secret form safety', () => {
 
     expect(form.appId).toBe('cli_app_123')
     expect(form.appSecret).toBe('')
+    expect(form.testRecipientEmail).toBe('recipient@example.com')
     expect(form.oauthRedirectUri).toBe('https://example.com/api/v1/auth/feishu/callback')
   })
 
