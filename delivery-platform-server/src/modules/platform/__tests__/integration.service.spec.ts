@@ -746,7 +746,7 @@ describe('IntegrationService secured configuration', () => {
       .mockResolvedValueOnce(
         jsonResponse({
           code: 0,
-          data: { department: { open_department_id: '0', name: '根部门' } },
+          data: { department: {} },
         }),
       )
       .mockResolvedValueOnce(
@@ -802,6 +802,12 @@ describe('IntegrationService secured configuration', () => {
         '0',
         'od-child',
       ]);
+      expect(snapshot.departments[0]).toEqual({
+        externalDepartmentId: '0',
+        name: '企业根部门',
+        order: 0,
+        active: true,
+      });
       expect(snapshot.contacts).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ externalUserId: 'ou-root', departmentIds: ['0'] }),
