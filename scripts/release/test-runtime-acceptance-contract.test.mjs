@@ -16,7 +16,10 @@ test('runtime acceptance is hard-wired to the test Environment and strict SSH id
 test('optional backup path keeps remote positional arguments aligned', () => {
   assert.match(workflow, /feishu_backup_path_arg="\$\{FEISHU_BACKUP_PATH:--\}"/u)
   assert.match(workflow, /printf -v remote_command 'test -f %q && test ! -L %q && exec bash %q/u)
-  assert.match(workflow, /"\$feishu_backup_path_arg" \\\n\s+"\$RESTORE_FEISHU_CONFIG" "\$SYNC_FEISHU"/u)
+  assert.match(
+    workflow,
+    /"\$feishu_backup_path_arg" \\\n\s+"\$RESTORE_FEISHU_CONFIG" "\$SYNC_FEISHU" "\$FEISHU_TEST_RECIPIENT_EMAIL"/u,
+  )
   assert.match(verifier, /if \[ "\$FEISHU_BACKUP_PATH" = '-' \]; then\s+FEISHU_BACKUP_PATH=''\s+fi/u)
 })
 
@@ -67,6 +70,8 @@ test('deployed authentication, refresh, permission and Feishu gates are explicit
     "'/integrations/FEISHU/test-notification'",
     "feishuNotification?.sent !== true",
     'feishuNotification,',
+    'Feishu test recipient email must resolve to exactly one active identity',
+    "body: JSON.stringify({ testRecipient: configuredTestRecipient })",
     "external_identities WHERE provider = '\\''FEISHU'\\'' AND is_active = 1 AND deactivated_at IS NULL",
     "user_department_memberships WHERE source = '\\''FEISHU'\\''",
     'FEISHU_RUNTIME_COUNTS users=',
