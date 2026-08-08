@@ -379,7 +379,7 @@ export const shellRoutes: RouteRecordRaw[] = [
           title: 'menu.systemIntegration',
           icon: 'Link',
           permissions: ['integration:view', 'integration:manage'],
-          menu: false,
+          menu: true,
           order: 70,
         },
       },

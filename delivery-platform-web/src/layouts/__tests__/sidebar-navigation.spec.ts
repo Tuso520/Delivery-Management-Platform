@@ -50,6 +50,7 @@ describe('sidebar navigation contract', () => {
           'menu.systemFields',
           'menu.systemConfig',
           'menu.userCenter',
+          'menu.systemIntegration',
         ],
       },
     ])
@@ -73,6 +74,7 @@ describe('sidebar navigation contract', () => {
     ['/settings/approvals', '/settings-group'],
     ['/settings/fields', '/settings-group'],
     ['/settings/system', '/settings-group'],
+    ['/settings/integrations', '/settings-group'],
   ])('maps route %s to the matching active group %s', (routePath, groupPath) => {
     const resolvedRoute = router.resolve(routePath)
     const activeMenu = resolveActiveMenuPath(
