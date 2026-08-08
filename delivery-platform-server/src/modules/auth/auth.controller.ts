@@ -79,7 +79,7 @@ export class AuthController {
     try {
       response.redirect(302, await this.authService.handleFeishuCallback(query));
     } catch {
-      response.redirect(302, '/login?feishu_error=authorization_failed');
+      response.redirect(302, '/#/login?feishu_error=authorization_failed');
     }
   }
 

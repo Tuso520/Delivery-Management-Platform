@@ -219,8 +219,8 @@ export class AuthService {
       { userId, redirectPath },
       60,
     );
-    const callback = new URL('/login/feishu/callback', redirectUri);
-    callback.searchParams.set('ticket', ticket);
+    const callback = new URL('/', redirectUri);
+    callback.hash = `/login/feishu/callback?ticket=${encodeURIComponent(ticket)}`;
     return callback.toString();
   }
 
