@@ -16,6 +16,7 @@ describe('settings navigation contract', () => {
       'menu.systemFields',
       'menu.systemConfig',
       'menu.userCenter',
+      'menu.systemIntegration',
     ])
     expect(settingItems.map((item) => item.path)).toEqual([
       '/settings/currency',
@@ -23,6 +24,7 @@ describe('settings navigation contract', () => {
       '/settings/fields',
       '/settings/system',
       '/settings',
+      '/settings/integrations',
     ])
   })
 
