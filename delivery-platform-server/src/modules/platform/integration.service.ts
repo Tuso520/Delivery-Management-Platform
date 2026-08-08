@@ -27,6 +27,8 @@ const ACTION_CONNECTION_TEST = 'CONNECTION_TEST';
 const ACTION_CONTACT_SYNC = 'CONTACT_SYNC';
 const ACTION_NOTIFICATION_TEST = 'NOTIFICATION_TEST';
 const CONTACT_SYNC_LEASE_MS = 5 * 60_000;
+const FEISHU_ROOT_DEPARTMENT_ID = '0';
+const FEISHU_ROOT_DEPARTMENT_NAME = '企业根部门';
 
 const PUBLIC_FIELDS: Record<TargetIntegrationProvider, readonly string[]> = {
   FEISHU: ['appId', 'contactDepartmentId', 'oauthRedirectUri', 'testRecipient'],
@@ -634,10 +636,16 @@ export class IntegrationService {
     }
     const data = this.asRecord(payload.data);
     const department = this.normalizeFeishuDepartment(data.department ?? data, '0');
-    if (!department) {
-      throw new IntegrationDeliveryError('INTEGRATION_ROOT_DEPARTMENT_INVALID', false);
+    if (department) return department;
+    if (departmentId === FEISHU_ROOT_DEPARTMENT_ID) {
+      return {
+        externalDepartmentId: FEISHU_ROOT_DEPARTMENT_ID,
+        name: FEISHU_ROOT_DEPARTMENT_NAME,
+        order: 0,
+        active: true,
+      };
     }
-    return department;
+    throw new IntegrationDeliveryError('INTEGRATION_ROOT_DEPARTMENT_INVALID', false);
   }
 
   private async fetchFeishuDepartmentContacts(

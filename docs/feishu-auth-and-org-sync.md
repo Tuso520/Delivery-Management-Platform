@@ -6,6 +6,8 @@
 
 通讯录同步以配置的根部门为边界，读取根部门、全部子部门和各部门直属用户，保存姓名、手机号、邮箱、头像、`user_id/open_id/union_id`、部门成员关系和状态。同步按用户独立事务执行，单个用户失败只增加 `failed`，不会回滚整批；结果固定输出 `total/added/updated/disabled/skipped/failed/departments`。
 
+当根部门配置为飞书结构性根节点 `0` 时，飞书可能不返回普通部门具备的名称或 `open_department_id`。系统在接口响应成功后以稳定 ID `0` 和名称“企业根部门”建立本地根节点，再同步其子部门；非根部门仍严格校验飞书返回的 ID 和名称。
+
 OAuth 登录只接受已经同步且唯一绑定的启用用户。浏览器 state 有效期 5 分钟，回调后立即原子消费；登录 ticket 有效期 60 秒，也只能消费一次。飞书 token 仅用于服务端读取当前身份，系统最终仍签发自己的短期 Access Token 和 HttpOnly Refresh Cookie。
 
 ## 飞书开放平台配置
