@@ -17,10 +17,14 @@ on:
         default: false
         type: boolean
       sync_feishu:
-        description: 测试连接、全量同步通讯录并验证 OAuth state
+        description: 测试连接、全量同步通讯录、OAuth state 和真实通知
         required: true
         default: false
         type: boolean
+      feishu_test_recipient_email:
+        description: 可选；从已同步用户解析 open_id，并更新飞书测试通知接收人
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -38,6 +42,7 @@ jobs:
       FEISHU_BACKUP_PATH: ${{ inputs.feishu_backup_path }}
       RESTORE_FEISHU_CONFIG: ${{ inputs.restore_feishu_config }}
       SYNC_FEISHU: ${{ inputs.sync_feishu }}
+      FEISHU_TEST_RECIPIENT_EMAIL: ${{ inputs.feishu_test_recipient_email }}
       TEST_ADMIN_PASSWORD: ${{ secrets.TEST_ADMIN_PASSWORD }}
       SERVER_HOST: ${{ vars.DEPLOY_HOST || secrets.DEPLOY_HOST }}
       SERVER_PORT: ${{ vars.DEPLOY_PORT || '22' }}
@@ -63,6 +68,16 @@ jobs:
           [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::release_sha 必须是完整 40 位小写 SHA'; missing=1; }
           case "$RESTORE_FEISHU_CONFIG" in true|false) ;; *) echo '::error::restore_feishu_config 非法'; missing=1 ;; esac
           case "$SYNC_FEISHU" in true|false) ;; *) echo '::error::sync_feishu 非法'; missing=1 ;; esac
+          if [ -n "$FEISHU_TEST_RECIPIENT_EMAIL" ]; then
+            [[ "$FEISHU_TEST_RECIPIENT_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}$ ]] || {
+              echo '::error::feishu_test_recipient_email 格式非法'
+              missing=1
+            }
+            [ "$SYNC_FEISHU" = 'true' ] || {
+              echo '::error::设置飞书测试接收人时必须启用 sync_feishu'
+              missing=1
+            }
+          fi
           [ "${#TEST_ADMIN_PASSWORD}" -ge 20 ] && [ "${#TEST_ADMIN_PASSWORD}" -le 72 ] || {
             echo '::error::TEST_ADMIN_PASSWORD 长度必须为 20 到 72 个字符'
             missing=1
@@ -109,11 +124,11 @@ jobs:
         run: |
           set -Eeuo pipefail
           feishu_backup_path_arg="${FEISHU_BACKUP_PATH:--}"
-          printf -v remote_command 'test -f %q && test ! -L %q && exec bash %q %q %q %q %q %q %q %q %q' \
+          printf -v remote_command 'test -f %q && test ! -L %q && exec bash %q %q %q %q %q %q %q %q %q %q' \
             "$REMOTE_STAGE/verify-test-runtime.sh" "$REMOTE_STAGE/verify-test-runtime.sh" \
             "$REMOTE_STAGE/verify-test-runtime.sh" "$APP_ROOT" "$DEPLOY_TARGET_ID" \
             "$RELEASE_SHA" "$INTERNAL_ORIGIN" "$PUBLIC_ORIGIN" "$feishu_backup_path_arg" \
-            "$RESTORE_FEISHU_CONFIG" "$SYNC_FEISHU"
+            "$RESTORE_FEISHU_CONFIG" "$SYNC_FEISHU" "$FEISHU_TEST_RECIPIENT_EMAIL"
           printf '%s\n' "$TEST_ADMIN_PASSWORD" | ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
