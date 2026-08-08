@@ -48,6 +48,7 @@ export interface IntegrationConfiguration {
   oauthRedirectUri?: string | null
   testRecipient?: string | null
   testRecipientEmail?: string | null
+  testRecipientUserId?: string | null
 }
 
 export interface IntegrationConfig {
@@ -71,7 +72,18 @@ export interface UpdateIntegrationDto {
   oauthRedirectUri?: string
   testRecipient?: string
   testRecipientEmail?: string
+  testRecipientUserId?: string
 }
+
+export interface IntegrationNotificationRecipient {
+  id: string
+  username: string
+  realName: string
+  email: string | null
+  department: { id: string; departmentName: string } | null
+}
+
+export type IntegrationNotificationRecipientPage = PaginatedData<IntegrationNotificationRecipient>
 
 export interface IntegrationActionResult {
   success?: boolean

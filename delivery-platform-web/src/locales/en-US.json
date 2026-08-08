@@ -544,6 +544,9 @@
     "testRecipientPlaceholder": "Enter the recipient open_id for notification testing",
     "testRecipientEmail": "Test Message Recipient Email",
     "testRecipientEmailPlaceholder": "Enter the user's email to resolve open_id automatically",
+    "testRecipientUser": "Test Message Recipient (Synced User)",
+    "testRecipientUserPlaceholder": "Select an active synced Feishu user",
+    "testRecipientUserHint": "Recommended; the user and Feishu identity are revalidated before sending.",
     "oauthRedirectUri": "Feishu OAuth callback URL",
     "oauthRedirectUriPlaceholder": "For example https://server/api/v1/auth/feishu/callback",
     "recommendedCallback": "Recommended for this environment: {uri}",
@@ -564,7 +567,7 @@
     "validation": {
       "name": "Enter a configuration name",
       "credentials": "Complete the App ID, App Secret, and HTTPS OAuth callback before enabling this integration",
-      "testRecipient": "Configure the test recipient open_id (ou_...) or user email first"
+      "testRecipient": "Select a synced user or configure the recipient open_id (ou_...)/user email first"
     },
     "saved": "Integration configuration saved. Secrets are never displayed on this page.",
     "operationFailed": "Integration operation failed. Check the sync logs.",

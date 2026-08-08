@@ -16,6 +16,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { OperationLogService } from '../operation-log/operation-log.service';
 
 import {
+  QueryIntegrationRecipientDto,
   QueryIntegrationSyncLogDto,
   TARGET_INTEGRATION_PROVIDERS,
   TargetIntegrationProvider,
@@ -37,6 +38,7 @@ const PUBLIC_FIELDS: Record<TargetIntegrationProvider, readonly string[]> = {
     'oauthRedirectUri',
     'testRecipient',
     'testRecipientEmail',
+    'testRecipientUserId',
   ],
 };
 
@@ -171,6 +173,55 @@ export class IntegrationService {
     return this.toResponse(provider, record);
   }
 
+  async findNotificationRecipients(
+    providerValue: string,
+    query: QueryIntegrationRecipientDto,
+  ) {
+    const provider = this.normalizeProvider(providerValue);
+    const record = await this.findRecordByProvider(provider);
+    if (!record) throw new NotFoundException('接口集成配置不存在');
+
+    const { page = 1, keyword } = query;
+    const pageSize = Math.min(query.pageSize ?? 20, 500);
+    const where: Prisma.UserWhereInput = {
+      deletedAt: null,
+      status: 'Active',
+      externalIdentities: {
+        some: {
+          integrationConfigId: record.id,
+          provider,
+          isActive: true,
+          deactivatedAt: null,
+          openId: { not: null },
+        },
+      },
+      ...(keyword && {
+        OR: [
+          { username: { contains: keyword } },
+          { realName: { contains: keyword } },
+          { email: { contains: keyword } },
+        ],
+      }),
+    };
+    const [total, items] = await Promise.all([
+      this.prisma.user.count({ where }),
+      this.prisma.user.findMany({
+        where,
+        select: {
+          id: true,
+          username: true,
+          realName: true,
+          email: true,
+          department: { select: { id: true, departmentName: true } },
+        },
+        orderBy: [{ realName: 'asc' }, { id: 'asc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ]);
+    return { items, page, pageSize, total };
+  }
+
   async getFeishuOAuthSettings(): Promise<FeishuOAuthSettings> {
     const record = await this.findRecordByProvider('FEISHU');
     if (!record || !record.isEnabled) {
@@ -260,6 +311,16 @@ export class IntegrationService {
     this.assertSecretsArePlaintext(secretPatch);
 
     const nextPublic = { ...currentPublic, ...publicPatch };
+    const selectedRecipientField = [
+      'testRecipientUserId',
+      'testRecipient',
+      'testRecipientEmail',
+    ].find((field) => this.optionalString(publicPatch[field]));
+    if (selectedRecipientField) {
+      for (const field of ['testRecipientUserId', 'testRecipient', 'testRecipientEmail']) {
+        if (field !== selectedRecipientField) delete nextPublic[field];
+      }
+    }
     let encryptedConfig = existing?.encryptedConfig ?? null;
     const enabled = dto.isEnabled ?? existing?.isEnabled ?? false;
     const shouldReencrypt = Object.keys(secretPatch).length > 0;
@@ -731,6 +792,33 @@ export class IntegrationService {
   private async resolveFeishuNotificationRecipient(
     configuration: Record<string, unknown>,
   ): Promise<string> {
+    const configuredUserId = this.optionalString(configuration.testRecipientUserId);
+    if (configuredUserId) {
+      const identities = await this.prisma.externalIdentity.findMany({
+        where: {
+          provider: 'FEISHU',
+          userId: configuredUserId,
+          isActive: true,
+          deactivatedAt: null,
+          openId: { not: null },
+          user: { is: { deletedAt: null, status: 'Active' } },
+        },
+        select: { openId: true },
+        take: 2,
+      });
+      const openIds = [
+        ...new Set(
+          identities
+            .map((identity) => this.optionalString(identity.openId))
+            .filter((value): value is string => Boolean(value)),
+        ),
+      ];
+      if (openIds.length !== 1 || !openIds[0].startsWith('ou_')) {
+        throw new IntegrationDeliveryError('INTEGRATION_TEST_RECIPIENT_NOT_FOUND', false);
+      }
+      return openIds[0];
+    }
+
     const configuredOpenId = this.optionalString(configuration.testRecipient);
     if (configuredOpenId) return configuredOpenId;
 

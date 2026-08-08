@@ -6,6 +6,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   MinLength,
   IsUrl,
@@ -72,6 +73,19 @@ export class UpdateTargetIntegrationDto {
   @IsEmail()
   @MaxLength(320)
   testRecipientEmail?: string;
+
+  @ApiPropertyOptional({ description: '从已同步通讯录中选择的测试消息接收人用户 ID' })
+  @IsOptional()
+  @IsUUID()
+  testRecipientUserId?: string;
+}
+
+export class QueryIntegrationRecipientDto extends PaginationDto {
+  @ApiPropertyOptional({ description: '按姓名、用户名或邮箱搜索' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  keyword?: string;
 }
 
 export class QueryIntegrationSyncLogDto extends PaginationDto {

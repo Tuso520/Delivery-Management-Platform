@@ -40,6 +40,23 @@ export function useIntegrationsQuery() {
   return useQuery({ queryKey: queryKeys.settings.integrations(), queryFn: integrationApi.getList })
 }
 
+export function useIntegrationRecipientsQuery(
+  provider: MaybeRefOrGetter<IntegrationProvider | ''>,
+  params: MaybeRefOrGetter<{ page: number; pageSize: number; keyword?: string }>,
+  enabled: MaybeRefOrGetter<boolean>,
+) {
+  return useQuery({
+    queryKey: computed(() =>
+      queryKeys.settings.integrationRecipients(toValue(provider), toValue(params)),
+    ),
+    queryFn: () =>
+      integrationApi.getNotificationRecipients(toValue(provider) as IntegrationProvider, {
+        ...toValue(params),
+      }),
+    enabled: computed(() => Boolean(toValue(provider)) && toValue(enabled)),
+  })
+}
+
 export function useIntegrationLogsQuery(
   provider: MaybeRefOrGetter<IntegrationProvider | ''>,
   params: MaybeRefOrGetter<{

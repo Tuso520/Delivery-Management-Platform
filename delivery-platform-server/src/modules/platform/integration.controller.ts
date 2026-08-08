@@ -6,7 +6,11 @@ import { RequirePermissions } from '../../common/decorators/permissions.decorato
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 
-import { QueryIntegrationSyncLogDto, UpdateTargetIntegrationDto } from './dto/integration.dto';
+import {
+  QueryIntegrationRecipientDto,
+  QueryIntegrationSyncLogDto,
+  UpdateTargetIntegrationDto,
+} from './dto/integration.dto';
 import { IntegrationService } from './integration.service';
 
 @ApiTags('Integrations')
@@ -28,6 +32,16 @@ export class IntegrationController {
   @ApiOperation({ summary: '获取单个集成配置' })
   findOne(@Param('provider') provider: string) {
     return this.integrationService.findByProvider(provider);
+  }
+
+  @Get(':provider/notification-recipients')
+  @RequirePermissions({ all: ['integration:manage'] })
+  @ApiOperation({ summary: '分页查询可接收集成测试通知的已同步用户' })
+  findNotificationRecipients(
+    @Param('provider') provider: string,
+    @Query() query: QueryIntegrationRecipientDto,
+  ) {
+    return this.integrationService.findNotificationRecipients(provider, query);
   }
 
   @Patch(':provider')

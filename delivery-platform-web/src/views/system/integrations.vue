@@ -17,6 +17,7 @@ import {
 import { Can } from '@/platform/permission'
 import {
   useIntegrationLogsQuery,
+  useIntegrationRecipientsQuery,
   useIntegrationsQuery,
 } from '@/composables/queries/useOperationsQueries'
 import { usePermission } from '@/composables/usePermission'
@@ -66,6 +67,11 @@ const logsVisible = ref(false)
 const logsProvider = ref<IntegrationProvider>('FEISHU')
 const logsPage = ref(1)
 const integrationsQuery = useIntegrationsQuery()
+const integrationRecipientsQuery = useIntegrationRecipientsQuery(
+  editingProvider,
+  { page: 1, pageSize: 500 },
+  computed(() => editorVisible.value && editingProvider.value === 'FEISHU' && canManage.value),
+)
 const integrationLogsQuery = useIntegrationLogsQuery(
   logsProvider,
   computed(() => ({ page: logsPage.value, pageSize: 20 })),
@@ -82,6 +88,13 @@ const logsPagination = computed(() => ({
 const loading = computed(() => integrationsQuery.isFetching.value)
 const loadFailed = computed(() => integrationsQuery.isError.value)
 const logsLoading = computed(() => integrationLogsQuery.isFetching.value)
+const recipientsLoading = computed(() => integrationRecipientsQuery.isFetching.value)
+const recipientOptions = computed(() =>
+  (integrationRecipientsQuery.data.value?.items ?? []).map((recipient) => ({
+    value: recipient.id,
+    label: `${recipient.realName}（${recipient.email || recipient.username}）`,
+  })),
+)
 
 const rows = computed<IntegrationRow[]>(() =>
   providerOptions.value.map((option) => ({
@@ -170,6 +183,24 @@ function openEditor(row: IntegrationRow): void {
   editorVisible.value = true
 }
 
+function onRecipientUserChange(value: unknown): void {
+  if (typeof value !== 'string' || !value) return
+  form.value.testRecipient = ''
+  form.value.testRecipientEmail = ''
+}
+
+function onRecipientOpenIdInput(value: string): void {
+  if (!value.trim()) return
+  form.value.testRecipientUserId = ''
+  form.value.testRecipientEmail = ''
+}
+
+function onRecipientEmailInput(value: string): void {
+  if (!value.trim()) return
+  form.value.testRecipientUserId = ''
+  form.value.testRecipient = ''
+}
+
 function requiredCredentialMissing(): boolean {
   const config = selectedConfig.value
   if (!form.value.isEnabled) return false
@@ -225,7 +256,8 @@ async function runAction(row: IntegrationRow, action: IntegrationAction): Promis
   if (
     action === 'notification' &&
     !row.config.configuration.testRecipient?.trim() &&
-    !row.config.configuration.testRecipientEmail?.trim()
+    !row.config.configuration.testRecipientEmail?.trim() &&
+    !row.config.configuration.testRecipientUserId?.trim()
   ) {
     Message.warning(t('integrations.validation.testRecipient'))
     openEditor(row)
@@ -505,10 +537,24 @@ function redactText(value?: string | null): string {
               :placeholder="t('integrations.departmentPlaceholder')"
             />
           </a-form-item>
+          <a-form-item :label="t('integrations.testRecipientUser')">
+            <a-select
+              v-model="form.testRecipientUserId"
+              :options="recipientOptions"
+              :loading="recipientsLoading"
+              :placeholder="t('integrations.testRecipientUserPlaceholder')"
+              allow-search
+              @change="onRecipientUserChange"
+            />
+            <template #extra>
+              {{ t('integrations.testRecipientUserHint') }}
+            </template>
+          </a-form-item>
           <a-form-item :label="t('integrations.testRecipient')">
             <a-input
               v-model="form.testRecipient"
               :placeholder="t('integrations.testRecipientPlaceholder')"
+              @input="onRecipientOpenIdInput"
             />
           </a-form-item>
           <a-form-item :label="t('integrations.testRecipientEmail')">
@@ -516,6 +562,7 @@ function redactText(value?: string | null): string {
               v-model="form.testRecipientEmail"
               :placeholder="t('integrations.testRecipientEmailPlaceholder')"
               :max-length="320"
+              @input="onRecipientEmailInput"
             />
           </a-form-item>
           <a-form-item :label="t('integrations.oauthRedirectUri')" required>

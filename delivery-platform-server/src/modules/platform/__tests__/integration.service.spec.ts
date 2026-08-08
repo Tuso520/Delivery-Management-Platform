@@ -174,6 +174,43 @@ describe('IntegrationService secured configuration', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('replaces legacy notification recipient fallbacks when a synced user is selected', async () => {
+    const existing = integrationRecordFixture({
+      isEnabled: false,
+      configValue: {
+        testRecipient: 'ou_legacy',
+        testRecipientEmail: 'legacy@example.com',
+      },
+    });
+    const update = jest.fn().mockImplementation(({ data }: { data: Record<string, unknown> }) => ({
+      ...existing,
+      ...data,
+    }));
+    const prisma = {
+      integrationConfig: {
+        findFirst: jest.fn().mockResolvedValue(existing),
+        update,
+      },
+    } as unknown as PrismaService;
+    const service = new IntegrationService(prisma, configService(), operationLog());
+
+    await service.update(
+      'FEISHU',
+      { testRecipientUserId: '11111111-1111-4111-8111-111111111111' },
+      'admin-1',
+    );
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          configValue: {
+            testRecipientUserId: '11111111-1111-4111-8111-111111111111',
+          },
+        }),
+      }),
+    );
+  });
+
   it('rejects enabling Feishu without the HTTPS OAuth callback required by QR login', async () => {
     const prisma = {
       integrationConfig: { findFirst: jest.fn().mockResolvedValue(null) },
@@ -913,6 +950,96 @@ describe('IntegrationService secured configuration', () => {
     } finally {
       fetchMock.mockRestore();
     }
+  });
+
+  it('lists only active synced users that have an active Feishu open_id', async () => {
+    const record = integrationRecordFixture();
+    const count = jest.fn().mockResolvedValue(1);
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        id: '11111111-1111-4111-8111-111111111111',
+        username: 'zhangsan',
+        realName: '张三',
+        email: 'zhangsan@example.com',
+        department: { id: 'dept-1', departmentName: '交付中心' },
+      },
+    ]);
+    const prisma = {
+      integrationConfig: { findFirst: jest.fn().mockResolvedValue(record) },
+      user: { count, findMany },
+    } as unknown as PrismaService;
+    const service = new IntegrationService(prisma, configService(), operationLog());
+
+    await expect(
+      service.findNotificationRecipients('FEISHU', { page: 1, pageSize: 500 }),
+    ).resolves.toEqual({
+      items: [
+        expect.objectContaining({
+          id: '11111111-1111-4111-8111-111111111111',
+          realName: '张三',
+        }),
+      ],
+      page: 1,
+      pageSize: 500,
+      total: 1,
+    });
+    expect(count).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        deletedAt: null,
+        status: 'Active',
+        externalIdentities: {
+          some: expect.objectContaining({
+            integrationConfigId: record.id,
+            provider: 'FEISHU',
+            isActive: true,
+            deactivatedAt: null,
+            openId: { not: null },
+          }),
+        },
+      }),
+    });
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 500 }));
+  });
+
+  it('resolves the selected synchronized user to one active Feishu open_id', async () => {
+    const findMany = jest.fn().mockResolvedValue([{ openId: 'ou_selected_recipient' }]);
+    const prisma = {
+      externalIdentity: { findMany },
+    } as unknown as PrismaService;
+    const service = new IntegrationService(prisma, configService(), operationLog());
+
+    await expect(
+      (service as unknown as IntegrationInternals).resolveFeishuNotificationRecipient({
+        testRecipientUserId: '11111111-1111-4111-8111-111111111111',
+        testRecipient: 'ou_legacy',
+        testRecipientEmail: 'legacy@example.com',
+      }),
+    ).resolves.toBe('ou_selected_recipient');
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        provider: 'FEISHU',
+        userId: '11111111-1111-4111-8111-111111111111',
+        isActive: true,
+        deactivatedAt: null,
+        openId: { not: null },
+        user: { is: { deletedAt: null, status: 'Active' } },
+      },
+      select: { openId: true },
+      take: 2,
+    });
+  });
+
+  it('rejects a selected user whose Feishu identity is no longer active', async () => {
+    const prisma = {
+      externalIdentity: { findMany: jest.fn().mockResolvedValue([]) },
+    } as unknown as PrismaService;
+    const service = new IntegrationService(prisma, configService(), operationLog());
+
+    await expect(
+      (service as unknown as IntegrationInternals).resolveFeishuNotificationRecipient({
+        testRecipientUserId: '11111111-1111-4111-8111-111111111111',
+      }),
+    ).rejects.toThrow('INTEGRATION_TEST_RECIPIENT_NOT_FOUND');
   });
 });
 

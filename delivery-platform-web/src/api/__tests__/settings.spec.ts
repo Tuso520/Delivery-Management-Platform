@@ -95,6 +95,7 @@ describe('target settings API contracts', () => {
     integrationApi.test('FEISHU')
     integrationApi.syncContacts('FEISHU')
     integrationApi.testNotification('FEISHU')
+    integrationApi.getNotificationRecipients('FEISHU', { page: 1, pageSize: 500 })
     integrationApi.getSyncLogs('FEISHU', { page: 1, pageSize: 20 })
 
     expect(mocks.get).toHaveBeenNthCalledWith(1, '/integrations')
@@ -105,7 +106,12 @@ describe('target settings API contracts', () => {
     expect(mocks.post).toHaveBeenNthCalledWith(1, '/integrations/FEISHU/test')
     expect(mocks.post).toHaveBeenNthCalledWith(2, '/integrations/FEISHU/sync-contacts')
     expect(mocks.post).toHaveBeenNthCalledWith(3, '/integrations/FEISHU/test-notification')
-    expect(mocks.get).toHaveBeenNthCalledWith(2, '/integrations/FEISHU/sync-logs', {
+    expect(mocks.get).toHaveBeenNthCalledWith(
+      2,
+      '/integrations/FEISHU/notification-recipients',
+      { params: { page: 1, pageSize: 500 } },
+    )
+    expect(mocks.get).toHaveBeenNthCalledWith(3, '/integrations/FEISHU/sync-logs', {
       params: { page: 1, pageSize: 20 },
     })
   })
