@@ -7,6 +7,7 @@ import router from '@/router'
 import { useUserStore } from '@/store/user'
 import type { LoginResult, UserProfile } from '@/types/user'
 import { removeToken, setToken } from '@/utils/auth'
+import { FEISHU_AUTO_LOGIN_SESSION_KEY } from '@/utils/feishu-client'
 
 vi.mock('@/api/auth', () => ({
   authApi: {
@@ -46,6 +47,7 @@ describe('useUserStore', () => {
   beforeEach(() => {
     removeToken()
     localStorage.clear()
+    sessionStorage.clear()
     setActivePinia(createPinia())
     useFilePreview().closePreview()
     vi.clearAllMocks()
@@ -169,6 +171,7 @@ describe('useUserStore', () => {
     expect(store.token).toBeNull()
     expect(store.userInfo).toBeNull()
     expect(store.isLoggedIn).toBe(false)
+    expect(sessionStorage.getItem(FEISHU_AUTO_LOGIN_SESSION_KEY)).toBe('1')
     expect(router.push).toHaveBeenCalledWith('/login')
   })
 

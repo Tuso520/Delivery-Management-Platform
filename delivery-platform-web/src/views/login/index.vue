@@ -20,6 +20,7 @@ import { accessItems } from '@/router'
 import { useLocaleStore } from '@/store/locale'
 import type { LocaleCode } from '@/store/locale'
 import type { LoginForm } from '@/types/user'
+import { claimFeishuAutoLogin } from '@/utils/feishu-client'
 
 const router = useRouter()
 const route = useRoute()
@@ -120,25 +121,37 @@ async function handleLogin(): Promise<void> {
   }
 }
 
-async function handleFeishuStart(): Promise<void> {
+async function startFeishuLogin(automatic = false): Promise<void> {
   feishuLoading.value = true
   try {
     const redirect = route.query.redirect as string | undefined
     const result = await authApi.beginFeishuLogin(
       redirect ? resolveRedirect(redirect, '/dashboard') : undefined,
     )
-    Message.info(copy.value.feishuStarting)
-    window.location.assign(result.authorizationUrl)
+    if (!automatic) Message.info(copy.value.feishuStarting)
+    if (automatic) {
+      window.location.replace(result.authorizationUrl)
+    } else {
+      window.location.assign(result.authorizationUrl)
+    }
   } catch {
     Message.error(copy.value.feishuFailed)
     feishuLoading.value = false
   }
 }
 
+async function handleFeishuStart(): Promise<void> {
+  await startFeishuLogin()
+}
+
 watch([() => route.path, () => route.query.ticket, () => route.query.feishu_error], async () => {
   if (route.query.feishu_error) {
     Message.error(copy.value.feishuFailed)
     await router.replace('/login')
+    return
+  }
+  if (route.path === '/login') {
+    if (claimFeishuAutoLogin()) void startFeishuLogin(true)
     return
   }
   if (route.path !== '/login/feishu/callback') return

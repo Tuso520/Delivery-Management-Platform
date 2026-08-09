@@ -4,7 +4,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useUserStore } from '@/store/user'
 import { useAppStore } from '@/store/app'
-import type { ThemeMode } from '@/store/app'
 import {
   filterMenusByPermissions,
   resolveActiveMenuPath,
@@ -12,7 +11,6 @@ import {
 } from '@/store/permission'
 import { useLocaleStore } from '@/store/locale'
 import { menuItems, resolveRouteTitle, settingItems } from '@/router'
-import type { LocaleCode } from '@/store/locale'
 import type { MenuItem } from '@/store/permission'
 import AppHeader from './components/AppHeader.vue'
 import AppSidebar from './components/AppSidebar.vue'
@@ -56,9 +54,6 @@ const userName = computed(
   () => userStore.userInfo?.realName || userStore.userInfo?.username || t('shell.userFallback'),
 )
 const avatarUrl = computed(() => userStore.userInfo?.avatar || undefined)
-const profilePath = computed(() =>
-  filteredSettings.value.some((item) => item.path === '/settings') ? '/settings' : undefined,
-)
 const pageTitle = computed(() => resolveRouteTitle(route.meta, localeStore.currentLocale))
 watchEffect(() => {
   document.title = `${pageTitle.value} - ${t('app.title')}`
@@ -83,13 +78,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', syncViewport))
     <AppHeader
       :user-name="userName"
       :avatar-url="avatarUrl"
-      :profile-path="profilePath"
-      :current-locale="localeStore.currentLocale"
-      :theme-mode="appStore.theme"
       @toggle-sidebar="appStore.toggleSidebar"
-      @setting-select="router.push"
-      @language-change="(value: LocaleCode) => localeStore.setLocale(value)"
-      @theme-change="(value: ThemeMode) => appStore.setTheme(value)"
       @logout="userStore.logout"
     />
     <div class="layout-body">

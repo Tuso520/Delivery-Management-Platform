@@ -9,6 +9,7 @@ import { queryClient } from '@/query/client'
 import router from '@/router'
 import type { LoginForm, LoginResult, UserInfo, UserProfile } from '@/types/user'
 import { getToken, removeToken, setToken } from '@/utils/auth'
+import { suppressFeishuAutoLogin } from '@/utils/feishu-client'
 
 function normalizeUser(profile: UserProfile): UserInfo {
   const userId = profile.id ?? profile.sub
@@ -149,6 +150,7 @@ export const useUserStore = defineStore('user', () => {
   }
 
   const logout = async (): Promise<void> => {
+    suppressFeishuAutoLogin()
     try {
       await authApi.logout()
     } catch {

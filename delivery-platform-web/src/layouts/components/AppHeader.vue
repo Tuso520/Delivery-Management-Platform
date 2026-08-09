@@ -1,24 +1,16 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { LocaleCode } from '@/store/locale'
-import type { ThemeMode } from '@/store/app'
 
 type DropdownCommand = string | number | Record<string, unknown> | undefined
 
 const props = defineProps<{
   userName: string
   avatarUrl?: string
-  profilePath?: string
-  currentLocale: LocaleCode
-  themeMode: ThemeMode
 }>()
 
 const emit = defineEmits<{
   toggleSidebar: []
-  settingSelect: [path: string]
-  languageChange: [locale: LocaleCode]
-  themeChange: [theme: ThemeMode]
   logout: []
 }>()
 
@@ -35,10 +27,6 @@ watch(
 )
 
 function handleUserCommand(command: DropdownCommand): void {
-  if (typeof command === 'string' && command.startsWith('/')) emit('settingSelect', command)
-  if (command === 'zh-CN' || command === 'en-US') emit('languageChange', command)
-  if (command === 'light' || command === 'dark' || command === 'system')
-    emit('themeChange', command)
   if (command === 'logout') emit('logout')
 }
 </script>
@@ -58,7 +46,7 @@ function handleUserCommand(command: DropdownCommand): void {
     <div class="header-right">
       <a-dropdown trigger="click" position="br" @select="handleUserCommand">
         <button class="user-trigger" type="button">
-          <a-avatar :size="32" shape="square" class="user-avatar">
+          <a-avatar :size="32" shape="circle" class="user-avatar">
             <img
               v-if="showAvatarImage"
               :src="avatarUrl"
@@ -70,24 +58,6 @@ function handleUserCommand(command: DropdownCommand): void {
           <span class="user-name">{{ userName }}</span>
         </button>
         <template #content>
-          <a-doption v-if="profilePath" :value="profilePath">
-            {{ t('app.profile') }}
-          </a-doption>
-          <a-doption value="zh-CN">
-            {{ t('shell.locale.zhCN') }}
-          </a-doption>
-          <a-doption value="en-US">
-            English
-          </a-doption>
-          <a-doption value="light">
-            {{ t('shell.theme.light') }}
-          </a-doption>
-          <a-doption value="dark">
-            {{ t('shell.theme.dark') }}
-          </a-doption>
-          <a-doption value="system">
-            {{ t('shell.theme.system') }}
-          </a-doption>
           <a-doption value="logout">
             {{ t('app.logout') }}
           </a-doption>
@@ -148,10 +118,11 @@ function handleUserCommand(command: DropdownCommand): void {
   align-items: center;
 }
 .user-avatar {
-  border-radius: 0;
+  border-radius: 50%;
   background: #165dff;
   color: #fff;
   font-weight: 600;
+  overflow: hidden;
 }
 .user-avatar img {
   width: 100%;

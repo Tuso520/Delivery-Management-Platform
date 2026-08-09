@@ -39,15 +39,17 @@ describe('application shell layout', () => {
     expect(headerSource).toContain(':src="avatarUrl"')
     expect(headerSource).toContain('@error="avatarLoadFailed = true"')
     expect(headerSource).toContain('class="user-avatar-fallback"')
+    expect(headerSource).toContain('shape="circle"')
+    expect(headerSource).toMatch(/\.user-avatar\s*\{[^}]*border-radius:\s*50%/s)
     expect(headerSource).toContain('<span class="user-name">{{ userName }}</span>')
-    expect(headerSource).toContain("t('app.profile')")
-    expect(headerSource).not.toContain('v-for="item in settings"')
-    expect(headerSource).not.toContain('settings: MenuItem[]')
-    expect(headerSource).toContain('value="light"')
-    expect(headerSource).toContain('value="dark"')
-    expect(headerSource).toContain('value="system"')
+    expect(headerSource).toContain('value="logout"')
+    expect(headerSource).not.toContain("t('app.profile')")
+    expect(headerSource).not.toContain('value="light"')
+    expect(headerSource).not.toContain('value="dark"')
+    expect(headerSource).not.toContain('value="system"')
     expect(headerSource).not.toContain('@arco-design/web-vue/es/icon')
-    expect(headerSource).toContain('value="zh-CN"')
+    expect(headerSource).not.toContain('value="zh-CN"')
+    expect(headerSource).not.toContain('value="en-US"')
   })
 
   it('uses the blue square D as the login and browser identity', () => {
@@ -59,6 +61,14 @@ describe('application shell layout', () => {
     expect(loginSource).toContain('src="@/assets/logo.svg"')
     expect(documentSource).toContain('content="#165DFF"')
     expect(documentSource).toContain('href="/favicon.svg"')
+  })
+
+  it('auto-starts the existing one-time-state OAuth only inside Feishu', () => {
+    expect(loginSource).toContain("import { claimFeishuAutoLogin } from '@/utils/feishu-client'")
+    expect(loginSource).toContain('if (claimFeishuAutoLogin())')
+    expect(loginSource).toContain('void startFeishuLogin(true)')
+    expect(loginSource).toContain('window.location.replace(result.authorizationUrl)')
+    expect(loginSource).toContain('route.query.feishu_error')
   })
 
   it('renders route-derived menu expansion and an explicit empty state', () => {
