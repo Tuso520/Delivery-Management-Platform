@@ -32,11 +32,22 @@ interface ShellMetrics {
 
 async function login(page: Page): Promise<void> {
   if (!adminUsername || !adminPassword) throw new Error('UI E2E credentials are required')
-  await page.goto('/#/login')
-  await page.getByPlaceholder('用户名').fill(adminUsername)
-  await page.getByPlaceholder('密码').fill(adminPassword)
-  await page.locator('.login-button').click()
-  await page.waitForURL((url) => !url.hash.startsWith('#/login'))
+
+  const loginResponse = await page.request.post('/api/v1/auth/login', {
+    data: { password: adminPassword, username: adminUsername },
+  })
+  expect(loginResponse.ok()).toBe(true)
+  const sessionBody = await loginResponse.text()
+  const session = JSON.parse(sessionBody) as { data?: { accessToken?: string } }
+  expect(session.data?.accessToken).toBeTruthy()
+
+  // The full release suite deliberately exercises many isolated browser contexts.
+  // Reuse this real login response during bootstrap so this layout-only scenario
+  // does not consume the stricter refresh-endpoint budget used by auth tests.
+  await page.route('**/api/v1/auth/refresh', (route) =>
+    route.fulfill({ body: sessionBody, contentType: 'application/json', status: 200 }),
+  )
+  await page.goto('/#/dashboard')
   await expect(page.locator('.layout-aside')).toBeVisible()
 }
 
