@@ -30,6 +30,12 @@
       "title": "标准库",
       "reference": ".ai-work/figma-standard-library-70-322.png",
       "actual": ".ai-work/acceptance-standard-library-1440x900.png"
+    },
+    {
+      "id": "user-shell",
+      "title": "用户中心、头像菜单与平台标识",
+      "reference": ".ai-work/design-user-shell-blue-d.png",
+      "actual": ".ai-work/acceptance-user-shell-1440x900.png"
     }
   ]
 }

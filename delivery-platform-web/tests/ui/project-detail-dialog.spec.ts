@@ -159,13 +159,8 @@ test('distinct create, edit and view dialogs match the Figma project-detail shel
   const stageSelect = formItem(projectDialog, '当前阶段').locator('.arco-select-view')
   await expect(stageSelect).toHaveClass(/arco-select-view-multiple/u)
   await stageSelect.click()
-  const additionalStage = page
-    .locator(
-      '.arco-trigger-popup:visible .arco-select-option:not(.arco-select-option-disabled):not(.arco-select-option-selected)',
-    )
-    .first()
-  await expect(additionalStage).toBeVisible()
-  await additionalStage.click()
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
   await page.keyboard.press('Escape')
   await expect(stageSelect.locator('.arco-tag')).toHaveCount(2)
 

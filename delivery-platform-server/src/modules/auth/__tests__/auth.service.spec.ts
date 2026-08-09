@@ -42,6 +42,7 @@ describe('AuthService', () => {
     password: '$2b$10$hashedpassword',
     realName: '测试用户',
     email: 'test@example.com',
+    avatarUrl: 'https://example.feishu.cn/avatar/user-1.png',
     status: 'Active',
     permissionVersion: 3,
     userRoles: [
@@ -112,6 +113,7 @@ describe('AuthService', () => {
         username: 'testuser',
         realName: '测试用户',
         email: 'test@example.com',
+        avatar: 'https://example.feishu.cn/avatar/user-1.png',
         roles: ['PROJECT_MANAGER'],
         permissions: ['project:view', 'project:create'],
         permissionVersion: 3,
@@ -310,6 +312,7 @@ describe('AuthService', () => {
           openId: 'ou_user_1',
           unionId: 'on_user_1',
           tenantUserId: 'tenant-user-1',
+          avatarUrl: 'https://example.feishu.cn/avatar/current-user.png',
         }),
       };
       return {
@@ -374,6 +377,10 @@ describe('AuthService', () => {
           where: expect.objectContaining({ provider: 'FEISHU', isActive: true }),
         }),
       );
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: { avatarUrl: 'https://example.feishu.cn/avatar/current-user.png' },
+      });
       const callbackUrl = new URL(callback);
       expect(callbackUrl.pathname).toBe('/');
       expect(callbackUrl.search).toBe('');

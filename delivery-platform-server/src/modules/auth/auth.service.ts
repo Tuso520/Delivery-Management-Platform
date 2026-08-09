@@ -54,6 +54,7 @@ export class AuthService {
         password: true,
         realName: true,
         email: true,
+        avatarUrl: true,
         status: true,
         permissionVersion: true,
         userRoles: {
@@ -91,6 +92,7 @@ export class AuthService {
       username: user.username,
       realName: user.realName,
       email: user.email,
+      avatar: user.avatarUrl,
       roles,
       permissions,
       permissionVersion: user.permissionVersion,
@@ -211,6 +213,10 @@ export class AuthService {
       where: { id: { in: identities.map(({ id }) => id) } },
       data: { lastSeenAt: new Date() },
     });
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { avatarUrl: external.avatarUrl ?? null },
+    });
 
     const ticket = randomBytes(32).toString('base64url');
     await this.redisService.storeOneTimeJson(
@@ -300,6 +306,7 @@ export class AuthService {
         username: true,
         realName: true,
         email: true,
+        avatarUrl: true,
         permissionVersion: true,
         userRoles: {
           where: { role: { status: 'Active' } },
@@ -330,6 +337,7 @@ export class AuthService {
       username: user.username,
       realName: user.realName,
       email: user.email,
+      avatar: user.avatarUrl,
       roles,
       permissions,
       permissionVersion: user.permissionVersion,

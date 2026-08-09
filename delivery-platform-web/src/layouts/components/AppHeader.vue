@@ -1,18 +1,17 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import figmaAvatar from '@/assets/figma/project-overview/avatar.png'
 import type { LocaleCode } from '@/store/locale'
 import type { ThemeMode } from '@/store/app'
-import type { MenuItem } from '@/store/permission'
 
 type DropdownCommand = string | number | Record<string, unknown> | undefined
 
 const props = defineProps<{
   userName: string
+  avatarUrl?: string
+  profilePath?: string
   currentLocale: LocaleCode
   themeMode: ThemeMode
-  settings: MenuItem[]
 }>()
 
 const emit = defineEmits<{
@@ -25,6 +24,15 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const userInitial = computed(() => props.userName.slice(0, 1) || 'U')
+const avatarLoadFailed = ref(false)
+const showAvatarImage = computed(() => Boolean(props.avatarUrl && !avatarLoadFailed.value))
+
+watch(
+  () => props.avatarUrl,
+  () => {
+    avatarLoadFailed.value = false
+  },
+)
 
 function handleUserCommand(command: DropdownCommand): void {
   if (typeof command === 'string' && command.startsWith('/')) emit('settingSelect', command)
@@ -51,13 +59,19 @@ function handleUserCommand(command: DropdownCommand): void {
       <a-dropdown trigger="click" position="br" @select="handleUserCommand">
         <button class="user-trigger" type="button">
           <a-avatar :size="32" shape="square" class="user-avatar">
-            <img :src="figmaAvatar" :alt="userInitial" />
+            <img
+              v-if="showAvatarImage"
+              :src="avatarUrl"
+              :alt="userName"
+              @error="avatarLoadFailed = true"
+            />
+            <span v-else class="user-avatar-fallback">{{ userInitial }}</span>
           </a-avatar>
           <span class="user-name">{{ userName }}</span>
         </button>
         <template #content>
-          <a-doption v-for="item in settings" :key="item.path" :value="item.path">
-            {{ t(item.title) }}
+          <a-doption v-if="profilePath" :value="profilePath">
+            {{ t('app.profile') }}
           </a-doption>
           <a-doption value="zh-CN">
             {{ t('shell.locale.zhCN') }}
@@ -135,7 +149,7 @@ function handleUserCommand(command: DropdownCommand): void {
 }
 .user-avatar {
   border-radius: 0;
-  background: #5ebd9f;
+  background: #165dff;
   color: #fff;
   font-weight: 600;
 }
@@ -144,6 +158,13 @@ function handleUserCommand(command: DropdownCommand): void {
   height: 100%;
   display: block;
   object-fit: cover;
+}
+.user-avatar-fallback {
+  display: inline-flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
 }
 .user-trigger {
   display: flex;

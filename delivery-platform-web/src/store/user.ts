@@ -30,7 +30,7 @@ function normalizeUser(profile: UserProfile): UserInfo {
     username: profile.username,
     realName: profile.realName,
     email: profile.email ?? '',
-    avatar: profile.avatar,
+    avatar: profile.avatar?.trim() || undefined,
     roles: profile.roles,
     permissions: profile.permissions,
   }

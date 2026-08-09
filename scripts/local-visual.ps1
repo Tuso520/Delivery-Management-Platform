@@ -28,6 +28,7 @@ $currentScreenshots = @(
   (Join-Path $projectRoot '.ai-work/acceptance-project-overview-1440x900.png'),
   (Join-Path $projectRoot '.ai-work/acceptance-archive-template-1440x900.png'),
   (Join-Path $projectRoot '.ai-work/acceptance-standard-library-1440x900.png'),
+  (Join-Path $projectRoot '.ai-work/acceptance-user-shell-1440x900.png'),
   (Join-Path $projectRoot '.ai-work/project-archive-43-317/local-1440x900.png'),
   (Join-Path $projectRoot '.ai-work/project-modal/local-create-1440x900.png')
 )
@@ -92,6 +93,7 @@ try {
       tests/ui/project-archive-layout.spec.ts `
       tests/ui/project-detail-dialog.spec.ts `
       tests/ui/standard-library-figma.spec.ts `
+      tests/ui/user-shell-layout.spec.ts `
       --config playwright.ui.config.ts `
       --grep 'match'
     $testExitCode = $LASTEXITCODE

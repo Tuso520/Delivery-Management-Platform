@@ -28,6 +28,7 @@ const profile: UserProfile = {
   username: 'admin',
   realName: '管理员',
   email: 'admin@test.com',
+  avatar: 'https://example.feishu.cn/avatar/admin.png',
   roles: ['SUPER_ADMIN'],
   permissions: ['user:view', 'project:view'],
 }
@@ -59,6 +60,7 @@ describe('useUserStore', () => {
     expect(store.token).toBe('test-token-123')
     expect(store.userInfo?.id).toBe('user-1')
     expect(store.userInfo?.roles).toEqual(['SUPER_ADMIN'])
+    expect(store.userInfo?.avatar).toBe('https://example.feishu.cn/avatar/admin.png')
     expect(store.isLoggedIn).toBe(true)
     expect(localStorage.getItem('delivery_token')).toBeNull()
     expect(localStorage.getItem('delivery_user_info')).toBeNull()
@@ -111,6 +113,7 @@ describe('useUserStore', () => {
     expect(authApi.refreshToken).toHaveBeenCalledOnce()
     expect(authApi.refreshToken).toHaveBeenCalledWith()
     expect(store.token).toBe('restored-token')
+    expect(store.userInfo?.avatar).toBe('https://example.feishu.cn/avatar/admin.png')
     expect(store.isLoggedIn).toBe(true)
   })
 
