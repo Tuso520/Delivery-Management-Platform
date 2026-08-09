@@ -54,13 +54,15 @@
 - 展开：`180px`
 - 收起：`48px`
 
-菜单使用单组展开模式；侧栏底部提供折叠入口，产品标识在移动端同时可唤出侧栏。当前不持久化菜单展开组，避免把导航状态复制成第二份配置。
+展开与收起尺寸同时作为 `width`、`min-width`、`max-width` 和 flex basis，菜单图标固定为 `18px`，菜单行与文字禁止收缩和换行。菜单使用单组展开模式；侧栏底部提供折叠入口，产品标识在移动端同时可唤出侧栏。当前不持久化菜单展开组，避免把导航状态复制成第二份配置。
 
 ## 2.3 页面内容区
 
 所有业务页面使用全宽内容区，不设置统一 `max-width`。
 
-桌面内容区统一使用 `13px` 外边距和 `4px` 主容器圆角；900px 以下为 `12px`，600px 以下为 `8px`。
+应用壳主内容区使用零初始宽度的 flex 自适应策略，只占用侧栏之外的剩余空间；根节点、布局主体和内容区必须保留 `min-width: 0` 与明确的溢出边界，禁止反向挤压侧栏。
+
+桌面内容区统一使用 `13px` 外边距和 `4px` 主容器圆角；粗指针触控设备在 600px 以下为 `12px`，420px 以下为 `8px`。
 
 ## 2.4 页面容器
 
@@ -77,8 +79,9 @@
 ## 2.5 响应式
 
 - 桌面端：完整功能
-- 平板端：侧栏收起、表单两列、工具栏换行、表格横向滚动
-- 手机端：重点保证查看、搜索、上传、审核和简单操作
+- 桌面端嵌入窗口：即使可视区域较窄，也保持侧栏固定展开/收起尺寸，由内容区内部滚动承载业务页面最小宽度
+- 平板端：表单两列、工具栏换行、表格横向滚动；是否使用抽屉由窄屏与触控指针共同判断
+- 手机端：仅在 `600px` 以下的粗指针设备使用侧栏抽屉，重点保证查看、搜索、上传、审核和简单操作
 - 复杂模板编辑、系统配置等可提示使用桌面端
 
 ---
@@ -753,15 +756,15 @@ App Shell 在内容区统一显示由路由元数据推导的紧凑面包屑；�
 
 菜单、页面、接口和数据模型的唯一归属如下：
 
-| 二级目录 | 页面 | 后端接口 | Prisma 模型 |
-| --- | --- | --- | --- |
-| 用户中心 | `src/views/system/user/index.vue` | `/users`、`/users/:id/roles`、`/users/:id/enable`、`/users/:id/disable`、`/users/:id/reset-password` | `User`、`UserRole`、`Role` |
-| 币种与汇率 | `src/views/currency/index.vue` | `/currencies`、`/currencies/sync-rates`、`/currencies/:code/lock`、`/currencies/:code/unlock` | `Currency` |
-| 通知规则 | `src/views/system/notification.vue` | `/notification-rules` | `NotificationRule` |
-| 审批规则 | `src/views/system/approvals.vue` | `/approval-templates` | `ApprovalTemplate`、`ApprovalStep` |
-| 字段配置 | `src/views/system/FieldSettings.vue` | `/field-config`、`/field-options` | `DictionaryCategory`、`DictionaryItem` |
-| 接口集成 | `src/views/system/integrations.vue` | `/integrations` | `IntegrationConfig`、`IntegrationSyncLog` |
-| 系统配置 | `src/views/system/config.vue` | `/system-settings`、`/system-time` | `SystemConfig` |
+| 二级目录   | 页面                                 | 后端接口                                                                                             | Prisma 模型                               |
+| ---------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| 用户中心   | `src/views/system/user/index.vue`    | `/users`、`/users/:id/roles`、`/users/:id/enable`、`/users/:id/disable`、`/users/:id/reset-password` | `User`、`UserRole`、`Role`                |
+| 币种与汇率 | `src/views/currency/index.vue`       | `/currencies`、`/currencies/sync-rates`、`/currencies/:code/lock`、`/currencies/:code/unlock`        | `Currency`                                |
+| 通知规则   | `src/views/system/notification.vue`  | `/notification-rules`                                                                                | `NotificationRule`                        |
+| 审批规则   | `src/views/system/approvals.vue`     | `/approval-templates`                                                                                | `ApprovalTemplate`、`ApprovalStep`        |
+| 字段配置   | `src/views/system/FieldSettings.vue` | `/field-config`、`/field-options`                                                                    | `DictionaryCategory`、`DictionaryItem`    |
+| 接口集成   | `src/views/system/integrations.vue`  | `/integrations`                                                                                      | `IntegrationConfig`、`IntegrationSyncLog` |
+| 系统配置   | `src/views/system/config.vue`        | `/system-settings`、`/system-time`                                                                   | `SystemConfig`                            |
 
 每个路由直接加载对应页面，不使用跨领域聚合页。`OperationLog` 仅作为后端审计写入模型保留，不属于任何设置二级目录。
 
@@ -976,16 +979,16 @@ Playwright `test:smoke:api` 验证真实 NestJS 的 `/health` 和 `/ready`；它
 
 # 14. 实施结果与持续门禁
 
-| 范围 | 当前结果 |
-| ---- | -------- |
-| 应用壳与导航 | 60px 全宽顶栏、180/48px 侧栏、四个左侧分组；路由注册表生成菜单、面包屑和权限 |
-| 页面交互 | 项目、审核、标准、知识和档案模版均支持可分享深链并在列表页打开抽屉；筛选保留在 URL，批次页码由滚动续载管理 |
-| 公共组件 | `components/business/` 覆盖容器、表格、抽屉、状态、表单、空/错/无权限态；BusinessTable 统一数组列、声明式列、动态列和每批 20 条的无限滚动 |
-| 服务端状态 | 所有在用业务与组织设置页面接入 TanStack Query；Pinia 只保存会话、权限、外观和语言 |
-| 权限 | 菜单、路由、动作按权限码；`SUPER_ADMIN` 仅前端展示绕过，后端仍做最终校验和审计 |
-| 文件 | 只保留 `AttachmentPreviewModal` + `FilePreviewRouter`；所有 Viewer 只读，处理产物由 Worker 生成 |
-| UI 与类型 | 删除 Arco 兼容层、旧图标别名和无效页面样式；strict、strictTemplates、noUnused 已开启 |
-| 国际化 | 核心业务与设置中英文 key 同构；业务数据不翻译，隐藏组织权限深链仍以中文为主 |
-| 自动化 | Vitest、Vue Test Utils、Query/i18n/路由/流程契约测试和真实 API Playwright 冒烟 |
+| 范围         | 当前结果                                                                                                                                  |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| 应用壳与导航 | 60px 全宽顶栏、180/48px 侧栏、四个左侧分组；路由注册表生成菜单、面包屑和权限                                                              |
+| 页面交互     | 项目、审核、标准、知识和档案模版均支持可分享深链并在列表页打开抽屉；筛选保留在 URL，批次页码由滚动续载管理                                |
+| 公共组件     | `components/business/` 覆盖容器、表格、抽屉、状态、表单、空/错/无权限态；BusinessTable 统一数组列、声明式列、动态列和每批 20 条的无限滚动 |
+| 服务端状态   | 所有在用业务与组织设置页面接入 TanStack Query；Pinia 只保存会话、权限、外观和语言                                                         |
+| 权限         | 菜单、路由、动作按权限码；`SUPER_ADMIN` 仅前端展示绕过，后端仍做最终校验和审计                                                            |
+| 文件         | 只保留 `AttachmentPreviewModal` + `FilePreviewRouter`；所有 Viewer 只读，处理产物由 Worker 生成                                           |
+| UI 与类型    | 删除 Arco 兼容层、旧图标别名和无效页面样式；strict、strictTemplates、noUnused 已开启                                                      |
+| 国际化       | 核心业务与设置中英文 key 同构；业务数据不翻译，隐藏组织权限深链仍以中文为主                                                               |
+| 自动化       | Vitest、Vue Test Utils、Query/i18n/路由/流程契约测试和真实 API Playwright 冒烟                                                            |
 
 每次影响前端的提交仍必须运行 `type-check`、`test`、`build`；样式、登录、文件、项目、档案、审核、标准或知识变更还必须完成真实浏览器验证。文件转换状态采用显式重试而非无限轮询，项目新建审核驳回后保持草稿，这两项是当前业务边界，不是兼容待办。

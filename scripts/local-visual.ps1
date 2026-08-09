@@ -94,6 +94,7 @@ try {
       tests/ui/project-detail-dialog.spec.ts `
       tests/ui/standard-library-figma.spec.ts `
       tests/ui/user-shell-layout.spec.ts `
+      tests/ui/sidebar-embedded-layout.spec.ts `
       --config playwright.ui.config.ts `
       --grep 'match'
     $testExitCode = $LASTEXITCODE

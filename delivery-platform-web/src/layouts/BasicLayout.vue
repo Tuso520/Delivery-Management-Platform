@@ -24,6 +24,7 @@ const appStore = useAppStore()
 const permissionStore = usePermissionStore()
 const localeStore = useLocaleStore()
 const isMobile = ref(false)
+let mobileSidebarMediaQuery: MediaQueryList | null = null
 const { t } = useI18n()
 permissionStore.setMenus(menuItems)
 const sidebarCollapsed = computed(() => appStore.sidebarCollapsed)
@@ -62,15 +63,21 @@ function handleMenuSelect(path: string): void {
   void router.push(path)
   if (isMobile.value) appStore.setSidebarCollapsed(true)
 }
-function syncViewport(): void {
-  isMobile.value = window.innerWidth <= 900
+function syncResponsiveSidebar(): void {
+  isMobile.value =
+    mobileSidebarMediaQuery?.matches ??
+    (window.innerWidth <= 600 && window.navigator.maxTouchPoints > 0)
   if (isMobile.value) appStore.setSidebarCollapsed(true)
 }
 onMounted(() => {
-  syncViewport()
-  window.addEventListener('resize', syncViewport)
+  mobileSidebarMediaQuery = window.matchMedia('(max-width: 600px) and (pointer: coarse)')
+  syncResponsiveSidebar()
+  mobileSidebarMediaQuery.addEventListener('change', syncResponsiveSidebar)
 })
-onBeforeUnmount(() => window.removeEventListener('resize', syncViewport))
+onBeforeUnmount(() => {
+  mobileSidebarMediaQuery?.removeEventListener('change', syncResponsiveSidebar)
+  mobileSidebarMediaQuery = null
+})
 </script>
 
 <template>
@@ -110,8 +117,10 @@ onBeforeUnmount(() => window.removeEventListener('resize', syncViewport))
 <style scoped>
 .basic-layout {
   width: 100%;
+  height: 100vh;
   height: 100dvh;
-  min-height: 100dvh;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -119,14 +128,18 @@ onBeforeUnmount(() => window.removeEventListener('resize', syncViewport))
   font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
 .layout-body {
-  min-height: 0;
-  flex: 1;
-  display: flex;
-}
-.layout-content {
+  width: 100%;
   min-width: 0;
   min-height: 0;
-  flex: 1;
+  flex: 1 1 0;
+  display: flex;
+  overflow: hidden;
+}
+.layout-content {
+  width: 0;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 0;
   display: flex;
   flex-direction: column;
   padding: 13px;
@@ -148,12 +161,12 @@ onBeforeUnmount(() => window.removeEventListener('resize', syncViewport))
   border: 0;
   background: rgba(29, 33, 41, 0.42);
 }
-@media (max-width: 900px) {
+@media (max-width: 600px) and (pointer: coarse) {
   .layout-content {
     padding: 12px;
   }
 }
-@media (max-width: 600px) {
+@media (max-width: 420px) and (pointer: coarse) {
   .layout-content {
     padding: 8px;
   }

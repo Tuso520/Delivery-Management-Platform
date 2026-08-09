@@ -16,12 +16,19 @@ describe('application shell layout', () => {
     expect(headerSource).toMatch(/\.layout-header\s*\{[^}]*height:\s*60px/s)
     expect(headerSource).toMatch(/\.layout-header\s*\{[^}]*flex:\s*0 0 60px/s)
     expect(sidebarSource).toMatch(/\.layout-aside\s*\{[^}]*width:\s*180px/s)
+    expect(sidebarSource).toMatch(/\.layout-aside\s*\{[^}]*min-width:\s*180px/s)
+    expect(sidebarSource).toMatch(/\.layout-aside\s*\{[^}]*max-width:\s*180px/s)
+    expect(sidebarSource).toMatch(/\.layout-aside\s*\{[^}]*flex:\s*0 0 180px/s)
     expect(sidebarSource).toMatch(/&\.collapsed\s*\{[^}]*width:\s*48px/s)
+    expect(sidebarSource).toMatch(/&\.collapsed\s*\{[^}]*min-width:\s*48px/s)
+    expect(sidebarSource).toMatch(/&\.collapsed\s*\{[^}]*flex-basis:\s*48px/s)
   })
 
   it('uses a full-width responsive content area without a max width', () => {
     expect(layoutSource).toMatch(/\.layout-main\s*\{[^}]*width:\s*100%/s)
     expect(layoutSource).toMatch(/\.layout-main\s*\{[^}]*min-height:\s*0/s)
+    expect(layoutSource).toMatch(/\.layout-content\s*\{[^}]*width:\s*0[^}]*flex:\s*1 1 0/s)
+    expect(layoutSource).toMatch(/\.layout-body\s*\{[^}]*min-width:\s*0[^}]*overflow:\s*hidden/s)
     expect(layoutSource).not.toMatch(/[;{]\s*max-width\s*:/u)
     expect(layoutSource).toContain('padding: 13px')
     expect(layoutSource).toContain('border-radius: 4px')
@@ -71,6 +78,17 @@ describe('application shell layout', () => {
     expect(loginSource).toContain('route.query.feishu_error')
   })
 
+  it('keeps desktop iframe navigation fixed and only uses a drawer on narrow touch screens', () => {
+    expect(layoutSource).toContain("window.matchMedia('(max-width: 600px) and (pointer: coarse)')")
+    expect(layoutSource).toContain('window.navigator.maxTouchPoints > 0')
+    expect(layoutSource).not.toContain('window.innerWidth <= 900')
+    expect(layoutSource).toContain('height: 100vh')
+    expect(layoutSource).toContain('height: 100dvh')
+    expect(sidebarSource).toContain('@media (max-width: 600px) and (pointer: coarse)')
+    expect(documentSource).toContain('viewport-fit=cover')
+    expect(documentSource).toContain('interactive-widget=resizes-content')
+  })
+
   it('renders route-derived menu expansion and an explicit empty state', () => {
     expect(sidebarSource).toContain('v-model:open-keys="openKeys"')
     expect(sidebarSource).toContain(':accordion="true"')
@@ -93,12 +111,26 @@ describe('application shell layout', () => {
   it('centers menu icons, labels and chevrons with flex containers', () => {
     expect(sidebarSource).toContain('class="menu-icon-box"')
     expect(sidebarSource).toContain('class="menu-chevron-box"')
-    expect(sidebarSource).toMatch(/\.menu-icon-box\s*\{[^}]*display:\s*flex[^}]*align-items:\s*center[^}]*justify-content:\s*center/s)
-    expect(sidebarSource).toMatch(/\.menu-chevron-box\s*\{[^}]*display:\s*flex[^}]*align-items:\s*center[^}]*justify-content:\s*center/s)
-    expect(sidebarSource).toMatch(/\.figma-menu-icon\s*\{[^}]*display:\s*block[^}]*object-fit:\s*contain[^}]*filter:/s)
+    expect(sidebarSource).toMatch(
+      /\.menu-icon-box\s*\{[^}]*display:\s*flex[^}]*align-items:\s*center[^}]*justify-content:\s*center/s,
+    )
+    expect(sidebarSource).toMatch(
+      /\.menu-chevron-box\s*\{[^}]*display:\s*flex[^}]*align-items:\s*center[^}]*justify-content:\s*center/s,
+    )
+    expect(sidebarSource).toMatch(
+      /\.figma-menu-icon\s*\{[^}]*display:\s*block[^}]*object-fit:\s*contain[^}]*filter:/s,
+    )
     expect(sidebarSource).toMatch(/\.figma-menu-icon\.is-active\s*\{[^}]*filter:/s)
+    expect(sidebarSource).toMatch(/\.menu-icon-box\s*\{[^}]*flex:\s*0 0 18px/s)
+    expect(sidebarSource).toMatch(
+      /\.menu-title\s*\{[^}]*white-space:\s*nowrap[^}]*overflow:\s*hidden/s,
+    )
     expect(sidebarSource).toMatch(/\.menu-chevron\s*\{[^}]*display:\s*block/s)
-    expect(sidebarSource).toMatch(/\.arco-menu-inline-content > \.arco-menu-item\)\s*\{[^}]*padding:\s*0 8px 0 42px/s)
-    expect(sidebarSource).not.toMatch(/(?:menu-icon-box|figma-menu-icon|menu-chevron-box|menu-chevron)[^}]*?(?:margin-top|translateY|\btop\s*:)/s)
+    expect(sidebarSource).toMatch(
+      /\.arco-menu-inline-content > \.arco-menu-item\)\s*\{[^}]*padding:\s*0 8px 0 42px/s,
+    )
+    expect(sidebarSource).not.toMatch(
+      /(?:menu-icon-box|figma-menu-icon|menu-chevron-box|menu-chevron)[^}]*?(?:margin-top|translateY|\btop\s*:)/s,
+    )
   })
 })

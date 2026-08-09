@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  resolveActiveMenuGroupPath,
-  type MenuItem,
-} from '@/store/permission'
+import { resolveActiveMenuGroupPath, type MenuItem } from '@/store/permission'
 import { resolveSidebarMenuIcon } from '@/layouts/sidebar-navigation'
 import menuChevronIcon from '@/assets/figma/project-overview/menu-chevron.svg'
 import menuChevronActiveIcon from '@/assets/figma/project-overview/menu-chevron-active.svg'
@@ -122,8 +119,10 @@ function isActiveGroup(menu: MenuItem): boolean {
 .layout-aside {
   position: relative;
   width: 180px;
+  min-width: 180px;
+  max-width: 180px;
   height: 100%;
-  flex: 0 0 auto;
+  flex: 0 0 180px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -131,11 +130,16 @@ function isActiveGroup(menu: MenuItem): boolean {
   transition: width 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   &.collapsed {
     width: 48px;
+    min-width: 48px;
+    max-width: 48px;
+    flex-basis: 48px;
   }
 }
 .sidebar-menu {
-  width: auto;
-  flex: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 0;
   padding: 4px 8px;
   overflow: auto;
   border-right: 0;
@@ -145,7 +149,10 @@ function isActiveGroup(menu: MenuItem): boolean {
 }
 .sidebar-menu :deep(.arco-menu-item),
 .sidebar-menu :deep(.arco-menu-inline-header) {
+  min-width: 0;
   height: 40px;
+  min-height: 40px;
+  flex-shrink: 0;
   margin: 0 0 4px;
   display: flex;
   align-items: center;
@@ -172,9 +179,14 @@ function isActiveGroup(menu: MenuItem): boolean {
   display: flex;
   align-items: center;
   line-height: 22px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .sidebar-menu :deep(.arco-menu-icon) {
   width: 18px;
+  min-width: 18px;
+  max-width: 18px;
   height: 18px;
   flex: 0 0 18px;
   display: flex;
@@ -185,7 +197,10 @@ function isActiveGroup(menu: MenuItem): boolean {
 }
 .menu-icon-box {
   width: 18px;
+  min-width: 18px;
+  max-width: 18px;
   height: 18px;
+  flex: 0 0 18px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -193,13 +208,15 @@ function isActiveGroup(menu: MenuItem): boolean {
 }
 .figma-menu-icon {
   display: block;
+  max-width: none;
+  flex: none;
   object-fit: contain;
-  filter: brightness(0) saturate(100%) invert(33%) sepia(11%) saturate(836%)
-    hue-rotate(175deg) brightness(95%) contrast(88%);
+  filter: brightness(0) saturate(100%) invert(33%) sepia(11%) saturate(836%) hue-rotate(175deg)
+    brightness(95%) contrast(88%);
 }
 .figma-menu-icon.is-active {
-  filter: brightness(0) saturate(100%) invert(34%) sepia(98%) saturate(4697%)
-    hue-rotate(220deg) brightness(103%) contrast(101%);
+  filter: brightness(0) saturate(100%) invert(34%) sepia(98%) saturate(4697%) hue-rotate(220deg)
+    brightness(103%) contrast(101%);
 }
 .figma-menu-icon--dashboard {
   width: 14.861px;
@@ -219,10 +236,13 @@ function isActiveGroup(menu: MenuItem): boolean {
 }
 .menu-title {
   min-width: 0;
-  flex: 1;
+  flex: 1 1 0;
   display: flex;
   align-items: center;
   line-height: 22px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .menu-chevron-box {
   width: 14px;
@@ -251,6 +271,7 @@ function isActiveGroup(menu: MenuItem): boolean {
   color: #165dff;
 }
 .collapse-area {
+  flex: 0 0 auto;
   padding: 12px;
   display: flex;
   justify-content: flex-end;
@@ -289,12 +310,15 @@ function isActiveGroup(menu: MenuItem): boolean {
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
 }
-@media (max-width: 900px) {
+@media (max-width: 600px) and (pointer: coarse) {
   .layout-aside {
     position: fixed;
     inset: 60px auto 0 0;
     z-index: 1001;
     width: 180px !important;
+    min-width: 180px;
+    max-width: 180px;
+    flex-basis: 180px;
     transform: translateX(0);
     &.collapsed {
       transform: translateX(-100%);
