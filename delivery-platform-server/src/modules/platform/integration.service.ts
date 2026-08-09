@@ -110,6 +110,7 @@ export interface FeishuOAuthIdentity {
   unionId?: string;
   tenantUserId?: string;
   tenantKey?: string;
+  avatarUrl?: string;
 }
 
 interface ContactSyncLease {
@@ -289,6 +290,9 @@ export class IntegrationService {
       unionId: this.optionalString(data.union_id),
       tenantUserId: this.optionalString(data.user_id),
       tenantKey: this.optionalString(data.tenant_key),
+      avatarUrl: this.optionalString(
+        data.avatar_url ?? data.avatar_big ?? data.avatar_middle ?? data.avatar_thumb,
+      ),
     };
     if (!identity.openId && !identity.unionId && !identity.tenantUserId) {
       throw new IntegrationDeliveryError('FEISHU_LOGIN_IDENTITY_INVALID', false);

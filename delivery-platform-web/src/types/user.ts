@@ -3,7 +3,7 @@ export interface UserInfo {
   username: string
   realName: string
   email: string
-  avatar?: string
+  avatar?: string | null
   roles: string[]
   permissions: string[]
 }
@@ -29,7 +29,7 @@ export interface UserProfile {
   username: string
   realName: string
   email: string | null
-  avatar?: string
+  avatar?: string | null
   roles: string[]
   permissions: string[]
   createdAt?: string

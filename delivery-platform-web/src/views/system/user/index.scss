@@ -1,3 +1,35 @@
+.user-page {
+  height: 100%;
+  overflow: hidden;
+}
+
+.table-card {
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.table-card :deep(.arco-card-body) {
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.table-card :deep(.business-table) {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.table-card :deep(.business-table__viewport) {
+  height: 100%;
+  max-height: none;
+  overflow: auto;
+}
+
 .no-role,
 .role-code-hint {
   color: #86909c;

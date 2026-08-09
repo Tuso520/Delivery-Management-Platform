@@ -313,7 +313,7 @@ async function handleResetPassword(): Promise<void> {
 </script>
 
 <template>
-  <PageContainer class="user-page">
+  <PageContainer class="user-page" :scrollable="false">
     <PageToolbar title="用户中心" description="维护用户基本资料、账号状态及角色关联">
       <template #actions>
         <Can permission="user:create">

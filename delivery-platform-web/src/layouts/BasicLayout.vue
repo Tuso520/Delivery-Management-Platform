@@ -55,6 +55,10 @@ const groupTitle = computed(() => (activeGroup.value ? t(activeGroup.value.title
 const userName = computed(
   () => userStore.userInfo?.realName || userStore.userInfo?.username || t('shell.userFallback'),
 )
+const avatarUrl = computed(() => userStore.userInfo?.avatar || undefined)
+const profilePath = computed(() =>
+  filteredSettings.value.some((item) => item.path === '/settings') ? '/settings' : undefined,
+)
 const pageTitle = computed(() => resolveRouteTitle(route.meta, localeStore.currentLocale))
 watchEffect(() => {
   document.title = `${pageTitle.value} - ${t('app.title')}`
@@ -78,9 +82,10 @@ onBeforeUnmount(() => window.removeEventListener('resize', syncViewport))
   <div class="basic-layout">
     <AppHeader
       :user-name="userName"
+      :avatar-url="avatarUrl"
+      :profile-path="profilePath"
       :current-locale="localeStore.currentLocale"
       :theme-mode="appStore.theme"
-      :settings="filteredSettings"
       @toggle-sidebar="appStore.toggleSidebar"
       @setting-select="router.push"
       @language-change="(value: LocaleCode) => localeStore.setLocale(value)"

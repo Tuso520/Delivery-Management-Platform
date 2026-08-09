@@ -226,6 +226,53 @@ describe('IntegrationService secured configuration', () => {
     ).rejects.toThrow('HTTPS 登录回调地址');
   });
 
+  it('returns the current Feishu user avatar from the OAuth user profile', async () => {
+    const findFirst = jest.fn();
+    const prisma = {
+      integrationConfig: { findFirst },
+    } as unknown as PrismaService;
+    const service = new IntegrationService(prisma, configService(), operationLog());
+    const internals = service as unknown as IntegrationInternals;
+    findFirst.mockResolvedValue(
+      integrationRecordFixture({
+        configValue: {
+          appId: 'app-id',
+          oauthRedirectUri: 'https://delivery.example.com/api/v1/auth/feishu/callback',
+        },
+        encryptedConfig: internals.encryptSecrets('FEISHU', { appSecret: 'test-secret' }),
+      }),
+    );
+    const fetchMock = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({ code: 0, access_token: 'user-access-token' }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          code: 0,
+          data: {
+            open_id: 'ou_user_1',
+            union_id: 'on_user_1',
+            user_id: 'tenant-user-1',
+            tenant_key: 'tenant-1',
+            avatar_url: 'https://example.feishu.cn/avatar/current-user.png',
+          },
+        }),
+      );
+
+    try {
+      await expect(service.exchangeFeishuOAuthCode('integration-1', 'oauth-code')).resolves.toEqual(
+        {
+          openId: 'ou_user_1',
+          unionId: 'on_user_1',
+          tenantUserId: 'tenant-user-1',
+          tenantKey: 'tenant-1',
+          avatarUrl: 'https://example.feishu.cn/avatar/current-user.png',
+        },
+      );
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
   it('fails a sensitive test safely when the encryption key is unavailable', async () => {
     const syncLogCreate = jest.fn().mockResolvedValue({ id: 'sync-log-1' });
     const prisma = {

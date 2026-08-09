@@ -86,6 +86,8 @@ const projectManagerUser = {
 };
 
 let activeUser = adminUser;
+let refreshSessionSequence = 0;
+const refreshSessions = new Map();
 
 let attachments = [];
 let approvalTasks = [];
@@ -1280,12 +1282,22 @@ function localStandards() {
   });
 }
 
-function sendJson(res, data, status = 200) {
+function sendJson(res, data, status = 200, headers = {}) {
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
     "Access-Control-Allow-Origin": "*",
+    ...headers,
   });
   res.end(JSON.stringify(data));
+}
+
+function readCookie(req, name) {
+  const prefix = `${name}=`;
+  return String(req.headers.cookie || "")
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(prefix))
+    ?.slice(prefix.length);
 }
 
 function sendRaw(res, buffer, contentType) {
@@ -1528,6 +1540,7 @@ function samplePng() {
 function ensureAuthorized(req) {
   if (
     req.url.includes("/auth/login") ||
+    req.url.includes("/auth/refresh") ||
     req.url.includes("/system-config/public") ||
     req.url.includes("/ready") ||
     req.url.includes("/signed-content?token=local-preview")
@@ -1912,17 +1925,20 @@ async function handleApi(req, res, url) {
       sendJson(res, envelope(null, "用户名或密码错误", 401), 401);
       return;
     }
-    if (username === "pm_wang") {
-      activeUser = projectManagerUser;
-    } else {
-      activeUser = adminUser;
-    }
+    const authenticatedUser = username === "pm_wang" ? projectManagerUser : adminUser;
+    activeUser = authenticatedUser;
+    const refreshSessionId = `local-session-${Date.now()}-${++refreshSessionSequence}`;
+    refreshSessions.set(refreshSessionId, authenticatedUser);
     sendJson(
       res,
       envelope({
-        accessToken: `local-test-token-${activeUser.username}-${Date.now()}`,
-        user: activeUser,
+        accessToken: `local-test-token-${authenticatedUser.username}-${Date.now()}`,
+        user: authenticatedUser,
       }),
+      200,
+      {
+        "Set-Cookie": `dmp_local_session=${refreshSessionId}; Path=/api/v1/auth; HttpOnly; SameSite=Lax`,
+      },
     );
     return;
   }
@@ -1932,8 +1948,30 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (req.method === "POST" && path === "/auth/refresh") {
+    const refreshSessionId = readCookie(req, "dmp_local_session");
+    const sessionUser = refreshSessions.get(refreshSessionId);
+    if (!sessionUser) {
+      sendJson(res, envelope(null, "未登录", 401), 401);
+      return;
+    }
+    sendJson(
+      res,
+      envelope({
+        accessToken: `local-test-token-${sessionUser.username}-${Date.now()}`,
+        user: sessionUser,
+        defaultRoute: "/dashboard",
+      }),
+    );
+    return;
+  }
+
   if (req.method === "POST" && path === "/auth/logout") {
-    sendJson(res, envelope(null));
+    const refreshSessionId = readCookie(req, "dmp_local_session");
+    refreshSessions.delete(refreshSessionId);
+    sendJson(res, envelope(null), 200, {
+      "Set-Cookie": "dmp_local_session=; Path=/api/v1/auth; Max-Age=0; HttpOnly; SameSite=Lax",
+    });
     return;
   }
 

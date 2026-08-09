@@ -13,6 +13,7 @@ export interface JwtPayload {
   username: string;
   realName: string;
   email: string | null;
+  avatar?: string | null;
   roles: string[];
   permissions: string[];
   permissionVersion: number;
@@ -66,6 +67,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         username: true,
         realName: true,
         email: true,
+        avatarUrl: true,
         permissionVersion: true,
         userRoles: {
           where: { role: { status: 'Active' } },
@@ -102,6 +104,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       username: user.username,
       realName: user.realName,
       email: user.email,
+      avatar: user.avatarUrl,
       roles: resolved.roles,
       permissions: resolved.permissions,
       permissionVersion: user.permissionVersion,

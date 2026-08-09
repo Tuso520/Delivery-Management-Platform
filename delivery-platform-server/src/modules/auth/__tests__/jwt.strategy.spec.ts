@@ -27,6 +27,7 @@ describe('JwtStrategy', () => {
     username: 'current-user',
     realName: '当前用户',
     email: 'current@example.com',
+    avatarUrl: 'https://example.feishu.cn/avatar/current-user.png',
     permissionVersion: 5,
     userRoles: [
       {
@@ -68,6 +69,7 @@ describe('JwtStrategy', () => {
       username: 'current-user',
       realName: '当前用户',
       email: 'current@example.com',
+      avatar: 'https://example.feishu.cn/avatar/current-user.png',
       roles: ['PROJECT_MANAGER'],
       permissions: ['project:view'],
       permissionVersion: 5,
