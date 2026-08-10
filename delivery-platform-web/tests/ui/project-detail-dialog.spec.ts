@@ -320,7 +320,7 @@ test('dirty edit requires confirmation and view mode remains safe at a smaller v
   await expect(projectDialog).toBeVisible({ timeout: 60_000 })
   const shortNameInput = formItem(projectDialog, '项目简称').locator('input')
   await shortNameInput.fill(`${await shortNameInput.inputValue()}-未保存`)
-  await page.locator('.arco-modal-mask:visible').last().click({ position: { x: 2, y: 2 } })
+  await page.mouse.click(2, 2)
   await expect(projectDialog).toBeVisible()
   await expect(page.getByText('未保存修改', { exact: true })).toHaveCount(0)
   await projectDialog.getByRole('button', { name: '关闭' }).click()
