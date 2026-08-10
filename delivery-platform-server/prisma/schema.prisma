@@ -256,6 +256,7 @@ model Project {
   contractAmount           Decimal?  @map("contract_amount") @db.Decimal(18, 2)
   exchangeRate             Decimal?  @map("exchange_rate") @db.Decimal(18, 8)
   convertedAmount          Decimal?  @map("converted_amount") @db.Decimal(18, 2)
+  acceptedConvertedAmount  Decimal?  @map("accepted_converted_amount") @db.Decimal(18, 2)
   exchangeRateDate         DateTime? @map("exchange_rate_date")
   exchangeRateSource       String?   @map("exchange_rate_source") @db.VarChar(50)
   projectLanguage          String?   @map("project_language") @db.VarChar(10)

@@ -97,7 +97,7 @@ const localUsers = [
   projectManagerUser,
   {
     id: "user-sales-li",
-    username: "sales_li",
+    username: "FS-DA-SALES-LI",
     realName: "李销售",
     email: "sales.li@delivery-platform.local",
   },
@@ -2621,11 +2621,24 @@ async function handleApi(req, res, url) {
   if (req.method === "POST" && path === "/projects") {
     const body = await readJson(req);
     const id = `project-${Date.now()}`;
+    const signedYear = body.contractSignedAt
+      ? new Date(body.contractSignedAt).getUTCFullYear()
+      : new Date().getUTCFullYear();
+    const countryCode = String(body.countryCode || "CN")
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/gu, "");
+    const codePrefix = `${signedYear}-${countryCode}-`;
+    const nextSequence =
+      localProjects.reduce((max, item) => {
+        if (!item.projectCode?.startsWith(codePrefix)) return max;
+        return Math.max(max, Number(item.projectCode.slice(codePrefix.length)) || 0);
+      }, 0) + 1;
     const project = {
       id,
       projectCode:
         body.projectCode ||
-        `${body.countryCode || "CN"}-${Date.now().toString().slice(-3)}`,
+        `${codePrefix}${String(nextSequence).padStart(4, "0")}`,
       projectName: body.projectName || "新建交付项目",
       shortName: body.shortName || null,
       countryCode: body.countryCode || "CN",
@@ -2642,6 +2655,9 @@ async function handleApi(req, res, url) {
       contractAmount: String(body.contractAmount || "0"),
       exchangeRate: "1",
       convertedAmount: String(body.contractAmount || "0"),
+      acceptedConvertedAmount: String(
+        body.acceptedConvertedAmount ?? body.contractAmount ?? "0",
+      ),
       baseCurrencyAmount: String(body.contractAmount || "0"),
       projectLanguage: body.projectLanguage || "zh-CN",
       archiveTemplateId: body.archiveTemplateId || null,

@@ -28,11 +28,6 @@ export interface UserReferenceOption {
   active: boolean;
 }
 
-const PURPOSE_ROLE_CODES: Partial<Record<UserReferencePurpose, string[]>> = {
-  'project-manager': ['PROJECT_MANAGER'],
-  'sales-owner': ['DELIVERY_MANAGER', 'COUNTRY_MANAGER'],
-};
-
 interface DepartmentTreeNode {
   id: string;
   departmentCode: string;
@@ -104,21 +99,10 @@ export class ReferenceService {
       }));
     }
 
-    const roleCodes = PURPOSE_ROLE_CODES[purpose];
     const users = await this.prisma.user.findMany({
       where: {
         deletedAt: null,
         status: 'Active',
-        ...(roleCodes && {
-          userRoles: {
-            some: {
-              role: {
-                status: 'Active',
-                roleCode: { in: roleCodes },
-              },
-            },
-          },
-        }),
       },
       select: {
         id: true,

@@ -46,17 +46,16 @@ const form = reactive<ProjectPaymentPlanItem>({
   remark: '',
 })
 const columns = computed<TableColumnData[]>(() => [
-  { title: '付款项', dataIndex: 'paymentName', width: 98 },
-  { title: '付款日期', dataIndex: 'dueDate', slotName: 'dueDate', width: 204 },
-  { title: '是否完成', dataIndex: 'completed', slotName: 'completed', width: 88 },
-  { title: '付款比例', slotName: 'ratio', width: 115 },
-  { title: '付款金额', slotName: 'originalAmount', width: 115 },
+  { title: '付款项', dataIndex: 'paymentName' },
+  { title: '付款日期', dataIndex: 'dueDate', slotName: 'dueDate' },
+  { title: '是否完成', dataIndex: 'completed', slotName: 'completed' },
+  { title: '付款比例', slotName: 'ratio' },
+  { title: '付款金额', slotName: 'originalAmount' },
   {
     title: `折算${props.baseCurrencyLabel || '币种'}`,
     slotName: 'convertedAmount',
-    width: 132,
   },
-  { title: '付款条件', dataIndex: 'remark', slotName: 'remark', width: 291 },
+  { title: '付款条件', dataIndex: 'remark', slotName: 'remark' },
 ])
 const keyedRows = computed(() =>
   props.modelValue.map((item, index) => ({ ...item, rowKey: item.id || `new-${index}` })),
@@ -199,6 +198,12 @@ function remove(): void {
       <h3 id="payment-plan-title">
         款项计划
       </h3>
+      <span
+        v-if="contractAmount && modelValue.length && !ratioMatchesContract"
+        class="ratio-warning"
+      >
+        当前款项比例合计 {{ ratioTotal }}，保存前必须调整为 100.00%。
+      </span>
       <div v-if="canOperate" class="payment-actions">
         <a-button type="primary" @click="remove">
           <template #icon>
@@ -218,10 +223,6 @@ function remove(): void {
       </div>
     </div>
 
-    <div v-if="contractAmount && modelValue.length && !ratioMatchesContract" class="ratio-warning">
-      当前款项比例合计 {{ ratioTotal }}，保存前必须调整为 100.00%。
-    </div>
-
     <div class="payment-table-scroll">
       <a-table
         v-model:selected-keys="selectedKeys"
@@ -232,7 +233,6 @@ function remove(): void {
         row-key="rowKey"
         size="small"
         :pagination="false"
-        :scroll="{ x: 1083 }"
       >
         <template #dueDate="{ record }">
           <a-date-picker
@@ -267,7 +267,7 @@ function remove(): void {
           {{ converted(record) }}
         </template>
         <template #remark="{ record }">
-          <span class="payment-condition" :title="record.remark || '—'">
+          <span class="payment-condition">
             {{ record.remark || '—' }}
           </span>
         </template>
@@ -316,23 +316,24 @@ function remove(): void {
 
 <style scoped>
 .payment-plan { padding: 32px 24px 24px; }
-.section-heading { height: 32px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e5e6eb; }
+.section-heading { min-height: 32px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #e5e6eb; }
 .section-heading h3 { margin: 0; color: #1d2129; font-size: 14px; font-weight: 700; line-height: 22px; }
-.payment-actions { display: flex; gap: 8px; }
+.payment-actions { display: flex; gap: 8px; margin-left: auto; }
 .payment-actions :deep(.arco-btn) { width: 82px; height: 32px; padding: 0; border-radius: 0; }
-.ratio-warning { margin-top: 10px; color: rgb(var(--warning-6)); font-size: 12px; }
+.ratio-warning { color: rgb(var(--warning-6)); font-size: 12px; line-height: 20px; }
 .payment-table-scroll { width: 100%; margin-top: 12px; overflow-x: auto; }
 .payment-table-scroll::-webkit-scrollbar { width: 4px; height: 4px; }
 .payment-table-scroll::-webkit-scrollbar-track { border-radius: 2px; background: #f0f0f0; }
 .payment-table-scroll::-webkit-scrollbar-thumb { border-radius: 2px; background: #bfbfbf; }
-.payment-plan :deep(.arco-table) { min-width: 1083px; }
+.payment-plan :deep(.arco-table) { width: max-content; min-width: 100%; }
+.payment-plan :deep(.arco-table-element) { width: max-content; min-width: 100%; table-layout: auto; }
 .payment-plan :deep(.arco-table-th) { height: 36px; padding: 0 16px; background: #f2f3f5; color: #1d2129; font-size: 14px; font-weight: 400; text-align: center; }
 .payment-plan :deep(.arco-table-td) { height: 60px; padding: 0 16px; color: #1d2129; font-size: 14px; text-align: center; }
-.payment-plan :deep(.arco-table-cell) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.payment-plan :deep(.arco-table-td-content) { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.payment-plan :deep(.arco-table-cell),
+.payment-plan :deep(.arco-table-td-content) { overflow: visible; text-overflow: clip; white-space: nowrap; }
 .payment-date-picker { width: 130px; }
 .payment-plan :deep(.payment-date-picker.arco-picker) { height: 32px; border: 0; border-radius: 0; background: #e5e6eb; }
-.payment-condition { display: block; max-width: 100%; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.payment-condition { display: block; min-width: 240px; max-width: 420px; text-align: left; white-space: normal; overflow-wrap: anywhere; }
 .payment-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; }
 .payment-form-grid :deep(.arco-picker), .payment-form-grid :deep(.arco-input-number) { width: 100%; }
 .span-full { grid-column: 1 / -1; }

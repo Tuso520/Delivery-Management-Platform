@@ -137,7 +137,7 @@ jobs:
       INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME: admin
       SEED_RESET_EXISTING_USER_PASSWORDS: "true"
       SEED_INCLUDE_DEMO_DATA: "true"
-      EXPECTED_MIGRATION_COUNT: "46"
+      EXPECTED_MIGRATION_COUNT: "47"
     steps:
       - uses: actions/checkout@v4
         with:

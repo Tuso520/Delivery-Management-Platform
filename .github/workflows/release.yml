@@ -11,6 +11,11 @@ on:
         description: main 历史中的完整提交、标签或 ref
         required: false
         default: ""
+      integration_only:
+        description: 仅构建并执行真实集成验收，不部署测试服务器
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   actions: read
@@ -223,7 +228,7 @@ jobs:
             --migrator-image "$migrator_image" \
             --frontend-artifact "$FRONTEND_ARTIFACT" \
             --frontend-file release/frontend.tar.gz \
-            --migration-count 46 \
+            --migration-count 47 \
             --output release/release-manifest.json
           node scripts/release/release-manifest.mjs verify \
             --manifest release/release-manifest.json \
@@ -276,7 +281,7 @@ jobs:
       MINIO_ROOT_USER: delivery_minio
       MINIO_BUCKET: delivery-platform
       BACKEND_HOST_PORT: "13000"
-      EXPECTED_MIGRATION_COUNT: "46"
+      EXPECTED_MIGRATION_COUNT: "47"
       INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME: admin
       SEED_RESET_EXISTING_USER_PASSWORDS: "true"
       SEED_INCLUDE_DEMO_DATA: "true"
@@ -440,7 +445,7 @@ jobs:
   deploy_test:
     name: 自动部署测试服务器
     needs: [resolve, build, integration]
-    if: ${{ vars.RELEASE_V2_ENABLED == 'true' }}
+    if: ${{ vars.RELEASE_V2_ENABLED == 'true' && (github.event_name != 'workflow_dispatch' || inputs.integration_only != true) }}
     uses: ./.github/workflows/reusable-deploy-release.yml
     with:
       environment_name: test

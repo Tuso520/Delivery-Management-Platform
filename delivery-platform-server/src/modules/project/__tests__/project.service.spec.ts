@@ -60,6 +60,7 @@ describe('ProjectService', () => {
     contractAmount: new Prisma.Decimal(100000),
     exchangeRate: new Prisma.Decimal(7.2),
     convertedAmount: new Prisma.Decimal(720000),
+    acceptedConvertedAmount: new Prisma.Decimal(720000),
     exchangeRateDate: new Date('2026-06-24T00:00:00Z'),
     exchangeRateSource: 'CentralBank',
     projectLanguage: 'zh-CN',
@@ -440,9 +441,47 @@ describe('ProjectService', () => {
     const createData = prisma.project.create.mock.calls[0]?.[0]?.data as {
       contractAmount: Prisma.Decimal;
       convertedAmount: Prisma.Decimal;
+      acceptedConvertedAmount: Prisma.Decimal;
     };
     expect(createData.contractAmount.toFixed(2)).toBe('100.10');
     expect(createData.convertedAmount.toFixed(2)).toBe('720.72');
+    expect(createData.acceptedConvertedAmount.toFixed(2)).toBe('720.72');
+  });
+
+  it('stores a manually adjusted accepted amount and acceptance state during creation', async () => {
+    prisma.project.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      ...mockProject,
+      acceptedConvertedAmount: new Prisma.Decimal('700.00'),
+      actualAcceptanceAt: new Date('2026-12-18'),
+      status: 'COMPLETED',
+    });
+    prisma.project.create.mockResolvedValue(mockProject);
+
+    await service.create(
+      {
+        projectName: '历史验收项目',
+        countryCode: 'VN',
+        archiveTemplateId,
+        contractCurrency: 'CNY',
+        baseCurrency: 'CNY',
+        contractAmount: '720.00',
+        acceptedConvertedAmount: '700.00',
+        expectedAcceptanceAt: '2026-12-18',
+        actualAcceptanceAt: '2026-12-18',
+      },
+      sensitiveActor,
+      idempotencyKey,
+    );
+
+    expect(prisma.project.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          acceptedConvertedAmount: new Prisma.Decimal('700.00'),
+          actualAcceptanceAt: new Date('2026-12-18'),
+          status: 'COMPLETED',
+        }),
+      }),
+    );
   });
 
   it('creates the project and its complete payment plan in the same transaction', async () => {
@@ -534,23 +573,33 @@ describe('ProjectService', () => {
     expect(prisma.project.create).not.toHaveBeenCalled();
   });
 
-  it('rejects a project manager who does not hold the active manager role', async () => {
-    prisma.user.findFirst.mockResolvedValue(null);
+  it('accepts an active Feishu-synced user as project manager without a local role', async () => {
+    prisma.project.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(mockProject);
+    prisma.project.create.mockResolvedValue(mockProject);
+    prisma.user.findFirst.mockResolvedValue({ id: 'feishu-user-1' });
 
-    await expect(
-      service.create(
-        {
-          projectName: '岗位错误项目',
-          countryCode: 'VN',
-          archiveTemplateId,
-          projectManagerId: 'member-1',
+    await service.create(
+      {
+        projectName: '飞书人员项目',
+        countryCode: 'VN',
+        archiveTemplateId,
+        projectManagerId: 'feishu-user-1',
+      },
+      sensitiveActor,
+      idempotencyKey,
+    );
+
+    expect(prisma.user.findFirst).toHaveBeenCalledWith({
+      where: { id: 'feishu-user-1', deletedAt: null, status: 'Active' },
+      select: { id: true },
+    });
+    expect(prisma.projectMember.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          projectId_userId: { projectId: 'project-1', userId: 'feishu-user-1' },
         },
-        sensitiveActor,
-        idempotencyKey,
-      ),
-    ).rejects.toThrow('项目经理不符合岗位要求');
-
-    expect(prisma.project.create).not.toHaveBeenCalled();
+      }),
+    );
   });
 
   it('returns the same project for the same actor, key and canonical request payload', async () => {
@@ -977,6 +1026,54 @@ describe('ProjectService', () => {
     expect(prisma.project.updateMany).not.toHaveBeenCalled();
   });
 
+  it('persists an edited accepted amount and allows clearing acceptance', async () => {
+    const acceptedProject = {
+      ...mockProject,
+      acceptedConvertedAmount: new Prisma.Decimal('720.00'),
+      actualAcceptanceAt: new Date('2026-12-18T00:00:00.000Z'),
+      status: 'COMPLETED',
+    };
+    const reopenedProject = {
+      ...acceptedProject,
+      acceptedConvertedAmount: new Prisma.Decimal('650.00'),
+      startDate: new Date('2027-01-01T00:00:00.000Z'),
+      expectedAcceptanceAt: null,
+      actualAcceptanceAt: null,
+      status: 'ACTIVE',
+      revision: 2,
+    };
+    prisma.project.findFirst
+      .mockResolvedValueOnce(acceptedProject)
+      .mockResolvedValueOnce(reopenedProject);
+    prisma.project.findUniqueOrThrow.mockResolvedValue(reopenedProject);
+
+    const result = await service.update(
+      'project-1',
+      {
+        revision: 1,
+        acceptedConvertedAmount: '650.00',
+        startDate: '2027-01-01T00:00:00.000Z',
+        expectedAcceptanceAt: null,
+        actualAcceptanceAt: null,
+      },
+      sensitiveActor,
+    );
+
+    expect(prisma.project.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          acceptedConvertedAmount: new Prisma.Decimal('650.00'),
+          startDate: new Date('2027-01-01T00:00:00.000Z'),
+          expectedAcceptanceAt: null,
+          actualAcceptanceAt: null,
+          status: 'ACTIVE',
+        }),
+      }),
+    );
+    expect(result.acceptedConvertedAmount).toBe('650.00');
+    expect(result.actualAcceptanceAt).toBeNull();
+  });
+
   it('updates, creates and soft-deletes the complete payment plan in the project transaction', async () => {
     const updatedProject = {
       ...mockProject,
@@ -1165,10 +1262,15 @@ describe('ProjectService', () => {
 
   it('generates the next project code sequence', async () => {
     prisma.project.findFirst.mockResolvedValue({
-      projectCode: 'VN-AC-2026-009',
+      projectCode: '2025-VN-0009',
     });
 
-    await expect(service.generateProjectCode('VN', 'AC')).resolves.toBe('VN-AC-2026-010');
+    await expect(service.generateProjectCode('vn', '2025-08-10')).resolves.toBe('2025-VN-0010');
+    expect(prisma.project.findFirst).toHaveBeenCalledWith({
+      where: { projectCode: { startsWith: '2025-VN-' } },
+      orderBy: { projectCode: 'desc' },
+      select: { projectCode: true },
+    });
   });
 
   it('audits an authorized financial detail read with request metadata', async () => {
@@ -1225,7 +1327,7 @@ describe('ProjectService', () => {
         _sum: { convertedAmount: new Prisma.Decimal('28565000') },
       })
       .mockResolvedValueOnce({
-        _sum: { convertedAmount: new Prisma.Decimal('15683000') },
+        _sum: { acceptedConvertedAmount: new Prisma.Decimal('15683000') },
       });
 
     await expect(service.getSummary(financialActor, { scope: 'mine' })).resolves.toMatchObject({
@@ -1245,7 +1347,7 @@ describe('ProjectService', () => {
           },
         ],
       },
-      _sum: { convertedAmount: true },
+      _sum: { acceptedConvertedAmount: true },
     });
   });
 

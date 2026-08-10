@@ -111,6 +111,13 @@ export class UpdateProjectDto {
   @Matches(MONEY_PATTERN, { message: '合同金额必须为非负数，整数最多16位，小数最多2位' })
   contractAmount?: string;
 
+  @ApiPropertyOptional({ description: '确收折算金额' })
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'number' ? String(value) : value))
+  @IsDecimal({ decimal_digits: '0,2', force_decimal: false })
+  @Matches(MONEY_PATTERN, { message: '确收金额必须为非负数，整数最多16位，小数最多2位' })
+  acceptedConvertedAmount?: string;
+
   @ApiPropertyOptional({ description: '合同编号' })
   @IsOptional()
   @IsString()

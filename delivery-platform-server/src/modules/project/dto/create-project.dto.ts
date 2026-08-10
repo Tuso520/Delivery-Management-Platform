@@ -164,6 +164,13 @@ export class CreateProjectDto {
   @Matches(MONEY_PATTERN, { message: '合同金额必须为非负数，整数最多16位，小数最多2位' })
   contractAmount?: string;
 
+  @ApiPropertyOptional({ description: '确收折算金额' })
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'number' ? String(value) : value))
+  @IsDecimal({ decimal_digits: '0,2', force_decimal: false })
+  @Matches(MONEY_PATTERN, { message: '确收金额必须为非负数，整数最多16位，小数最多2位' })
+  acceptedConvertedAmount?: string;
+
   @ApiPropertyOptional({ description: '合同编号' })
   @IsOptional()
   @IsString()
@@ -247,6 +254,11 @@ export class CreateProjectDto {
   @IsOptional()
   @IsDateString()
   expectedAcceptanceAt?: string | null;
+
+  @ApiPropertyOptional({ description: '实际验收时间；仅具备进度更新权限时可写入' })
+  @IsOptional()
+  @IsDateString()
+  actualAcceptanceAt?: string | null;
 
   @ApiProperty({ description: '档案模板ID（创建时解析其当前已发布版本）' })
   @IsString()

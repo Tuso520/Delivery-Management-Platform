@@ -105,7 +105,7 @@ test('distinct create, edit and view dialogs match the Figma project-detail shel
   await expect(projectDialog.getByRole('button', { name: '保存' })).toBeVisible()
   await expect(projectDialog.getByRole('button', { name: '关闭' })).toHaveCSS(
     'border-radius',
-    '100px',
+    '0px',
   )
   await expect(projectDialog.getByRole('button', { name: '关闭' })).toHaveCSS('width', '54px')
   await expect
@@ -155,6 +155,8 @@ test('distinct create, edit and view dialogs match the Figma project-detail shel
   await formItem(projectDialog, '合同金额')
     .locator('input')
     .fill('9007199254740991.99')
+  await expect(formItem(projectDialog, '确收金额').locator('input')).not.toHaveValue('')
+  await formItem(projectDialog, '确收金额').locator('input').fill('123456.78')
   await chooseFirst(projectDialog, page, '档案模版')
   const stageSelect = formItem(projectDialog, '当前阶段').locator('.arco-select-view')
   await expect(stageSelect).toHaveClass(/arco-select-view-multiple/u)
@@ -163,6 +165,14 @@ test('distinct create, edit and view dialogs match the Figma project-detail shel
   await page.keyboard.press('Enter')
   await page.keyboard.press('Escape')
   await expect(stageSelect.locator('.arco-tag')).toHaveCount(2)
+  for (const label of ['销售负责人', '项目经理', '电气工程师', '软件工程师']) {
+    await chooseFirst(projectDialog, page, label)
+    await expect(formItem(projectDialog, label).locator('.arco-select-view-value'))
+      .not.toContainText(/FS-DA/u)
+  }
+  await formItem(projectDialog, '验收时间').locator('input').fill('2026-12-12')
+  await formItem(projectDialog, '是否完成验收').locator('.arco-select-view').click()
+  await page.locator('.arco-select-option:visible').filter({ hasText: /^是$/u }).click()
 
   await addPayment(
     page,
@@ -174,6 +184,10 @@ test('distinct create, edit and view dialogs match the Figma project-detail shel
   await expect(projectDialog.getByText('44.49%', { exact: true })).toBeVisible()
   await expect(projectDialog.getByText('55.51%', { exact: true })).toBeVisible()
   await expect(projectDialog.locator('.ratio-warning')).toHaveCount(0)
+  const paymentTableOverflow = await projectDialog.locator('.payment-table-scroll').evaluate(
+    (element) => element.scrollWidth > element.clientWidth,
+  )
+  expect(paymentTableOverflow).toBe(true)
   await projectDialog.screenshot({ path: screenshotPaths.create, animations: 'disabled' })
 
   const createResponsePromise = page.waitForResponse(
@@ -185,10 +199,18 @@ test('distinct create, edit and view dialogs match the Figma project-detail shel
   const createResponse = await createResponsePromise
   expect(createResponse.status()).toBe(201)
   const createEnvelope = (await createResponse.json()) as {
-    data: { id: string; projectCode: string; currentStages: string[] }
+    data: {
+      id: string
+      projectCode: string
+      currentStages: string[]
+      acceptedConvertedAmount: string
+      actualAcceptanceAt: string | null
+    }
   }
-  expect(createEnvelope.data.projectCode).toMatch(/-\d{3}$/u)
+  expect(createEnvelope.data.projectCode).toMatch(/^\d{4}-[A-Z0-9]+-\d{4}$/u)
   expect(createEnvelope.data.currentStages).toHaveLength(2)
+  expect(createEnvelope.data.acceptedConvertedAmount).toBe('123456.78')
+  expect(createEnvelope.data.actualAcceptanceAt?.slice(0, 10)).toBe('2026-12-12')
   const projectId = createEnvelope.data.id
   await expect(projectDialog).toBeHidden()
 
@@ -197,6 +219,9 @@ test('distinct create, edit and view dialogs match the Figma project-detail shel
   await expect(formItem(projectDialog, '合同名称').locator('input')).toHaveValue(contractName)
   await expect(formItem(projectDialog, '当前阶段').locator('.arco-tag')).toHaveCount(2)
   await expect(projectDialog.locator('.payment-table-scroll tbody tr')).toHaveCount(2)
+  await expect(formItem(projectDialog, '确收金额').locator('input')).toHaveValue('123456.78')
+  await expect(formItem(projectDialog, '是否完成验收').locator('.arco-select-view-value'))
+    .toHaveText('是')
 
   await projectDialog
     .locator('.payment-table-scroll tbody tr')
@@ -219,14 +244,11 @@ test('distinct create, edit and view dialogs match the Figma project-detail shel
     .locator('.payment-table-scroll tbody tr')
     .filter({ hasText: '首付款' })
   await firstPaymentRow.locator('td').nth(3).locator('.arco-radio').click()
-  await expect(formItem(projectDialog, '确收金额').locator('input')).not.toHaveValue('0.00')
+  await formItem(projectDialog, '确收金额').locator('input').fill('234567.89')
   await formItem(projectDialog, '项目简称').locator('input').fill('弹窗验收-已编辑')
-  await formItem(projectDialog, '验收时间').locator('input').fill('2026-12-12')
+  await expect(formItem(projectDialog, '验收时间').locator('input')).toBeDisabled()
   await formItem(projectDialog, '是否完成验收').locator('.arco-select-view').click()
-  await page
-    .locator('.arco-select-option:visible')
-    .filter({ hasText: /^是$/u })
-    .click()
+  await page.locator('.arco-select-option:visible').filter({ hasText: /^否$/u }).click()
   await projectDialog.locator('.dialog-body').evaluate((element) => {
     element.scrollTop = 0
   })
@@ -241,9 +263,10 @@ test('distinct create, edit and view dialogs match the Figma project-detail shel
   const updateResponse = await updateResponsePromise
   expect(updateResponse.status()).toBe(200)
   const updateEnvelope = (await updateResponse.json()) as {
-    data: { actualAcceptanceAt: string | null }
+    data: { actualAcceptanceAt: string | null; acceptedConvertedAmount: string }
   }
-  expect(updateEnvelope.data.actualAcceptanceAt?.slice(0, 10)).toBe('2026-12-12')
+  expect(updateEnvelope.data.actualAcceptanceAt).toBeNull()
+  expect(updateEnvelope.data.acceptedConvertedAmount).toBe('234567.89')
   await expect(projectDialog).toBeHidden()
 
   await page.goto(`/#/projects/${projectId}`)
@@ -258,13 +281,13 @@ test('distinct create, edit and view dialogs match the Figma project-detail shel
   await expect(projectDialog.getByText('验收尾款', { exact: true })).toBeVisible()
   await expect(projectDialog.getByText('2026-12-12', { exact: true }).first()).toBeVisible()
   await expect(
-    projectDialog.locator('.view-field').filter({ hasText: /是否完成验收\s*是/u }),
+    projectDialog.locator('.view-field').filter({ hasText: /是否完成验收\s*否/u }),
   ).toHaveCount(1)
   const confirmedViewField = projectDialog
     .locator('.view-field')
     .filter({ hasText: '确收金额（人民币）' })
   await expect(confirmedViewField).toHaveCount(1)
-  expect(await confirmedViewField.textContent()).not.toContain('0.00')
+  expect(await confirmedViewField.textContent()).toContain('234,567.89')
   await expect(projectDialog.locator('.basic-section input')).toHaveCount(0)
   await expect(projectDialog.locator('input:not([disabled])')).toHaveCount(0)
   await expect(projectDialog.locator('.payment-table-scroll .arco-radio:not(.arco-radio-disabled)'))
@@ -297,20 +320,23 @@ test('dirty edit requires confirmation and view mode remains safe at a smaller v
   await expect(projectDialog).toBeVisible({ timeout: 60_000 })
   const shortNameInput = formItem(projectDialog, '项目简称').locator('input')
   await shortNameInput.fill(`${await shortNameInput.inputValue()}-未保存`)
+  await page.locator('.arco-modal-mask:visible').last().click({ position: { x: 2, y: 2 } })
+  await expect(projectDialog).toBeVisible()
+  await expect(page.getByText('未保存修改', { exact: true })).toHaveCount(0)
   await projectDialog.getByRole('button', { name: '关闭' }).click()
   const confirmation = page.locator('.arco-modal:visible').last()
   await expect(confirmation.getByText('未保存修改', { exact: true })).toBeVisible()
   await expect(confirmation).toHaveClass(/business-confirm-dialog/u)
   await expect(confirmation).toHaveCSS('border-radius', '0px')
   await expect(confirmation.locator('.arco-modal-title-icon')).toBeHidden()
-  await expect(confirmation.getByRole('button', { name: '放弃修改' })).toHaveCSS(
+  await expect(confirmation.getByRole('button', { name: '保存' })).toHaveCSS(
     'background-color',
     'rgb(22, 93, 255)',
   )
-  await expect(confirmation.getByRole('button', { name: '放弃修改' })).toHaveCSS(
+  await expect(confirmation.getByRole('button', { name: '保存' })).toHaveCSS(
     'border-radius',
     '2px',
   )
-  await confirmation.getByRole('button', { name: '继续编辑' }).click()
-  await expect(projectDialog).toBeVisible()
+  await confirmation.getByRole('button', { name: '放弃修改' }).click()
+  await expect(projectDialog).toBeHidden()
 })

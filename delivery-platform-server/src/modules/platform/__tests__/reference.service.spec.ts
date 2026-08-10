@@ -82,49 +82,25 @@ describe('ReferenceService selectable options', () => {
     );
   });
 
-  it('filters project-manager options by active role', async () => {
+  it('uses the same active-user directory for project-manager options', async () => {
     const { prisma, service } = createService();
     jest.mocked(prisma.user.findMany).mockResolvedValue([]);
 
     await service.findUserOptions('project-manager');
 
     expect(prisma.user.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          userRoles: {
-            some: {
-              role: {
-                status: 'Active',
-                roleCode: { in: ['PROJECT_MANAGER'] },
-              },
-            },
-          },
-        }),
-      }),
+      expect.objectContaining({ where: { deletedAt: null, status: 'Active' } }),
     );
   });
 
-  it('filters sales-owner options to delivery and country managers', async () => {
+  it('uses the same active-user directory for sales-owner options', async () => {
     const { prisma, service } = createService();
     jest.mocked(prisma.user.findMany).mockResolvedValue([]);
 
     await service.findUserOptions('sales-owner');
 
     expect(prisma.user.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          userRoles: {
-            some: {
-              role: {
-                status: 'Active',
-                roleCode: {
-                  in: ['DELIVERY_MANAGER', 'COUNTRY_MANAGER'],
-                },
-              },
-            },
-          },
-        }),
-      }),
+      expect.objectContaining({ where: { deletedAt: null, status: 'Active' } }),
     );
   });
 

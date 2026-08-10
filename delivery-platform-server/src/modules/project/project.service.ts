@@ -96,6 +96,7 @@ interface ProjectListItem {
   contractAmount?: string | null;
   exchangeRate?: string | null;
   convertedAmount?: string | null;
+  acceptedConvertedAmount?: string | null;
   exchangeRateDate?: Date | null;
   exchangeRateSource?: string | null;
   projectLanguage: string | null;
@@ -192,6 +193,7 @@ export class ProjectService {
           contractAmount: true,
           exchangeRate: true,
           convertedAmount: true,
+          acceptedConvertedAmount: true,
           exchangeRateDate: true,
           exchangeRateSource: true,
           projectLanguage: true,
@@ -379,7 +381,7 @@ export class ProjectService {
         }),
         this.prisma.project.aggregate({
           where: { AND: [filteredScope, acceptedThisYearWhere] },
-          _sum: { convertedAmount: true },
+          _sum: { acceptedConvertedAmount: true },
         }),
       ]);
     const canViewFinancial = this.canViewFinancial(actor);
@@ -391,7 +393,7 @@ export class ProjectService {
         ? (totalAmount._sum.convertedAmount?.toNumber() ?? 0)
         : null,
       acceptedConvertedAmount: canViewFinancial
-        ? (acceptedAmount._sum.convertedAmount?.toNumber() ?? 0)
+        ? (acceptedAmount._sum.acceptedConvertedAmount?.toNumber() ?? 0)
         : null,
     };
   }
@@ -462,16 +464,20 @@ export class ProjectService {
     };
   }
 
-  async generateProjectCode(countryCode: string, customerCode: string): Promise<string> {
-    const year = new Date().getFullYear();
-    const prefix = `${countryCode}-${customerCode}-${year}`;
+  async generateProjectCode(countryCode: string, contractSignedAt?: string | null): Promise<string> {
+    const normalizedCountryCode = countryCode.trim().toUpperCase().replace(/[^A-Z0-9]/gu, '');
+    if (!normalizedCountryCode) {
+      throw new BadRequestException('国家代码无法用于生成项目编号');
+    }
+    const signedAt = contractSignedAt ? new Date(contractSignedAt) : new Date();
+    const year = signedAt.getUTCFullYear();
+    const prefix = `${year}-${normalizedCountryCode}-`;
 
     const lastProject = await this.prisma.project.findFirst({
       where: {
         projectCode: { startsWith: prefix },
-        deletedAt: null,
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { projectCode: 'desc' },
       select: { projectCode: true },
     });
 
@@ -484,7 +490,7 @@ export class ProjectService {
       }
     }
 
-    return `${prefix}-${String(seq).padStart(3, '0')}`;
+    return `${prefix}${String(seq).padStart(4, '0')}`;
   }
 
   async create(dto: CreateProjectDto, actor: ProjectActor, rawIdempotencyKey: string) {
@@ -497,11 +503,9 @@ export class ProjectService {
     }
 
     this.assertSensitiveWriteAllowed(dto, actor);
-    this.assertProjectDateOrder(
-      dto.contractSignedAt,
-      dto.startDate,
-      dto.expectedAcceptanceAt,
-    );
+    this.assertProjectDateOrder(dto.contractSignedAt, dto.startDate, dto.expectedAcceptanceAt);
+    this.assertProjectDateOrder(dto.contractSignedAt, dto.startDate, dto.actualAcceptanceAt);
+    if (dto.actualAcceptanceAt !== undefined) this.assertProgressPermission(actor);
     await this.projectConfiguration.validate(dto);
     const deliveryStages = await this.resolveDeliveryStages(dto.deliveryStages);
     const deliveryStage = await this.resolvePrimaryDeliveryStage(deliveryStages);
@@ -511,9 +515,7 @@ export class ProjectService {
       this.fieldConfiguration?.assertConfiguredValue('CURRENCY', dto.baseCurrency),
     ]);
     await this.validateLeadershipAssignments(dto);
-    const customerCode = dto.customerName ? dto.customerName.substring(0, 2).toUpperCase() : 'XX';
-
-    const projectCode = await this.generateProjectCode(dto.countryCode, customerCode);
+    const projectCode = await this.generateProjectCode(dto.countryCode, dto.contractSignedAt);
     const contractAmount =
       dto.contractAmount === undefined
         ? undefined
@@ -523,6 +525,10 @@ export class ProjectService {
       dto.contractCurrency,
       dto.baseCurrency,
     );
+    const acceptedConvertedAmount =
+      dto.acceptedConvertedAmount === undefined
+        ? amountData.convertedAmount
+        : new Prisma.Decimal(dto.acceptedConvertedAmount).toDecimalPlaces(2);
     const preparedPayments = await this.preparePaymentPlans(
       dto.paymentPlans,
       contractAmount,
@@ -535,7 +541,11 @@ export class ProjectService {
     const preparedReview = dto.saveAsDraft
       ? null
       : await this.prepareProjectCreateReview(projectId, dto, userId);
-    const initialLifecycleStatus = dto.saveAsDraft || preparedReview ? 'DRAFT' : 'ACTIVE';
+    const initialLifecycleStatus = dto.saveAsDraft || preparedReview
+      ? 'DRAFT'
+      : dto.actualAcceptanceAt
+        ? 'COMPLETED'
+        : 'ACTIVE';
 
     try {
       const result = await this.prisma.$transaction(async (tx) => {
@@ -556,6 +566,7 @@ export class ProjectService {
             contractCurrency: dto.contractCurrency,
             baseCurrency: dto.baseCurrency,
             contractAmount,
+            acceptedConvertedAmount,
             contractNo: dto.contractNo,
             contractSignedAt: dto.contractSignedAt ? new Date(dto.contractSignedAt) : null,
             ...amountData,
@@ -578,6 +589,7 @@ export class ProjectService {
             expectedAcceptanceAt: dto.expectedAcceptanceAt
               ? new Date(dto.expectedAcceptanceAt)
               : null,
+            actualAcceptanceAt: dto.actualAcceptanceAt ? new Date(dto.actualAcceptanceAt) : null,
             createIdempotencyKey: idempotencyKey,
             createRequestHash: requestHash,
             revision: 1,
@@ -728,13 +740,24 @@ export class ProjectService {
       throw new NotFoundException('项目不存在');
     }
     this.assertProjectRevision(project.revision, dto.revision);
+    const effectiveContractSignedAt =
+      dto.contractSignedAt === undefined ? project.contractSignedAt : dto.contractSignedAt;
+    const effectiveStartDate = dto.startDate === undefined ? project.startDate : dto.startDate;
+    const effectiveExpectedAcceptanceAt =
+      dto.expectedAcceptanceAt === undefined
+        ? project.expectedAcceptanceAt
+        : dto.expectedAcceptanceAt;
+    const effectiveActualAcceptanceAt =
+      dto.actualAcceptanceAt === undefined ? project.actualAcceptanceAt : dto.actualAcceptanceAt;
     this.assertProjectDateOrder(
-      dto.contractSignedAt ?? project.contractSignedAt,
-      dto.startDate ?? project.startDate,
-      dto.actualAcceptanceAt ??
-        dto.expectedAcceptanceAt ??
-        project.actualAcceptanceAt ??
-        project.expectedAcceptanceAt,
+      effectiveContractSignedAt,
+      effectiveStartDate,
+      effectiveExpectedAcceptanceAt,
+    );
+    this.assertProjectDateOrder(
+      effectiveContractSignedAt,
+      effectiveStartDate,
+      effectiveActualAcceptanceAt,
     );
     if (
       dto.deliveryStages !== undefined ||
@@ -743,9 +766,6 @@ export class ProjectService {
       dto.actualAcceptanceAt !== undefined
     ) {
       this.assertProgressPermission(actor);
-    }
-    if (project.actualAcceptanceAt && dto.actualAcceptanceAt === null) {
-      throw new BadRequestException('已完成验收的项目不允许撤销验收');
     }
     await this.projectConfiguration.validateUpdate(dto, {
       customerType: project.customerType ?? undefined,
@@ -804,6 +824,11 @@ export class ProjectService {
         ? undefined
         : new Prisma.Decimal(dto.contractAmount).toDecimalPlaces(2);
     if (contractAmount !== undefined) updateData.contractAmount = contractAmount;
+    if (dto.acceptedConvertedAmount !== undefined) {
+      updateData.acceptedConvertedAmount = new Prisma.Decimal(
+        dto.acceptedConvertedAmount,
+      ).toDecimalPlaces(2);
+    }
     const effectiveContractAmount = contractAmount ?? project.contractAmount ?? undefined;
     const effectiveContractCurrency = dto.contractCurrency ?? project.contractCurrency ?? undefined;
     const effectiveBaseCurrency = dto.baseCurrency ?? project.baseCurrency ?? undefined;
@@ -865,6 +890,7 @@ export class ProjectService {
     if (actualAcceptanceAt !== undefined) {
       updateData.actualAcceptanceAt = actualAcceptanceAt;
       if (actualAcceptanceAt) updateData.status = 'COMPLETED';
+      else if (project.status === 'COMPLETED') updateData.status = 'ACTIVE';
     }
     updateData.revision = { increment: 1 };
 
@@ -1190,6 +1216,7 @@ export class ProjectService {
       contractCurrency: project.contractCurrency,
       baseCurrency: project.baseCurrency,
       contractAmount: project.contractAmount?.toString() ?? null,
+      acceptedConvertedAmount: project.acceptedConvertedAmount?.toString() ?? null,
       contractNo: project.contractNo,
       contractSignedAt: project.contractSignedAt?.toISOString() ?? null,
       projectLanguage: project.projectLanguage,
@@ -1204,6 +1231,7 @@ export class ProjectService {
       startDate: project.startDate?.toISOString() ?? null,
       plannedEndDate: project.plannedEndDate?.toISOString() ?? null,
       expectedAcceptanceAt: project.expectedAcceptanceAt?.toISOString() ?? null,
+      actualAcceptanceAt: project.actualAcceptanceAt?.toISOString() ?? null,
     };
   }
 
@@ -1498,37 +1526,23 @@ export class ProjectService {
     dto: Partial<CreateProjectDto & UpdateProjectDto>,
   ): Promise<void> {
     const assignments = [
-      [dto.salesOwnerId, '销售负责人', ['DELIVERY_MANAGER', 'COUNTRY_MANAGER']],
-      [dto.projectManagerId, '项目经理', ['PROJECT_MANAGER']],
-      [dto.electricalOwnerId, '电气工程师', null],
-      [dto.softwareOwnerId, '软件工程师', null],
+      [dto.salesOwnerId, '销售负责人'],
+      [dto.projectManagerId, '项目经理'],
+      [dto.electricalOwnerId, '电气工程师'],
+      [dto.softwareOwnerId, '软件工程师'],
     ] as const;
-    for (const [userId, fieldName, allowedRoles] of assignments) {
+    for (const [userId, fieldName] of assignments) {
       if (!userId) continue;
       const user = await this.prisma.user.findFirst({
         where: {
           id: userId,
           deletedAt: null,
           status: 'Active',
-          ...(allowedRoles
-            ? {
-                userRoles: {
-                  some: {
-                    role: {
-                      status: 'Active',
-                      roleCode: { in: [...allowedRoles] },
-                    },
-                  },
-                },
-              }
-            : {}),
         },
         select: { id: true },
       });
       if (!user) {
-        throw new BadRequestException(
-          allowedRoles ? `${fieldName}不符合岗位要求` : `${fieldName}必须选择有效的在职用户`,
-        );
+        throw new BadRequestException(`${fieldName}必须选择有效的在职用户`);
       }
     }
   }
@@ -1799,16 +1813,19 @@ export class ProjectService {
       | 'contractCurrency'
       | 'baseCurrency'
       | 'contractAmount'
+      | 'acceptedConvertedAmount'
       | 'contractNo'
       | 'contractSignedAt'
       | 'expectedAcceptanceAt'
+      | 'actualAcceptanceAt'
     >,
     actor?: ProjectActor,
   ): void {
     const includesFinancialData =
       dto.contractCurrency !== undefined ||
       dto.baseCurrency !== undefined ||
-      dto.contractAmount !== undefined;
+      dto.contractAmount !== undefined ||
+      dto.acceptedConvertedAmount !== undefined;
     if (includesFinancialData && actor && !this.canViewFinancial(actor)) {
       throw new ForbiddenException('无权设置项目财务信息');
     }
@@ -1816,7 +1833,11 @@ export class ProjectService {
     if (includesContractData && actor && !this.canViewContract(actor)) {
       throw new ForbiddenException('无权设置项目合同信息');
     }
-    if (dto.expectedAcceptanceAt !== undefined && actor && !this.canViewAcceptance(actor)) {
+    if (
+      (dto.expectedAcceptanceAt !== undefined || dto.actualAcceptanceAt !== undefined) &&
+      actor &&
+      !this.canViewAcceptance(actor)
+    ) {
       throw new ForbiddenException('无权设置项目验收信息');
     }
   }
@@ -1865,6 +1886,7 @@ export class ProjectService {
       contractAmount: Prisma.Decimal | null;
       exchangeRate: Prisma.Decimal | null;
       convertedAmount: Prisma.Decimal | null;
+      acceptedConvertedAmount: Prisma.Decimal | null;
       exchangeRateDate: Date | null;
       exchangeRateSource: string | null;
       contractNo: string | null;
@@ -1891,6 +1913,7 @@ export class ProjectService {
       contractAmount,
       exchangeRate,
       convertedAmount,
+      acceptedConvertedAmount,
       exchangeRateDate,
       exchangeRateSource,
       contractNo,
@@ -1930,6 +1953,9 @@ export class ProjectService {
       contractAmount: canViewFinancial ? (contractAmount?.toFixed(2) ?? null) : null,
       exchangeRate: canViewFinancial ? (exchangeRate?.toFixed(8) ?? null) : null,
       convertedAmount: canViewFinancial ? (convertedAmount?.toFixed(2) ?? null) : null,
+      acceptedConvertedAmount: canViewFinancial
+        ? (acceptedConvertedAmount?.toFixed(2) ?? null)
+        : null,
       exchangeRateDate: canViewFinancial ? exchangeRateDate : null,
       exchangeRateSource: canViewFinancial ? exchangeRateSource : null,
       contractNo: canViewContract ? contractNo : null,

@@ -2,6 +2,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import type { FormInstance } from '@arco-design/web-vue'
 import Message from '@arco-design/web-vue/es/message'
+import Modal from '@arco-design/web-vue/es/modal'
 import { IconClose, IconSave } from '@arco-design/web-vue/es/icon'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 
@@ -32,11 +33,9 @@ import type {
   ProjectPaymentPlanItem,
   ProjectPaymentPlanWriteItem,
 } from '@/domains/project/types/project-payment'
-import { arcoConfirm } from '@/utils/arco-dialog'
 import {
   formatMoneyString,
   isMoney,
-  minorToMoney,
   moneyToMinor,
   multiplyMoneyByRate,
   normalizeMoneyInput,
@@ -64,9 +63,9 @@ const { hasAnyPermission, hasPermission } = usePermission()
 const formRef = ref<FormInstance>()
 const initialSnapshot = ref('')
 const payments = ref<ProjectPaymentPlanItem[]>([])
+const acceptedAmountManuallyEdited = ref(false)
 const isCreate = computed(() => props.mode === 'create')
 const isView = computed(() => props.mode === 'view')
-const isEdit = computed(() => props.mode === 'edit')
 const projectId = computed(() => props.projectId || '')
 const canViewPayments = computed(() => hasPermission('payment:view'))
 const projectQuery = useProjectDetailQuery(projectId)
@@ -86,10 +85,9 @@ const canUpdateProgress = computed(() =>
   (isCreate.value || project.value?.canUpdateProgress === true),
 )
 const canEditAcceptance = computed(() =>
-  isEdit.value &&
+  !readonly.value &&
   canUpdateProgress.value &&
-  hasAnyPermission(['project:view_acceptance']) &&
-  !project.value?.actualAcceptanceAt,
+  hasAnyPermission(['project:view_acceptance']),
 )
 const canEditAcceptanceDate = computed(() =>
   canUpdateProgress.value &&
@@ -117,6 +115,7 @@ const formData = reactive({
   contractCurrency: '',
   contractAmount: '',
   convertedAmount: '',
+  acceptedConvertedAmount: '',
   archiveTemplateId: '',
   contractNo: '',
   contractSignedAt: '',
@@ -259,14 +258,6 @@ const convertedAmount = computed(() => {
   const currency = currencies.value.find((item) => item.currencyCode === formData.contractCurrency)
   return multiplyMoneyByRate(formData.contractAmount, currency?.cnyRate)
 })
-const confirmedAmount = computed(() => {
-  if (payments.value.length === 0) return ''
-  const total = payments.value.reduce(
-    (sum, item) => sum + moneyToMinor(item.receivedConvertedAmount ?? '0'),
-    0n,
-  )
-  return formatMoneyString(minorToMoney(total))
-})
 const snapshot = computed(() => JSON.stringify({ formData, payments: payments.value }))
 const dirty = computed(() => !readonly.value && Boolean(initialSnapshot.value) && snapshot.value !== initialSnapshot.value)
 const paymentRatioValid = computed(() => {
@@ -323,6 +314,7 @@ function blankForm(): void {
     contractCurrency: baseCurrencyCode.value,
     contractAmount: '',
     convertedAmount: '',
+    acceptedConvertedAmount: '',
     archiveTemplateId: '',
     contractNo: '',
     contractSignedAt: '',
@@ -341,6 +333,7 @@ function blankForm(): void {
   })
   applyFieldDefaults()
   payments.value = []
+  acceptedAmountManuallyEdited.value = false
   idempotencyKey.value = globalThis.crypto?.randomUUID?.() ?? `project-${Date.now()}`
   formRef.value?.clearValidate()
 }
@@ -366,6 +359,7 @@ function assignProject(): void {
       baseCurrencyCode.value,
     contractAmount: value.contractAmount ?? '',
     convertedAmount: value.convertedAmount ?? '',
+    acceptedConvertedAmount: value.acceptedConvertedAmount ?? value.convertedAmount ?? '',
     archiveTemplateId: value.archiveTemplateId || '',
     contractNo: value.contractNo || '',
     contractSignedAt: value.contractSignedAt?.slice(0, 10) || '',
@@ -439,9 +433,13 @@ watch(() => paymentQuery.isError.value, (isError) => {
   if (!props.visible || isCreate.value || !isError || !project.value) return
   queueMicrotask(captureSnapshot)
 })
+watch(convertedAmount, (value) => {
+  if (!props.visible || !isCreate.value || acceptedAmountManuallyEdited.value) return
+  formData.acceptedConvertedAmount = value ?? ''
+})
 
 function personLabel(option: ProjectUserReferenceOption): string {
-  return `${option.displayName} (${option.name})${option.departmentName ? ` · ${option.departmentName}` : ''}`
+  return option.displayName
 }
 function displayText(value: unknown): string {
   if (value === null || value === undefined || String(value).trim() === '') return '—'
@@ -460,7 +458,7 @@ function userReferenceLabel(
 ): string {
   if (!value) return '—'
   const option = options.find((item) => item.id === value)
-  return option ? personLabel(option) : value
+  return option ? personLabel(option) : '—'
 }
 function archiveLabel(value: string): string {
   return archiveOptions.value.find((item) => item.value === value)?.label ?? displayText(value)
@@ -515,6 +513,7 @@ function commonPayload(): Omit<UpdateProjectDto, 'revision'> {
     payload.contractCurrency = formData.contractCurrency
     payload.baseCurrency = baseCurrencyCode.value
     payload.contractAmount = formData.contractAmount || undefined
+    payload.acceptedConvertedAmount = formData.acceptedConvertedAmount || undefined
   }
   if (canEditContract.value) {
     payload.contractNo = optionalText(formData.contractNo)
@@ -551,18 +550,22 @@ const mutation = useMutation({
       : projectApi.update(variables.id, variables.data),
   retry: false,
 })
-async function save(): Promise<void> {
-  if (readonly.value || mutation.isPending.value || !formRef.value) return
+async function save(): Promise<boolean> {
+  if (readonly.value || mutation.isPending.value || !formRef.value) return false
   const validation = await formRef.value.validate().catch((error: unknown) => error)
-  if (validation) return
+  if (validation) return false
   if (formData.contractAmount && !isMoney(formData.contractAmount)) {
     Message.warning('请输入有效合同金额，最多保留两位小数')
-    return
+    return false
   }
-  if (!datesValid()) return
+  if (formData.acceptedConvertedAmount && !isMoney(formData.acceptedConvertedAmount)) {
+    Message.warning('请输入有效确收金额，最多保留两位小数')
+    return false
+  }
+  if (!datesValid()) return false
   if (!paymentRatioValid.value) {
     Message.warning('款项计划付款比例合计必须为 100.00%')
-    return
+    return false
   }
   try {
     let savedProjectId = ''
@@ -580,11 +583,14 @@ async function save(): Promise<void> {
           expectedAcceptanceAt: canEditAcceptanceDate.value
             ? formData.expectedAcceptanceAt || undefined
             : undefined,
+          actualAcceptanceAt: canEditAcceptance.value && formData.acceptanceCompleted
+            ? formData.expectedAcceptanceAt
+            : undefined,
         },
       })
       savedProjectId = savedProject.id
     } else {
-      if (!project.value) return
+      if (!project.value) return false
       const progressPayload = canUpdateProgress.value
         ? {
             deliveryStages: [...formData.deliveryStages],
@@ -624,35 +630,44 @@ async function save(): Promise<void> {
     initialSnapshot.value = snapshot.value
     emit('saved')
     emit('update:visible', false)
+    return true
   } catch (error) {
     if (hasHttpStatus(error, 409)) {
       Message.warning('项目已被其他人修改，请刷新后重试')
       await projectQuery.refetch()
     }
+    return false
   }
 }
 function updateContractAmount(value: string): void {
   formData.contractAmount = normalizeMoneyInput(value)
 }
-async function confirmClose(): Promise<boolean> {
-  if (!dirty.value) return true
-  try {
-    await arcoConfirm('当前修改尚未保存，确定关闭项目详情吗？', '未保存修改', {
-      confirmButtonText: '放弃修改',
-      cancelButtonText: '继续编辑',
-      type: 'warning',
-    })
-    return true
-  } catch {
-    return false
+function updateAcceptedAmount(value: string): void {
+  acceptedAmountManuallyEdited.value = true
+  formData.acceptedConvertedAmount = normalizeMoneyInput(value)
+}
+function close(): void {
+  if (!dirty.value) {
+    emit('update:visible', false)
+    return
   }
-}
-async function close(): Promise<void> {
-  if (await confirmClose()) emit('update:visible', false)
-}
-function beforeCancel(): boolean {
-  void close()
-  return false
+  Modal.confirm({
+    simple: false,
+    alignCenter: true,
+    titleAlign: 'start',
+    modalClass: 'business-confirm-dialog',
+    title: '未保存修改',
+    content: '当前修改尚未保存，请选择保存或放弃修改。',
+    okText: '保存',
+    cancelText: '放弃修改',
+    closable: false,
+    maskClosable: false,
+    escToClose: false,
+    onBeforeOk: async (done) => {
+      done(await save())
+    },
+    onCancel: () => emit('update:visible', false),
+  })
 }
 async function retryLoad(): Promise<void> {
   const requests: Array<Promise<unknown>> = [
@@ -672,10 +687,9 @@ async function retryLoad(): Promise<void> {
     :width="1040"
     :footer="false"
     :closable="false"
-    :mask-closable="true"
+    :mask-closable="false"
+    :esc-to-close="false"
     :unmount-on-close="true"
-    :on-before-cancel="beforeCancel"
-    @update:visible="emit('update:visible', $event)"
   >
     <div class="dialog-shell">
       <header class="dialog-header">
@@ -901,7 +915,7 @@ async function retryLoad(): Promise<void> {
                 </div>
                 <div class="view-field">
                   <span>确收金额（{{ baseCurrencyLabel }}）</span>
-                  <div>{{ moneyLabel(confirmedAmount) }}</div>
+                  <div>{{ moneyLabel(formData.acceptedConvertedAmount) }}</div>
                 </div>
                 <div class="view-field">
                   <span>是否完成验收</span>
@@ -1106,9 +1120,10 @@ async function retryLoad(): Promise<void> {
                 </a-form-item>
                 <a-form-item :label="`确收金额（${baseCurrencyLabel}）`">
                   <a-input
-                    :model-value="confirmedAmount"
-                    placeholder="自动汇总"
-                    disabled
+                    :model-value="formData.acceptedConvertedAmount"
+                    placeholder="默认带入合同折算金额"
+                    :disabled="!canEditFinancial"
+                    @input="updateAcceptedAmount"
                   />
                 </a-form-item>
                 <a-form-item class="acceptance-field" label="是否完成验收">
@@ -1147,7 +1162,7 @@ async function retryLoad(): Promise<void> {
 .dialog-header h2 { margin: 0; font-size: 16px; font-weight: 700; line-height: 24px; }
 .dialog-actions { display: flex; align-items: center; gap: 12px; }
 .dialog-actions :deep(.arco-btn) { width: 82px; height: 32px; padding: 0; border-radius: 0; }
-.dialog-close { width: 54px; height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0 16px; border: 0; border-radius: 100px; background: transparent; color: #165dff; cursor: pointer; }
+.dialog-close { width: 54px; height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0 16px; border: 0; border-radius: 0; background: transparent; color: #165dff; cursor: pointer; }
 .dialog-close:hover { background: #f2f3f5; }
 .dialog-body { min-height: 0; flex: 1; overflow-x: hidden; overflow-y: auto; scrollbar-color: #c9cdd4 #f2f3f5; scrollbar-width: thin; }
 .dialog-body::-webkit-scrollbar { width: 4px; height: 4px; }

@@ -50,6 +50,7 @@ export interface Project {
   contractAmount?: string | null
   exchangeRate?: string | null
   convertedAmount?: string | null
+  acceptedConvertedAmount?: string | null
   convertedCnyAmount?: string | null
   currencyCode?: string | null
   exchangeRateDate?: string | null
@@ -161,6 +162,7 @@ interface ProjectCommonWriteFields {
   contractCurrency?: string
   baseCurrency?: string
   contractAmount?: string
+  acceptedConvertedAmount?: string
   contractNo?: string | null
   contractSignedAt?: string | null
   projectLanguage?: string
@@ -182,6 +184,7 @@ export interface CreateProjectDto extends ProjectCommonWriteFields {
   deliveryStages?: ProjectDeliveryStage[]
   progressPercent?: number
   expectedAcceptanceAt?: string | null
+  actualAcceptanceAt?: string | null
   archiveTemplateVersionId?: string
   approvalTemplateId?: string
   saveAsDraft?: boolean

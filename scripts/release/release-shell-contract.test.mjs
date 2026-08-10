@@ -410,6 +410,19 @@ test('an already-built release can be deployed and attested without rebuilding i
   assert.doesNotMatch(deployExistingWorkflow, /docker\s+build/u)
 })
 
+test('a manually dispatched release can stop after real integration acceptance', () => {
+  for (const contract of [
+    'integration_only:',
+    '仅构建并执行真实集成验收，不部署测试服务器',
+    "github.event_name != 'workflow_dispatch' || inputs.integration_only != true",
+  ]) {
+    assert.match(
+      releaseWorkflow,
+      new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'),
+    )
+  }
+})
+
 test('runtime and migrator images share production layers without shipping builder toolchains', () => {
   occursInOrder(backendDockerfile, [
     'FROM ${NODE_IMAGE} AS runtime-base',
