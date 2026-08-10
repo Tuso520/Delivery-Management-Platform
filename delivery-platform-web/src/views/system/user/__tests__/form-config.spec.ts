@@ -26,4 +26,13 @@ describe('user form configuration', () => {
       expect.objectContaining({ minLength: 6, maxLength: 100 }),
     ]))
   })
+
+  it('uses user-facing names for the login account and display username', () => {
+    expect(userFormRules.username).toEqual(expect.arrayContaining([
+      expect.objectContaining({ message: '请输入登录账号' }),
+    ]))
+    expect(userFormRules.realName).toEqual(expect.arrayContaining([
+      expect.objectContaining({ message: '请输入用户名' }),
+    ]))
+  })
 })

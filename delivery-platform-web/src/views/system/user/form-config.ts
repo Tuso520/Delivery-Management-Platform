@@ -13,16 +13,16 @@ export interface UserFormModel {
 
 export const userFormRules: FormRules = {
   username: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
-    { minLength: 2, maxLength: 50, message: '用户名长度 2-50 个字符', trigger: 'blur' },
+    { required: true, message: '请输入登录账号', trigger: 'blur' },
+    { minLength: 2, maxLength: 50, message: '登录账号长度 2-50 个字符', trigger: 'blur' },
   ],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
     { minLength: 6, maxLength: 100, message: '密码长度为 6-100 个字符', trigger: 'blur' },
   ],
   realName: [
-    { required: true, message: '请输入真实姓名', trigger: 'blur' },
-    { maxLength: 50, message: '真实姓名最多 50 个字符', trigger: 'blur' },
+    { required: true, message: '请输入用户名', trigger: 'blur' },
+    { maxLength: 50, message: '用户名最多 50 个字符', trigger: 'blur' },
   ],
   email: [{ type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' }],
 }

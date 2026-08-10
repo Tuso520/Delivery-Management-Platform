@@ -36,13 +36,13 @@ async function handleSubmit(): Promise<void> {
       :rules="userFormRules"
       auto-label-width
     >
-      <a-form-item label="用户名" field="username">
-        <a-input v-model="formData.username" :disabled="isEdit" :max-length="50" />
+      <a-form-item v-if="!isEdit" label="登录账号" field="username">
+        <a-input v-model="formData.username" :max-length="50" />
       </a-form-item>
       <a-form-item v-if="!isEdit" label="密码" field="password">
         <a-input v-model="formData.password" type="password" :max-length="100" />
       </a-form-item>
-      <a-form-item label="真实姓名" field="realName">
+      <a-form-item label="用户名" field="realName">
         <a-input v-model="formData.realName" :max-length="50" />
       </a-form-item>
       <a-form-item label="所属部门">

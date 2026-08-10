@@ -216,7 +216,7 @@ async function handleSubmit(): Promise<void> {
 
 function handleDelete(row: UserListItem): void {
   arcoConfirm(
-    `确定删除用户“${row.realName}(${row.username})”吗？删除后该用户将被禁用且不可恢复。`,
+    `确定删除用户“${row.realName}”吗？删除后该用户将被禁用且不可恢复。`,
     '确认删除',
     {
       confirmButtonText: '确定',
@@ -236,7 +236,7 @@ function handleDelete(row: UserListItem): void {
 }
 
 function handleDisable(row: UserListItem): void {
-  arcoConfirm(`确定禁用用户 "${row.realName}(${row.username})" 吗？`, '确认禁用', {
+  arcoConfirm(`确定禁用用户 "${row.realName}" 吗？`, '确认禁用', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning',
@@ -253,7 +253,7 @@ function handleDisable(row: UserListItem): void {
 }
 
 function handleEnable(row: UserListItem): void {
-  arcoConfirm(`确定启用用户 "${row.realName}(${row.username})" 吗？`, '确认启用', {
+  arcoConfirm(`确定启用用户 "${row.realName}" 吗？`, '确认启用', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'info',
@@ -332,7 +332,7 @@ async function handleResetPassword(): Promise<void> {
         <a-form-item label="关键词">
           <a-input
             v-model="filters.keyword"
-            placeholder="用户名/真实姓名/邮箱"
+            placeholder="用户名/邮箱"
             allow-clear
             style="width: 220px"
             @press-enter="handleSearch"
@@ -389,8 +389,7 @@ async function handleResetPassword(): Promise<void> {
         @retry="userListQuery.refetch()"
         @page-change="handlePageChange"
       >
-        <a-table-column data-index="username" title="用户名" :width="140" />
-        <a-table-column data-index="realName" title="真实姓名" :width="120" />
+        <a-table-column data-index="realName" title="用户名" :width="140" />
         <a-table-column
           data-index="email"
           title="邮箱"
@@ -500,7 +499,7 @@ async function handleResetPassword(): Promise<void> {
     >
       <div v-if="currentUserForRole" class="role-dialog-info">
         为用户
-        <strong>{{ currentUserForRole.realName }}({{ currentUserForRole.username }})</strong>
+        <strong>{{ currentUserForRole.realName }}</strong>
         分配角色
       </div>
       <a-spin :loading="rolesQuery.isFetching.value">
