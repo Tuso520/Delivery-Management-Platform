@@ -739,6 +739,7 @@
       "convertedCny": "折算人民币",
       "convertedCurrency": "折算{currency}",
       "sales": "销售",
+      "keywords": "项目关键词",
       "manager": "项目经理"
     },
     "selectStage": "选择阶段",

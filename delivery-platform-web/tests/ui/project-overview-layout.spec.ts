@@ -325,7 +325,7 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
   const tableHeaders = await page
     .locator('.project-list-panel thead .arco-table-th')
     .allTextContents()
-  expect(tableHeaders.slice(0, 13).map((value) => value.trim())).toEqual([
+  expect(tableHeaders.slice(0, 14).map((value) => value.trim())).toEqual([
     '项目名称',
     '项目经理 ↕',
     '项目地点',
@@ -339,26 +339,29 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
     '客户类型',
     '合同类型',
     '销售',
+    '项目关键词',
   ])
 
   const columnWidths = await page
     .locator('.project-list-panel thead .arco-table-th')
     .evaluateAll((headers) =>
-      headers.slice(0, 13).map((header) => Math.round(header.getBoundingClientRect().width)),
+      headers.slice(0, 14).map((header) => Math.round(header.getBoundingClientRect().width)),
     )
-  expect(columnWidths).toEqual([240, 110, 160, 200, 180, 120, 120, 80, 160, 160, 120, 110, 100])
+  expect(columnWidths).toEqual([
+    240, 110, 160, 200, 180, 120, 120, 80, 160, 160, 120, 110, 100, 200,
+  ])
   const gridAlignment = await page.evaluate(() => {
     const keyword = document.querySelector<HTMLElement>('.keyword-input')
     const tableFrame = document.querySelector<HTMLElement>('.project-table-frame')
     const headers = [
       ...document.querySelectorAll<HTMLElement>('.project-list-panel thead .arco-table-th'),
-    ].slice(0, 13)
+    ].slice(0, 14)
     const cells = [
       ...document.querySelectorAll<HTMLElement>(
         '.project-list-panel tbody .arco-table-tr:first-child .arco-table-td',
       ),
-    ].slice(0, 13)
-    if (!keyword || !tableFrame || headers.length !== 13 || cells.length !== 13) {
+    ].slice(0, 14)
+    if (!keyword || !tableFrame || headers.length !== 14 || cells.length !== 14) {
       throw new Error('Project overview grid alignment nodes are incomplete')
     }
     const borderSnapshot = (element: HTMLElement) => {
@@ -381,10 +384,10 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
   expect(gridAlignment.searchToManagerRightDelta).toBeLessThanOrEqual(0.5)
   expect(gridAlignment.tableContentLeftDelta).toBeLessThanOrEqual(0.5)
   expect(gridAlignment.headerBorders).toEqual(
-    Array.from({ length: 13 }, () => '1px solid rgb(229, 230, 235)'),
+    Array.from({ length: 14 }, () => '1px solid rgb(229, 230, 235)'),
   )
   expect(gridAlignment.cellBorders).toEqual(
-    Array.from({ length: 13 }, () => '1px solid rgb(229, 230, 235)'),
+    Array.from({ length: 14 }, () => '1px solid rgb(229, 230, 235)'),
   )
   expect(gridAlignment.frameBorderWidth).toBe('0px')
   expect(gridAlignment.frameInsetStroke).toContain('rgb(229, 230, 235)')
@@ -401,6 +404,7 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
         [3, '.stage-cell'],
         [4, '.progress'],
         [8, '.money-cell'],
+        [13, '.stage-cell'],
       ])
       return [...selectors].map(([index, selector]) => {
         const cell = cells[index]
@@ -409,7 +413,30 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
         return Math.round(content.getBoundingClientRect().left - cell.getBoundingClientRect().left)
       })
     })
-  expect(leftAlignedOffsets).toEqual([12, 12, 12, 12, 12])
+  expect(leftAlignedOffsets).toEqual([12, 12, 12, 12, 12, 12])
+
+  const stageTag = page
+    .locator('.project-list-panel tbody .arco-table-td:nth-child(4) .stage-tag')
+    .first()
+  const keywordTag = page
+    .locator('.project-list-panel tbody .arco-table-td:nth-child(14) .stage-tag')
+    .first()
+  await expect(stageTag).toBeVisible()
+  await expect(keywordTag).toBeVisible()
+  await expect(keywordTag).not.toHaveText(/^[A-Z][A-Z_]+$/)
+  const tagPresentation = async (tag: typeof stageTag) =>
+    tag.evaluate((element) => {
+      const style = getComputedStyle(element)
+      return {
+        height: style.height,
+        padding: style.padding,
+        fontSize: style.fontSize,
+        fontWeight: style.fontWeight,
+        lineHeight: style.lineHeight,
+        whiteSpace: style.whiteSpace,
+      }
+    })
+  expect(await tagPresentation(keywordTag)).toEqual(await tagPresentation(stageTag))
 
   await expect(page.locator('.arco-message')).toHaveCount(0, { timeout: 10_000 })
   expect(consoleErrors).toEqual([])
@@ -463,14 +490,14 @@ test('project overview keeps loading, empty and error states inside the Figma ta
   await expect(page.locator('.project-list-panel .arco-spin-loading')).toBeVisible()
   await expect(page.locator('.business-empty')).toContainText('暂无符合条件的项目')
   await expect(page.locator('.project-table-frame')).toHaveCSS('height', '602px')
-  await expect(page.locator('.project-list-panel thead .arco-table-th')).toHaveCount(13)
+  await expect(page.locator('.project-list-panel thead .arco-table-th')).toHaveCount(14)
   expect(
     await page
       .locator('.project-list-panel thead .arco-table-th')
       .evaluateAll((headers) =>
         headers.map((header) => getComputedStyle(header).borderRightWidth),
       ),
-  ).toEqual(Array.from({ length: 13 }, () => '1px'))
+  ).toEqual(Array.from({ length: 14 }, () => '1px'))
 
   responseMode = 'error'
   await page.getByPlaceholder('搜索项目名称', { exact: true }).fill('project-overview-error-state')

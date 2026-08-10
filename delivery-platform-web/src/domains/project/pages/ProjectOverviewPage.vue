@@ -39,7 +39,7 @@ const permissionStore = usePermissionStore()
 const projectLayout = Object.freeze({
   nameColumnWidth: 240,
   managerColumnWidth: 110,
-  tableWidth: 1860,
+  tableWidth: 2060,
   scopeWidth: 100,
   toolbarGap: 8,
 })
@@ -561,6 +561,21 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
           <a-table-column :title="t('projects.columns.sales')" :width="100" align="center">
             <template #cell="{ record: row }">
               {{ row.salesOwner?.realName || memberName(row, 'SALES_OWNER') }}
+            </template>
+          </a-table-column>
+          <a-table-column :title="t('projects.columns.keywords')" :width="200" align="center">
+            <template #cell="{ record: row }">
+              <span v-if="row.keywords?.length" class="stage-cell">
+                <span
+                  v-for="keyword in row.keywords ?? []"
+                  :key="keyword"
+                  class="stage-tag"
+                  :style="dictionaryStyle('projectKeyword', keyword)"
+                >
+                  {{ fieldConfig.getFieldLabel('PROJECT_KEYWORD', keyword) }}
+                </span>
+              </span>
+              <span v-else>-</span>
             </template>
           </a-table-column>
         </BusinessTable>

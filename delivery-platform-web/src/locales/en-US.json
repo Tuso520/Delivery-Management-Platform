@@ -739,6 +739,7 @@
       "convertedCny": "Converted CNY",
       "convertedCurrency": "Converted {currency}",
       "sales": "Sales",
+      "keywords": "Project Keywords",
       "manager": "Project Manager"
     },
     "selectStage": "Select stage",
