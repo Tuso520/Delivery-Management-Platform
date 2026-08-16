@@ -978,12 +978,27 @@ describe('running Delivery Platform API', () => {
       expect(invalidSort.code).not.toBe(0);
 
       const limited = await login(limitedUsername, limitedPassword);
-      const forbidden = await expectAuthenticatedGet(
+      expect(limited.user.permissions).toContain('project:update');
+      expect(limited.user.permissions).not.toContain('archive_template:view');
+      const projectReferenceResponse = await expectAuthenticatedGet(
         '/archive-templates',
+        limited.accessToken,
+      );
+      expect(projectReferenceResponse.data).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: target.id,
+            currentPublishedVersion: expect.objectContaining({ status: 'PUBLISHED' }),
+          }),
+        ]),
+      );
+
+      const forbiddenDetail = await expectAuthenticatedGet(
+        `/archive-templates/${target.id}`,
         limited.accessToken,
         403,
       );
-      expect(forbidden.code).not.toBe(0);
+      expect(forbiddenDetail.code).not.toBe(0);
     },
     AUTHENTICATED_E2E_TIMEOUT_MS,
   );

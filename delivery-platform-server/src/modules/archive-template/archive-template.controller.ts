@@ -9,6 +9,13 @@ import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { ArchiveTemplateService } from './archive-template.service';
 import { CreateArchiveTemplateDto, QueryArchiveTemplateDto } from './dto/archive-template.dto';
 
+const ARCHIVE_TEMPLATE_REFERENCE_PERMISSIONS = [
+  'project:view',
+  'project:create',
+  'project:update',
+  'archive_template:view',
+] as const;
+
 @ApiTags('Archive Templates')
 @ApiBearerAuth('JWT-auth')
 @Controller('archive-templates')
@@ -17,7 +24,7 @@ export class ArchiveTemplateController {
   constructor(private readonly archiveTemplateService: ArchiveTemplateService) {}
 
   @Get()
-  @RequirePermissions({ all: ['archive_template:view'] })
+  @RequirePermissions({ any: [...ARCHIVE_TEMPLATE_REFERENCE_PERMISSIONS] })
   @ApiOperation({ summary: '获取档案模板列表' })
   @ApiResponse({ status: 200, description: '模板列表' })
   findAll(@Query() query: QueryArchiveTemplateDto) {

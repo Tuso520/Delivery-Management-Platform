@@ -514,6 +514,23 @@ test('project manager is restricted by data scope, field permissions and setting
   })
   await expect(page.getByRole('button', { name: '永久删除' })).toHaveCount(0)
 
+  const archiveTemplateResponse = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/v1/archive-templates' &&
+      response.request().method() === 'GET',
+  )
+  await page.goto(`/#/projects/${projects.data.items[0].id}/edit`)
+  expect((await archiveTemplateResponse).status()).toBe(200)
+  const projectDialog = page.locator('.project-detail-dialog .arco-modal')
+  await expect(projectDialog).toBeVisible({ timeout: 60_000 })
+  await expect(
+    projectDialog
+      .locator('.arco-form-item')
+      .filter({ hasText: /^\s*档案模版/u })
+      .locator('.arco-select-view-value'),
+  ).toContainText('DC-ARCH-DEFAULT')
+  await projectDialog.getByRole('button', { name: '关闭' }).click()
+
   await page.locator('.user-trigger').click()
   await expect(page.locator('.arco-dropdown-option').filter({ hasText: '参数配置' })).toHaveCount(0)
   await page.goto('/#/settings/system')

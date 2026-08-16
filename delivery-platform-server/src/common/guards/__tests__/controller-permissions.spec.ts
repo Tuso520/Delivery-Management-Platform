@@ -6,6 +6,7 @@ import * as ts from 'typescript';
 
 import { getAllPermissionCodes } from '../../../../prisma/seed-data/permissions';
 import { ArchiveTemplateVersionController } from '../../../modules/archive-template/archive-template-version.controller';
+import { ArchiveTemplateController } from '../../../modules/archive-template/archive-template.controller';
 import { DashboardController } from '../../../modules/dashboard/dashboard.controller';
 import { FieldOptionsController } from '../../../modules/field-configuration/field-configuration.controller';
 import { FileController } from '../../../modules/file/file.controller';
@@ -148,6 +149,18 @@ describe('controller backend permission boundaries', () => {
     expect(permissions(ProjectController.prototype, 'archive')).toEqual(['project:archive']);
     expect(isAuthenticatedOnly(FieldOptionsController.prototype, 'findEnabled')).toBe(true);
     expect(isAuthenticatedOnly(FieldOptionsController.prototype, 'findEnabledBatch')).toBe(true);
+  });
+
+  it('exposes archive template references to project workflows without opening template details', () => {
+    expect(permissions(ArchiveTemplateController.prototype, 'findAll')).toEqual([
+      'project:view',
+      'project:create',
+      'project:update',
+      'archive_template:view',
+    ]);
+    expect(permissions(ArchiveTemplateController.prototype, 'findOne')).toEqual([
+      'archive_template:view',
+    ]);
   });
 
   it('allows every authenticated user to query only their service-filtered review data', () => {
