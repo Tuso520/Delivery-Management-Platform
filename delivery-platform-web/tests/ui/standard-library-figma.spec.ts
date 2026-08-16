@@ -348,12 +348,9 @@ test('standard library keeps real loading, empty and validation errors inside th
   await page.locator('.keyword-input input').fill(invalidKeyword)
   await page.getByRole('button', { name: '查询', exact: true }).click()
   await validationResponse
-  await expect(
-    page
-      .locator('.arco-message-error')
-      .filter({ hasText: 'Request failed with status code 400' })
-      .first(),
-  ).toBeVisible()
+  const validationMessage = page.locator('.arco-message-error').first()
+  await expect(validationMessage).toBeVisible()
+  await expect(validationMessage).not.toContainText('Request failed with status code 400')
   await expect(page.locator('.library-panel')).toBeVisible()
 })
 

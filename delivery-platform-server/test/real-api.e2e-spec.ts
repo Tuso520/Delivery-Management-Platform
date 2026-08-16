@@ -1012,10 +1012,13 @@ describe('running Delivery Platform API', () => {
   it(
     'submits an archive template draft with the seeded default review configuration',
     async () => {
-      if (!username || !password) {
-        throw new Error('Admin E2E credentials are required for archive template review E2E');
+      if (!username || !password || !process.env.SEED_DEFAULT_PASSWORD) {
+        throw new Error(
+          'Admin and seeded reviewer credentials are required for archive template review E2E',
+        );
       }
       const admin = await login(username, password);
+      const reviewer = await login('delivery_mgr', process.env.SEED_DEFAULT_PASSWORD);
       const templates = (await expectAuthenticatedGet('/archive-templates', admin.accessToken))
         .data as ArchiveTemplateListItem[];
       const target = templates.find((template) => template.currentPublishedVersion !== null);
@@ -1041,6 +1044,28 @@ describe('running Delivery Platform API', () => {
       ).data;
       expect(review).toEqual(
         expect.objectContaining({ id: expect.any(String), status: 'PENDING' }),
+      );
+
+      await expectAuthenticatedRequest(
+        `/file-reviews/${review.id}/approve`,
+        reviewer.accessToken,
+        {
+          method: 'POST',
+          body: JSON.stringify({ comment: 'archive template review E2E approved' }),
+        },
+        201,
+      );
+
+      const publishedTemplates = (
+        await expectAuthenticatedGet('/archive-templates', admin.accessToken)
+      ).data as ArchiveTemplateListItem[];
+      expect(publishedTemplates).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: target.id,
+            currentPublishedVersion: expect.objectContaining({ status: 'PUBLISHED' }),
+          }),
+        ]),
       );
     },
     AUTHENTICATED_E2E_TIMEOUT_MS,
