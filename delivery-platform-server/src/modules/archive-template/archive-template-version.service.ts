@@ -9,6 +9,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import type { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { OperationLogService } from '../operation-log/operation-log.service';
+import { DEFAULT_APPROVAL_TEMPLATE_CODE_BY_BUSINESS_TYPE } from '../platform/workflow/default-approval-template.contract';
 import { ReviewConfigurationService } from '../review/review-configuration.service';
 import { ReviewTaskService } from '../review/review-task.service';
 
@@ -296,7 +297,8 @@ export class ArchiveTemplateVersionService {
       throw new BadRequestException('档案模板版本至少需要一个文件夹和一个文件项');
     }
 
-    const configuration = await this.reviewConfiguration.resolve(dto.approvalTemplateId, userId);
+    const approvalTemplateId = await this.resolveApprovalTemplateId(dto.approvalTemplateId);
+    const configuration = await this.reviewConfiguration.resolve(approvalTemplateId, userId);
     return this.reviewTasks.createTask({
       sourceType: 'ARCHIVE_TEMPLATE',
       sourceId: version.id,
@@ -403,6 +405,20 @@ export class ArchiveTemplateVersionService {
     if (activeApprovalCount !== approvalTemplateIds.length) {
       throw new BadRequestException('文件项审批模板不存在或已停用');
     }
+  }
+
+  private async resolveApprovalTemplateId(requestedId?: string): Promise<string | undefined> {
+    if (requestedId) return requestedId;
+    const template = await this.prisma.approvalTemplate.findFirst({
+      where: {
+        templateCode: DEFAULT_APPROVAL_TEMPLATE_CODE_BY_BUSINESS_TYPE.ARCHIVE_TEMPLATE,
+        businessType: 'ARCHIVE_TEMPLATE',
+        isEnabled: true,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    return template?.id;
   }
 
   private async nextVersionNo(templateId: string): Promise<string> {

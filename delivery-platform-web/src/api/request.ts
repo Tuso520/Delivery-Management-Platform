@@ -172,6 +172,9 @@ axiosInstance.interceptors.response.use(
     }
 
     switch (status) {
+      case 400:
+        Message.error(data?.message || '请求参数错误')
+        break
       case 401:
         await expireSession()
         break

@@ -202,6 +202,61 @@ describe('ArchiveTemplateVersionService', () => {
     expect(reviewTasks.createTask).not.toHaveBeenCalled();
   });
 
+  it('uses the stable archive-template review configuration when none is submitted', async () => {
+    const createTask = reviewTasks.createTask as jest.Mock;
+    createTask.mockResolvedValue({ id: 'task-1', status: 'PENDING' });
+    (reviewConfiguration.resolve as jest.Mock).mockResolvedValue({
+      approvalTemplateId: 'approval-template-1',
+      approvalTemplateVersion: '2026-08-17T00:00:00.000Z',
+      snapshot: { id: 'approval-template-1' },
+      reviewMode: 'SINGLE',
+      steps: [{ mode: 'SINGLE', requiredCount: 1, assigneeUserIds: ['reviewer-1'] }],
+    });
+    const prisma = {
+      archiveTemplateVersion: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'version-1',
+          status: 'DRAFT',
+          versionNo: 'V1.1',
+          template: { templateName: '深化档案模板', countryCode: null },
+          _count: { folders: 1, versionItems: 1 },
+        }),
+      },
+      approvalTemplate: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'approval-template-1' }),
+      },
+    } as unknown as PrismaService;
+    const service = new ArchiveTemplateVersionService(
+      prisma,
+      reviewConfiguration,
+      reviewTasks,
+      operationLog,
+    );
+
+    await expect(service.submitReview('version-1', {}, 'user-1')).resolves.toEqual({
+      id: 'task-1',
+      status: 'PENDING',
+    });
+    expect(prisma.approvalTemplate.findFirst).toHaveBeenCalledWith({
+      where: {
+        templateCode: 'TARGET_ARCHIVE_TEMPLATE_REVIEW',
+        businessType: 'ARCHIVE_TEMPLATE',
+        isEnabled: true,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    expect(reviewConfiguration.resolve).toHaveBeenCalledWith('approval-template-1', 'user-1');
+    expect(createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceType: 'ARCHIVE_TEMPLATE',
+        sourceId: 'version-1',
+        approvalTemplateId: 'approval-template-1',
+        submittedBy: 'user-1',
+      }),
+    );
+  });
+
   it('publishes only by approving the linked unified review task', async () => {
     const prisma = {
       archiveTemplateVersion: {

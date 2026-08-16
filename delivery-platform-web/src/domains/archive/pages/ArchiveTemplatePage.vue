@@ -113,7 +113,7 @@ const createForm = reactive({
   description: '',
 })
 
-const drawerVisible = ref(false)
+const detailVisible = ref(false)
 const selectedTemplateId = ref('')
 const selectedTemplateFallback = ref<ArchiveTemplate | null>(null)
 const selectedVersionId = ref('')
@@ -135,9 +135,9 @@ const templateListParams = computed(() => ({
   sortOrder: sortOrder.value,
 }))
 const templateListQuery = useArchiveTemplateListQuery(templateListParams)
-const templateDetailQuery = useArchiveTemplateDetailQuery(selectedTemplateId, drawerVisible)
-const templateVersionsQuery = useArchiveTemplateVersionsQuery(selectedTemplateId, drawerVisible)
-const templateVersionQuery = useArchiveTemplateVersionQuery(selectedVersionId, drawerVisible)
+const templateDetailQuery = useArchiveTemplateDetailQuery(selectedTemplateId, detailVisible)
+const templateVersionsQuery = useArchiveTemplateVersionsQuery(selectedTemplateId, detailVisible)
+const templateVersionQuery = useArchiveTemplateVersionQuery(selectedVersionId, detailVisible)
 const formOptionQueries = useArchiveTemplateFormOptionsQueries()
 const records = computed(() => templateListQuery.data.value ?? [])
 const selectedTemplate = computed<ArchiveTemplate | null>(() => {
@@ -385,7 +385,7 @@ async function loadVersion(value: unknown): Promise<void> {
 }
 
 function closeDetail(): void {
-  drawerVisible.value = false
+  detailVisible.value = false
   selectedTemplateId.value = ''
   selectedTemplateFallback.value = null
   selectedVersionId.value = ''
@@ -393,14 +393,14 @@ function closeDetail(): void {
   void router.push({ name: 'ArchiveTemplate', query: listRouteQuery() })
 }
 
-function handleDrawerVisibility(visible: boolean): void {
+function handleDetailVisibility(visible: boolean): void {
   if (!visible) closeDetail()
 }
 
 function syncRouteIntent(): void {
   const templateId = firstRouteParam(route.params.templateId)
   if (!templateId) {
-    drawerVisible.value = false
+    detailVisible.value = false
     selectedTemplateId.value = ''
     selectedTemplateFallback.value = null
     selectedVersionId.value = ''
@@ -413,11 +413,11 @@ function syncRouteIntent(): void {
     selectedVersionId.value = ''
     editableFolders.value = []
   }
-  drawerVisible.value = true
+  detailVisible.value = true
 }
 
 function syncSelectedVersion(): void {
-  if (!drawerVisible.value || !templateVersionsQuery.isSuccess.value) return
+  if (!detailVisible.value || !templateVersionsQuery.isSuccess.value) return
   const requestedVersionId = queryString(route.query.versionId)
   const publishedVersionId = selectedTemplate.value?.currentPublishedVersion?.id ?? ''
   const selected =
@@ -864,12 +864,20 @@ watch(
       </a-form>
     </a-modal>
 
-    <a-drawer
-      :visible="drawerVisible"
+    <a-modal
+      class="archive-template-detail-modal"
+      :visible="detailVisible"
       :width="'80vw'"
+      :top="24"
+      :align-center="false"
+      :body-style="{
+        padding: '0 20px 20px',
+        maxHeight: 'calc(100vh - 128px)',
+        overflowY: 'auto',
+      }"
       :footer="false"
       unmount-on-close
-      @update:visible="handleDrawerVisibility"
+      @update:visible="handleDetailVisibility"
     >
       <template #title>
         {{ selectedTemplate?.templateName || t('archiveTemplate.detailTitle') }}
@@ -1046,7 +1054,7 @@ watch(
           </section>
         </template>
       </a-spin>
-    </a-drawer>
+    </a-modal>
   </section>
 </template>
 

@@ -794,6 +794,15 @@ test('archive template matches Figma 69:305 geometry and server query behavior',
     /^\s*\d{4}-\d{2}-\d{2}\s*$/,
   )
 
+  await publishedRow.locator('.template-link').click()
+  const detailModal = page.locator('.archive-template-detail-modal .arco-modal')
+  await expect(detailModal).toBeVisible({ timeout: 60_000 })
+  await expect(page.locator('.arco-drawer')).toHaveCount(0)
+  await expect(page).toHaveURL(/#\/archive-templates\/[^?]+/u)
+  await detailModal.locator('.arco-modal-close-btn').click()
+  await expect(detailModal).toBeHidden()
+  await expect(page).toHaveURL(/#\/archive-template(?:\?|$)/u)
+
   const searchRequest = page.waitForResponse((response) => {
     const url = new URL(response.url())
     return (

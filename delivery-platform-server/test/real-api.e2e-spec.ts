@@ -120,6 +120,12 @@ interface ArchiveTemplateListItem {
   } | null;
 }
 
+interface ArchiveTemplateVersionData {
+  id: string;
+  status: string;
+  versionNo: string;
+}
+
 const AUTHENTICATED_E2E_TIMEOUT_MS = 90_000;
 
 describe('running Delivery Platform API', () => {
@@ -999,6 +1005,43 @@ describe('running Delivery Platform API', () => {
         403,
       );
       expect(forbiddenDetail.code).not.toBe(0);
+    },
+    AUTHENTICATED_E2E_TIMEOUT_MS,
+  );
+
+  it(
+    'submits an archive template draft with the seeded default review configuration',
+    async () => {
+      if (!username || !password) {
+        throw new Error('Admin E2E credentials are required for archive template review E2E');
+      }
+      const admin = await login(username, password);
+      const templates = (await expectAuthenticatedGet('/archive-templates', admin.accessToken))
+        .data as ArchiveTemplateListItem[];
+      const target = templates.find((template) => template.currentPublishedVersion !== null);
+      if (!target) throw new Error('A published archive template is required for review E2E');
+
+      const draft = (
+        await expectAuthenticatedRequest<ArchiveTemplateVersionData>(
+          `/archive-templates/${target.id}/versions`,
+          admin.accessToken,
+          { method: 'POST', body: JSON.stringify({}) },
+          201,
+        )
+      ).data;
+      expect(draft.status).toBe('DRAFT');
+
+      const review = (
+        await expectAuthenticatedRequest<{ id: string; status: string }>(
+          `/archive-template-versions/${draft.id}/submit-review`,
+          admin.accessToken,
+          { method: 'POST', body: JSON.stringify({}) },
+          201,
+        )
+      ).data;
+      expect(review).toEqual(
+        expect.objectContaining({ id: expect.any(String), status: 'PENDING' }),
+      );
     },
     AUTHENTICATED_E2E_TIMEOUT_MS,
   );

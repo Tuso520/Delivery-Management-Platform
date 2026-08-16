@@ -32,7 +32,10 @@ describe('archive template route state', () => {
     expect(page).toContain("name: 'ArchiveTemplateDetail'")
     expect(page).toContain("preservedRouteQuery(route.query, ['versionId'])")
     expect(page).toContain('route.query.versionId')
-    expect(page).toContain('useArchiveTemplateDetailQuery(selectedTemplateId, drawerVisible)')
+    expect(page).toContain('useArchiveTemplateDetailQuery(selectedTemplateId, detailVisible)')
+    expect(page).toContain('<a-modal')
+    expect(page).toContain('class="archive-template-detail-modal"')
+    expect(page).not.toContain('<a-drawer')
     expect(queries).toContain('archiveTemplateApi.getById(toValue(templateId))')
   })
 
