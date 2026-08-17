@@ -127,7 +127,6 @@ flowchart TD
 | `/review/:taskId`           | `ReviewDetail`  | `src/views/review/pending.vue`           | 保留列表 query 并自动打开审核详情抽屉               | 登录即可进入      |
 | `/archive-templates/:templateId` | `ArchiveTemplateDetail` | `src/views/archive/template.vue` | 自动打开模版版本详情抽屉                       | `archive_template:view` |
 | `/standards/:id`            | `StandardDetail` | `src/views/standard/index.vue`          | 自动打开标准详情抽屉                                | `standard:view`   |
-| `/knowledge/:id`            | `KnowledgeDetail` | `src/views/knowledge/index.vue`        | 自动打开知识详情抽屉                                | `knowledge:view`  |
 | `/organization/departments` | `Departments`   | `src/views/organization/departments.vue` | 仅深链                                              | `department:view` |
 | `/organization/roles`       | `Roles`         | `src/views/system/role/index.vue`        | 仅深链                                              | `role:view`       |
 

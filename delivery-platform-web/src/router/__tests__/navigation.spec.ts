@@ -79,7 +79,6 @@ describe('application navigation', () => {
       ['Review', 'ReviewDetail', '/review/task-1'],
       ['ArchiveTemplate', 'ArchiveTemplateDetail', '/archive-templates/template-1'],
       ['Standard', 'StandardDetail', '/standards/standard-1'],
-      ['Knowledge', 'KnowledgeDetail', '/knowledge/knowledge-1'],
     ] as const
 
     for (const [listName, detailName, path] of routePairs) {
@@ -91,7 +90,8 @@ describe('application navigation', () => {
     }
 
     expect(router.resolve('/forbidden').name).toBe('Forbidden')
-    expect(router.resolve('/knowledge/knowledge-1/view').name).toBe('KnowledgeReader')
+    expect(router.resolve('/knowledge/knowledge-1').name).toBe('NotFound')
+    expect(router.resolve('/knowledge/knowledge-1/view').name).toBe('NotFound')
     expect(router.resolve('/knowledge/create').name).toBe('NotFound')
     expect(router.resolve('/standards/create').name).toBe('NotFound')
   })
@@ -103,8 +103,6 @@ describe('application navigation', () => {
     expect(router.resolve('/projects/project-1').meta.activeMenu).toBe('/projects')
     expect(router.resolve('/archive-templates/template-1').meta.activeMenu).toBe('/archive-template')
     expect(router.resolve('/standards/standard-1').meta.activeMenu).toBe('/standards')
-    expect(router.resolve('/knowledge/knowledge-1').meta.activeMenu).toBe('/knowledge')
-    expect(router.resolve('/knowledge/knowledge-1/view').meta.activeMenu).toBe('/knowledge')
   })
 
   it('does not register retired domains or compatibility aliases', () => {
