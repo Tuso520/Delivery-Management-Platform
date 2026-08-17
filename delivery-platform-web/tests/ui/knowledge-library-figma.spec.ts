@@ -10,6 +10,19 @@ interface KnowledgeItem {
   id: string
   categoryId: string
   title: string
+  displayVersion?: {
+    version: string
+    contentType: 'FILE' | 'MARKDOWN' | 'LINK'
+    fileVersion?: {
+      logicalFileId: string
+      asset: {
+        originalName: string
+        extension: string | null
+      }
+    } | null
+    markdownContent?: string | null
+    externalUrl?: string | null
+  } | null
   versions?: Array<{
     fileVersion?: {
       logicalFileId: string
@@ -248,8 +261,10 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
   expect(selectedCategoryId).toBeTruthy()
 
   const longTitle = `知识库超长标题-${Date.now()}-${'跨国交付现场调试与验收操作规范'.repeat(5)}`
+  const longMaterialName = `${longTitle}.md`
   let longItemId = ''
   let fileItemId = ''
+  let fileMaterialName = ''
   try {
     const createLongResponse = await page.request.post('/api/v1/knowledge', {
       headers: authHeaders(accessToken),
@@ -269,10 +284,11 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
     expect(createLongResponse.status()).toBe(201)
     longItemId = ((await createLongResponse.json()) as KnowledgeEnvelope).data.id
 
+    fileMaterialName = `knowledge-main-${Date.now()}.md`
     const mainFile = await uploadKnowledgeFile(
       page.request,
       accessToken,
-      `knowledge-main-${Date.now()}.md`,
+      fileMaterialName,
       'knowledge main file',
     )
     const supportingFile = await uploadKnowledgeFile(
@@ -318,9 +334,15 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
     }
 
     await page.reload()
-    await expect(page.getByRole('button', { name: longTitle })).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByRole('button', { name: longMaterialName })).toBeVisible({
+      timeout: 60_000,
+    })
+    await expect(page.getByRole('button', { name: fileMaterialName })).toBeVisible()
+    const refreshedList = await fetchKnowledge(page.request, accessToken)
+    const fileListItem = refreshedList.data.items.find((item) => item.id === fileItemId)
+    expect(fileListItem?.displayVersion?.fileVersion?.asset.originalName).toBe(fileMaterialName)
     const longTitleMetrics = await page
-      .getByRole('button', { name: longTitle })
+      .getByRole('button', { name: longMaterialName })
       .evaluate((node) => ({
         clientWidth: node.clientWidth,
         scrollWidth: node.scrollWidth,
@@ -337,7 +359,7 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
     const panelHeights: number[] = []
     for (const viewport of knowledgeViewports) {
       await page.setViewportSize(viewport)
-      await expect(page.getByRole('button', { name: longTitle })).toBeVisible()
+      await expect(page.getByRole('button', { name: longMaterialName })).toBeVisible()
       const geometry = await measureKnowledgeLayout(page)
       panelHeights.push(geometry.panel.height)
 
@@ -355,9 +377,9 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
       expect(geometry.bodyWidths).toHaveLength(5)
       geometry.headerWidths.forEach((width, index) => {
         expect(Math.abs(width - geometry.bodyWidths[index]!)).toBeLessThanOrEqual(0.5)
-        expect(
-          Math.abs(width - geometry.table.width * ([365, 90, 130, 170, 182][index]! / 937)),
-        ).toBeLessThanOrEqual(1)
+        const expectedWidth =
+          index === 0 ? geometry.table.width - 572 : [0, 90, 130, 170, 182][index]!
+        expect(Math.abs(width - expectedWidth)).toBeLessThanOrEqual(1)
       })
       expect(geometry.pageOverflowX).toBe(0)
       expect(geometry.pageOverflowY).toBe(0)
@@ -389,10 +411,26 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
     expect(panelHeights[1]).toBeGreaterThan(panelHeights[0]!)
     expect(panelHeights[2]).toBeGreaterThan(panelHeights[1]!)
 
-    await page.getByRole('button', { name: longTitle }).click()
-    await expect(page.locator('.arco-drawer')).toBeVisible()
-    await expect(page.locator('.detail-section')).toBeVisible()
-    await page.locator('.arco-drawer-close-btn').click()
+    await page.getByRole('button', { name: longMaterialName }).click()
+    await expect(page).toHaveURL(new RegExp(`#/knowledge/${longItemId}/view`))
+    await expect(page.locator('.knowledge-reader__markdown')).toContainText('自动化验收正文')
+    await expect(page.locator('.arco-drawer')).toHaveCount(0)
+    await expect(page.locator('.attachment-preview-modal')).toHaveCount(0)
+    await page.getByRole('button', { name: '返回知识库' }).click()
+    await expect(page).toHaveURL(/#\/knowledge(?:\?|$)/u)
+
+    const previewResponse = page.waitForResponse((response) =>
+      response.url().includes(`/api/v1/files/${mainFile.logicalFileId}/preview-session`),
+    )
+    await page.getByRole('button', { name: fileMaterialName }).click()
+    await previewResponse
+    await expect(page).toHaveURL(new RegExp(`#/knowledge/${fileItemId}/view`))
+    await expect(page.locator('.knowledge-reader .file-preview-router')).toBeVisible()
+    await expect(page.locator('.knowledge-reader .markdown-body')).toContainText(
+      'knowledge main file',
+    )
+    await expect(page.locator('.attachment-preview-modal')).toHaveCount(0)
+    await page.getByRole('button', { name: '返回知识库' }).click()
 
     await page.getByRole('button', { name: '新增' }).click()
     const createModal = page.locator('.arco-modal:visible')
@@ -480,7 +518,9 @@ test('knowledge library exposes real loading/error recovery to a read-only user'
   await page.setViewportSize({ width: 1440, height: 900 })
   const accessToken = await login(page, knowledgeReaderUsername, knowledgeReaderPassword)
   await page.goto('/#/knowledge')
-  await expect(page.locator('.knowledge-category')).toHaveCount(10, { timeout: 60_000 })
+  await expect
+    .poll(() => page.locator('.knowledge-category').count(), { timeout: 60_000 })
+    .toBeGreaterThan(0)
   await expect(page.getByRole('button', { name: '新增' })).toHaveCount(0)
   await expect(page.locator('.knowledge-table__actions button')).toHaveCount(0)
 

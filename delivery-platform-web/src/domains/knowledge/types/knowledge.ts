@@ -74,6 +74,7 @@ export interface KnowledgeItem {
   status: KnowledgeItemStatus
   currentPublishedVersionId?: string | null
   currentPublishedVersion: KnowledgePublishedVersionSummary | null
+  displayVersion: KnowledgeVersion | null
   effectiveAt: string | null
   createdBy: string
   updatedBy: string

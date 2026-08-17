@@ -1221,6 +1221,11 @@
     "versionDraftHint": "草稿可反复保存；提交审核后内容将锁定，已发布版本不会被覆盖。",
     "autoVersionPlaceholder": "留空自动递增",
     "defaultFileName": "知识资料",
+    "reader": {
+      "back": "返回知识库",
+      "loadFailed": "知识资料加载失败",
+      "unavailable": "当前资料暂无可直接查看的内容"
+    },
     "summary": {
       "aria": "知识库统计",
       "total": "标准总数",
