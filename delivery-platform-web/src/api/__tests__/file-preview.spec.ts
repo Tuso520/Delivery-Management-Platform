@@ -61,6 +61,17 @@ describe('unified file preview contract', () => {
     expect(session.route.viewer).toBe('xmind')
     expect(session.xmind?.sheets).toEqual(sheets)
   })
+
+  it('loads preview bytes through the authenticated API route', async () => {
+    const blob = new Blob(['knowledge main file'], { type: 'text/markdown' })
+    mocks.get.mockResolvedValueOnce(blob)
+
+    await expect(fileApi.loadPreviewContent('file-1')).resolves.toBe(blob)
+    expect(mocks.get).toHaveBeenCalledWith('/files/file-1/preview-content', {
+      responseType: 'blob',
+      timeout: 120000,
+    })
+  })
 })
 
 function previewSession(overrides: Record<string, unknown>) {

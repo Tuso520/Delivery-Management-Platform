@@ -236,6 +236,13 @@ export const fileApi = {
     })
   },
 
+  loadPreviewContent(id: string) {
+    return request.get<Blob>(`/files/${id}/preview-content`, {
+      responseType: 'blob',
+      timeout: 120000,
+    })
+  },
+
   archive(id: string) {
     return request.post<{ id: string; archivedAt: string }>(`/files/${id}/archive`)
   },

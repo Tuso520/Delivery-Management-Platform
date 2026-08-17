@@ -9,6 +9,7 @@ import {
   Logger,
   NotFoundException,
   Optional,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma, type FileAsset } from '@prisma/client';
@@ -608,6 +609,34 @@ export class UnifiedFileService {
       processingStatus: processingJobs.map(({ outputAsset: _outputAsset, ...job }) => job),
       ...(onlyOffice ? { onlyOffice } : {}),
       ...(resolvedPreview.xmind ? { xmind: resolvedPreview.xmind } : {}),
+    };
+  }
+
+  async getPreviewContent(
+    identifier: string,
+    actor: UnifiedFileAccessActor,
+  ): Promise<UnifiedFileContent> {
+    const file = await this.getAccessibleLogicalFile(identifier, actor, 'VIEW');
+    const requestedVersion = file.versions?.find((version) => version.id === identifier);
+    const current = requestedVersion ?? file.currentVersion;
+    if (!current) {
+      throw new NotFoundException('文件尚无可预览的当前版本');
+    }
+    if (requestedVersion && requestedVersion.id !== file.currentVersionId) {
+      await this.assertVersionPreviewAccess(requestedVersion, actor);
+    }
+    const processingJobs = await this.findPreviewProcessingJobs(current.asset.id);
+    const resolvedPreview = await this.resolvePreview(current.asset, processingJobs);
+    if (resolvedPreview.availability.state !== 'READY') {
+      throw new UnprocessableEntityException(
+        resolvedPreview.availability.reason ?? '文件预览内容尚未就绪',
+      );
+    }
+    const asset = resolvedPreview.asset;
+    return {
+      stream: await this.storage.getObjectFrom(asset.storageBucket, asset.storageKey),
+      fileName: asset.originalName,
+      mimeType: asset.mimeType,
     };
   }
 

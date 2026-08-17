@@ -121,6 +121,37 @@ export class FileController {
     return this.unifiedFiles.createPreviewSession(id, actor);
   }
 
+  @Get(':id/preview-content')
+  @RequirePermissions({
+    any: [
+      'file:preview',
+      'file:preview_pending',
+      'standard:view',
+      'knowledge:view',
+      'file_review:view',
+      'file_review:view_all',
+      'file_review:manage',
+      'file_review:act',
+    ],
+  })
+  @RawResponse()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '通过鉴权接口读取只读预览内容' })
+  async previewContent(
+    @Param('id') id: string,
+    @CurrentUser() actor: JwtPayload,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const content = await this.unifiedFiles.getPreviewContent(id, actor);
+    response.setHeader('Content-Type', content.mimeType);
+    response.setHeader('Cache-Control', 'private, no-store');
+    response.setHeader(
+      'Content-Disposition',
+      `inline; filename*=UTF-8''${encodeURIComponent(content.fileName)}`,
+    );
+    return new StreamableFile(content.stream);
+  }
+
   @Get(':id/download')
   @RequirePermissions({
     any: ['file:download', 'standard:download', 'knowledge:download'],

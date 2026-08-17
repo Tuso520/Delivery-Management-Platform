@@ -19,6 +19,9 @@ describe('unified file preview regression', () => {
     expect(source).toContain('v-if="canDownload" :loading="downloading" @click="downloadOriginal"')
     expect(source).toContain("throw new Error('ONLYOFFICE is unavailable')")
     expect(source).toContain("throw new Error('ONLYOFFICE API did not initialize')")
+    expect(source).toContain('fileApi.loadPreviewContent(nextSession.file.id)')
+    expect(source).toContain('URL.createObjectURL(blob)')
+    expect(source).not.toContain('const response = await fetch(url)')
   })
 
   it('keeps compact preview content flush with the modal body', () => {
