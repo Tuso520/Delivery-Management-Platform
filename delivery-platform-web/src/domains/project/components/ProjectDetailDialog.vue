@@ -1164,7 +1164,7 @@ async function retryLoad(): Promise<void> {
 .dialog-actions :deep(.arco-btn) { width: 82px; height: 32px; padding: 0; border-radius: 0; }
 .dialog-close { width: 54px; height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0 16px; border: 0; border-radius: 0; background: transparent; color: #165dff; cursor: pointer; }
 .dialog-close:hover { background: #f2f3f5; }
-.dialog-body { min-height: 0; flex: 1; overflow-x: hidden; overflow-y: auto; scrollbar-color: #c9cdd4 #f2f3f5; scrollbar-width: thin; }
+.dialog-body { min-height: 0; flex: 1; overflow-x: hidden; overflow-y: scroll; scrollbar-color: #c9cdd4 #f2f3f5; scrollbar-width: thin; scrollbar-gutter: stable; }
 .dialog-body::-webkit-scrollbar { width: 4px; height: 4px; }
 .dialog-body::-webkit-scrollbar-track { background: #f2f3f5; }
 .dialog-body::-webkit-scrollbar-thumb { border-radius: 2px; background: #c9cdd4; }

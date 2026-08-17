@@ -1,4 +1,5 @@
 const MONEY_PATTERN = /^\d{1,16}(?:\.\d{0,2})?$/
+const PERCENT_PATTERN = /^\d{1,3}(?:\.\d{0,2})?$/
 
 export function normalizeMoneyInput(value: string): string {
   const normalized = value.split(',').join('').replace(/[^\d.]/g, '')
@@ -10,6 +11,27 @@ export function normalizeMoneyInput(value: string): string {
 
 export function isMoney(value: string): boolean {
   return MONEY_PATTERN.test(value) && value.length > 0
+}
+
+export function normalizePercentInput(value: string): string {
+  const normalized = value.replace(/[^\d.]/g, '')
+  const [integer = '', ...fractionParts] = normalized.split('.')
+  const fraction = fractionParts.join('').slice(0, 2)
+  const compactInteger = integer.replace(/^0+(?=\d)/, '')
+  return fractionParts.length > 0 ? `${compactInteger || '0'}.${fraction}` : compactInteger
+}
+
+export function isPercent(value: string): boolean {
+  if (!PERCENT_PATTERN.test(value) || value.length === 0) return false
+  const [integer, fraction = ''] = value.split('.')
+  const hundredths = BigInt(integer) * 100n + BigInt(fraction.padEnd(2, '0'))
+  return hundredths <= 10_000n
+}
+
+function percentToHundredths(value: string): bigint | undefined {
+  if (!isPercent(value)) return undefined
+  const [integer, fraction = ''] = value.split('.')
+  return BigInt(integer) * 100n + BigInt(fraction.padEnd(2, '0'))
 }
 
 export function moneyToMinor(value: string | null | undefined): bigint {
@@ -33,12 +55,25 @@ export function formatMoneyString(value: string | null | undefined): string {
 }
 
 export function ratioPercent(amount: string, total: string): string {
+  const value = percentValue(amount, total)
+  return value ? `${value}%` : '—'
+}
+
+export function percentValue(amount: string, total: string): string | undefined {
   const totalMinor = moneyToMinor(total)
-  if (totalMinor === 0n) return '—'
+  if (totalMinor === 0n || !isMoney(amount)) return undefined
   const hundredthPercent = (moneyToMinor(amount) * 10_000n + totalMinor / 2n) / totalMinor
   const whole = hundredthPercent / 100n
   const fraction = String(hundredthPercent % 100n).padStart(2, '0')
-  return `${whole}.${fraction}%`
+  return `${whole}.${fraction}`
+}
+
+export function moneyFromPercent(percent: string, total: string): string | undefined {
+  const hundredths = percentToHundredths(percent)
+  const totalMinor = moneyToMinor(total)
+  if (hundredths === undefined || totalMinor === 0n) return undefined
+  const amountMinor = (totalMinor * hundredths + 5_000n) / 10_000n
+  return minorToMoney(amountMinor)
 }
 
 export function multiplyMoneyByRate(

@@ -463,7 +463,7 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
           </a-table-column>
           <a-table-column :title="t('projects.columns.region')" :width="160" align="center">
             <template #cell="{ record: row }">
-              <span class="cell-left nowrap">{{ region(row) }}</span>
+              <span class="cell-center nowrap">{{ region(row) }}</span>
             </template>
           </a-table-column>
           <a-table-column :title="t('projects.columns.currentStage')" :width="200" align="center">
@@ -866,6 +866,13 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
   text-align: left;
   text-overflow: ellipsis;
 }
+.cell-center {
+  width: 100%;
+  display: block;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+}
 .money-cell {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -974,8 +981,10 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
 }
 :deep(.project-list-panel .business-table__viewport) {
   max-height: none;
+  overflow: scroll;
   scrollbar-color: #b5babf #f0f2f2;
   scrollbar-width: auto;
+  scrollbar-gutter: stable;
 }
 :deep(.project-list-panel .business-table__viewport::-webkit-scrollbar) {
   width: 6px;

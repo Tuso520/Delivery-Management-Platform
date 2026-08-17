@@ -9,10 +9,14 @@ import { usePermission } from '@/composables/usePermission'
 import type { ProjectPaymentPlanItem } from '@/domains/project/types/project-payment'
 import {
   formatMoneyString,
+  isPercent,
   isMoney,
+  moneyFromPercent,
   minorToMoney,
   moneyToMinor,
   normalizeMoneyInput,
+  normalizePercentInput,
+  percentValue,
   proportionalMoney,
   ratioPercent,
 } from '@/utils/decimal-money'
@@ -37,25 +41,31 @@ const canOperate = computed(
 const selectedKeys = ref<string[]>([])
 const visible = ref(false)
 const editingIndex = ref<number | null>(null)
-const form = reactive<ProjectPaymentPlanItem>({
+type PaymentPlanForm = ProjectPaymentPlanItem & { paymentRatio: string }
+type LastEditedField = 'amount' | 'ratio' | null
+
+const lastEditedField = ref<LastEditedField>(null)
+const form = reactive<PaymentPlanForm>({
   paymentName: '',
   dueDate: '',
   completed: false,
   receivedDate: null,
   originalAmount: '',
+  paymentRatio: '',
   remark: '',
 })
 const columns = computed<TableColumnData[]>(() => [
-  { title: '付款项', dataIndex: 'paymentName' },
-  { title: '付款日期', dataIndex: 'dueDate', slotName: 'dueDate' },
-  { title: '是否完成', dataIndex: 'completed', slotName: 'completed' },
-  { title: '付款比例', slotName: 'ratio' },
-  { title: '付款金额', slotName: 'originalAmount' },
+  { title: '付款项', dataIndex: 'paymentName', align: 'center' },
+  { title: '付款日期', dataIndex: 'dueDate', slotName: 'dueDate', align: 'center' },
+  { title: '是否完成', dataIndex: 'completed', slotName: 'completed', align: 'center' },
+  { title: '付款比例', slotName: 'ratio', align: 'center' },
+  { title: '付款金额', slotName: 'originalAmount', align: 'center' },
   {
     title: `折算${props.baseCurrencyLabel || '币种'}`,
     slotName: 'convertedAmount',
+    align: 'center',
   },
-  { title: '付款条件', dataIndex: 'remark', slotName: 'remark' },
+  { title: '付款条件', dataIndex: 'remark', slotName: 'remark', align: 'center' },
 ])
 const keyedRows = computed(() =>
   props.modelValue.map((item, index) => ({ ...item, rowKey: item.id || `new-${index}` })),
@@ -94,6 +104,7 @@ function selectedIndex(): number {
 }
 function openCreate(): void {
   editingIndex.value = null
+  lastEditedField.value = null
   Object.assign(form, {
     id: undefined,
     paymentName: '',
@@ -101,6 +112,7 @@ function openCreate(): void {
     completed: false,
     receivedDate: null,
     originalAmount: '',
+    paymentRatio: '',
     receivedOriginalAmount: '',
     receivedConvertedAmount: '',
     remark: '',
@@ -114,12 +126,30 @@ function openEdit(): void {
     return
   }
   editingIndex.value = index
-  Object.assign(form, props.modelValue[index])
+  lastEditedField.value = 'amount'
+  Object.assign(form, props.modelValue[index], {
+    paymentRatio: percentValue(props.modelValue[index].originalAmount, props.contractAmount || '') ?? '',
+  })
   visible.value = true
 }
 function save(): boolean {
   if (!form.paymentName.trim()) {
     Message.warning('请输入付款项名称')
+    return false
+  }
+  if (form.paymentRatio && !isPercent(form.paymentRatio)) {
+    Message.warning('请输入 0 至 100 之间的付款比例，最多保留两位小数')
+    return false
+  }
+  if (form.paymentRatio && Number(form.paymentRatio) <= 0) {
+    Message.warning('付款比例必须大于 0')
+    return false
+  }
+  if (
+    lastEditedField.value === 'ratio' &&
+    (!props.contractAmount || moneyToMinor(props.contractAmount) === 0n)
+  ) {
+    Message.warning('请先输入大于 0 的合同金额，再按付款比例计算付款金额')
     return false
   }
   if (!isMoney(form.originalAmount)) {
@@ -130,10 +160,21 @@ function save(): boolean {
     Message.warning('付款金额必须大于 0')
     return false
   }
+  if (
+    props.contractAmount &&
+    moneyToMinor(props.contractAmount) > 0n &&
+    moneyToMinor(form.originalAmount) > moneyToMinor(props.contractAmount)
+  ) {
+    Message.warning('付款金额不能超过合同金额')
+    return false
+  }
   const next = props.modelValue.map((item) => ({ ...item }))
-  const value = {
-    ...form,
+  const value: ProjectPaymentPlanItem = {
+    id: form.id,
     paymentName: form.paymentName.trim(),
+    dueDate: form.dueDate,
+    completed: form.completed,
+    originalAmount: form.originalAmount,
     remark: form.remark.trim(),
     receivedDate: form.completed ? form.receivedDate || new Date().toISOString() : null,
     receivedOriginalAmount: form.completed ? form.receivedOriginalAmount || form.originalAmount : '0',
@@ -149,7 +190,16 @@ function save(): boolean {
   return true
 }
 function updateAmount(value: string): void {
+  lastEditedField.value = 'amount'
   form.originalAmount = normalizeMoneyInput(value)
+  const calculatedRatio = percentValue(form.originalAmount, props.contractAmount || '')
+  if (calculatedRatio !== undefined) form.paymentRatio = calculatedRatio
+}
+function updateRatio(value: string): void {
+  lastEditedField.value = 'ratio'
+  form.paymentRatio = normalizePercentInput(value)
+  const calculatedAmount = moneyFromPercent(form.paymentRatio, props.contractAmount || '')
+  if (calculatedAmount !== undefined) form.originalAmount = calculatedAmount
 }
 function updateCompleted(rowKey: string, completed: boolean): void {
   const index = keyedRows.value.findIndex((item) => item.rowKey === rowKey)
@@ -261,10 +311,10 @@ function remove(): void {
           {{ ratio(record) }}
         </template>
         <template #originalAmount="{ record }">
-          {{ formatMoneyString(record.originalAmount) }}
+          <span class="payment-cell-left">{{ formatMoneyString(record.originalAmount) }}</span>
         </template>
         <template #convertedAmount="{ record }">
-          {{ converted(record) }}
+          <span class="payment-cell-left">{{ converted(record) }}</span>
         </template>
         <template #remark="{ record }">
           <span class="payment-condition">
@@ -294,12 +344,23 @@ function remove(): void {
         <a-form-item label="付款日期">
           <a-date-picker v-model="form.dueDate" format="YYYY-MM-DD" />
         </a-form-item>
-        <a-form-item label="付款金额" required>
+        <a-form-item label="付款金额（按合同币种）" required>
           <a-input
             :model-value="form.originalAmount"
             placeholder="请输入付款金额"
             @input="updateAmount"
           />
+        </a-form-item>
+        <a-form-item label="付款比例">
+          <a-input
+            :model-value="form.paymentRatio"
+            placeholder="请输入付款比例"
+            @input="updateRatio"
+          >
+            <template #suffix>
+              %
+            </template>
+          </a-input>
         </a-form-item>
         <a-form-item label="是否完成">
           <a-checkbox v-model="form.completed">
@@ -321,7 +382,7 @@ function remove(): void {
 .payment-actions { display: flex; gap: 8px; margin-left: auto; }
 .payment-actions :deep(.arco-btn) { width: 82px; height: 32px; padding: 0; border-radius: 0; }
 .ratio-warning { color: rgb(var(--warning-6)); font-size: 12px; line-height: 20px; }
-.payment-table-scroll { width: 100%; margin-top: 12px; overflow-x: auto; }
+.payment-table-scroll { width: 100%; margin-top: 12px; overflow-x: scroll; scrollbar-gutter: stable; }
 .payment-table-scroll::-webkit-scrollbar { width: 4px; height: 4px; }
 .payment-table-scroll::-webkit-scrollbar-track { border-radius: 2px; background: #f0f0f0; }
 .payment-table-scroll::-webkit-scrollbar-thumb { border-radius: 2px; background: #bfbfbf; }
@@ -333,7 +394,8 @@ function remove(): void {
 .payment-plan :deep(.arco-table-td-content) { overflow: visible; text-overflow: clip; white-space: nowrap; }
 .payment-date-picker { width: 130px; }
 .payment-plan :deep(.payment-date-picker.arco-picker) { height: 32px; border: 0; border-radius: 0; background: #e5e6eb; }
-.payment-condition { display: block; min-width: 240px; max-width: 420px; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.payment-condition { width: 100%; display: block; min-width: 240px; max-width: 420px; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.payment-cell-left { width: 100%; display: block; min-width: 120px; text-align: left; }
 .payment-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; }
 .payment-form-grid :deep(.arco-picker), .payment-form-grid :deep(.arco-input-number) { width: 100%; }
 .span-full { grid-column: 1 / -1; }

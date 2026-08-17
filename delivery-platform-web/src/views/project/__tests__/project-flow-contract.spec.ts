@@ -125,12 +125,30 @@ describe('project overview and overlay contract', () => {
     expect(overview).not.toContain('`CNY ${amount')
     expect(paymentPlan).toContain('props.baseCurrency')
     expect(paymentPlan).toContain('width: max-content')
-    expect(paymentPlan).toContain('overflow-x: auto')
+    expect(paymentPlan).toContain('overflow-x: scroll')
     expect(paymentPlan).not.toContain(':scroll="{ x: 1083 }"')
     expect(paymentPlan).not.toContain("contractCurrency === 'CNY'")
     expect(api).toContain('/projects/${id}/progress')
     expect(api).not.toContain('/projects/${id}/stage')
     expect(api).not.toContain('/projects/${id}/acceptance')
+  })
+
+  it('keeps project and payment scrollbars visible and payment amount-ratio editing linked', () => {
+    const overview = source('src/domains/project/pages/ProjectOverviewPage.vue')
+    const dialog = source('src/domains/project/components/ProjectDetailDialog.vue')
+    const paymentPlan = source('src/domains/project/components/ProjectPaymentPlan.vue')
+
+    expect(overview).toContain('<span class="cell-center nowrap">{{ region(row) }}</span>')
+    expect(overview).toMatch(/business-table__viewport\)[^{]*\{[^}]*overflow:\s*scroll;/su)
+    expect(dialog).toMatch(/\.dialog-body\s*\{[^}]*overflow-y:\s*scroll;/su)
+    expect(paymentPlan).toContain('label="付款金额（按合同币种）"')
+    expect(paymentPlan).toContain('label="付款比例"')
+    expect(paymentPlan).toContain("lastEditedField.value = 'amount'")
+    expect(paymentPlan).toContain("lastEditedField.value = 'ratio'")
+    expect(paymentPlan).toContain('moneyFromPercent(form.paymentRatio')
+    expect(paymentPlan).toContain('percentValue(form.originalAmount')
+    expect(paymentPlan).toContain('overflow-x: scroll')
+    expect(paymentPlan).toContain('<span class="payment-cell-left">{{ converted(record) }}</span>')
   })
 
   it('keeps permanent deletion out of the Figma list while retaining the guarded API', () => {

@@ -4,10 +4,14 @@ import {
   formatMoneyString,
   moneyToMinor,
   multiplyMoneyByRate,
+  moneyFromPercent,
   normalizeMoneyInput,
+  normalizePercentInput,
+  percentValue,
   proportionalMoney,
   ratioPercent,
   isMoney,
+  isPercent,
 } from '../decimal-money'
 
 describe('decimal money utilities', () => {
@@ -28,5 +32,17 @@ describe('decimal money utilities', () => {
     expect(proportionalMoney('300000.00', '1000000.00', '7200000.00')).toBe(
       '2160000.00',
     )
+  })
+
+  it('converts payment percentages and money in both directions with validation', () => {
+    expect(normalizePercentInput('030.129%')).toBe('30.12')
+    expect(isPercent('100.00')).toBe(true)
+    expect(isPercent('100.01')).toBe(false)
+    expect(isPercent('1000')).toBe(false)
+    expect(isPercent('')).toBe(false)
+    expect(moneyFromPercent('30.00', '1000000.00')).toBe('300000.00')
+    expect(percentValue('300000.00', '1000000.00')).toBe('30.00')
+    expect(moneyFromPercent('30.00', '0')).toBeUndefined()
+    expect(percentValue('300000.00', '')).toBeUndefined()
   })
 })
