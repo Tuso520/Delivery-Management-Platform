@@ -9,7 +9,6 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import type { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { OperationLogService } from '../operation-log/operation-log.service';
-import { DEFAULT_APPROVAL_TEMPLATE_CODE_BY_BUSINESS_TYPE } from '../platform/workflow/default-approval-template.contract';
 import { ReviewConfigurationService } from '../review/review-configuration.service';
 import { ReviewTaskService } from '../review/review-task.service';
 
@@ -297,7 +296,10 @@ export class ArchiveTemplateVersionService {
       throw new BadRequestException('档案模板版本至少需要一个文件夹和一个文件项');
     }
 
-    const approvalTemplateId = await this.resolveApprovalTemplateId(dto.approvalTemplateId);
+    const approvalTemplateId = await this.resolveApprovalTemplateId(
+      dto.approvalTemplateId,
+      version.template.countryCode,
+    );
     const configuration = await this.reviewConfiguration.resolve(approvalTemplateId, userId);
     return this.reviewTasks.createTask({
       sourceType: 'ARCHIVE_TEMPLATE',
@@ -407,18 +409,44 @@ export class ArchiveTemplateVersionService {
     }
   }
 
-  private async resolveApprovalTemplateId(requestedId?: string): Promise<string | undefined> {
-    if (requestedId) return requestedId;
-    const template = await this.prisma.approvalTemplate.findFirst({
+  private async resolveApprovalTemplateId(
+    requestedId: string | undefined,
+    countryCode: string | null,
+  ): Promise<string | undefined> {
+    if (requestedId) {
+      const requestedTemplate = await this.prisma.approvalTemplate.findFirst({
+        where: {
+          id: requestedId,
+          businessType: 'ARCHIVE_TEMPLATE',
+          isEnabled: true,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+      if (!requestedTemplate) {
+        throw new BadRequestException(
+          '指定的档案模板审批流程不存在、已停用或业务类型不匹配',
+        );
+      }
+      return requestedTemplate.id;
+    }
+
+    const templates = await this.prisma.approvalTemplate.findMany({
       where: {
-        templateCode: DEFAULT_APPROVAL_TEMPLATE_CODE_BY_BUSINESS_TYPE.ARCHIVE_TEMPLATE,
         businessType: 'ARCHIVE_TEMPLATE',
         isEnabled: true,
         deletedAt: null,
+        ...(countryCode
+          ? { OR: [{ countryCode }, { countryCode: null }] }
+          : { countryCode: null }),
       },
-      select: { id: true },
+      select: { id: true, countryCode: true },
+      orderBy: { updatedAt: 'desc' },
     });
-    return template?.id;
+    return (
+      templates.find((template) => template.countryCode === countryCode) ??
+      templates.find((template) => template.countryCode === null)
+    )?.id;
   }
 
   private async nextVersionNo(templateId: string): Promise<string> {

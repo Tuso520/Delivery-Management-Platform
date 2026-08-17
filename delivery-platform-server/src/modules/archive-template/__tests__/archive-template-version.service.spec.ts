@@ -202,7 +202,7 @@ describe('ArchiveTemplateVersionService', () => {
     expect(reviewTasks.createTask).not.toHaveBeenCalled();
   });
 
-  it('uses the stable archive-template review configuration when none is submitted', async () => {
+  it('uses the configured archive-template review flow when none is submitted', async () => {
     const createTask = reviewTasks.createTask as jest.Mock;
     createTask.mockResolvedValue({ id: 'task-1', status: 'PENDING' });
     (reviewConfiguration.resolve as jest.Mock).mockResolvedValue({
@@ -218,12 +218,15 @@ describe('ArchiveTemplateVersionService', () => {
           id: 'version-1',
           status: 'DRAFT',
           versionNo: 'V1.1',
-          template: { templateName: '深化档案模板', countryCode: null },
+          template: { templateName: '深化档案模板', countryCode: 'CN' },
           _count: { folders: 1, versionItems: 1 },
         }),
       },
       approvalTemplate: {
-        findFirst: jest.fn().mockResolvedValue({ id: 'approval-template-1' }),
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'global-template', countryCode: null },
+          { id: 'approval-template-1', countryCode: 'CN' },
+        ]),
       },
     } as unknown as PrismaService;
     const service = new ArchiveTemplateVersionService(
@@ -237,14 +240,15 @@ describe('ArchiveTemplateVersionService', () => {
       id: 'task-1',
       status: 'PENDING',
     });
-    expect(prisma.approvalTemplate.findFirst).toHaveBeenCalledWith({
+    expect(prisma.approvalTemplate.findMany).toHaveBeenCalledWith({
       where: {
-        templateCode: 'TARGET_ARCHIVE_TEMPLATE_REVIEW',
         businessType: 'ARCHIVE_TEMPLATE',
         isEnabled: true,
         deletedAt: null,
+        OR: [{ countryCode: 'CN' }, { countryCode: null }],
       },
-      select: { id: true },
+      select: { id: true, countryCode: true },
+      orderBy: { updatedAt: 'desc' },
     });
     expect(reviewConfiguration.resolve).toHaveBeenCalledWith('approval-template-1', 'user-1');
     expect(createTask).toHaveBeenCalledWith(
@@ -255,6 +259,76 @@ describe('ArchiveTemplateVersionService', () => {
         submittedBy: 'user-1',
       }),
     );
+  });
+
+  it('falls back to the most recently updated global archive-template review flow', async () => {
+    (reviewConfiguration.resolve as jest.Mock).mockResolvedValue({
+      approvalTemplateId: 'global-template-new',
+      approvalTemplateVersion: '2026-08-17T00:00:00.000Z',
+      snapshot: { id: 'global-template-new' },
+      reviewMode: 'SINGLE',
+      steps: [{ mode: 'SINGLE', requiredCount: 1, assigneeUserIds: ['reviewer-1'] }],
+    });
+    (reviewTasks.createTask as jest.Mock).mockResolvedValue({ id: 'task-2', status: 'PENDING' });
+    const prisma = {
+      archiveTemplateVersion: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'version-2',
+          status: 'DRAFT',
+          versionNo: 'V2.0',
+          template: { templateName: '国际档案模板', countryCode: 'SG' },
+          _count: { folders: 1, versionItems: 1 },
+        }),
+      },
+      approvalTemplate: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'global-template-new', countryCode: null },
+          { id: 'global-template-old', countryCode: null },
+        ]),
+      },
+    } as unknown as PrismaService;
+    const service = new ArchiveTemplateVersionService(
+      prisma,
+      reviewConfiguration,
+      reviewTasks,
+      operationLog,
+    );
+
+    await expect(service.submitReview('version-2', {}, 'user-1')).resolves.toEqual({
+      id: 'task-2',
+      status: 'PENDING',
+    });
+    expect(reviewConfiguration.resolve).toHaveBeenCalledWith('global-template-new', 'user-1');
+  });
+
+  it('rejects an explicitly selected approval flow from another business type', async () => {
+    const prisma = {
+      archiveTemplateVersion: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'version-3',
+          status: 'DRAFT',
+          versionNo: 'V3.0',
+          template: { templateName: '档案模板', countryCode: null },
+          _count: { folders: 1, versionItems: 1 },
+        }),
+      },
+      approvalTemplate: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+    } as unknown as PrismaService;
+    const service = new ArchiveTemplateVersionService(
+      prisma,
+      reviewConfiguration,
+      reviewTasks,
+      operationLog,
+    );
+
+    await expect(
+      service.submitReview('version-3', { approvalTemplateId: 'standard-flow' }, 'user-1'),
+    ).rejects.toThrow(
+      new BadRequestException('指定的档案模板审批流程不存在、已停用或业务类型不匹配'),
+    );
+    expect(reviewConfiguration.resolve).not.toHaveBeenCalled();
   });
 
   it('publishes only by approving the linked unified review task', async () => {

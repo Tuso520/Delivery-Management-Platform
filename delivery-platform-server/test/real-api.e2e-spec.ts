@@ -1010,7 +1010,7 @@ describe('running Delivery Platform API', () => {
   );
 
   it(
-    'submits an archive template draft with the seeded default review configuration',
+    'submits an archive template draft with the configured business review flow',
     async () => {
       if (!username || !password || !process.env.SEED_DEFAULT_PASSWORD) {
         throw new Error(
@@ -1019,6 +1019,31 @@ describe('running Delivery Platform API', () => {
       }
       const admin = await login(username, password);
       const reviewer = await login('delivery_mgr', process.env.SEED_DEFAULT_PASSWORD);
+      const configuredFlow = (
+        await expectAuthenticatedRequest<{ id: string }>(
+          '/approval-templates',
+          admin.accessToken,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              templateCode: `E2E_ARCHIVE_TEMPLATE_REVIEW_${Date.now()}`,
+              templateName: '真实验收档案模板审核流程',
+              businessType: 'ARCHIVE_TEMPLATE',
+              enabled: true,
+              steps: [
+                {
+                  stepOrder: 1,
+                  stepName: '交付负责人审核',
+                  mode: 'SINGLE',
+                  approverType: 'role',
+                  approverValues: ['DELIVERY_MANAGER'],
+                },
+              ],
+            }),
+          },
+          201,
+        )
+      ).data;
       const templates = (await expectAuthenticatedGet('/archive-templates', admin.accessToken))
         .data as ArchiveTemplateListItem[];
       const target = templates.find((template) => template.currentPublishedVersion !== null);
@@ -1044,6 +1069,13 @@ describe('running Delivery Platform API', () => {
       ).data;
       expect(review).toEqual(
         expect.objectContaining({ id: expect.any(String), status: 'PENDING' }),
+      );
+      const reviewDetail = await expectAuthenticatedGet(
+        `/file-reviews/${review.id}`,
+        admin.accessToken,
+      );
+      expect(reviewDetail.data).toEqual(
+        expect.objectContaining({ approvalTemplateId: configuredFlow.id }),
       );
 
       await expectAuthenticatedRequest(
