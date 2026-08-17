@@ -1,19 +1,10 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 
 import type { PrismaService } from '../../../database/prisma.service';
 import type { OperationLogService } from '../../operation-log/operation-log.service';
-import type { ReviewConfigurationService } from '../../review/review-configuration.service';
-import type { ReviewTaskService } from '../../review/review-task.service';
 import { ArchiveTemplateVersionService } from '../archive-template-version.service';
 
 describe('ArchiveTemplateVersionService', () => {
-  const reviewConfiguration = {
-    resolve: jest.fn(),
-  } as unknown as ReviewConfigurationService;
-  const reviewTasks = {
-    createTask: jest.fn(),
-    approve: jest.fn(),
-  } as unknown as ReviewTaskService;
   const operationLog = {
     log: jest.fn().mockResolvedValue(undefined),
   } as unknown as OperationLogService;
@@ -86,12 +77,7 @@ describe('ArchiveTemplateVersionService', () => {
           callback(transaction),
         ),
     } as unknown as PrismaService;
-    const service = new ArchiveTemplateVersionService(
-      prisma,
-      reviewConfiguration,
-      reviewTasks,
-      operationLog,
-    );
+    const service = new ArchiveTemplateVersionService(prisma, operationLog);
 
     await service.createVersion('template-1', { versionNo: 'V1.1' }, 'user-1');
 
@@ -99,7 +85,6 @@ describe('ArchiveTemplateVersionService', () => {
       where: { id: 'template-1' },
       data: { status: 'DRAFT', updatedBy: 'user-1' },
     });
-
     expect(createMany).toHaveBeenCalledWith({
       data: [
         expect.objectContaining({
@@ -123,12 +108,7 @@ describe('ArchiveTemplateVersionService', () => {
         }),
       },
     } as unknown as PrismaService;
-    const service = new ArchiveTemplateVersionService(
-      prisma,
-      reviewConfiguration,
-      reviewTasks,
-      operationLog,
-    );
+    const service = new ArchiveTemplateVersionService(prisma, operationLog);
 
     await expect(
       service.replaceDraftStructure('version-1', { revision: 1, folders: [] }, 'user-1'),
@@ -147,12 +127,7 @@ describe('ArchiveTemplateVersionService', () => {
         }),
       },
     } as unknown as PrismaService;
-    const service = new ArchiveTemplateVersionService(
-      prisma,
-      reviewConfiguration,
-      reviewTasks,
-      operationLog,
-    );
+    const service = new ArchiveTemplateVersionService(prisma, operationLog);
 
     await expect(
       service.replaceDraftStructure(
@@ -177,229 +152,167 @@ describe('ArchiveTemplateVersionService', () => {
     ).rejects.toThrow(new BadRequestException('文件项稳定标识重复：shared'));
   });
 
-  it('will not submit an empty draft for approval', async () => {
+  it('will not publish an empty draft', async () => {
     const prisma = {
       archiveTemplateVersion: {
         findUnique: jest.fn().mockResolvedValue({
           id: 'version-1',
           status: 'DRAFT',
-          versionNo: 'V1.0',
-          template: { templateName: '默认模板', countryCode: null },
+          revision: 1,
+          template: { id: 'template-1', status: 'DRAFT' },
           _count: { folders: 0, versionItems: 0 },
         }),
       },
     } as unknown as PrismaService;
-    const service = new ArchiveTemplateVersionService(
-      prisma,
-      reviewConfiguration,
-      reviewTasks,
-      operationLog,
-    );
+    const service = new ArchiveTemplateVersionService(prisma, operationLog);
 
-    await expect(service.submitReview('version-1', {}, 'user-1')).rejects.toThrow(
+    await expect(service.publishVersion('version-1', 'user-1')).rejects.toThrow(
       new BadRequestException('档案模板版本至少需要一个文件夹和一个文件项'),
     );
-    expect(reviewTasks.createTask).not.toHaveBeenCalled();
   });
 
-  it('uses the configured archive-template review flow when none is submitted', async () => {
-    const createTask = reviewTasks.createTask as jest.Mock;
-    createTask.mockResolvedValue({ id: 'task-1', status: 'PENDING' });
-    (reviewConfiguration.resolve as jest.Mock).mockResolvedValue({
-      approvalTemplateId: 'approval-template-1',
-      approvalTemplateVersion: '2026-08-17T00:00:00.000Z',
-      snapshot: { id: 'approval-template-1' },
-      reviewMode: 'SINGLE',
-      steps: [{ mode: 'SINGLE', requiredCount: 1, assigneeUserIds: ['reviewer-1'] }],
-    });
-    const prisma = {
-      archiveTemplateVersion: {
-        findUnique: jest.fn().mockResolvedValue({
-          id: 'version-1',
-          status: 'DRAFT',
-          versionNo: 'V1.1',
-          template: { templateName: '深化档案模板', countryCode: 'CN' },
-          _count: { folders: 1, versionItems: 1 },
-        }),
-      },
-      approvalTemplate: {
-        findMany: jest.fn().mockResolvedValue([
-          { id: 'global-template', countryCode: null },
-          { id: 'approval-template-1', countryCode: 'CN' },
-        ]),
-      },
-    } as unknown as PrismaService;
-    const service = new ArchiveTemplateVersionService(
-      prisma,
-      reviewConfiguration,
-      reviewTasks,
-      operationLog,
-    );
-
-    await expect(service.submitReview('version-1', {}, 'user-1')).resolves.toEqual({
-      id: 'task-1',
-      status: 'PENDING',
-    });
-    expect(prisma.approvalTemplate.findMany).toHaveBeenCalledWith({
-      where: {
-        businessType: 'ARCHIVE_TEMPLATE',
-        isEnabled: true,
-        deletedAt: null,
-        OR: [{ countryCode: 'CN' }, { countryCode: null }],
-      },
-      select: { id: true, countryCode: true },
-      orderBy: { updatedAt: 'desc' },
-    });
-    expect(reviewConfiguration.resolve).toHaveBeenCalledWith('approval-template-1', 'user-1');
-    expect(createTask).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sourceType: 'ARCHIVE_TEMPLATE',
-        sourceId: 'version-1',
-        approvalTemplateId: 'approval-template-1',
-        submittedBy: 'user-1',
-      }),
-    );
-  });
-
-  it('falls back to the most recently updated global archive-template review flow', async () => {
-    (reviewConfiguration.resolve as jest.Mock).mockResolvedValue({
-      approvalTemplateId: 'global-template-new',
-      approvalTemplateVersion: '2026-08-17T00:00:00.000Z',
-      snapshot: { id: 'global-template-new' },
-      reviewMode: 'SINGLE',
-      steps: [{ mode: 'SINGLE', requiredCount: 1, assigneeUserIds: ['reviewer-1'] }],
-    });
-    (reviewTasks.createTask as jest.Mock).mockResolvedValue({ id: 'task-2', status: 'PENDING' });
-    const prisma = {
-      archiveTemplateVersion: {
-        findUnique: jest.fn().mockResolvedValue({
-          id: 'version-2',
-          status: 'DRAFT',
-          versionNo: 'V2.0',
-          template: { templateName: '国际档案模板', countryCode: 'SG' },
-          _count: { folders: 1, versionItems: 1 },
-        }),
-      },
-      approvalTemplate: {
-        findMany: jest.fn().mockResolvedValue([
-          { id: 'global-template-new', countryCode: null },
-          { id: 'global-template-old', countryCode: null },
-        ]),
-      },
-    } as unknown as PrismaService;
-    const service = new ArchiveTemplateVersionService(
-      prisma,
-      reviewConfiguration,
-      reviewTasks,
-      operationLog,
-    );
-
-    await expect(service.submitReview('version-2', {}, 'user-1')).resolves.toEqual({
-      id: 'task-2',
-      status: 'PENDING',
-    });
-    expect(reviewConfiguration.resolve).toHaveBeenCalledWith('global-template-new', 'user-1');
-  });
-
-  it('rejects an explicitly selected approval flow from another business type', async () => {
-    const prisma = {
-      archiveTemplateVersion: {
-        findUnique: jest.fn().mockResolvedValue({
-          id: 'version-3',
-          status: 'DRAFT',
-          versionNo: 'V3.0',
-          template: { templateName: '档案模板', countryCode: null },
-          _count: { folders: 1, versionItems: 1 },
-        }),
-      },
-      approvalTemplate: {
-        findFirst: jest.fn().mockResolvedValue(null),
-      },
-    } as unknown as PrismaService;
-    const service = new ArchiveTemplateVersionService(
-      prisma,
-      reviewConfiguration,
-      reviewTasks,
-      operationLog,
-    );
-
-    await expect(
-      service.submitReview('version-3', { approvalTemplateId: 'standard-flow' }, 'user-1'),
-    ).rejects.toThrow(
-      new BadRequestException('指定的档案模板审批流程不存在、已停用或业务类型不匹配'),
-    );
-    expect(reviewConfiguration.resolve).not.toHaveBeenCalled();
-  });
-
-  it('publishes only by approving the linked unified review task', async () => {
-    const prisma = {
-      archiveTemplateVersion: {
-        findUnique: jest.fn().mockResolvedValue({
-          id: 'version-1',
-          status: 'IN_REVIEW',
-          _count: { folders: 1, versionItems: 1 },
-        }),
-      },
-      reviewTask: {
-        findFirst: jest.fn().mockResolvedValue({ id: 'review-task-1' }),
-      },
-    } as unknown as PrismaService;
-    const service = new ArchiveTemplateVersionService(
-      prisma,
-      reviewConfiguration,
-      reviewTasks,
-      operationLog,
-    );
-    const actor = {
-      sub: 'reviewer-1',
-      username: 'reviewer',
-      realName: '审核人',
-      email: null,
-      roles: [],
-      permissions: ['file_review:act'],
-      permissionVersion: 1,
+  it('publishes a draft directly without creating a review task', async () => {
+    const transaction = {
+      archiveTemplateVersion: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      archiveTemplate: { update: jest.fn().mockResolvedValue({ id: 'template-1' }) },
+      reviewTask: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      outboxEvent: { create: jest.fn().mockResolvedValue({ id: 'event-1' }) },
     };
-    (reviewTasks.approve as jest.Mock).mockResolvedValue(undefined);
-    jest.spyOn(service, 'findVersion').mockResolvedValue({ id: 'version-1' } as never);
-
-    await service.approveAssignedReviewStep('version-1', actor);
-
-    expect(reviewTasks.approve).toHaveBeenCalledWith(
-      'review-task-1',
-      '档案模板版本审核通过',
-      actor,
-    );
-  });
-
-  it('fails closed when an in-review version has no unified review task', async () => {
     const prisma = {
       archiveTemplateVersion: {
         findUnique: jest.fn().mockResolvedValue({
           id: 'version-1',
-          status: 'IN_REVIEW',
+          templateId: 'template-1',
+          versionNo: 'V1.0',
+          status: 'DRAFT',
+          revision: 4,
+          template: { id: 'template-1', status: 'DRAFT' },
           _count: { folders: 1, versionItems: 1 },
         }),
       },
-      reviewTask: { findFirst: jest.fn().mockResolvedValue(null) },
+      $transaction: jest
+        .fn()
+        .mockImplementation((callback: (tx: typeof transaction) => Promise<unknown>) =>
+          callback(transaction),
+        ),
     } as unknown as PrismaService;
-    const service = new ArchiveTemplateVersionService(
-      prisma,
-      reviewConfiguration,
-      reviewTasks,
-      operationLog,
-    );
+    const service = new ArchiveTemplateVersionService(prisma, operationLog);
+    jest.spyOn(service, 'findVersion').mockResolvedValue({
+      id: 'version-1',
+      status: 'PUBLISHED',
+    } as never);
 
-    await expect(
-      service.approveAssignedReviewStep('version-1', {
-        sub: 'reviewer-1',
-        username: 'reviewer',
-        realName: '审核人',
-        email: null,
-        roles: [],
-        permissions: ['file_review:act'],
-        permissionVersion: 1,
+    await expect(service.publishVersion('version-1', 'user-1')).resolves.toEqual({
+      id: 'version-1',
+      status: 'PUBLISHED',
+    });
+
+    expect(transaction.reviewTask.updateMany).not.toHaveBeenCalled();
+    expect(transaction.archiveTemplateVersion.updateMany).toHaveBeenCalledWith({
+      where: { id: 'version-1', status: 'DRAFT', revision: 4 },
+      data: expect.objectContaining({
+        status: 'PUBLISHED',
+        revision: { increment: 1 },
+        publishedBy: 'user-1',
+        publishedAt: expect.any(Date),
       }),
-    ).rejects.toThrow('缺少统一审核任务');
-    expect(reviewTasks.approve).not.toHaveBeenCalled();
+    });
+    expect(transaction.archiveTemplate.update).toHaveBeenCalledWith({
+      where: { id: 'template-1' },
+      data: {
+        currentPublishedVersionId: 'version-1',
+        status: 'PUBLISHED',
+        updatedBy: 'user-1',
+      },
+    });
+    expect(transaction.outboxEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        eventType: 'ArchiveTemplatePublished',
+        aggregateId: 'version-1',
+        deduplicationKey: 'ArchiveTemplatePublished:version-1',
+      }),
+    });
+    expect(operationLog.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'user-1',
+        action: 'publish_version',
+        targetId: 'version-1',
+      }),
+    );
+  });
+
+  it('archives a legacy pending review task before directly publishing an in-review version', async () => {
+    const transaction = {
+      archiveTemplateVersion: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      archiveTemplate: { update: jest.fn().mockResolvedValue({ id: 'template-1' }) },
+      reviewTask: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      outboxEvent: { create: jest.fn().mockResolvedValue({ id: 'event-1' }) },
+    };
+    const prisma = {
+      archiveTemplateVersion: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'version-review',
+          templateId: 'template-1',
+          versionNo: 'V2.0',
+          status: 'IN_REVIEW',
+          revision: 8,
+          template: { id: 'template-1', status: 'IN_REVIEW' },
+          _count: { folders: 2, versionItems: 4 },
+        }),
+      },
+      $transaction: jest
+        .fn()
+        .mockImplementation((callback: (tx: typeof transaction) => Promise<unknown>) =>
+          callback(transaction),
+        ),
+    } as unknown as PrismaService;
+    const service = new ArchiveTemplateVersionService(prisma, operationLog);
+    jest.spyOn(service, 'findVersion').mockResolvedValue({ id: 'version-review' } as never);
+
+    await service.publishVersion('version-review', 'user-1');
+
+    expect(transaction.reviewTask.updateMany).toHaveBeenCalledWith({
+      where: {
+        sourceType: 'ARCHIVE_TEMPLATE',
+        sourceId: 'version-review',
+        sourceVersionId: 'version-review',
+        status: 'PENDING',
+        archivedAt: null,
+      },
+      data: { archivedAt: expect.any(Date), activeReviewKey: null },
+    });
+  });
+
+  it('fails atomically when another request changes the version before publication', async () => {
+    const transaction = {
+      archiveTemplateVersion: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      archiveTemplate: { update: jest.fn() },
+      reviewTask: { updateMany: jest.fn() },
+      outboxEvent: { create: jest.fn() },
+    };
+    const prisma = {
+      archiveTemplateVersion: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'version-1',
+          versionNo: 'V1.0',
+          status: 'DRAFT',
+          revision: 2,
+          template: { id: 'template-1', status: 'DRAFT' },
+          _count: { folders: 1, versionItems: 1 },
+        }),
+      },
+      $transaction: jest
+        .fn()
+        .mockImplementation((callback: (tx: typeof transaction) => Promise<unknown>) =>
+          callback(transaction),
+        ),
+    } as unknown as PrismaService;
+    const service = new ArchiveTemplateVersionService(prisma, operationLog);
+
+    await expect(service.publishVersion('version-1', 'user-1')).rejects.toThrow(
+      new ConflictException('档案模板版本状态已变化，请刷新后重试'),
+    );
+    expect(transaction.archiveTemplate.update).not.toHaveBeenCalled();
+    expect(transaction.outboxEvent.create).not.toHaveBeenCalled();
   });
 });

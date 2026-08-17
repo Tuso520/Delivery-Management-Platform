@@ -95,10 +95,10 @@ export const archiveTemplateApi = {
     return request.patch<ArchiveTemplateVersion>(`/archive-template-versions/${versionId}`, data)
   },
 
-  submitReview(versionId: string, approvalTemplateId?: string) {
-    return request.post<{ id: string; status: string }>(
-      `/archive-template-versions/${versionId}/submit-review`,
-      approvalTemplateId ? { approvalTemplateId } : {},
+  publishVersion(versionId: string) {
+    return request.post<ArchiveTemplateVersion>(
+      `/archive-template-versions/${versionId}/publish`,
+      {},
     )
   },
 

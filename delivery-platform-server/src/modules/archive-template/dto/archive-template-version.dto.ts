@@ -115,9 +115,3 @@ export class UpdateArchiveTemplateVersionDto {
   @Type(() => ArchiveTemplateVersionFolderDto)
   folders: ArchiveTemplateVersionFolderDto[];
 }
-
-export class SubmitArchiveTemplateVersionReviewDto {
-  @IsOptional()
-  @IsString()
-  approvalTemplateId?: string;
-}

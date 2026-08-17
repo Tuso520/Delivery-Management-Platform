@@ -5,12 +5,10 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import type { JwtPayload } from '../auth/strategies/jwt.strategy';
 
 import { ArchiveTemplateVersionService } from './archive-template-version.service';
 import {
   CreateArchiveTemplateVersionDto,
-  SubmitArchiveTemplateVersionReviewDto,
   UpdateArchiveTemplateVersionDto,
 } from './dto/archive-template-version.dto';
 
@@ -59,20 +57,22 @@ export class ArchiveTemplateVersionController {
 
   @Post('archive-template-versions/:id/submit-review')
   @RequirePermissions({ all: ['archive_template:submit_review'] })
-  @ApiOperation({ summary: '提交档案模板版本审批' })
-  submitReview(
+  @ApiOperation({ summary: '兼容旧客户端：直接发布档案模板版本' })
+  publishVersionLegacy(
     @Param('id') versionId: string,
-    @Body() dto: SubmitArchiveTemplateVersionReviewDto,
     @CurrentUser('sub') userId: string,
   ) {
-    return this.versions.submitReview(versionId, dto, userId);
+    return this.versions.publishVersion(versionId, userId);
   }
 
   @Post('archive-template-versions/:id/publish')
-  @RequirePermissions({ all: ['file_review:act'] })
-  @ApiOperation({ summary: '处理当前指派的档案模板统一审核步骤' })
-  approveAssignedReviewStep(@Param('id') versionId: string, @CurrentUser() actor: JwtPayload) {
-    return this.versions.approveAssignedReviewStep(versionId, actor);
+  @RequirePermissions({ all: ['archive_template:submit_review'] })
+  @ApiOperation({ summary: '直接发布档案模板版本（无需审批）' })
+  publishVersion(
+    @Param('id') versionId: string,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.versions.publishVersion(versionId, userId);
   }
 
   @Post('archive-templates/:id/disable')

@@ -1048,14 +1048,12 @@ POST /archive-templates
 GET  /archive-templates/:id
 POST /archive-templates/:id/versions
 PATCH /archive-template-versions/:versionId
-POST /archive-template-versions/:versionId/submit-review
 POST /archive-template-versions/:versionId/publish
 POST /archive-templates/:id/disable
 ```
 
-已发布版本只读。创建新版本时完整复制当前发布版本为草稿。
-
-档案模版审核任务统一进入文件审核中心，但来源标记为 `ARCHIVE_TEMPLATE`；若前端最终不展示此来源，可以由管理员审批配置页处理，不应重新建立另一套审批实现。
+已发布版本只读。创建新版本时完整复制当前发布版本为草稿。档案模板版本保存草稿后直接发布，
+不创建统一审核任务；模板文件项配置的项目档案文件审核策略继续生效。
 
 ---
 
@@ -2203,7 +2201,6 @@ DELETE /projects/:id/permanent
 /archive-templates/:id
 /archive-templates/:id/versions
 /archive-template-versions/:id
-/archive-template-versions/:id/submit-review
 /archive-template-versions/:id/publish
 /archive-templates/:id/disable
 ```

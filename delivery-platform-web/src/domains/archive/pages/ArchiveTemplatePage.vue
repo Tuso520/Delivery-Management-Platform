@@ -269,8 +269,8 @@ const saveStructureMutation = useMutation({
   },
 })
 
-const submitReviewMutation = useMutation({
-  mutationFn: (versionId: string) => archiveTemplateApi.submitReview(versionId),
+const publishVersionMutation = useMutation({
+  mutationFn: (versionId: string) => archiveTemplateApi.publishVersion(versionId),
   retry: false,
   onSuccess: async (_, versionId) => {
     const invalidations = [
@@ -300,7 +300,7 @@ const disableTemplateMutation = useMutation({
 
 const creating = computed(() => createTemplateMutation.isPending.value)
 const savingStructure = computed(() => saveStructureMutation.isPending.value)
-const submittingReview = computed(() => submitReviewMutation.isPending.value)
+const publishingVersion = computed(() => publishVersionMutation.isPending.value)
 
 function resetCreateForm(): void {
   Object.assign(createForm, {
@@ -575,11 +575,11 @@ async function saveStructure(showMessage = true): Promise<boolean> {
   return true
 }
 
-async function submitVersionReview(): Promise<void> {
+async function publishVersion(): Promise<void> {
   if (!selectedVersion.value) return
   if (!(await saveStructure(false))) return
-  await submitReviewMutation.mutateAsync(selectedVersion.value.id)
-  Message.success(t('archiveTemplate.messages.reviewSubmitted'))
+  await publishVersionMutation.mutateAsync(selectedVersion.value.id)
+  Message.success(t('archiveTemplate.messages.published'))
 }
 
 async function disableTemplate(row: ArchiveTemplate): Promise<void> {
@@ -911,10 +911,10 @@ watch(
                   canEditVersion && permissionStore.hasPermission('archive_template:submit_review')
                 "
                 type="primary"
-                :loading="submittingReview"
-                @click="submitVersionReview"
+                :loading="publishingVersion"
+                @click="publishVersion"
               >
-                {{ t('archiveTemplate.submitReview') }}
+                {{ t('archiveTemplate.publishVersion') }}
               </a-button>
             </a-space>
           </section>

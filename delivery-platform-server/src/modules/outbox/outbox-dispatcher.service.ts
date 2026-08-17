@@ -483,7 +483,7 @@ export class OutboxDispatcherService {
         (userId): userId is string => Boolean(userId),
       ),
       title: `档案模板已发布：${version.template.templateName}`,
-      content: `版本 ${version.versionNo} 已审核通过并发布。`,
+      content: `版本 ${version.versionNo} 已发布。`,
       notificationType: 'archive_template_published',
       relatedType: 'ArchiveTemplate',
       relatedId: version.template.id,

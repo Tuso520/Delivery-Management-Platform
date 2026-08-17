@@ -124,6 +124,7 @@ interface ArchiveTemplateVersionData {
   id: string;
   status: string;
   versionNo: string;
+  publishedBy?: string | null;
 }
 
 const AUTHENTICATED_E2E_TIMEOUT_MS = 90_000;
@@ -1010,44 +1011,16 @@ describe('running Delivery Platform API', () => {
   );
 
   it(
-    'submits an archive template draft with the configured business review flow',
+    'publishes an archive template draft directly without an approval workflow',
     async () => {
-      if (!username || !password || !process.env.SEED_DEFAULT_PASSWORD) {
-        throw new Error(
-          'Admin and seeded reviewer credentials are required for archive template review E2E',
-        );
+      if (!username || !password) {
+        throw new Error('Admin credentials are required for archive template publishing E2E');
       }
       const admin = await login(username, password);
-      const reviewer = await login('delivery_mgr', process.env.SEED_DEFAULT_PASSWORD);
-      const configuredFlow = (
-        await expectAuthenticatedRequest<{ id: string }>(
-          '/approval-templates',
-          admin.accessToken,
-          {
-            method: 'POST',
-            body: JSON.stringify({
-              templateCode: `E2E_ARCHIVE_TEMPLATE_REVIEW_${Date.now()}`,
-              templateName: '真实验收档案模板审核流程',
-              businessType: 'ARCHIVE_TEMPLATE',
-              enabled: true,
-              steps: [
-                {
-                  stepOrder: 1,
-                  stepName: '交付负责人审核',
-                  mode: 'SINGLE',
-                  approverType: 'role',
-                  approverValues: ['DELIVERY_MANAGER'],
-                },
-              ],
-            }),
-          },
-          201,
-        )
-      ).data;
       const templates = (await expectAuthenticatedGet('/archive-templates', admin.accessToken))
         .data as ArchiveTemplateListItem[];
       const target = templates.find((template) => template.currentPublishedVersion !== null);
-      if (!target) throw new Error('A published archive template is required for review E2E');
+      if (!target) throw new Error('A published archive template is required for publishing E2E');
 
       const draft = (
         await expectAuthenticatedRequest<ArchiveTemplateVersionData>(
@@ -1059,33 +1032,20 @@ describe('running Delivery Platform API', () => {
       ).data;
       expect(draft.status).toBe('DRAFT');
 
-      const review = (
-        await expectAuthenticatedRequest<{ id: string; status: string }>(
-          `/archive-template-versions/${draft.id}/submit-review`,
+      const published = (
+        await expectAuthenticatedRequest<ArchiveTemplateVersionData>(
+          `/archive-template-versions/${draft.id}/publish`,
           admin.accessToken,
           { method: 'POST', body: JSON.stringify({}) },
           201,
         )
       ).data;
-      expect(review).toEqual(
-        expect.objectContaining({ id: expect.any(String), status: 'PENDING' }),
-      );
-      const reviewDetail = await expectAuthenticatedGet(
-        `/file-reviews/${review.id}`,
-        admin.accessToken,
-      );
-      expect(reviewDetail.data).toEqual(
-        expect.objectContaining({ approvalTemplateId: configuredFlow.id }),
-      );
-
-      await expectAuthenticatedRequest(
-        `/file-reviews/${review.id}/approve`,
-        reviewer.accessToken,
-        {
-          method: 'POST',
-          body: JSON.stringify({ comment: 'archive template review E2E approved' }),
-        },
-        201,
+      expect(published).toEqual(
+        expect.objectContaining({
+          id: draft.id,
+          status: 'PUBLISHED',
+          publishedBy: expect.any(String),
+        }),
       );
 
       const publishedTemplates = (
@@ -1095,7 +1055,10 @@ describe('running Delivery Platform API', () => {
         expect.arrayContaining([
           expect.objectContaining({
             id: target.id,
-            currentPublishedVersion: expect.objectContaining({ status: 'PUBLISHED' }),
+            currentPublishedVersion: expect.objectContaining({
+              id: draft.id,
+              status: 'PUBLISHED',
+            }),
           }),
         ]),
       );

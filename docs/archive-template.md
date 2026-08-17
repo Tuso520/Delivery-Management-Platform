@@ -79,8 +79,7 @@
 | 创建模板 | `POST /api/v1/archive-templates` | `archive_template:create` |
 | 版本列表与详情 | `GET /api/v1/archive-templates/:id/versions`、`GET /api/v1/archive-template-versions/:id` | `archive_template:view` |
 | 创建、编辑版本 | `POST /api/v1/archive-templates/:id/versions`、`PATCH /api/v1/archive-template-versions/:id` | `archive_template:update_draft` |
-| 提交审核 | `POST /api/v1/archive-template-versions/:id/submit-review` | `archive_template:submit_review` |
-| 审核发布 | `POST /api/v1/archive-template-versions/:id/publish` | `file_review:act` |
+| 直接发布版本 | `POST /api/v1/archive-template-versions/:id/publish` | `archive_template:submit_review` |
 | 停用模板 | `POST /api/v1/archive-templates/:id/disable` | `archive_template:disable` |
 
 列表接口的 `sortBy` 只接受 `templateName`、`currentVersion`，`sortOrder` 只接受
@@ -88,7 +87,7 @@
 ID 次序。API 仍使用平台统一响应体和全局异常格式。
 
 `ArchiveTemplate` 保存模板稳定编码、适用国家/项目类型稳定值和当前发布版本指针；
-`ArchiveTemplateVersion` 保存版本号、状态、乐观锁修订号及审核关系；
+`ArchiveTemplateVersion` 保存版本号、状态、乐观锁修订号及发布信息；档案模板版本保存草稿后直接发布，不创建审批任务；
 `ArchiveTemplateFolder`、`ArchiveTemplateVersionItem` 保存两级目录、稳定键、文件规则和排序。
 项目创建时复制发布版本为项目快照，并保存模板及版本主键，不通过显示名称关联。
 本次列表重构不改变 Prisma schema，不新增 migration。

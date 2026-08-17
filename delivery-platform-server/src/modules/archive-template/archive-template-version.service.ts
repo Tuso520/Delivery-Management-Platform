@@ -6,26 +6,22 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { enqueueDomainEvent } from '../../common/events/outbox';
 import { PrismaService } from '../../database/prisma.service';
-import type { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { OperationLogService } from '../operation-log/operation-log.service';
-import { ReviewConfigurationService } from '../review/review-configuration.service';
-import { ReviewTaskService } from '../review/review-task.service';
 
 import {
   CreateArchiveTemplateVersionDto,
-  SubmitArchiveTemplateVersionReviewDto,
   UpdateArchiveTemplateVersionDto,
 } from './dto/archive-template-version.dto';
 
 const editableStatuses = new Set(['DRAFT', 'REJECTED']);
+const publishableStatuses = new Set([...editableStatuses, 'IN_REVIEW']);
 
 @Injectable()
 export class ArchiveTemplateVersionService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly reviewConfiguration: ReviewConfigurationService,
-    private readonly reviewTasks: ReviewTaskService,
     private readonly operationLog: OperationLogService,
   ) {}
 
@@ -274,77 +270,93 @@ export class ArchiveTemplateVersionService {
     return this.findVersion(versionId);
   }
 
-  async submitReview(
-    versionId: string,
-    dto: SubmitArchiveTemplateVersionReviewDto,
-    userId: string,
-  ) {
+  async publishVersion(versionId: string, userId: string) {
     const version = await this.prisma.archiveTemplateVersion.findUnique({
       where: { id: versionId },
       include: {
-        template: { select: { templateName: true, countryCode: true } },
+        template: { select: { id: true, status: true } },
         _count: { select: { folders: true, versionItems: true } },
       },
     });
     if (!version) {
       throw new NotFoundException('档案模板版本不存在');
     }
-    if (!editableStatuses.has(version.status)) {
-      throw new BadRequestException('当前版本状态不能提交审核');
+    if (!publishableStatuses.has(version.status)) {
+      throw new BadRequestException('当前版本状态不能发布');
+    }
+    if (version.template.status === 'DISABLED') {
+      throw new BadRequestException('已停用的档案模板不能发布版本');
     }
     if (version._count.folders === 0 || version._count.versionItems === 0) {
       throw new BadRequestException('档案模板版本至少需要一个文件夹和一个文件项');
     }
 
-    const approvalTemplateId = await this.resolveApprovalTemplateId(
-      dto.approvalTemplateId,
-      version.template.countryCode,
-    );
-    const configuration = await this.reviewConfiguration.resolve(approvalTemplateId, userId);
-    return this.reviewTasks.createTask({
-      sourceType: 'ARCHIVE_TEMPLATE',
-      sourceId: version.id,
-      sourceVersionId: version.id,
-      approvalTemplateId: configuration.approvalTemplateId,
-      approvalTemplateVersion: configuration.approvalTemplateVersion,
-      approvalSnapshot: configuration.snapshot,
-      title: `${version.template.templateName} ${version.versionNo}`,
-      locationLabel: '档案模板',
-      reviewMode: configuration.reviewMode,
-      submittedBy: userId,
-      steps: configuration.steps,
-    });
-  }
+    const publishedAt = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      if (version.status === 'IN_REVIEW') {
+        await tx.reviewTask.updateMany({
+          where: {
+            sourceType: 'ARCHIVE_TEMPLATE',
+            sourceId: version.id,
+            sourceVersionId: version.id,
+            status: 'PENDING',
+            archivedAt: null,
+          },
+          data: { archivedAt: publishedAt, activeReviewKey: null },
+        });
+      }
 
-  async approveAssignedReviewStep(versionId: string, actor: JwtPayload) {
-    const version = await this.prisma.archiveTemplateVersion.findUnique({
-      where: { id: versionId },
-      include: { _count: { select: { folders: true, versionItems: true } } },
-    });
-    if (!version) {
-      throw new NotFoundException('档案模板版本不存在');
-    }
-    if (version.status !== 'IN_REVIEW') {
-      throw new BadRequestException('只有审核中的版本可以发布');
-    }
-    if (version._count.folders === 0 || version._count.versionItems === 0) {
-      throw new BadRequestException('空档案模板版本不能发布');
-    }
+      const published = await tx.archiveTemplateVersion.updateMany({
+        where: {
+          id: version.id,
+          status: version.status,
+          revision: version.revision,
+        },
+        data: {
+          status: 'PUBLISHED',
+          revision: { increment: 1 },
+          publishedAt,
+          publishedBy: userId,
+        },
+      });
+      if (published.count !== 1) {
+        throw new ConflictException('档案模板版本状态已变化，请刷新后重试');
+      }
 
-    const pendingTask = await this.prisma.reviewTask.findFirst({
-      where: {
-        sourceType: 'ARCHIVE_TEMPLATE',
-        sourceId: versionId,
-        sourceVersionId: versionId,
-        status: 'PENDING',
-        archivedAt: null,
+      await tx.archiveTemplate.update({
+        where: { id: version.template.id },
+        data: {
+          currentPublishedVersionId: version.id,
+          status: 'PUBLISHED',
+          updatedBy: userId,
+        },
+      });
+      await enqueueDomainEvent(tx, {
+        eventType: 'ArchiveTemplatePublished',
+        aggregateType: 'archive_template',
+        aggregateId: version.id,
+        deduplicationKey: `ArchiveTemplatePublished:${version.id}`,
+        payload: {
+          sourceId: version.id,
+          templateId: version.template.id,
+          publishedBy: userId,
+        },
+      });
+    });
+
+    await this.operationLog.log({
+      userId,
+      module: 'archive-template',
+      action: 'publish_version',
+      targetType: 'archive_template_version',
+      targetId: version.id,
+      afterData: {
+        templateId: version.template.id,
+        versionNo: version.versionNo,
+        previousStatus: version.status,
+        publishedAt: publishedAt.toISOString(),
       },
-      select: { id: true },
     });
-    if (!pendingTask) {
-      throw new BadRequestException('审核中的档案模板版本缺少统一审核任务，不能直接发布');
-    }
-    await this.reviewTasks.approve(pendingTask.id, '档案模板版本审核通过', actor);
     return this.findVersion(versionId);
   }
 
@@ -407,46 +419,6 @@ export class ArchiveTemplateVersionService {
     if (activeApprovalCount !== approvalTemplateIds.length) {
       throw new BadRequestException('文件项审批模板不存在或已停用');
     }
-  }
-
-  private async resolveApprovalTemplateId(
-    requestedId: string | undefined,
-    countryCode: string | null,
-  ): Promise<string | undefined> {
-    if (requestedId) {
-      const requestedTemplate = await this.prisma.approvalTemplate.findFirst({
-        where: {
-          id: requestedId,
-          businessType: 'ARCHIVE_TEMPLATE',
-          isEnabled: true,
-          deletedAt: null,
-        },
-        select: { id: true },
-      });
-      if (!requestedTemplate) {
-        throw new BadRequestException(
-          '指定的档案模板审批流程不存在、已停用或业务类型不匹配',
-        );
-      }
-      return requestedTemplate.id;
-    }
-
-    const templates = await this.prisma.approvalTemplate.findMany({
-      where: {
-        businessType: 'ARCHIVE_TEMPLATE',
-        isEnabled: true,
-        deletedAt: null,
-        ...(countryCode
-          ? { OR: [{ countryCode }, { countryCode: null }] }
-          : { countryCode: null }),
-      },
-      select: { id: true, countryCode: true },
-      orderBy: { updatedAt: 'desc' },
-    });
-    return (
-      templates.find((template) => template.countryCode === countryCode) ??
-      templates.find((template) => template.countryCode === null)
-    )?.id;
   }
 
   private async nextVersionNo(templateId: string): Promise<string> {

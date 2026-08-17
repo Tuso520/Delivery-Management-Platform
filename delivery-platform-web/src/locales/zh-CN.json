@@ -970,7 +970,7 @@
   },
   "archiveTemplate": {
     "title": "档案模板",
-    "subtitle": "已发布版本保持只读；修改目录必须创建新草稿并重新审核发布。",
+    "subtitle": "已发布版本保持只读；修改目录需创建新草稿并重新发布。",
     "refresh": "刷新",
     "create": "创建",
     "createTitle": "创建档案模板",
@@ -990,8 +990,7 @@
     "addFolder": "新增文件夹",
     "addItem": "新增文件项",
     "saveDraft": "保存草稿",
-    "submitReview": "提交审核",
-    "reviewAndPublish": "审核并发布",
+    "publishVersion": "发布版本",
     "publishedHint": "已发布版本为不可变快照。如需修改，请在列表中创建新版本。",
     "folderCount": "{count} 个文件夹",
     "itemCount": "{count} 个文件项",
@@ -1047,7 +1046,6 @@
       "versionCreated": "草稿版本 {version} 已创建",
       "standardFoldersAdded": "标准 37 类一级目录已补充到当前草稿",
       "structureSaved": "草稿结构已保存",
-      "reviewSubmitted": "模板版本已提交审核，草稿结构现已锁定",
       "published": "模板版本已发布，新建项目将复制该版本快照",
       "disabled": "档案模板已停用"
     },

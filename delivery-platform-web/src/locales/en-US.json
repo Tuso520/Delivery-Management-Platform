@@ -970,7 +970,7 @@
   },
   "archiveTemplate": {
     "title": "Archive Templates",
-    "subtitle": "Published versions remain read-only. Directory changes require a new draft and another review and release.",
+    "subtitle": "Published versions remain read-only. Directory changes require a new draft and another release.",
     "refresh": "Refresh",
     "create": "Create",
     "createTitle": "Create Archive Template",
@@ -990,8 +990,7 @@
     "addFolder": "Add Folder",
     "addItem": "Add Item",
     "saveDraft": "Save Draft",
-    "submitReview": "Submit for Review",
-    "reviewAndPublish": "Approve and Publish",
+    "publishVersion": "Publish Version",
     "publishedHint": "A published version is an immutable snapshot. Create a new version from the list to make changes.",
     "folderCount": "{count} folders",
     "itemCount": "{count} items",
@@ -1047,7 +1046,6 @@
       "versionCreated": "Draft version {version} created",
       "standardFoldersAdded": "The 37 standard top-level categories were added to this draft",
       "structureSaved": "Draft structure saved",
-      "reviewSubmitted": "Template version submitted for review and the draft structure is now locked",
       "published": "Template version published. New projects will copy this version snapshot.",
       "disabled": "Archive template disabled"
     },

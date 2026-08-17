@@ -170,9 +170,12 @@ describe('controller backend permission boundaries', () => {
     expect(permissions(ReviewTaskController.prototype, 'getHistory')).toBeUndefined();
     expect(permissions(ReviewTaskController.prototype, 'approve')).toEqual(['file_review:act']);
     expect(permissions(ReviewTaskController.prototype, 'reject')).toEqual(['file_review:act']);
-    expect(
-      permissions(ArchiveTemplateVersionController.prototype, 'approveAssignedReviewStep'),
-    ).toEqual(['file_review:act']);
+    expect(permissions(ArchiveTemplateVersionController.prototype, 'publishVersion')).toEqual([
+      'archive_template:submit_review',
+    ]);
+    expect(permissions(ArchiveTemplateVersionController.prototype, 'publishVersionLegacy')).toEqual([
+      'archive_template:submit_review',
+    ]);
     expect(permissions(FileController.prototype, 'findOne')).toEqual(
       expect.arrayContaining(['file_review:view', 'file_review:view_all', 'file_review:manage']),
     );
