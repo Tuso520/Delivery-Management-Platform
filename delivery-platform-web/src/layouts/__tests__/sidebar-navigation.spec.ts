@@ -49,8 +49,9 @@ describe('sidebar navigation contract', () => {
           'menu.systemApproval',
           'menu.systemFields',
           'menu.systemConfig',
-          'menu.userCenter',
-          'menu.systemIntegration',
+            'menu.userCenter',
+            'menu.rolePermissions',
+            'menu.systemIntegration',
         ],
       },
     ])

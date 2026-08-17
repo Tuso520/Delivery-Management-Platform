@@ -142,6 +142,7 @@ model Role {
   description      String?       @db.Text
   status           String        @default("Active") @db.VarChar(20)
   defaultDataScope DataScopeType @default(PARTICIPATED) @map("default_data_scope")
+  isProtected      Boolean       @default(false) @map("is_protected")
   createdAt        DateTime      @default(now()) @map("created_at")
   updatedAt        DateTime      @updatedAt @map("updated_at")
 
@@ -157,6 +158,12 @@ model Permission {
   permissionName String    @map("permission_name") @db.VarChar(50)
   resource       String    @db.VarChar(50)
   action         String    @db.VarChar(50)
+  moduleCode     String    @default("other") @map("module_code") @db.VarChar(50)
+  moduleName     String    @default("其他") @map("module_name") @db.VarChar(50)
+  pageCode       String    @default("other") @map("page_code") @db.VarChar(50)
+  pageName       String    @default("其他") @map("page_name") @db.VarChar(50)
+  actionGroup    String    @default("OPERATE") @map("action_group") @db.VarChar(20)
+  sortOrder      Int       @default(0) @map("sort_order")
   description    String?   @db.VarChar(200)
   deprecatedAt   DateTime? @map("deprecated_at")
   createdAt      DateTime  @default(now()) @map("created_at")
@@ -167,6 +174,7 @@ model Permission {
   departmentGrants DepartmentPermissionGrant[]
 
   @@index([deprecatedAt])
+  @@index([moduleCode, pageCode, sortOrder], map: "permissions_catalog_order_idx")
   @@map("permissions")
 }
 

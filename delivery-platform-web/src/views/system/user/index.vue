@@ -16,7 +16,7 @@ import {
 import { Can } from '@/platform/permission'
 import {
   useDepartmentsQuery,
-  useRolesQuery,
+  useAssignableRolesQuery,
   useUsersQuery,
 } from '@/composables/queries/useAdministrationQueries'
 import { queryKeys } from '@/query/keys'
@@ -73,7 +73,7 @@ const formData = reactive<UserFormModel>({
 const roleDialogVisible = ref(false)
 const currentUserForRole = ref<UserListItem | null>(null)
 const selectedRoleIds = ref<string[]>([])
-const rolesQuery = useRolesQuery(roleDialogVisible)
+const rolesQuery = useAssignableRolesQuery(roleDialogVisible)
 
 const pwdDialogVisible = ref(false)
 const currentUserForPwd = ref('')

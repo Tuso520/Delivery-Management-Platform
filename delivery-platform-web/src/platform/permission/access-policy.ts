@@ -8,6 +8,7 @@ export interface AccessSubject {
 export interface PermissionRequirement {
   all?: readonly string[]
   any?: readonly string[]
+  roles?: readonly string[]
 }
 
 export interface MenuItem {
@@ -16,6 +17,7 @@ export interface MenuItem {
   title: string
   icon?: string
   permissions?: readonly string[]
+  roles?: readonly string[]
   children?: MenuItem[]
 }
 
@@ -23,6 +25,8 @@ export function canAccess(
   subject: AccessSubject,
   requirement: PermissionRequirement = {},
 ): boolean {
+  const roles = requirement.roles ?? []
+  if (!roles.every((role) => subject.roles.includes(role))) return false
   if (subject.roles.includes('SUPER_ADMIN' satisfies RoleCode)) return true
 
   const all = requirement.all ?? []
@@ -44,7 +48,8 @@ export function filterMenusByPermissions(
       ? filterMenusByPermissions(menu.children, userPermissions, userRoles)
       : undefined
     const canAccessSelf =
-      !menu.permissions?.length || canAccess(subject, { any: menu.permissions })
+      (!menu.permissions?.length && !menu.roles?.length) ||
+      canAccess(subject, { any: menu.permissions, roles: menu.roles })
     const hasAccessibleChildren = Boolean(filteredChildren?.length)
 
     if (!canAccessSelf || (menu.children && !hasAccessibleChildren)) return []

@@ -2,7 +2,7 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 import type { RouteLocationNormalizedLoaded, RouteRecordRaw } from 'vue-router'
 
 import NotFound from '@/views/NotFound.vue'
-import type { PermissionCode } from '@/platform/permission/access-control.generated'
+import type { PermissionCode, RoleCode } from '@/platform/permission/access-control.generated'
 import type { MenuItem } from '@/platform/permission/access-policy'
 
 import i18n from '@/locales'
@@ -13,6 +13,7 @@ interface ShellRouteMeta {
   title: string
   icon?: string
   permissions?: PermissionCode[]
+  roles?: RoleCode[]
   navigationGroup?: NavigationSurface
   menu?: boolean
   order?: number
@@ -55,6 +56,7 @@ export function buildNavigationFromRoutes(
             title: meta.title,
             icon: meta.icon,
             permissions: meta.permissions,
+            roles: meta.roles,
           }
         })
 
@@ -312,6 +314,18 @@ export const shellRoutes: RouteRecordRaw[] = [
         },
       },
       {
+        path: 'role-permissions',
+        name: 'RolePermissions',
+        component: () => import('@/views/system/role/index.vue'),
+        meta: {
+          title: 'menu.rolePermissions',
+          icon: 'Safe',
+          roles: ['SUPER_ADMIN'],
+          menu: true,
+          order: 60,
+        },
+      },
+      {
         path: 'currency',
         name: 'Currency',
         component: () => import('@/views/currency/index.vue'),
@@ -395,9 +409,8 @@ export const shellRoutes: RouteRecordRaw[] = [
   },
   {
     path: 'organization/roles',
-    name: 'Roles',
-    component: () => import('@/views/system/role/index.vue'),
-    meta: { title: 'routes.roles', permissions: ['role:view'], hidden: true },
+    redirect: '/settings/role-permissions',
+    meta: { title: 'routes.roles', roles: ['SUPER_ADMIN'], hidden: true },
   },
   {
     path: '/forbidden',

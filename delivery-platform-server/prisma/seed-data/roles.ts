@@ -374,18 +374,19 @@ export async function seedRoles(prisma: PrismaClient): Promise<void> {
       where: { roleCode: role.roleCode },
       // Role names, descriptions and data scopes can be managed in production.
       // Seeding must never overwrite those choices on an existing role.
-      update: {},
+      update: role.roleCode === 'SUPER_ADMIN' ? { isProtected: true, status: 'Active' } : {},
       create: {
         roleCode: role.roleCode,
         roleName: role.roleName,
         description: role.description,
         defaultDataScope: role.defaultDataScope,
+        isProtected: role.roleCode === 'SUPER_ADMIN',
       },
     });
     // A newly introduced role needs its initial matrix. Existing production
     // roles are user-managed, so a deploy-time seed must not silently grant
     // newly added permissions. Administrators can assign those explicitly.
-    if (existingRole && process.env.NODE_ENV === 'production') {
+    if (existingRole && process.env.NODE_ENV === 'production' && role.roleCode !== 'SUPER_ADMIN') {
       console.log(
         `Role "${role.roleCode}" already exists; preserving production metadata and permissions.`,
       );

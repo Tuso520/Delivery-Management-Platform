@@ -16,6 +16,7 @@ describe('settings navigation contract', () => {
       'menu.systemFields',
       'menu.systemConfig',
       'menu.userCenter',
+      'menu.rolePermissions',
       'menu.systemIntegration',
     ])
     expect(settingItems.map((item) => item.path)).toEqual([
@@ -24,6 +25,7 @@ describe('settings navigation contract', () => {
       '/settings/fields',
       '/settings/system',
       '/settings',
+      '/settings/role-permissions',
       '/settings/integrations',
     ])
   })
@@ -43,13 +45,16 @@ describe('settings navigation contract', () => {
       SystemConfig: ['system_setting:view', 'system_setting:manage'],
       Integrations: ['integration:view', 'integration:manage'],
     })
+    expect(
+      (group?.children ?? []).find((route) => route.name === 'RolePermissions')?.meta?.roles,
+    ).toEqual(['SUPER_ADMIN'])
   })
 
   it('loads each settings route with its own page component', () => {
     const group = shellRoutes.find((route) => route.name === 'SettingsGroup')
     const settingRoutes = group?.children ?? []
 
-    expect(settingRoutes).toHaveLength(7)
+    expect(settingRoutes).toHaveLength(8)
     expect(settingRoutes.every((route) => route.component !== undefined)).toBe(true)
     expect(settingRoutes.every((route) => route.beforeEnter === undefined)).toBe(true)
     expect(settingRoutes.map((route) => route.name)).not.toContain('Logs')

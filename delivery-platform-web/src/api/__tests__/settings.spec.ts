@@ -15,6 +15,8 @@ import { currencyApi } from '@/api/currency'
 import { fieldConfigurationApi, fieldOptionsApi } from '@/api/field-configuration'
 import { integrationApi } from '@/api/integration'
 import { notificationApi } from '@/platform/notification/notification.api'
+import { permissionApi } from '@/api/permission'
+import { roleApi } from '@/api/role'
 import { systemSettingsApi } from '@/api/system'
 
 describe('target settings API contracts', () => {
@@ -138,5 +140,19 @@ describe('target settings API contracts', () => {
     expect(mocks.get).toHaveBeenCalledWith('/field-options/COUNTRY')
     expect(mocks.post).toHaveBeenCalledWith('/field-options/batch', { codes: ['COUNTRY', 'CURRENCY'] })
     expect(mocks.delete).toHaveBeenCalledWith('/field-config/values/value-1')
+  })
+
+  it('separates protected role administration from user-center role options', () => {
+    roleApi.getList()
+    roleApi.getAssignable()
+    roleApi.assignPermissions('role-1', { permissionIds: ['permission-1'] })
+    permissionApi.getAll()
+
+    expect(mocks.get).toHaveBeenNthCalledWith(1, '/roles')
+    expect(mocks.get).toHaveBeenNthCalledWith(2, '/roles/assignable')
+    expect(mocks.post).toHaveBeenCalledWith('/roles/role-1/permissions', {
+      permissionIds: ['permission-1'],
+    })
+    expect(mocks.get).toHaveBeenNthCalledWith(3, '/permissions')
   })
 })

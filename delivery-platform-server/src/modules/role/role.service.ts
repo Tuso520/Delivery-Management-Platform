@@ -22,13 +22,15 @@ export class RoleService {
   ) {}
 
   async findAll() {
-    const roles = await this.prisma.role.findMany({
+    const [roles, activePermissionCount] = await Promise.all([
+      this.prisma.role.findMany({
       select: {
         id: true,
         roleCode: true,
         roleName: true,
         description: true,
         status: true,
+        isProtected: true,
         createdAt: true,
         updatedAt: true,
         _count: {
@@ -41,7 +43,9 @@ export class RoleService {
         },
       },
       orderBy: { createdAt: 'asc' },
-    });
+      }),
+      this.prisma.permission.count({ where: { deprecatedAt: null } }),
+    ]);
 
     return roles.map((role) => ({
       id: role.id,
@@ -49,11 +53,31 @@ export class RoleService {
       roleName: role.roleName,
       description: role.description,
       status: role.status,
+      isProtected: role.isProtected,
       createdAt: role.createdAt,
       updatedAt: role.updatedAt,
       userCount: role._count.userRoles,
-      permissionCount: role._count.rolePermissions,
+      permissionCount: role.isProtected ? activePermissionCount : role._count.rolePermissions,
     }));
+  }
+
+  async findAssignable(operatorRoles: string[]) {
+    const canAssignProtectedRole = operatorRoles.includes('SUPER_ADMIN');
+    return this.prisma.role.findMany({
+      where: {
+        status: 'Active',
+        ...(canAssignProtectedRole ? {} : { isProtected: false }),
+      },
+      select: {
+        id: true,
+        roleCode: true,
+        roleName: true,
+        description: true,
+        status: true,
+        isProtected: true,
+      },
+      orderBy: [{ isProtected: 'desc' }, { createdAt: 'asc' }],
+    });
   }
 
   async findById(id: string) {
@@ -65,6 +89,7 @@ export class RoleService {
         roleName: true,
         description: true,
         status: true,
+        isProtected: true,
         createdAt: true,
         updatedAt: true,
         rolePermissions: {
@@ -88,9 +113,23 @@ export class RoleService {
       throw new NotFoundException('角色不存在');
     }
 
+    const permissions = role.isProtected
+      ? await this.prisma.permission.findMany({
+          where: { deprecatedAt: null },
+          select: {
+            id: true,
+            permissionCode: true,
+            permissionName: true,
+            resource: true,
+            action: true,
+          },
+          orderBy: [{ sortOrder: 'asc' }, { permissionCode: 'asc' }],
+        })
+      : role.rolePermissions.map((rp) => rp.permission);
+
     return {
       ...role,
-      permissions: role.rolePermissions.map((rp) => rp.permission),
+      permissions,
     };
   }
 
@@ -133,6 +172,9 @@ export class RoleService {
       if (!role) {
         throw new NotFoundException('角色不存在');
       }
+      if (role.isProtected && dto.status && dto.status !== 'Active') {
+        throw new BadRequestException('超级管理员角色必须保持启用');
+      }
 
       const statusChanged = dto.status !== undefined && dto.status !== role.status;
       const updated = await tx.role.update({
@@ -148,6 +190,7 @@ export class RoleService {
           roleName: true,
           description: true,
           status: true,
+          isProtected: true,
           updatedAt: true,
         },
       });
@@ -171,6 +214,9 @@ export class RoleService {
 
     if (!role) {
       throw new NotFoundException('角色不存在');
+    }
+    if (role.isProtected) {
+      throw new BadRequestException('超级管理员角色不可删除');
     }
 
     // Check if role has users assigned
@@ -199,6 +245,7 @@ export class RoleService {
         where: { id: roleId },
         select: {
           id: true,
+          isProtected: true,
           rolePermissions: {
             where: { permission: { deprecatedAt: null } },
             select: { permissionId: true },
@@ -207,6 +254,9 @@ export class RoleService {
       });
       if (!role) {
         throw new NotFoundException('角色不存在');
+      }
+      if (role.isProtected) {
+        throw new BadRequestException('超级管理员始终拥有全部权限，权限集合不可修改');
       }
 
       const permissions = await tx.permission.findMany({

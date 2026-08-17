@@ -30,7 +30,7 @@ export class RoleController {
   constructor(private readonly roleService: RoleService) {}
 
   @Get()
-  @RequirePermissions({ all: ['role:view'] })
+  @RequirePermissions({ roles: ['SUPER_ADMIN'] })
   @ApiOperation({ summary: '获取角色列表（含用户数和权限数）' })
   @ApiResponse({
     status: 200,
@@ -60,8 +60,15 @@ export class RoleController {
     return this.roleService.findAll();
   }
 
+  @Get('assignable')
+  @RequirePermissions({ all: ['user:assign_role'] })
+  @ApiOperation({ summary: '获取用户中心可分配角色列表' })
+  async findAssignable(@CurrentUser('roles') operatorRoles: string[]) {
+    return this.roleService.findAssignable(operatorRoles ?? []);
+  }
+
   @Post()
-  @RequirePermissions({ all: ['role:create'] })
+  @RequirePermissions({ roles: ['SUPER_ADMIN'] })
   @ApiOperation({ summary: '创建角色' })
   @ApiBody({ type: CreateRoleDto })
   @ApiResponse({ status: 201, description: '创建成功' })
@@ -71,7 +78,7 @@ export class RoleController {
   }
 
   @Get(':id')
-  @RequirePermissions({ all: ['role:view'] })
+  @RequirePermissions({ roles: ['SUPER_ADMIN'] })
   @ApiOperation({ summary: '获取角色详情（含权限列表）' })
   @ApiResponse({ status: 200, description: '角色详情' })
   @ApiResponse({ status: 404, description: '角色不存在' })
@@ -80,7 +87,7 @@ export class RoleController {
   }
 
   @Put(':id')
-  @RequirePermissions({ all: ['role:update'] })
+  @RequirePermissions({ roles: ['SUPER_ADMIN'] })
   @ApiOperation({ summary: '更新角色信息' })
   @ApiBody({ type: UpdateRoleDto })
   @ApiResponse({ status: 200, description: '更新成功' })
@@ -90,7 +97,7 @@ export class RoleController {
   }
 
   @Delete(':id')
-  @RequirePermissions({ all: ['role:delete'] })
+  @RequirePermissions({ roles: ['SUPER_ADMIN'] })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '停用角色（软删除）' })
   @ApiResponse({ status: 200, description: '停用成功' })
@@ -102,7 +109,7 @@ export class RoleController {
   }
 
   @Post(':id/permissions')
-  @RequirePermissions({ all: ['role:assign_permission'] })
+  @RequirePermissions({ roles: ['SUPER_ADMIN'] })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '分配角色权限' })
   @ApiBody({ type: AssignPermissionsDto })

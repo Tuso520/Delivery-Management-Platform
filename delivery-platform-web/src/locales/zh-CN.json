@@ -32,6 +32,7 @@
     "systemFields": "字段配置",
     "systemApproval": "审批规则",
     "systemIntegration": "接口集成",
+    "rolePermissions": "角色权限",
     "systemConfig": "参数配置",
     "systemNotification": "通知规则",
     "userCenter": "用户中心"

@@ -236,22 +236,31 @@ export class UserService {
     }
 
     const revokedAt = new Date();
-    await this.prisma.$transaction(async (tx) => {
-      await tx.user.update({
-        where: { id },
-        data: {
-          deletedAt: revokedAt,
-          permissionVersion: { increment: 1 },
-        },
-      });
-      await tx.refreshSession.updateMany({
-        where: { userId: id, revokedAt: null },
-        data: { revokedAt, revokeReason: 'USER_DELETED' },
-      });
-    });
+    await this.prisma.$transaction(
+      async (tx) => {
+        await this.assertCanRemoveSuperAdmin(tx, id);
+        await tx.user.update({
+          where: { id },
+          data: {
+            deletedAt: revokedAt,
+            permissionVersion: { increment: 1 },
+          },
+        });
+        await tx.refreshSession.updateMany({
+          where: { userId: id, revokedAt: null },
+          data: { revokedAt, revokeReason: 'USER_DELETED' },
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
   }
 
-  async assignRoles(userId: string, dto: AssignRolesDto, operatorId: string) {
+  async assignRoles(
+    userId: string,
+    dto: AssignRolesDto,
+    operatorId: string,
+    operatorRoles: string[] = [],
+  ) {
     await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.findFirst({
         where: { id: userId, deletedAt: null },
@@ -265,10 +274,22 @@ export class UserService {
       }
       const roles = await tx.role.findMany({
         where: { id: { in: dto.roleIds }, status: 'Active' },
-        select: { id: true, defaultDataScope: true },
+        select: { id: true, roleCode: true, isProtected: true, defaultDataScope: true },
       });
       if (roles.length !== new Set(dto.roleIds).size) {
         throw new BadRequestException('角色不存在或已停用');
+      }
+      if (
+        roles.some((role) => role.isProtected) &&
+        !operatorRoles.includes('SUPER_ADMIN')
+      ) {
+        throw new BadRequestException('只有超级管理员可以分配超级管理员角色');
+      }
+      const removingProtectedRole =
+        await tx.userRole.count({ where: { userId, role: { isProtected: true } } }) > 0 &&
+        !roles.some((role) => role.isProtected);
+      if (removingProtectedRole) {
+        await this.assertCanRemoveSuperAdmin(tx, userId);
       }
 
       // Remove existing roles
@@ -305,7 +326,7 @@ export class UserService {
         },
         tx,
       );
-    });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
     return this.findById(userId);
   }
@@ -323,26 +344,30 @@ export class UserService {
       throw new BadRequestException('用户已被禁用');
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.user.update({
-        where: { id: userId },
-        data: {
-          status: 'Inactive',
-          permissionVersion: { increment: 1 },
-        },
-        select: {
-          id: true,
-          username: true,
-          realName: true,
-          status: true,
-        },
-      });
-      await tx.refreshSession.updateMany({
-        where: { userId, revokedAt: null },
-        data: { revokedAt: new Date(), revokeReason: 'USER_DISABLED' },
-      });
-      return updated;
-    });
+    return this.prisma.$transaction(
+      async (tx) => {
+        await this.assertCanRemoveSuperAdmin(tx, userId);
+        const updated = await tx.user.update({
+          where: { id: userId },
+          data: {
+            status: 'Inactive',
+            permissionVersion: { increment: 1 },
+          },
+          select: {
+            id: true,
+            username: true,
+            realName: true,
+            status: true,
+          },
+        });
+        await tx.refreshSession.updateMany({
+          where: { userId, revokedAt: null },
+          data: { revokedAt: new Date(), revokeReason: 'USER_DISABLED' },
+        });
+        return updated;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
   }
 
   async enable(userId: string) {
@@ -399,5 +424,27 @@ export class UserService {
     });
 
     return { message: '密码重置成功' };
+  }
+
+  private async assertCanRemoveSuperAdmin(
+    tx: Prisma.TransactionClient,
+    userId: string,
+  ): Promise<void> {
+    const hasProtectedRole = await tx.userRole.count({
+      where: { userId, role: { isProtected: true, status: 'Active' } },
+    });
+    if (hasProtectedRole === 0) return;
+
+    const remaining = await tx.user.count({
+      where: {
+        id: { not: userId },
+        deletedAt: null,
+        status: 'Active',
+        userRoles: { some: { role: { isProtected: true, status: 'Active' } } },
+      },
+    });
+    if (remaining === 0) {
+      throw new BadRequestException('必须至少保留一个可用的超级管理员账号');
+    }
   }
 }

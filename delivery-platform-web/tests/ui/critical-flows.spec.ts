@@ -216,12 +216,70 @@ test('administrator can use the target architecture navigation', async ({ page }
     timeout: 60_000,
   })
 
-  await page.goto('/#/organization/roles')
-  await expect(page.getByRole('heading', { name: '角色管理' }).first()).toBeVisible({
+  await page.goto('/#/settings/role-permissions')
+  await expect(page.getByRole('heading', { name: '角色权限' }).first()).toBeVisible({
     timeout: 60_000,
   })
   await expect(page.getByText('SUPER_ADMIN', { exact: true })).toBeVisible({ timeout: 60_000 })
   expect(browserErrors).toEqual([])
+})
+
+test('role permissions lifecycle is super-admin-only and new roles start empty', async ({
+  page,
+}) => {
+  const accessToken = await login(page, adminUsername, adminPassword)
+  const authorization = { authorization: `Bearer ${accessToken}` }
+  const marker = Date.now().toString()
+  const roleCode = `E2E_ROLE_${marker}`
+
+  const createResponse = await page.request.post('/api/v1/roles', {
+    headers: authorization,
+    data: { roleCode, roleName: `E2E 角色 ${marker}`, description: '角色权限自动化验收' },
+  })
+  expect(createResponse.status()).toBe(201)
+  const created = (await createResponse.json()) as { data: { id: string } }
+
+  const emptyDetailResponse = await page.request.get(`/api/v1/roles/${created.data.id}`, {
+    headers: authorization,
+  })
+  expect(emptyDetailResponse.status()).toBe(200)
+  const emptyDetail = (await emptyDetailResponse.json()) as { data: { permissions: unknown[] } }
+  expect(emptyDetail.data.permissions).toEqual([])
+
+  const catalogResponse = await page.request.get('/api/v1/permissions', { headers: authorization })
+  expect(catalogResponse.status()).toBe(200)
+  const catalog = (await catalogResponse.json()) as {
+    data: Array<{ pages: Array<{ permissions: Array<{ id: string }> }> }>
+  }
+  const permissionId = catalog.data[0]?.pages[0]?.permissions[0]?.id
+  expect(permissionId).toEqual(expect.any(String))
+
+  const assignResponse = await page.request.post(`/api/v1/roles/${created.data.id}/permissions`, {
+    headers: authorization,
+    data: { permissionIds: [permissionId] },
+  })
+  expect(assignResponse.status()).toBe(200)
+  const assigned = (await assignResponse.json()) as { data: { permissions: Array<{ id: string }> } }
+  expect(assigned.data.permissions.map(({ id }) => id)).toEqual([permissionId])
+
+  const updateResponse = await page.request.put(`/api/v1/roles/${created.data.id}`, {
+    headers: authorization,
+    data: { roleName: `E2E 角色（已编辑）${marker}` },
+  })
+  expect(updateResponse.status()).toBe(200)
+
+  const deleteResponse = await page.request.delete(`/api/v1/roles/${created.data.id}`, {
+    headers: authorization,
+  })
+  expect(deleteResponse.status()).toBe(200)
+
+  const limitedToken = await login(page, limitedUsername, limitedPassword)
+  const deniedResponse = await page.request.get('/api/v1/roles', {
+    headers: { authorization: `Bearer ${limitedToken}` },
+  })
+  expect(deniedResponse.status()).toBe(403)
+  await page.goto('/#/settings/role-permissions')
+  await page.waitForURL((url) => url.hash === '#/dashboard')
 })
 
 test('administrator can create, edit, inspect, progress, archive and restore a project', async ({
@@ -346,7 +404,7 @@ test('administrator can create, edit, inspect, progress, archive and restore a p
   const viewport = page.viewportSize()
   expect(detailBox).not.toBeNull()
   expect(viewport).not.toBeNull()
-  expect(Math.abs((detailBox!.x + detailBox!.width / 2) - viewport!.width / 2)).toBeLessThan(4)
+  expect(Math.abs(detailBox!.x + detailBox!.width / 2 - viewport!.width / 2)).toBeLessThan(4)
   await expect(detailDialog.getByRole('button', { name: '保存' })).toHaveCount(0)
   await expect(detailDialog.locator('input:not([disabled])')).toHaveCount(0)
   await page.getByRole('button', { name: '关闭' }).click()
@@ -486,10 +544,10 @@ test('administrator round-trips a private MinIO file and File Worker output', as
     outputAssetId: expect.any(String),
   })
 
-  const thumbnailResponse = await page.request.get(
-    `/api/v1/files/${uploaded.data.id}/thumbnail`,
-    { headers: authorization, timeout: 60_000 },
-  )
+  const thumbnailResponse = await page.request.get(`/api/v1/files/${uploaded.data.id}/thumbnail`, {
+    headers: authorization,
+    timeout: 60_000,
+  })
   expect(thumbnailResponse.status()).toBe(200)
   expect(thumbnailResponse.headers()['content-type']).toContain('image/webp')
   expect((await thumbnailResponse.body()).byteLength).toBeGreaterThan(0)
@@ -536,5 +594,7 @@ test('project manager is restricted by data scope, field permissions and setting
   await page.goto('/#/settings/system')
   await page.waitForURL((url) => url.hash === '#/dashboard')
   await expect(page.getByRole('heading', { name: '数据看板' })).toBeVisible()
+  await page.goto('/#/settings/role-permissions')
+  await page.waitForURL((url) => url.hash === '#/dashboard')
   expect(browserErrors).toEqual([])
 })

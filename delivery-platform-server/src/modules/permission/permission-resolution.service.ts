@@ -3,7 +3,9 @@ import { PermissionEffect } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
 
-export const SYSTEM_MINIMUM_PERMISSIONS = ['dashboard:view'] as const;
+// An assigned role grants exactly the permissions configured for that role.
+// Keeping this empty ensures newly created roles start with no implicit page access.
+export const SYSTEM_MINIMUM_PERMISSIONS: readonly string[] = [];
 
 export interface ResolvedPermissions {
   roles: string[];

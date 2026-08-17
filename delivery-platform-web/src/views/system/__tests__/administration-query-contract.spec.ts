@@ -16,7 +16,7 @@ describe('administration server-state contract', () => {
 
   it('uses Query reads and mutations instead of mount-time API state', () => {
     const queries = readSource('src/composables/queries/useAdministrationQueries.ts')
-    expect(queries.match(/useQuery\(/gu)).toHaveLength(7)
+    expect(queries.match(/useQuery\(/gu)).toHaveLength(8)
     expect(queries).toContain('queryKeys.users.list')
     expect(queries).toContain('queryKeys.roles.detail')
     expect(queries).toContain('queryKeys.departments.tree')

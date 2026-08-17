@@ -6,6 +6,10 @@ export const roleApi = {
     return request.get<Role[]>('/roles')
   },
 
+  getAssignable() {
+    return request.get<Role[]>('/roles/assignable')
+  },
+
   getById(id: string) {
     return request.get<RoleDetail>(`/roles/${id}`)
   },

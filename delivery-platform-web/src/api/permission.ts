@@ -1,8 +1,8 @@
 import request from './request'
-import type { PermissionGroup } from '@/types/role'
+import type { PermissionModule } from '@/types/role'
 
 export const permissionApi = {
   getAll() {
-    return request.get<PermissionGroup[]>('/permissions')
+    return request.get<PermissionModule[]>('/permissions')
   },
 }

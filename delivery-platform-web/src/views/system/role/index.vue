@@ -24,7 +24,7 @@ import type {
   AssignPermissionsDto,
   CreateRoleDto,
   Permission,
-  PermissionGroup,
+  PermissionModule,
   Role,
   UpdateRoleDto,
 } from '@/types/role'
@@ -43,6 +43,9 @@ const roleList = computed<Role[]>(() => roleListQuery.data.value ?? [])
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const currentId = ref('')
+const isEditingProtectedRole = computed(
+  () => roleList.value.some((role) => role.id === currentId.value && role.isProtected),
+)
 const formRef = ref<FormInstance>()
 const formData = reactive({
   roleCode: '',
@@ -67,7 +70,7 @@ const currentRoleId = computed(() => currentRoleForPerm.value?.id ?? '')
 const selectedPermIds = ref<string[]>([])
 const permissionGroupsQuery = usePermissionGroupsQuery(permDialogVisible)
 const roleDetailQuery = useRoleDetailQuery(currentRoleId, permDialogVisible)
-const permissionGroups = computed<PermissionGroup[]>(() => permissionGroupsQuery.data.value ?? [])
+const permissionModules = computed<PermissionModule[]>(() => permissionGroupsQuery.data.value ?? [])
 const permTreeLoading = computed(
   () => permissionGroupsQuery.isFetching.value || roleDetailQuery.isFetching.value,
 )
@@ -75,11 +78,45 @@ const permLoadFailed = computed(
   () => permissionGroupsQuery.isError.value || roleDetailQuery.isError.value,
 )
 const actionGroups = [
-  { key: 'view', label: '查看' },
-  { key: 'download', label: '下载' },
-  { key: 'upload', label: '上传' },
-  { key: 'operate', label: '操作' },
+  { key: 'VIEW', label: '查看' },
+  { key: 'OPERATE', label: '操作 / 编辑' },
+  { key: 'TRANSFER', label: '上传 / 下载' },
+  { key: 'DELETE', label: '删除' },
 ] as const
+type ActionGroup = (typeof actionGroups)[number]['key']
+interface PermissionMatrixRow {
+  id: string
+  label: string
+  level: 'module' | 'page' | 'permission'
+  permissions: Permission[]
+  children?: PermissionMatrixRow[]
+}
+const matrixRows = computed<PermissionMatrixRow[]>(() =>
+  permissionModules.value.map((module) => {
+    const pages = module.pages.map((page) => ({
+      id: `page:${module.moduleCode}:${page.pageCode}`,
+      label: page.pageName,
+      level: 'page' as const,
+      permissions: page.permissions,
+      children: page.permissions.map((permission) => ({
+        id: `permission:${permission.id}`,
+        label: permission.permissionName,
+        level: 'permission' as const,
+        permissions: [permission],
+      })),
+    }))
+    return {
+      id: `module:${module.moduleCode}`,
+      label: module.moduleName,
+      level: 'module' as const,
+      permissions: pages.flatMap((page) => page.permissions),
+      children: pages,
+    }
+  }),
+)
+const allPermissions = computed(() =>
+  permissionModules.value.flatMap((module) => module.pages.flatMap((page) => page.permissions)),
+)
 
 const roleMutation = useMutation({
   mutationFn: async (variables: RoleMutationVariables): Promise<void> => {
@@ -207,64 +244,37 @@ function retryPermissionData(): void {
   void Promise.all([permissionGroupsQuery.refetch(), roleDetailQuery.refetch()])
 }
 
-function handleGroupCheckAll(group: PermissionGroup, checked: boolean): void {
+function setPermissions(permissions: readonly Permission[], checked: boolean): void {
+  const permissionIds = new Set(permissions.map((permission) => permission.id))
   if (checked) {
-    const newIds = group.permissions
+    const newIds = permissions
       .filter((permission: Permission) => !selectedPermIds.value.includes(permission.id))
       .map((permission: Permission) => permission.id)
     selectedPermIds.value.push(...newIds)
     return
   }
-  const groupIds = new Set(group.permissions.map((permission: Permission) => permission.id))
-  selectedPermIds.value = selectedPermIds.value.filter((id: string) => !groupIds.has(id))
+  selectedPermIds.value = selectedPermIds.value.filter((id: string) => !permissionIds.has(id))
 }
 
-function isGroupAllChecked(group: PermissionGroup): boolean {
-  return group.permissions.every((permission: Permission) =>
+function isAllChecked(permissions: readonly Permission[]): boolean {
+  return permissions.length > 0 && permissions.every((permission: Permission) =>
     selectedPermIds.value.includes(permission.id),
   )
 }
 
-function isGroupIndeterminate(group: PermissionGroup): boolean {
-  const groupCheckedCount = group.permissions.filter((permission: Permission) =>
+function isIndeterminate(permissions: readonly Permission[]): boolean {
+  const checkedCount = permissions.filter((permission: Permission) =>
     selectedPermIds.value.includes(permission.id),
   ).length
-  return groupCheckedCount > 0 && groupCheckedCount < group.permissions.length
+  return checkedCount > 0 && checkedCount < permissions.length
 }
 
-function permissionsByAction(
-  group: PermissionGroup,
-  actionGroup: 'view' | 'download' | 'upload' | 'operate',
-): Permission[] {
-  return group.permissions.filter((permission) => permission.actionGroup === actionGroup)
+function actionPermissions(row: PermissionMatrixRow, actionGroup: ActionGroup): Permission[] {
+  return row.permissions.filter((permission) => permission.actionGroup === actionGroup)
 }
 
-function resourceLabel(resource: string): string {
-  const map: Record<string, string> = {
-    user: '用户管理',
-    role: '角色管理',
-    permission: '权限管理',
-    project: '项目管理',
-    archive: '档案管理',
-    file: '文件管理',
-    file_review: '文件审核',
-    archive_template: '档案模版',
-    standard: '标准库',
-    knowledge: '知识库',
-    tools: '工具管理',
-    currency: '币种配置',
-    settings: '设置入口',
-    notification_rule: '通知规则',
-    approval_config: '审批配置',
-    audit_log: '操作日志',
-    system_setting: '系统配置',
-    dashboard: '数据看板',
-    payment: '项目回款',
-    department: '组织架构',
-    dictionary: '数据字典',
-    integration: '接口集成',
-  }
-  return map[resource] || resource
+function allActionPermissions(actionGroup: ActionGroup): Permission[] {
+  return allPermissions.value.filter((permission) => permission.actionGroup === actionGroup)
 }
 
 watch(
@@ -280,7 +290,7 @@ watch(
 
 <template>
   <PageContainer class="role-page">
-    <PageToolbar title="角色管理" description="维护角色定义及权限矩阵">
+    <PageToolbar title="角色权限" description="按页面与功能维护角色，并为用户中心的角色分配提供授权依据">
       <template #actions>
         <Can permission="role:create">
           <a-button type="primary" @click="openCreate">
@@ -344,7 +354,7 @@ watch(
               </Can>
               <Can permission="role:assign_permission">
                 <a-button type="text" size="small" @click="openAssignPermissions(row)">
-                  权限
+                  {{ row.isProtected ? '查看权限' : '配置权限' }}
                 </a-button>
               </Can>
               <Can permission="role:delete">
@@ -352,6 +362,7 @@ watch(
                   status="danger"
                   type="text"
                   size="small"
+                  :disabled="row.isProtected"
                   @click="handleDelete(row)"
                 >
                   删除
@@ -395,7 +406,7 @@ watch(
           />
         </a-form-item>
         <a-form-item v-if="isEdit" label="状态" field="status">
-          <a-radio-group v-model="formData.status">
+          <a-radio-group v-model="formData.status" :disabled="isEditingProtectedRole">
             <a-radio value="Active">
               活跃
             </a-radio>
@@ -417,13 +428,28 @@ watch(
 
     <BusinessModal
       v-model:visible="permDialogVisible"
-      title="分配权限"
+      title="配置角色权限"
       :width="1080"
       :mask-closable="false"
     >
       <div v-if="currentRoleForPerm" class="perm-dialog-info">
         为角色<strong>{{ currentRoleForPerm.roleName }}({{ currentRoleForPerm.roleCode }})</strong>
-        分配权限
+        配置权限。新建角色默认不包含任何权限。
+      </div>
+
+      <a-alert v-if="currentRoleForPerm?.isProtected" type="info" class="protected-alert">
+        超级管理员固定拥有全部权限，不能取消、停用或删除。
+      </a-alert>
+
+      <div class="permission-batch-actions">
+        <a-space>
+          <a-button size="small" :disabled="currentRoleForPerm?.isProtected" @click="setPermissions(allPermissions, true)">
+            全部勾选
+          </a-button>
+          <a-button size="small" :disabled="currentRoleForPerm?.isProtected" @click="setPermissions(allPermissions, false)">
+            全部取消
+          </a-button>
+        </a-space>
       </div>
 
       <a-spin :loading="permTreeLoading" class="perm-tree-container">
@@ -439,23 +465,26 @@ watch(
             </a-button>
           </template>
         </a-result>
-        <div v-else-if="permissionGroups.length === 0 && !permTreeLoading" class="perm-empty">
+        <div v-else-if="permissionModules.length === 0 && !permTreeLoading" class="perm-empty">
           暂无可用权限数据
         </div>
         <BusinessTable
-          v-else-if="permissionGroups.length"
-          :data="permissionGroups"
+          v-else-if="permissionModules.length"
+          :data="matrixRows"
+          row-key="id"
+          default-expand-all-rows
           bordered
           class="permission-matrix"
         >
-          <a-table-column title="模块" :width="160" fixed="left">
+          <a-table-column title="页面 / 功能" :width="360" fixed="left">
             <template #cell="{ record: row }">
               <a-checkbox
-                :model-value="isGroupAllChecked(row)"
-                :indeterminate="isGroupIndeterminate(row)"
-                @change="(value) => handleGroupCheckAll(row, Boolean(value))"
+                :model-value="isAllChecked(row.permissions)"
+                :indeterminate="isIndeterminate(row.permissions)"
+                :disabled="currentRoleForPerm?.isProtected"
+                @change="(value) => setPermissions(row.permissions, Boolean(value))"
               >
-                {{ resourceLabel(row.resource) }}
+                <span :class="`permission-label permission-label--${row.level}`">{{ row.label }}</span>
               </a-checkbox>
             </template>
           </a-table-column>
@@ -465,23 +494,25 @@ watch(
             :title="actionGroup.label"
             :min-width="205"
           >
+            <template #title>
+              <a-checkbox
+                :model-value="isAllChecked(allActionPermissions(actionGroup.key))"
+                :indeterminate="isIndeterminate(allActionPermissions(actionGroup.key))"
+                :disabled="currentRoleForPerm?.isProtected"
+                @change="(value) => setPermissions(allActionPermissions(actionGroup.key), Boolean(value))"
+              >
+                {{ actionGroup.label }}
+              </a-checkbox>
+            </template>
             <template #cell="{ record: row }">
-              <a-checkbox-group v-model="selectedPermIds" class="matrix-cell">
-                <a-checkbox
-                  v-for="permission in permissionsByAction(row, actionGroup.key)"
-                  :key="permission.id"
-                  :value="permission.id"
-                  class="matrix-permission"
-                >
-                  {{ permission.permissionName }}
-                </a-checkbox>
-                <span
-                  v-if="permissionsByAction(row, actionGroup.key).length === 0"
-                  class="permission-empty"
-                >
-                  -
-                </span>
-              </a-checkbox-group>
+              <a-checkbox
+                v-if="actionPermissions(row, actionGroup.key).length"
+                :model-value="isAllChecked(actionPermissions(row, actionGroup.key))"
+                :indeterminate="isIndeterminate(actionPermissions(row, actionGroup.key))"
+                :disabled="currentRoleForPerm?.isProtected"
+                @change="(value) => setPermissions(actionPermissions(row, actionGroup.key), Boolean(value))"
+              />
+              <span v-else class="permission-empty">-</span>
             </template>
           </a-table-column>
         </BusinessTable>
@@ -494,7 +525,7 @@ watch(
         <a-button
           type="primary"
           :loading="roleMutation.isPending.value"
-          :disabled="permLoadFailed"
+          :disabled="permLoadFailed || currentRoleForPerm?.isProtected"
           @click="handleAssignPermissions"
         >
           保存
@@ -509,6 +540,16 @@ watch(
   margin-bottom: 16px;
   color: #4e5969;
   font-size: 14px;
+}
+
+.protected-alert,
+.permission-batch-actions {
+  margin-bottom: 12px;
+}
+
+.permission-batch-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .perm-tree-container {
@@ -526,15 +567,12 @@ watch(
   text-align: center;
 }
 
-.matrix-cell {
-  display: grid;
-  gap: 5px;
+.permission-label--module {
+  font-weight: 600;
 }
 
-.matrix-permission {
-  height: auto;
-  margin-right: 0;
-  white-space: normal;
+.permission-label--page {
+  font-weight: 500;
 }
 
 .permission-empty {

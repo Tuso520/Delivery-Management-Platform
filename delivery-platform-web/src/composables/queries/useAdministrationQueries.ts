@@ -41,6 +41,14 @@ export function useRolesQuery(enabled: MaybeRefOrGetter<boolean> = true) {
   })
 }
 
+export function useAssignableRolesQuery(enabled: MaybeRefOrGetter<boolean> = true) {
+  return useQuery({
+    queryKey: [...queryKeys.roles.list(), 'assignable'],
+    queryFn: roleApi.getAssignable,
+    enabled: computed(() => toValue(enabled)),
+  })
+}
+
 export function useRoleDetailQuery(
   roleId: MaybeRefOrGetter<string>,
   enabled: MaybeRefOrGetter<boolean> = true,

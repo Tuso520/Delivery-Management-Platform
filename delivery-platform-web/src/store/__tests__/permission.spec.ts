@@ -66,6 +66,27 @@ describe('filterMenusByPermissions', () => {
     expect(result).toEqual(groupedMenus)
   })
 
+  it('hides role-restricted menus from users who only have permission codes', () => {
+    const restricted: MenuItem[] = [
+      {
+        path: '/settings',
+        name: 'Settings',
+        title: '系统设置',
+        children: [
+          {
+            path: '/settings/role-permissions',
+            name: 'RolePermissions',
+            title: '角色权限',
+            roles: ['SUPER_ADMIN'],
+          },
+        ],
+      },
+    ]
+
+    expect(filterMenusByPermissions(restricted, ['role:assign_permission'], ['SYSTEM_ADMIN'])).toEqual([])
+    expect(filterMenusByPermissions(restricted, [], ['SUPER_ADMIN'])).toEqual(restricted)
+  })
+
   it('returns the first accessible child route for a regular user', () => {
     expect(
       findFirstAccessibleMenuPath(groupedMenus, ['file_review:view']),

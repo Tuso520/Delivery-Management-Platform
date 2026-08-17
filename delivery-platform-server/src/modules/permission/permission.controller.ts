@@ -17,7 +17,7 @@ export class PermissionController {
   constructor(private readonly permissionService: PermissionService) {}
 
   @Get()
-  @RequirePermissions({ all: ['permission:view'] })
+  @RequirePermissions({ roles: ['SUPER_ADMIN'] })
   @ApiOperation({ summary: '获取权限列表（按资源分组）' })
   @ApiResponse({
     status: 200,

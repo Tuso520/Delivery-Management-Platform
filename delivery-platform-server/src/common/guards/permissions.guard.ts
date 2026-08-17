@@ -31,7 +31,8 @@ export class PermissionsGuard implements CanActivate {
 
     const all = metadata.all ?? [];
     const any = metadata.any ?? [];
-    if (all.length === 0 && any.length === 0) return true;
+    const requiredRoles = metadata.roles ?? [];
+    if (all.length === 0 && any.length === 0 && requiredRoles.length === 0) return true;
 
     const request = context.switchToHttp().getRequest();
     const { user } = request;
@@ -39,6 +40,10 @@ export class PermissionsGuard implements CanActivate {
 
     const userPermissions: string[] = user.permissions ?? [];
     const userRoles: string[] = user.roles ?? [];
+    const hasRequiredRoles = requiredRoles.every((role) => userRoles.includes(role));
+    if (!hasRequiredRoles) {
+      return this.deny(request, user, all, any, requiredRoles);
+    }
     if (userRoles.includes('SUPER_ADMIN')) return true;
 
     const hasAll = all.every((permission) => userPermissions.includes(permission));
@@ -47,6 +52,16 @@ export class PermissionsGuard implements CanActivate {
       any.some((permission) => userPermissions.includes(permission));
     if (hasAll && hasAny) return true;
 
+    return this.deny(request, user, all, any, requiredRoles);
+  }
+
+  private async deny(
+    request: { method?: string; path?: string },
+    user: { sub: string },
+    all: readonly string[],
+    any: readonly string[],
+    requiredRoles: readonly string[],
+  ): Promise<never> {
     const audit = {
       userId: user.sub,
       module: 'permission',
@@ -57,6 +72,7 @@ export class PermissionsGuard implements CanActivate {
       afterData: {
         requiredAll: all,
         requiredAny: any,
+        requiredRoles,
         path: request.path ?? 'unknown',
       },
       errorReason: '权限校验未通过',

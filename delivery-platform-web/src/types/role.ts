@@ -4,6 +4,7 @@ export interface Role {
   roleName: string
   description: string | null
   status: string
+  isProtected: boolean
   userCount: number
   permissionCount: number
   createdAt: string
@@ -20,14 +21,26 @@ export interface Permission {
   permissionName: string
   resource: string
   action: string
-  actionGroup?: 'view' | 'download' | 'upload' | 'operate'
+  moduleCode?: string
+  moduleName?: string
+  pageCode?: string
+  pageName?: string
+  actionGroup: 'VIEW' | 'OPERATE' | 'TRANSFER' | 'DELETE'
+  sortOrder?: number
   description: string | null
   createdAt: string
 }
 
-export interface PermissionGroup {
-  resource: string
+export interface PermissionPage {
+  pageCode: string
+  pageName: string
   permissions: Permission[]
+}
+
+export interface PermissionModule {
+  moduleCode: string
+  moduleName: string
+  pages: PermissionPage[]
 }
 
 export interface CreateRoleDto {

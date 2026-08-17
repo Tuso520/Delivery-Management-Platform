@@ -94,6 +94,18 @@ describe('PermissionsGuard', () => {
     await expect(guard.canActivate(createContext([], ['SUPER_ADMIN']))).resolves.toBe(true);
   });
 
+  it('enforces a required role even when another role has matching permissions', async () => {
+    const reflector = {
+      getAllAndOverride: jest.fn().mockReturnValue({ roles: ['SUPER_ADMIN'] }),
+    } as unknown as Reflector;
+    const guard = new PermissionsGuard(reflector, operationLog);
+
+    await expect(
+      guard.canActivate(createContext(['role:assign_permission'], ['SYSTEM_ADMIN'])),
+    ).rejects.toThrow(ForbiddenException);
+    await expect(guard.canActivate(createContext([], ['SUPER_ADMIN']))).resolves.toBe(true);
+  });
+
   it('keeps the 403 decision when deny auditing fails and records compensation', async () => {
     const reflector = {
       getAllAndOverride: jest.fn().mockReturnValue({ all: ['project:delete'] }),

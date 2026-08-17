@@ -2,7 +2,7 @@ import router, { accessItems } from './index'
 import { getFirstAccessiblePath } from './access'
 import { useUserStore } from '@/store/user'
 import { canAccess } from '@/platform/permission/access-policy'
-import type { PermissionCode } from '@/platform/permission/access-control.generated'
+import type { PermissionCode, RoleCode } from '@/platform/permission/access-control.generated'
 import Message from '@arco-design/web-vue/es/message'
 
 router.beforeEach(async (to, from, next) => {
@@ -42,14 +42,15 @@ router.beforeEach(async (to, from, next) => {
   }
 
   // Route-level permission check
-  if (to.meta?.permissions) {
-    const requiredPerms = to.meta.permissions as PermissionCode[]
+  if (to.meta?.permissions || to.meta?.roles) {
+    const requiredPerms = (to.meta.permissions ?? []) as PermissionCode[]
+    const requiredRoles = (to.meta.roles ?? []) as RoleCode[]
     const hasPerm = canAccess(
       {
         permissions: userStore.userInfo?.permissions ?? [],
         roles: userStore.userInfo?.roles ?? [],
       },
-      { any: requiredPerms },
+      { any: requiredPerms, roles: requiredRoles },
     )
     if (!hasPerm) {
       if (from.path !== '/login') Message.error('没有权限访问此页面')

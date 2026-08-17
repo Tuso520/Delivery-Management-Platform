@@ -32,6 +32,7 @@
     "systemFields": "Field Configuration",
     "systemApproval": "Approval Rules",
     "systemIntegration": "Integrations",
+    "rolePermissions": "Role Permissions",
     "systemConfig": "Parameter Configuration",
     "systemNotification": "Notification Rules",
     "userCenter": "User Center"

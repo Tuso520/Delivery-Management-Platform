@@ -1,4 +1,10 @@
 import { PrismaClient } from '@prisma/client';
+
+import {
+  permissionActionGroup,
+  permissionPageMetadata,
+  permissionSortOrder,
+} from '../../src/modules/permission/permission-catalog';
 export interface PermissionSeed {
   permissionCode: string;
   permissionName: string;
@@ -493,12 +499,22 @@ export const permissionDefs = [
 ] as const satisfies readonly PermissionSeed[];
 export async function seedPermissions(prisma: PrismaClient): Promise<void> {
   for (const perm of permissionDefs) {
+    const page = permissionPageMetadata(perm.resource);
+    const catalogData = {
+      moduleCode: page.moduleCode,
+      moduleName: page.moduleName,
+      pageCode: page.pageCode,
+      pageName: page.pageName,
+      actionGroup: permissionActionGroup(perm.action),
+      sortOrder: permissionSortOrder(perm.resource, perm.action),
+    };
     await prisma.permission.upsert({
       where: { permissionCode: perm.permissionCode },
       update: {
         permissionName: perm.permissionName,
         resource: perm.resource,
         action: perm.action,
+        ...catalogData,
         deprecatedAt: null,
       },
       create: {
@@ -506,6 +522,7 @@ export async function seedPermissions(prisma: PrismaClient): Promise<void> {
         permissionName: perm.permissionName,
         resource: perm.resource,
         action: perm.action,
+        ...catalogData,
       },
     });
   }

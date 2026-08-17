@@ -45,6 +45,7 @@ describe('application navigation', () => {
       'menu.systemFields',
       'menu.systemConfig',
       'menu.userCenter',
+      'menu.rolePermissions',
       'menu.systemIntegration',
     ])
   })

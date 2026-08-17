@@ -22,35 +22,54 @@ export class PermissionService {
         permissionName: true,
         resource: true,
         action: true,
+        moduleCode: true,
+        moduleName: true,
+        pageCode: true,
+        pageName: true,
+        actionGroup: true,
+        sortOrder: true,
         description: true,
         createdAt: true,
       },
-      orderBy: [{ resource: 'asc' }, { action: 'asc' }],
+      orderBy: [{ sortOrder: 'asc' }, { permissionCode: 'asc' }],
     });
 
-    // Group by resource
-    const groupedMap = new Map<string, typeof permissions>();
+    const modules = new Map<string, {
+      moduleCode: string;
+      moduleName: string;
+      pages: Map<string, {
+        pageCode: string;
+        pageName: string;
+        permissions: typeof permissions;
+      }>;
+    }>();
 
-    for (const perm of permissions) {
-      const existing = groupedMap.get(perm.resource) || [];
-      existing.push({
-        id: perm.id,
-        permissionCode: perm.permissionCode,
-        permissionName: perm.permissionName,
-        resource: perm.resource,
-        action: perm.action,
-        description: perm.description,
-        createdAt: perm.createdAt,
-      });
-      groupedMap.set(perm.resource, existing);
+    for (const permission of permissions) {
+      let module = modules.get(permission.moduleCode);
+      if (!module) {
+        module = {
+          moduleCode: permission.moduleCode,
+          moduleName: permission.moduleName,
+          pages: new Map(),
+        };
+        modules.set(permission.moduleCode, module);
+      }
+      let page = module.pages.get(permission.pageCode);
+      if (!page) {
+        page = {
+          pageCode: permission.pageCode,
+          pageName: permission.pageName,
+          permissions: [],
+        };
+        module.pages.set(permission.pageCode, page);
+      }
+      page.permissions.push(permission);
     }
 
-    return Array.from(groupedMap.entries()).map(([resource, perms]) => ({
-      resource,
-      permissions: perms.map((permission) => ({
-        ...permission,
-        actionGroup: this.resolveActionGroup(permission.action),
-      })),
+    return [...modules.values()].map((module) => ({
+      moduleCode: module.moduleCode,
+      moduleName: module.moduleName,
+      pages: [...module.pages.values()],
     }));
   }
 
@@ -193,18 +212,4 @@ export class PermissionService {
     return [...result];
   }
 
-  private resolveActionGroup(
-    action: string,
-  ): 'view' | 'download' | 'upload' | 'operate' {
-    if (action.includes('download')) return 'download';
-    if (action.includes('upload') || action === 'create') return 'upload';
-    if (
-      action === 'view' ||
-      action.includes('preview') ||
-      action.startsWith('view_')
-    ) {
-      return 'view';
-    }
-    return 'operate';
-  }
 }

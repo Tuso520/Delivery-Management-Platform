@@ -808,7 +808,7 @@ describe('deployment seed safety', () => {
     expect(bcrypt.hash).not.toHaveBeenCalled();
   });
 
-  it('does not overwrite or broaden existing seeded roles in production', async () => {
+  it('preserves ordinary roles while keeping the protected super administrator complete', async () => {
     const originalNodeEnv = process.env.NODE_ENV;
     process.env.NODE_ENV = 'production';
     const deleteRolePermission = jest.fn();
@@ -816,8 +816,8 @@ describe('deployment seed safety', () => {
     const permissionFindMany = jest.fn().mockResolvedValue([{ id: 'new-seeded-permission' }]);
     const prisma = {
       role: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'role-1' }),
-        upsert: jest.fn().mockResolvedValue({ id: 'role-1' }),
+        findUnique: jest.fn(({ where }) => Promise.resolve({ id: `role-${where.roleCode}` })),
+        upsert: jest.fn(({ where }) => Promise.resolve({ id: `role-${where.roleCode}` })),
       },
       permission: {
         findMany: permissionFindMany,
@@ -842,10 +842,17 @@ describe('deployment seed safety', () => {
     }
 
     expect(deleteRolePermission).not.toHaveBeenCalled();
-    expect(createRolePermission).not.toHaveBeenCalled();
-    expect(permissionFindMany).not.toHaveBeenCalled();
+    expect(createRolePermission).toHaveBeenCalledTimes(1);
+    expect(createRolePermission).toHaveBeenCalledWith({
+      data: { roleId: 'role-SUPER_ADMIN', permissionId: 'new-seeded-permission' },
+    });
+    expect(permissionFindMany).toHaveBeenCalledTimes(1);
     for (const call of (prisma.role.upsert as unknown as jest.Mock).mock.calls) {
-      expect(call[0].update).toEqual({});
+      expect(call[0].update).toEqual(
+        call[0].where.roleCode === 'SUPER_ADMIN'
+          ? { isProtected: true, status: 'Active' }
+          : {},
+      );
     }
   });
 

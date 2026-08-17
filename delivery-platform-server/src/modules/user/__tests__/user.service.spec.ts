@@ -35,6 +35,7 @@ describe('UserService', () => {
         delete: jest.fn(),
       },
       userRole: {
+        count: jest.fn().mockResolvedValue(0),
         deleteMany: jest.fn(),
         createMany: jest.fn(),
       },
@@ -430,6 +431,35 @@ describe('UserService', () => {
       await expect(service.assignRoles('user-1', assignDto, 'admin-1')).rejects.toThrow(
         BadRequestException,
       );
+      expect(prisma.userRole.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects protected role assignment by a non-super administrator', async () => {
+      prisma.user.findFirst.mockResolvedValue({ id: 'user-1', userRoles: [] });
+      prisma.role.findMany.mockResolvedValue([
+        {
+          id: 'role-super',
+          roleCode: 'SUPER_ADMIN',
+          isProtected: true,
+          defaultDataScope: 'ALL',
+        },
+      ]);
+
+      await expect(
+        service.assignRoles('user-1', { roleIds: ['role-super'] }, 'admin-1', ['SYSTEM_ADMIN']),
+      ).rejects.toThrow('只有超级管理员可以分配超级管理员角色');
+      expect(prisma.userRole.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('prevents removal of the last active super administrator', async () => {
+      prisma.user.findFirst.mockResolvedValue({ id: 'user-1', userRoles: [{ roleId: 'role-super' }] });
+      prisma.role.findMany.mockResolvedValue([]);
+      prisma.userRole.count.mockResolvedValue(1);
+      prisma.user.count.mockResolvedValue(0);
+
+      await expect(
+        service.assignRoles('user-1', { roleIds: [] }, 'admin-1', ['SUPER_ADMIN']),
+      ).rejects.toThrow('必须至少保留一个可用的超级管理员账号');
       expect(prisma.userRole.deleteMany).not.toHaveBeenCalled();
     });
   });

@@ -84,7 +84,7 @@ describe('PermissionResolutionService', () => {
 
     await expect(service.resolveForUser('user-1')).resolves.toEqual({
       roles: ['PROJECT_MEMBER'],
-      permissions: ['archive:view', 'dashboard:view', 'file:download', 'knowledge:view'],
+      permissions: ['archive:view', 'file:download', 'knowledge:view'],
     });
   });
 
@@ -127,7 +127,7 @@ describe('PermissionResolutionService', () => {
 
     await expect(service.resolveForUser('user-1')).resolves.toEqual({
       roles: [],
-      permissions: ['dashboard:view'],
+      permissions: [],
     });
   });
 

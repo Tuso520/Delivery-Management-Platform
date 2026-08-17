@@ -1026,7 +1026,13 @@ function fieldOption(value, label, index, code = null) {
   };
 }
 
-function fieldConfiguration(fieldCode, fieldName, values, defaultValue = null, sort = 1) {
+function fieldConfiguration(
+  fieldCode,
+  fieldName,
+  values,
+  defaultValue = null,
+  sort = 1,
+) {
   return {
     id: `local-config-${fieldCode.toLowerCase()}`,
     fieldCode,
@@ -1054,32 +1060,138 @@ function moduleFieldOptions(moduleCode) {
   const commonCountry = fieldConfiguration(
     "COUNTRY",
     "国家/地区",
-    [["CN", "中国", "CN"], ["VN", "越南", "VN"], ["TH", "泰国", "TH"]],
+    [
+      ["CN", "中国", "CN"],
+      ["VN", "越南", "VN"],
+      ["TH", "泰国", "TH"],
+    ],
     "CN",
     90,
   );
   if (moduleCode === "project") {
     return [
-      fieldConfiguration("CURRENCY", "币种", [["CNY", "人民币", "CNY"], ["USD", "美元", "USD"], ["VND", "越南盾", "VND"]], "CNY"),
-      fieldConfiguration("PROJECT_TYPE", "项目类型", [["software", "软件交付"], ["electrical", "电气交付"]], "software", 2),
-      fieldConfiguration("PROJECT_STATUS", "项目状态", [["Active", "进行中"], ["Draft", "草稿"], ["Accepted", "已验收"]], "Active", 3),
-      fieldConfiguration("CUSTOMER_TYPE", "客户类型", [["END_USER", "最终用户"], ["CONTRACTOR", "总包商"]], "END_USER", 4),
-      fieldConfiguration("CONTRACT_TYPE", "合同类型", [["DIRECT", "直签合同"], ["SUBCONTRACT", "分包合同"]], "DIRECT", 5),
-      fieldConfiguration("PRODUCT_TYPE", "产品类型", [["PLATFORM", "平台软件"], ["CONTROL", "控制系统"]], "PLATFORM", 6),
-      fieldConfiguration("PROJECT_KEYWORD", "项目关键词", [["KEY", "重点项目"], ["OVERSEAS", "海外项目"]], "KEY", 7),
-      fieldConfiguration("PROJECT_STAGE", "项目阶段", [["01_presale", "售前"], ["02_design", "设计"], ["03_procurement", "采购"]], "01_presale", 8),
+      fieldConfiguration(
+        "CURRENCY",
+        "币种",
+        [
+          ["CNY", "人民币", "CNY"],
+          ["USD", "美元", "USD"],
+          ["VND", "越南盾", "VND"],
+        ],
+        "CNY",
+      ),
+      fieldConfiguration(
+        "PROJECT_TYPE",
+        "项目类型",
+        [
+          ["software", "软件交付"],
+          ["electrical", "电气交付"],
+        ],
+        "software",
+        2,
+      ),
+      fieldConfiguration(
+        "PROJECT_STATUS",
+        "项目状态",
+        [
+          ["Active", "进行中"],
+          ["Draft", "草稿"],
+          ["Accepted", "已验收"],
+        ],
+        "Active",
+        3,
+      ),
+      fieldConfiguration(
+        "CUSTOMER_TYPE",
+        "客户类型",
+        [
+          ["END_USER", "最终用户"],
+          ["CONTRACTOR", "总包商"],
+        ],
+        "END_USER",
+        4,
+      ),
+      fieldConfiguration(
+        "CONTRACT_TYPE",
+        "合同类型",
+        [
+          ["DIRECT", "直签合同"],
+          ["SUBCONTRACT", "分包合同"],
+        ],
+        "DIRECT",
+        5,
+      ),
+      fieldConfiguration(
+        "PRODUCT_TYPE",
+        "产品类型",
+        [
+          ["PLATFORM", "平台软件"],
+          ["CONTROL", "控制系统"],
+        ],
+        "PLATFORM",
+        6,
+      ),
+      fieldConfiguration(
+        "PROJECT_KEYWORD",
+        "项目关键词",
+        [
+          ["KEY", "重点项目"],
+          ["OVERSEAS", "海外项目"],
+        ],
+        "KEY",
+        7,
+      ),
+      fieldConfiguration(
+        "PROJECT_STAGE",
+        "项目阶段",
+        [
+          ["01_presale", "售前"],
+          ["02_design", "设计"],
+          ["03_procurement", "采购"],
+        ],
+        "01_presale",
+        8,
+      ),
       commonCountry,
     ];
   }
   if (moduleCode === "project-archive") {
     return [
-      fieldConfiguration("FILE_TYPE", "文件类型", [["pdf", "PDF"], ["docx", "Word"], ["xlsx", "Excel"], ["png", "图片"]], "pdf"),
+      fieldConfiguration(
+        "FILE_TYPE",
+        "文件类型",
+        [
+          ["pdf", "PDF"],
+          ["docx", "Word"],
+          ["xlsx", "Excel"],
+          ["png", "图片"],
+        ],
+        "pdf",
+      ),
     ];
   }
   if (moduleCode === "standard") {
     return [
-      fieldConfiguration("STANDARD_TYPE", "标准类型", [["DELIVERY", "交付标准"], ["MANAGEMENT", "管理标准"]], "DELIVERY"),
-      fieldConfiguration("STANDARD_DELIVERY_STAGE", "交付阶段", [["INITIATION", "启动阶段"], ["DESIGN", "设计阶段"], ["DELIVERY", "交付阶段"]], "INITIATION", 2),
+      fieldConfiguration(
+        "STANDARD_TYPE",
+        "标准类型",
+        [
+          ["DELIVERY", "交付标准"],
+          ["MANAGEMENT", "管理标准"],
+        ],
+        "DELIVERY",
+      ),
+      fieldConfiguration(
+        "STANDARD_DELIVERY_STAGE",
+        "交付阶段",
+        [
+          ["INITIATION", "启动阶段"],
+          ["DESIGN", "设计阶段"],
+          ["DELIVERY", "交付阶段"],
+        ],
+        "INITIATION",
+        2,
+      ),
       fieldConfiguration(
         "STANDARD_MANAGEMENT_DOMAIN",
         "管理领域",
@@ -1092,7 +1204,10 @@ function moduleFieldOptions(moduleCode) {
           ["PROCUREMENT_SUPPLY_CHAIN_MANAGEMENT", "采购与供应链管理"],
           ["RISK_ISSUE_TODO_MANAGEMENT", "风险、问题与待办管理"],
           ["CHANGE_ADDITION_MANAGEMENT", "变更与增项管理"],
-          ["COMMUNICATION_MEETING_REPORTING_MANAGEMENT", "沟通、会议与汇报管理"],
+          [
+            "COMMUNICATION_MEETING_REPORTING_MANAGEMENT",
+            "沟通、会议与汇报管理",
+          ],
           ["FILE_ARCHIVE_DELIVERABLE_MANAGEMENT", "文件、档案与成果物管理"],
           ["STAGE_REVIEW_APPROVAL_MANAGEMENT", "阶段评审与审批管理"],
           ["SUBCONTRACTOR_STAKEHOLDER_MANAGEMENT", "分包商与相关方管理"],
@@ -1100,8 +1215,27 @@ function moduleFieldOptions(moduleCode) {
         "PROGRESS_PLANNING_MANAGEMENT",
         3,
       ),
-      fieldConfiguration("STANDARD_BUSINESS_TYPE", "业务类型", [["SOFTWARE", "软件"], ["ELECTRICAL", "电气"]], "SOFTWARE", 4),
-      fieldConfiguration("STANDARD_STATUS", "标准状态", [["PUBLISHED", "已发布"], ["DRAFT", "草稿"], ["IN_REVIEW", "审核中"]], "PUBLISHED", 5),
+      fieldConfiguration(
+        "STANDARD_BUSINESS_TYPE",
+        "业务类型",
+        [
+          ["SOFTWARE", "软件"],
+          ["ELECTRICAL", "电气"],
+        ],
+        "SOFTWARE",
+        4,
+      ),
+      fieldConfiguration(
+        "STANDARD_STATUS",
+        "标准状态",
+        [
+          ["PUBLISHED", "已发布"],
+          ["DRAFT", "草稿"],
+          ["IN_REVIEW", "审核中"],
+        ],
+        "PUBLISHED",
+        5,
+      ),
       commonCountry,
     ];
   }
@@ -1120,7 +1254,8 @@ function archiveTargetTreeForProject(project) {
       .sort((left, right) => left.sortOrder - right.sortOrder)
       .map((item) => {
         const file = projectFiles.find(
-          (candidate) => candidate.archiveItemId === item.id && !candidate.deletedAt,
+          (candidate) =>
+            candidate.archiveItemId === item.id && !candidate.deletedAt,
         );
         return {
           id: item.id,
@@ -1172,7 +1307,10 @@ function archiveTargetTreeForProject(project) {
           canUpload: true,
           canDownload: Boolean(file),
           canDeleteFile: Boolean(file),
-          pendingReviewSummary: { count: file?.fileStatus === "Reviewing" ? 1 : 0, tasks: [] },
+          pendingReviewSummary: {
+            count: file?.fileStatus === "Reviewing" ? 1 : 0,
+            tasks: [],
+          },
         };
       });
     return {
@@ -1183,10 +1321,13 @@ function archiveTargetTreeForProject(project) {
       sourceStableKey: stage.stageCode,
       isTemporary: false,
       archivedAt: null,
-      completedCount: items.filter((item) => ["Approved", "Archived"].includes(item.status)).length,
+      completedCount: items.filter((item) =>
+        ["Approved", "Archived"].includes(item.status),
+      ).length,
       totalCount: items.length,
       requiredCompletedCount: items.filter(
-        (item) => item.required && ["Approved", "Archived"].includes(item.status),
+        (item) =>
+          item.required && ["Approved", "Archived"].includes(item.status),
       ).length,
       requiredTotalCount: items.filter((item) => item.required).length,
       items,
@@ -1199,7 +1340,12 @@ function archiveTargetTreeForProject(project) {
       name: project.projectName,
       currentStage: project.currentStage,
     },
-    template: { id: "local-template", version: "1.0", latestVersion: "1.0", hasDiff: false },
+    template: {
+      id: "local-template",
+      version: "1.0",
+      latestVersion: "1.0",
+      hasDiff: false,
+    },
     folders,
   };
 }
@@ -1873,7 +2019,15 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === "GET" && path === "/dashboard/project-summary") {
-    sendJson(res, envelope({ total: localProjects.length, active: 6, delayed: 1, accepted: 1 }));
+    sendJson(
+      res,
+      envelope({
+        total: localProjects.length,
+        active: 6,
+        delayed: 1,
+        accepted: 1,
+      }),
+    );
     return;
   }
   if (req.method === "GET" && path === "/dashboard/my-tasks") {
@@ -1909,9 +2063,16 @@ async function handleApi(req, res, url) {
     return;
   }
 
-  const moduleFieldOptionsMatch = path.match(/^\/field-options\/module\/([^/]+)$/);
+  const moduleFieldOptionsMatch = path.match(
+    /^\/field-options\/module\/([^/]+)$/,
+  );
   if (req.method === "GET" && moduleFieldOptionsMatch) {
-    sendJson(res, envelope(moduleFieldOptions(decodeURIComponent(moduleFieldOptionsMatch[1]))));
+    sendJson(
+      res,
+      envelope(
+        moduleFieldOptions(decodeURIComponent(moduleFieldOptionsMatch[1])),
+      ),
+    );
     return;
   }
 
@@ -1925,7 +2086,8 @@ async function handleApi(req, res, url) {
       sendJson(res, envelope(null, "用户名或密码错误", 401), 401);
       return;
     }
-    const authenticatedUser = username === "pm_wang" ? projectManagerUser : adminUser;
+    const authenticatedUser =
+      username === "pm_wang" ? projectManagerUser : adminUser;
     activeUser = authenticatedUser;
     const refreshSessionId = `local-session-${Date.now()}-${++refreshSessionSequence}`;
     refreshSessions.set(refreshSessionId, authenticatedUser);
@@ -1970,7 +2132,8 @@ async function handleApi(req, res, url) {
     const refreshSessionId = readCookie(req, "dmp_local_session");
     refreshSessions.delete(refreshSessionId);
     sendJson(res, envelope(null), 200, {
-      "Set-Cookie": "dmp_local_session=; Path=/api/v1/auth; Max-Age=0; HttpOnly; SameSite=Lax",
+      "Set-Cookie":
+        "dmp_local_session=; Path=/api/v1/auth; Max-Age=0; HttpOnly; SameSite=Lax",
     });
     return;
   }
@@ -2263,8 +2426,11 @@ async function handleApi(req, res, url) {
           id: "role-super",
           roleCode: "SUPER_ADMIN",
           roleName: "超级管理员",
-          roleDesc: "本地联调管理员",
+          description: "本地联调管理员",
           status: "Active",
+          isProtected: true,
+          userCount: 1,
+          permissionCount: 2,
           createdAt: now(),
           updatedAt: now(),
         },
@@ -2272,8 +2438,11 @@ async function handleApi(req, res, url) {
           id: "role-sw",
           roleCode: "SOFTWARE_ENGINEER",
           roleName: "软件工程师",
-          roleDesc: "软件交付",
+          description: "软件交付",
           status: "Active",
+          isProtected: false,
+          userCount: 1,
+          permissionCount: 1,
           createdAt: now(),
           updatedAt: now(),
         },
@@ -2281,12 +2450,76 @@ async function handleApi(req, res, url) {
           id: "role-elec",
           roleCode: "ELEC_ENGINEER",
           roleName: "电气工程师",
-          roleDesc: "电气交付",
+          description: "电气交付",
           status: "Active",
+          isProtected: false,
+          userCount: 1,
+          permissionCount: 1,
           createdAt: now(),
           updatedAt: now(),
         },
       ]),
+    );
+    return;
+  }
+
+  if (req.method === "GET" && path === "/roles/assignable") {
+    sendJson(
+      res,
+      envelope([
+        {
+          id: "role-super",
+          roleCode: "SUPER_ADMIN",
+          roleName: "超级管理员",
+          status: "Active",
+          isProtected: true,
+        },
+        {
+          id: "role-sw",
+          roleCode: "SOFTWARE_ENGINEER",
+          roleName: "软件工程师",
+          status: "Active",
+          isProtected: false,
+        },
+        {
+          id: "role-elec",
+          roleCode: "ELEC_ENGINEER",
+          roleName: "电气工程师",
+          status: "Active",
+          isProtected: false,
+        },
+      ]),
+    );
+    return;
+  }
+
+  const roleDetailMatch = path.match(/^\/roles\/([^/]+)$/);
+  if (req.method === "GET" && roleDetailMatch) {
+    sendJson(
+      res,
+      envelope({
+        id: roleDetailMatch[1],
+        roleCode:
+          roleDetailMatch[1] === "role-super"
+            ? "SUPER_ADMIN"
+            : "SOFTWARE_ENGINEER",
+        roleName:
+          roleDetailMatch[1] === "role-super" ? "超级管理员" : "软件工程师",
+        description: "本地联调角色",
+        status: "Active",
+        isProtected: roleDetailMatch[1] === "role-super",
+        createdAt: now(),
+        updatedAt: now(),
+        permissions: [
+          {
+            id: "perm-project-view",
+            permissionCode: "project:view",
+            permissionName: "查看项目",
+            resource: "project",
+            action: "view",
+          },
+        ],
+      }),
     );
     return;
   }
@@ -2597,13 +2830,19 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === "GET" && path === "/projects/summary") {
-    const visibleProjects = localProjects.filter((project) => !project.deletedAt);
-    const accepted = visibleProjects.filter((project) => project.projectStatus === "Accepted");
+    const visibleProjects = localProjects.filter(
+      (project) => !project.deletedAt,
+    );
+    const accepted = visibleProjects.filter(
+      (project) => project.projectStatus === "Accepted",
+    );
     sendJson(
       res,
       envelope({
         total: visibleProjects.length,
-        active: visibleProjects.filter((project) => project.projectStatus === "Active").length,
+        active: visibleProjects.filter(
+          (project) => project.projectStatus === "Active",
+        ).length,
         acceptedThisYear: accepted.length,
         totalConvertedAmount: visibleProjects.reduce(
           (total, project) => total + Number(project.convertedAmount || 0),
@@ -2632,7 +2871,10 @@ async function handleApi(req, res, url) {
     const nextSequence =
       localProjects.reduce((max, item) => {
         if (!item.projectCode?.startsWith(codePrefix)) return max;
-        return Math.max(max, Number(item.projectCode.slice(codePrefix.length)) || 0);
+        return Math.max(
+          max,
+          Number(item.projectCode.slice(codePrefix.length)) || 0,
+        );
       }, 0) + 1;
     const project = {
       id,
@@ -2670,7 +2912,8 @@ async function handleApi(req, res, url) {
       projectManagerId: body.projectManagerId || projectManagerUser.id,
       electricalOwnerId: body.electricalOwnerId || "user-elec-chen",
       softwareOwnerId: body.softwareOwnerId || "user-sw-zhao",
-      currentStage: body.deliveryStages?.[0] || body.currentStage || "01_presale",
+      currentStage:
+        body.deliveryStages?.[0] || body.currentStage || "01_presale",
       currentStages: body.deliveryStages?.length
         ? [...body.deliveryStages]
         : [body.currentStage || "01_presale"],
@@ -2738,13 +2981,18 @@ async function handleApi(req, res, url) {
     const { paymentPlans, ...projectChanges } = body;
     Object.assign(project, projectChanges, {
       ...(body.deliveryStages?.length
-        ? { currentStage: body.deliveryStages[0], currentStages: [...body.deliveryStages] }
+        ? {
+            currentStage: body.deliveryStages[0],
+            currentStages: [...body.deliveryStages],
+          }
         : {}),
       updatedAt: now(),
     });
     if (Array.isArray(paymentPlans)) {
       localProjectPayments = [
-        ...localProjectPayments.filter((payment) => payment.projectId !== project.id),
+        ...localProjectPayments.filter(
+          (payment) => payment.projectId !== project.id,
+        ),
         ...buildLocalProjectPayments(project.id, paymentPlans),
       ];
     }
@@ -2762,7 +3010,9 @@ async function handleApi(req, res, url) {
     return;
   }
 
-  const archiveTreeMatch = path.match(/^\/projects\/([^/]+)\/(?:archives|archive-tree)$/);
+  const archiveTreeMatch = path.match(
+    /^\/projects\/([^/]+)\/(?:archives|archive-tree)$/,
+  );
   if (req.method === "GET" && archiveTreeMatch) {
     const project = localProjects.find(
       (item) => item.id === archiveTreeMatch[1] && !item.deletedAt,
@@ -2802,7 +3052,10 @@ async function handleApi(req, res, url) {
 
   if (req.method === "GET" && path === "/standards/category-counts") {
     const dimension = url.searchParams.get("dimension");
-    const codeKey = dimension === "MANAGEMENT_DOMAIN" ? "managementDomainCode" : "deliveryStageCode";
+    const codeKey =
+      dimension === "MANAGEMENT_DOMAIN"
+        ? "managementDomainCode"
+        : "deliveryStageCode";
     const counts = new Map();
     for (const standard of localStandards()) {
       const code = standard[codeKey];
@@ -2816,26 +3069,48 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === "GET" && path === "/standards") {
-    const keyword = (url.searchParams.get("keyword") || "").trim().toLowerCase();
+    const keyword = (url.searchParams.get("keyword") || "")
+      .trim()
+      .toLowerCase();
     const deliveryStageCode = url.searchParams.get("deliveryStageCode");
     const managementDomainCode = url.searchParams.get("managementDomainCode");
     const standards = localStandards().filter(
       (standard) =>
-        (!keyword || standard.name.toLowerCase().includes(keyword) || standard.code.toLowerCase().includes(keyword)) &&
-        (!deliveryStageCode || standard.deliveryStageCode === deliveryStageCode) &&
-        (!managementDomainCode || standard.managementDomainCode === managementDomainCode),
+        (!keyword ||
+          standard.name.toLowerCase().includes(keyword) ||
+          standard.code.toLowerCase().includes(keyword)) &&
+        (!deliveryStageCode ||
+          standard.deliveryStageCode === deliveryStageCode) &&
+        (!managementDomainCode ||
+          standard.managementDomainCode === managementDomainCode),
     );
     sendJson(
       res,
-      envelope(page(standards, url.searchParams.get("page"), url.searchParams.get("pageSize"))),
+      envelope(
+        page(
+          standards,
+          url.searchParams.get("page"),
+          url.searchParams.get("pageSize"),
+        ),
+      ),
     );
     return;
   }
 
   const standardDetailMatch = path.match(/^\/standards\/([^/]+)$/);
   if (req.method === "GET" && standardDetailMatch) {
-    const standard = localStandards().find((item) => item.id === standardDetailMatch[1]);
-    sendJson(res, envelope(standard ?? null, standard ? "ok" : "标准不存在", standard ? 0 : 404), standard ? 200 : 404);
+    const standard = localStandards().find(
+      (item) => item.id === standardDetailMatch[1],
+    );
+    sendJson(
+      res,
+      envelope(
+        standard ?? null,
+        standard ? "ok" : "标准不存在",
+        standard ? 0 : 404,
+      ),
+      standard ? 200 : 404,
+    );
     return;
   }
 
@@ -3201,7 +3476,9 @@ async function handleApi(req, res, url) {
       createdAt: now(),
       updatedAt: now(),
     }));
-    const keyword = String(url.searchParams.get("keyword") || "").trim().toLowerCase();
+    const keyword = String(url.searchParams.get("keyword") || "")
+      .trim()
+      .toLowerCase();
     if (keyword) {
       templates = templates.filter(
         (template) =>
@@ -3214,7 +3491,8 @@ async function handleApi(req, res, url) {
     if (sortBy === "templateName" || sortBy === "updatedAt") {
       templates.sort(
         (left, right) =>
-          String(left[sortBy]).localeCompare(String(right[sortBy]), "zh-CN") * sortOrder,
+          String(left[sortBy]).localeCompare(String(right[sortBy]), "zh-CN") *
+          sortOrder,
       );
     }
     sendJson(res, envelope(templates));
@@ -3339,17 +3617,24 @@ async function handleApi(req, res, url) {
       res,
       envelope([
         {
-          resource: "project",
-          permissions: [
+          moduleCode: "delivery",
+          moduleName: "项目交付",
+          pages: [
             {
-              id: "perm-project-view",
-              permissionCode: "project:view",
-              permissionName: "查看项目",
-              resource: "project",
-              action: "view",
-              actionGroup: "view",
-              description: null,
-              createdAt: now(),
+              pageCode: "project",
+              pageName: "项目台账",
+              permissions: [
+                {
+                  id: "perm-project-view",
+                  permissionCode: "project:view",
+                  permissionName: "查看项目",
+                  resource: "project",
+                  action: "view",
+                  actionGroup: "VIEW",
+                  description: null,
+                  createdAt: now(),
+                },
+              ],
             },
           ],
         },
@@ -4059,7 +4344,9 @@ async function handleApi(req, res, url) {
   if (req.method === "GET" && path === "/project-payments") {
     const projectId = url.searchParams.get("projectId");
     const payments = projectId
-      ? localProjectPayments.filter((payment) => payment.projectId === projectId)
+      ? localProjectPayments.filter(
+          (payment) => payment.projectId === projectId,
+        )
       : localProjectPayments;
     sendJson(
       res,
@@ -4171,5 +4458,7 @@ const server = createServer(async (req, res) => {
 
 server.listen(port, host, () => {
   console.log(`Delivery platform local test server: http://localhost:${port}`);
-  console.log("Login accounts: admin, pm_wang (passwords supplied through local environment)");
+  console.log(
+    "Login accounts: admin, pm_wang (passwords supplied through local environment)",
+  );
 });

@@ -152,8 +152,9 @@ export class UserController {
     @Param('id') id: string,
     @Body() dto: AssignRolesDto,
     @CurrentUser('sub') operatorId: string,
+    @CurrentUser('roles') operatorRoles: string[],
   ) {
-    return this.userService.assignRoles(id, dto, operatorId);
+    return this.userService.assignRoles(id, dto, operatorId, operatorRoles ?? []);
   }
 
   @Post(':id/disable')

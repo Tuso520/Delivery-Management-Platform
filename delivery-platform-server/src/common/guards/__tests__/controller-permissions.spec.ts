@@ -107,7 +107,14 @@ function controllerPermissionCodes(): string[] {
           if (ts.isStringLiteral(child)) codes.add(child.text);
           ts.forEachChild(child, collectStrings);
         };
-        node.expression.arguments.forEach(collectStrings);
+        for (const argument of node.expression.arguments) {
+          if (!ts.isObjectLiteralExpression(argument)) continue;
+          for (const property of argument.properties) {
+            if (!ts.isPropertyAssignment(property)) continue;
+            const name = property.name.getText(sourceFile);
+            if (name === 'all' || name === 'any') collectStrings(property.initializer);
+          }
+        }
       }
       ts.forEachChild(node, visit);
     };

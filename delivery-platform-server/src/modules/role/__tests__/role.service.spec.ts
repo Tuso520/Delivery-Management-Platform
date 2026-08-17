@@ -169,6 +169,19 @@ describe('RoleService authorization invalidation', () => {
         service.assignPermissions('missing-role', { permissionIds: [] }, 'admin-1'),
       ).rejects.toThrow(NotFoundException);
     });
+
+    it('rejects changes to the protected super administrator permission set', async () => {
+      transaction.role.findUnique.mockResolvedValue({
+        id: 'role-super',
+        isProtected: true,
+        rolePermissions: [],
+      });
+
+      await expect(
+        service.assignPermissions('role-super', { permissionIds: [] }, 'admin-1'),
+      ).rejects.toThrow('超级管理员始终拥有全部权限');
+      expect(transaction.rolePermission.deleteMany).not.toHaveBeenCalled();
+    });
   });
 
   describe('update', () => {
@@ -222,6 +235,19 @@ describe('RoleService authorization invalidation', () => {
       await expect(service.update('missing-role', { roleName: 'Missing' })).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it('keeps the protected super administrator role active', async () => {
+      transaction.role.findUnique.mockResolvedValue({
+        id: 'role-super',
+        status: 'Active',
+        isProtected: true,
+      });
+
+      await expect(service.update('role-super', { status: 'Inactive' })).rejects.toThrow(
+        '超级管理员角色必须保持启用',
+      );
+      expect(transaction.role.update).not.toHaveBeenCalled();
     });
   });
 });
