@@ -157,6 +157,51 @@ describe('KnowledgeItemService', () => {
     );
   });
 
+  it('returns the standard-library display version with a public file name for each list row', async () => {
+    const displayVersion = knowledgeVersionRecord({
+      id: 'draft-version-2',
+      contentType: 'FILE',
+      fileVersionId: 'file-version-2',
+      fileVersion: publicFileVersionWithInternalMetadata('file-version-2', '现场调试指南.pdf'),
+      markdownContent: null,
+    });
+    const findMany = jest.fn().mockResolvedValue([
+      knowledgeItemRecord({
+        status: 'DRAFT',
+        versions: [displayVersion],
+      }),
+    ]);
+    const prisma = {
+      knowledgeItem: {
+        count: jest.fn().mockResolvedValue(1),
+        findMany,
+      },
+    } as unknown as PrismaService;
+    const service = new KnowledgeItemService(prisma, reviewConfiguration, reviewTasks);
+
+    const result = await service.findAll(
+      { page: 1, pageSize: 20 },
+      { sub: 'manager-1', permissions: ['knowledge:archive'] },
+    );
+
+    expect(result.items[0]).toHaveProperty(
+      'displayVersion.fileVersion.asset.originalName',
+      '现场调试指南.pdf',
+    );
+    expect(result.items[0]).not.toHaveProperty('displayVersion.fileVersion.asset.storageBucket');
+    expect(result.items[0]).not.toHaveProperty('displayVersion.fileVersion.asset.storageKey');
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({
+          versions: expect.objectContaining({
+            take: 1,
+            orderBy: [{ revision: 'desc' }, { updatedAt: 'desc' }],
+          }),
+        }),
+      }),
+    );
+  });
+
   it('enforces mutually exclusive FILE, MARKDOWN and LINK primary content', async () => {
     const prisma = {
       knowledgeCategory: {
@@ -403,9 +448,7 @@ describe('KnowledgeItemService', () => {
         return [lockedKnowledgeItemRecord()];
       }
       if (sql.includes('FROM knowledge_versions_v2')) {
-        return activeVersionId
-          ? [{ id: activeVersionId, status: 'DRAFT', archived_at: null }]
-          : [];
+        return activeVersionId ? [{ id: activeVersionId, status: 'DRAFT', archived_at: null }] : [];
       }
       throw new Error(`Unexpected lock query: ${sql}`);
     });
@@ -479,9 +522,7 @@ describe('KnowledgeItemService', () => {
     const rejected = results.find(
       (result): result is PromiseRejectedResult => result.status === 'rejected',
     );
-    expect(rejected?.reason).toEqual(
-      new ConflictException('该知识条目已有草稿或审核中版本'),
-    );
+    expect(rejected?.reason).toEqual(new ConflictException('该知识条目已有草稿或审核中版本'));
     expect(transaction.knowledgeVersion.create).toHaveBeenCalledTimes(1);
     expect(queryRaw).toHaveBeenCalledTimes(4);
     const lockSql = queryRaw.mock.calls.map(([query]) => query.strings.join(' '));
@@ -614,11 +655,7 @@ describe('KnowledgeItemService', () => {
     createReviewTask.mockResolvedValue({ id: 'task-1', status: 'PENDING' });
     const service = new KnowledgeItemService(prisma, reviewConfiguration, reviewTasks);
 
-    const result = await service.submitReview(
-      'version-1',
-      { revision: 4 },
-      owner,
-    );
+    const result = await service.submitReview('version-1', { revision: 4 }, owner);
 
     expect(prisma.approvalTemplate.findFirst).toHaveBeenCalledWith({
       where: {
@@ -646,9 +683,7 @@ describe('KnowledgeItemService', () => {
     const queryRaw = jest
       .fn()
       .mockResolvedValueOnce([lockedKnowledgeItemRecord({ status: 'DRAFT' })])
-      .mockResolvedValueOnce([
-        { id: 'version-1', status: 'DRAFT', archived_at: null },
-      ])
+      .mockResolvedValueOnce([{ id: 'version-1', status: 'DRAFT', archived_at: null }])
       .mockResolvedValueOnce([{ id: 'task-1', status: 'PENDING' }]);
     const transaction = {
       $queryRaw: queryRaw,
@@ -688,11 +723,7 @@ describe('KnowledgeItemService', () => {
     expect(lockQueries[2].strings.join('')).not.toContain('knowledge-1');
     expect(lockQueries[0].values).toEqual(['knowledge-1']);
     expect(lockQueries[1].values).toEqual(['knowledge-1']);
-    expect(lockQueries[2].values).toEqual([
-      'knowledge-1',
-      'version-1',
-      'version-1',
-    ]);
+    expect(lockQueries[2].values).toEqual(['knowledge-1', 'version-1', 'version-1']);
     expect(transaction.knowledgeItem.updateMany).not.toHaveBeenCalled();
     expect(transaction.knowledgeVersion.updateMany).not.toHaveBeenCalled();
     expect(transaction.operationLog.create).not.toHaveBeenCalled();
@@ -898,6 +929,7 @@ function knowledgeItemRecord(overrides: Record<string, unknown> = {}) {
     status: 'DRAFT',
     currentPublishedVersionId: null,
     currentPublishedVersion: null,
+    versions: [],
     effectiveAt: null,
     createdBy: 'owner-1',
     updatedBy: 'owner-1',

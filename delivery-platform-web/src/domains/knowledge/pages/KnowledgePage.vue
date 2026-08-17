@@ -41,6 +41,10 @@ import {
   knowledgeContentPayload,
   validateKnowledgeContent,
 } from '@/domains/knowledge/adapters/knowledge-content.adapter'
+import {
+  knowledgeMaterialName,
+  selectKnowledgeDisplayVersion,
+} from '@/domains/knowledge/utils/knowledge-display'
 import { downloadBlob } from '@/utils/blob'
 
 const route = useRoute()
@@ -72,65 +76,7 @@ const localizedContentTypeOptions = computed(() =>
   })),
 )
 
-type KnowledgeTableColumnKey = 'title' | 'version' | 'effectiveAt' | 'updater' | 'actions'
-
-interface KnowledgeTableColumn {
-  key: KnowledgeTableColumnKey
-  title: string
-  width: number
-  headerAlign: 'center'
-  contentAlign: 'left' | 'center'
-  format: 'title' | 'version' | 'date' | 'person' | 'actions'
-  overflow: 'tooltip' | 'clip'
-}
-
-const tableColumns = computed<KnowledgeTableColumn[]>(() => [
-  {
-    key: 'title',
-    title: t('knowledge.fields.title'),
-    width: 365,
-    headerAlign: 'center',
-    contentAlign: 'left',
-    format: 'title',
-    overflow: 'tooltip',
-  },
-  {
-    key: 'version',
-    title: t('knowledge.fields.currentVersion'),
-    width: 90,
-    headerAlign: 'center',
-    contentAlign: 'center',
-    format: 'version',
-    overflow: 'clip',
-  },
-  {
-    key: 'effectiveAt',
-    title: t('knowledge.fields.effectiveAt'),
-    width: 130,
-    headerAlign: 'center',
-    contentAlign: 'center',
-    format: 'date',
-    overflow: 'clip',
-  },
-  {
-    key: 'updater',
-    title: t('knowledge.fields.updater'),
-    width: 170,
-    headerAlign: 'center',
-    contentAlign: 'center',
-    format: 'person',
-    overflow: 'tooltip',
-  },
-  {
-    key: 'actions',
-    title: t('common.action'),
-    width: 182,
-    headerAlign: 'center',
-    contentAlign: 'center',
-    format: 'actions',
-    overflow: 'clip',
-  },
-])
+const KNOWLEDGE_TABLE_COLUMN_COUNT = 5
 
 const versionColumns = computed<TableColumnData[]>(() => [
   { title: t('knowledge.fields.version'), dataIndex: 'version', width: 90 },
@@ -263,10 +209,7 @@ const list = computed(() => knowledgeListQuery.data.value?.items ?? [])
 const categoryCountMap = computed(
   () =>
     new Map(
-      (knowledgeCategoryCountsQuery.data.value ?? []).map((item) => [
-        item.categoryId,
-        item.count,
-      ]),
+      (knowledgeCategoryCountsQuery.data.value ?? []).map((item) => [item.categoryId, item.count]),
     ),
 )
 const sidebarCategoryOptions = computed(() => {
@@ -578,6 +521,31 @@ function openDetail(row: KnowledgeItem): void {
   })
 }
 
+function openKnowledgeMaterial(row: KnowledgeItem): void {
+  const version = selectKnowledgeDisplayVersion(row)
+  if (!version) {
+    Message.warning(t('knowledge.messages.noPreviewFile'))
+    return
+  }
+  if (version.contentType === 'LINK') {
+    if (!version.externalUrl) {
+      Message.warning(t('knowledge.noLink'))
+      return
+    }
+    window.open(version.externalUrl, '_blank', 'noopener,noreferrer')
+    return
+  }
+  if (version.contentType === 'FILE' && !version.fileVersion?.logicalFileId) {
+    Message.warning(t('knowledge.messages.noPreviewFile'))
+    return
+  }
+  void router.push({
+    name: 'KnowledgeReader',
+    params: { id: row.id },
+    query: listRouteQuery(),
+  })
+}
+
 function closeDetail(): void {
   detailVisible.value = false
   selectedDetailId.value = ''
@@ -800,24 +768,6 @@ async function downloadSupportingFile(file: KnowledgeSupportingFile): Promise<vo
   downloadBlob(blob, file.fileVersion.asset.originalName)
 }
 
-async function downloadItem(row: KnowledgeItem): Promise<void> {
-  const record =
-    detail.value?.id === row.id
-      ? detail.value
-      : await queryClient.ensureQueryData({
-          queryKey: queryKeys.knowledge.detail(row.id),
-          queryFn: () => knowledgeApi.getById(row.id),
-        })
-  const version =
-    record.versions?.find((item) => item.id === record.currentPublishedVersionId) ??
-    record.versions?.find((item) => item.status === 'PUBLISHED')
-  if (!version?.fileVersion) {
-    Message.warning(t('knowledge.messages.publishedNoDownload'))
-    return
-  }
-  await downloadVersion(version)
-}
-
 async function syncRouteIntent(): Promise<void> {
   const mode = typeof route.query.mode === 'string' ? route.query.mode : ''
   const id = firstRouteParam(route.params.id)
@@ -840,9 +790,7 @@ watch(
     const activeOptions = categoryOptions.value
     if (!activeOptions.length) return
     if (options.some((option) => option.id === selectedCategoryId.value)) return
-    const configuredDefault = String(
-      fieldConfig.getField('KNOWLEDGE_CATEGORY')?.defaultValue ?? '',
-    )
+    const configuredDefault = String(fieldConfig.getField('KNOWLEDGE_CATEGORY')?.defaultValue ?? '')
     selectedCategoryId.value =
       activeOptions.find((option) => option.value === configuredDefault)?.id ??
       activeOptions[0]?.id ??
@@ -963,25 +911,30 @@ watch(
             <p>{{ selectedCategory?.description || '-' }}</p>
           </header>
 
-          <div class="knowledge-table-region">
+          <div
+            class="knowledge-table-region"
+            :class="{ 'knowledge-table-region--state': loadError || !list.length }"
+          >
             <table class="knowledge-table">
               <colgroup>
-                <col
-                  v-for="column in tableColumns"
-                  :key="column.key"
-                  :style="{ width: `${column.width}px` }"
-                />
+                <col class="column-title" />
+                <col class="column-version" />
+                <col class="column-date" />
+                <col class="column-updater" />
+                <col class="column-actions" />
               </colgroup>
               <thead>
                 <tr>
-                  <th v-for="column in tableColumns" :key="column.key">
-                    {{ column.title }}
-                  </th>
+                  <th>{{ t('knowledge.fields.title') }}</th>
+                  <th>{{ t('knowledge.fields.currentVersion') }}</th>
+                  <th>{{ t('knowledge.fields.effectiveAt') }}</th>
+                  <th>{{ t('knowledge.fields.updater') }}</th>
+                  <th>{{ t('common.action') }}</th>
                 </tr>
               </thead>
               <tbody v-if="loadError">
                 <tr class="knowledge-table__state-row">
-                  <td :colspan="tableColumns.length">
+                  <td :colspan="KNOWLEDGE_TABLE_COLUMN_COUNT">
                     <div class="knowledge-table__state">
                       <span>{{ loadError }}</span>
                       <a-button size="mini" @click="fetchList">
@@ -994,9 +947,9 @@ watch(
               <tbody v-else-if="list.length">
                 <tr v-for="record in list" :key="record.id">
                   <td class="knowledge-table__title">
-                    <a-tooltip :content="record.title" position="top">
-                      <button type="button" @click="openDetail(record)">
-                        {{ record.title }}
+                    <a-tooltip :content="knowledgeMaterialName(record)" position="top">
+                      <button type="button" @click="openKnowledgeMaterial(record)">
+                        {{ knowledgeMaterialName(record) }}
                       </button>
                     </a-tooltip>
                   </td>
@@ -1009,17 +962,7 @@ watch(
                   </td>
                   <td class="knowledge-table__actions">
                     <button
-                      v-if="
-                        canDownload &&
-                          record.currentPublishedVersion?.contentType === 'FILE'
-                      "
-                      type="button"
-                      @click="downloadItem(record)"
-                    >
-                      {{ t('common.download') }}
-                    </button>
-                    <button
-                      v-else-if="canEdit && record.status !== 'ARCHIVED'"
+                      v-if="canEdit && record.status !== 'ARCHIVED'"
                       type="button"
                       @click="openEdit(record)"
                     >
@@ -1027,9 +970,7 @@ watch(
                     </button>
                     <button
                       v-if="
-                        canArchive &&
-                          record.status !== 'ARCHIVED' &&
-                          record.status !== 'IN_REVIEW'
+                        canArchive && record.status !== 'ARCHIVED' && record.status !== 'IN_REVIEW'
                       "
                       type="button"
                       class="knowledge-table__archive"
@@ -1042,7 +983,7 @@ watch(
               </tbody>
               <tbody v-else>
                 <tr class="knowledge-table__state-row">
-                  <td :colspan="tableColumns.length">
+                  <td :colspan="KNOWLEDGE_TABLE_COLUMN_COUNT">
                     <a-empty
                       :description="
                         appliedKeyword || selectedCategoryId
@@ -1482,12 +1423,14 @@ watch(
 .knowledge-library {
   --knowledge-border: #e5e6eb;
   width: 100%;
+  height: 100%;
   min-width: 0;
-  min-height: 784px;
+  min-height: 0;
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 8px;
-  padding: 8px 13px 13px;
+  padding: 8px 13px 15px;
   overflow: hidden;
   color: #1d2129;
   background: #fff;
@@ -1599,13 +1542,14 @@ watch(
 
 .knowledge-panel {
   width: 100%;
-  min-width: 936px;
-  height: 625px;
+  min-width: 0;
+  min-height: 0;
   display: flex;
-  flex: 0 0 625px;
+  flex: 1 1 0;
+  gap: 1px;
   overflow: hidden;
-  border: 1px solid var(--knowledge-border);
-  background: #fff;
+  background: var(--knowledge-border);
+  box-shadow: inset 0 0 0 1px var(--knowledge-border);
   box-sizing: border-box;
 }
 
@@ -1615,7 +1559,7 @@ watch(
   display: flex;
   flex: 0 0 270px;
   flex-direction: column;
-  border-right: 1px solid var(--knowledge-border);
+  background: #fff;
   box-sizing: border-box;
 }
 
@@ -1634,6 +1578,7 @@ watch(
 
 .knowledge-category-list {
   min-height: 0;
+  flex: 1 1 0;
   overflow-y: auto;
 }
 
@@ -1680,21 +1625,26 @@ watch(
 
 .knowledge-content-scroll {
   min-width: 0;
+  min-height: 0;
   height: 100%;
   flex: 1 1 auto;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
+  background: #fff;
 }
 
 .knowledge-content {
-  width: 937px;
-  min-width: 937px;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
   height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .knowledge-category-description {
   height: 72px;
   display: flex;
+  flex: 0 0 72px;
   flex-direction: column;
   justify-content: center;
   padding: 0 16px;
@@ -1724,16 +1674,43 @@ watch(
 
 .knowledge-table-region {
   position: relative;
-  height: 551px;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 0;
   overflow: auto;
 }
 
 .knowledge-table {
-  width: 937px;
+  width: 100%;
+  min-width: 937px;
   table-layout: fixed;
   border-collapse: collapse;
   color: #1d2129;
   font-size: 13px;
+}
+
+.knowledge-table .column-title {
+  width: auto;
+}
+
+.knowledge-table .column-version {
+  width: 90px;
+}
+
+.knowledge-table .column-date {
+  width: 130px;
+}
+
+.knowledge-table .column-updater {
+  width: 170px;
+}
+
+.knowledge-table .column-actions {
+  width: 182px;
+}
+
+.knowledge-table-region--state .knowledge-table {
+  height: 100%;
 }
 
 .knowledge-table th,
@@ -1809,10 +1786,6 @@ watch(
 
 .knowledge-table__actions .knowledge-table__archive {
   color: #e33836;
-}
-
-.knowledge-table__state-row td {
-  height: 506px;
 }
 
 .knowledge-table__state {

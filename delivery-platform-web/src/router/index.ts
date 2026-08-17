@@ -85,10 +85,10 @@ export function resolveRouteTitle(
 
 const ProjectOverviewView = () => import('@/domains/project/pages/ProjectOverviewPage.vue')
 const ReviewView = () => import('@/views/review/pending.vue')
-const ArchiveTemplateView = () =>
-  import('@/domains/archive/pages/ArchiveTemplatePage.vue')
+const ArchiveTemplateView = () => import('@/domains/archive/pages/ArchiveTemplatePage.vue')
 const StandardView = () => import('@/views/standard/index.vue')
 const KnowledgeView = () => import('@/domains/knowledge/pages/KnowledgePage.vue')
+const KnowledgeReaderView = () => import('@/domains/knowledge/pages/KnowledgeReaderPage.vue')
 
 export const shellRoutes: RouteRecordRaw[] = [
   {
@@ -280,6 +280,17 @@ export const shellRoutes: RouteRecordRaw[] = [
         path: '/knowledge/:id([A-Za-z0-9_-]*[0-9_-][A-Za-z0-9_-]*)',
         name: 'KnowledgeDetail',
         component: KnowledgeView,
+        meta: {
+          title: 'menu.knowledge',
+          permissions: ['knowledge:view'],
+          hidden: true,
+          activeMenu: '/knowledge',
+        },
+      },
+      {
+        path: '/knowledge/:id([A-Za-z0-9_-]*[0-9_-][A-Za-z0-9_-]*)/view',
+        name: 'KnowledgeReader',
+        component: KnowledgeReaderView,
         meta: {
           title: 'menu.knowledge',
           permissions: ['knowledge:view'],

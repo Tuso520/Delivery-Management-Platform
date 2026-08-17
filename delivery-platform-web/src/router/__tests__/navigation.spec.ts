@@ -91,6 +91,7 @@ describe('application navigation', () => {
     }
 
     expect(router.resolve('/forbidden').name).toBe('Forbidden')
+    expect(router.resolve('/knowledge/knowledge-1/view').name).toBe('KnowledgeReader')
     expect(router.resolve('/knowledge/create').name).toBe('NotFound')
     expect(router.resolve('/standards/create').name).toBe('NotFound')
   })
@@ -103,6 +104,7 @@ describe('application navigation', () => {
     expect(router.resolve('/archive-templates/template-1').meta.activeMenu).toBe('/archive-template')
     expect(router.resolve('/standards/standard-1').meta.activeMenu).toBe('/standards')
     expect(router.resolve('/knowledge/knowledge-1').meta.activeMenu).toBe('/knowledge')
+    expect(router.resolve('/knowledge/knowledge-1/view').meta.activeMenu).toBe('/knowledge')
   })
 
   it('does not register retired domains or compatibility aliases', () => {

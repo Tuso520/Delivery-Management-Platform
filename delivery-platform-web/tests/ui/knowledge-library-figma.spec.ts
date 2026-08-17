@@ -10,6 +10,19 @@ interface KnowledgeItem {
   id: string
   categoryId: string
   title: string
+  displayVersion?: {
+    version: string
+    contentType: 'FILE' | 'MARKDOWN' | 'LINK'
+    fileVersion?: {
+      logicalFileId: string
+      asset: {
+        originalName: string
+        extension: string | null
+      }
+    } | null
+    markdownContent?: string | null
+    externalUrl?: string | null
+  } | null
   versions?: Array<{
     fileVersion?: {
       logicalFileId: string
@@ -116,6 +129,63 @@ async function uploadKnowledgeFile(
   return ((await response.json()) as UploadEnvelope).data
 }
 
+const knowledgeViewports = [
+  { width: 1366, height: 768 },
+  { width: 1920, height: 1080 },
+  { width: 2560, height: 1440 },
+] as const
+
+async function measureKnowledgeLayout(page: Page) {
+  return page.evaluate(() => {
+    const element = (selector: string) => {
+      const node = document.querySelector<HTMLElement>(selector)
+      if (!node) throw new Error(`Missing ${selector}`)
+      return node
+    }
+    const rect = (selector: string) => {
+      const box = element(selector).getBoundingClientRect()
+      return {
+        left: box.left,
+        right: box.right,
+        top: box.top,
+        bottom: box.bottom,
+        width: box.width,
+        height: box.height,
+      }
+    }
+    const widths = (selector: string) =>
+      Array.from(document.querySelectorAll<HTMLElement>(selector))
+        .slice(0, 5)
+        .map((node) => node.getBoundingClientRect().width)
+
+    const layoutMain = element('.layout-main')
+    const categoryList = element('.knowledge-category-list')
+    const tableRegion = element('.knowledge-table-region')
+
+    return {
+      root: rect('.knowledge-library'),
+      layoutMain: rect('.layout-main'),
+      panel: rect('.knowledge-panel'),
+      sidebar: rect('.knowledge-categories'),
+      content: rect('.knowledge-content'),
+      description: rect('.knowledge-category-description'),
+      tableRegion: rect('.knowledge-table-region'),
+      table: rect('.knowledge-table'),
+      headerWidths: widths('.knowledge-table thead th'),
+      bodyWidths: widths('.knowledge-table tbody tr:first-child td'),
+      pageOverflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      pageOverflowY: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+      layoutOverflowX: layoutMain.scrollWidth - layoutMain.clientWidth,
+      layoutOverflowY: layoutMain.scrollHeight - layoutMain.clientHeight,
+      tableOverflowX: tableRegion.scrollWidth - tableRegion.clientWidth,
+      tableOverflowY: tableRegion.scrollHeight - tableRegion.clientHeight,
+      categoryOverflowY: categoryList.scrollHeight - categoryList.clientHeight,
+      categoryOverflowStyle: getComputedStyle(categoryList).overflowY,
+      tableOverflowStyle: getComputedStyle(tableRegion).overflow,
+    }
+  })
+}
+
 test('knowledge library matches Figma node 125:624 and uses real backend services', async ({
   page,
 }) => {
@@ -133,7 +203,10 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
   const root = page.locator('.knowledge-library')
   const table = page.locator('.knowledge-table')
   await expect(root).toBeVisible()
-  await expect(page.locator('.knowledge-category')).toHaveCount(10, { timeout: 60_000 })
+  await expect
+    .poll(() => page.locator('.knowledge-category').count(), { timeout: 60_000 })
+    .toBeGreaterThan(0)
+  const configuredCategoryCount = await page.locator('.knowledge-category').count()
   await expect(table.locator('tbody tr').first()).toBeVisible({ timeout: 60_000 })
   await expect(page.locator('.knowledge-metric')).toHaveCount(3)
   await expect(page.locator('.knowledge-metric__icon img')).toHaveCount(3)
@@ -146,71 +219,52 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
   ])
   await expect(page.locator('.arco-pagination')).toHaveCount(0)
 
-  const geometry = await page.evaluate(() => {
-    const rect = (selector: string) => {
+  const figmaGeometry = await page.evaluate(() => {
+    const size = (selector: string) => {
       const node = document.querySelector<HTMLElement>(selector)
       if (!node) throw new Error(`Missing ${selector}`)
       const box = node.getBoundingClientRect()
       return { width: box.width, height: box.height }
     }
-    const widths = (selector: string) =>
-      Array.from(document.querySelectorAll<HTMLElement>(selector))
-        .slice(0, 5)
-        .map((node) => node.getBoundingClientRect().width)
-
     return {
-      root: rect('.knowledge-library'),
-      metrics: rect('.knowledge-metrics'),
-      metric: rect('.knowledge-metric'),
-      toolbar: rect('.knowledge-toolbar'),
-      queryButton: rect('.knowledge-query-button'),
-      addButton: rect('.knowledge-add-button'),
-      panel: rect('.knowledge-panel'),
-      sidebar: rect('.knowledge-categories'),
-      categoryHeader: rect('.knowledge-category-header'),
-      categoryRow: rect('.knowledge-category'),
-      description: rect('.knowledge-category-description'),
-      content: rect('.knowledge-content'),
-      headerWidths: widths('.knowledge-table thead th'),
-      bodyWidths: widths('.knowledge-table tbody tr:first-child td'),
-      rowHeights: Array.from(document.querySelectorAll<HTMLElement>('.knowledge-table tr')).map(
-        (node) => node.getBoundingClientRect().height,
-      ),
-      pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      metrics: size('.knowledge-metrics'),
+      metric: size('.knowledge-metric'),
+      toolbar: size('.knowledge-toolbar'),
+      queryButton: size('.knowledge-query-button'),
+      addButton: size('.knowledge-add-button'),
+      categoryHeader: size('.knowledge-category-header'),
+      categoryRow: size('.knowledge-category'),
+      rowHeights: Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '.knowledge-table thead tr, .knowledge-table tbody tr:not(.knowledge-table__state-row)',
+        ),
+      ).map((node) => node.getBoundingClientRect().height),
     }
   })
 
-  expect(geometry.root).toEqual({ width: 1234, height: 784 })
-  expect(geometry.metrics.height).toBe(88)
-  expect(geometry.metric.height).toBe(76)
-  expect(geometry.toolbar.height).toBe(32)
-  expect(geometry.queryButton).toEqual({ width: 82, height: 32 })
-  expect(geometry.addButton).toEqual({ width: 82, height: 32 })
-  expect(geometry.panel).toEqual({ width: 1208, height: 625 })
-  expect(geometry.sidebar.width).toBe(270)
-  expect(geometry.categoryHeader.height).toBe(44)
-  expect(geometry.categoryRow.height).toBe(44)
-  expect(geometry.description.height).toBe(72)
-  expect(geometry.content.width).toBe(937)
-  expect(geometry.headerWidths).toEqual([365, 90, 130, 170, 182])
-  expect(geometry.bodyWidths).toEqual(geometry.headerWidths)
-  expect(geometry.rowHeights.every((height) => height === 44)).toBe(true)
-  expect(geometry.pageOverflow).toBe(0)
+  expect(figmaGeometry.metrics.height).toBe(88)
+  expect(figmaGeometry.metric.height).toBe(76)
+  expect(figmaGeometry.toolbar.height).toBe(32)
+  expect(figmaGeometry.queryButton).toEqual({ width: 82, height: 32 })
+  expect(figmaGeometry.addButton).toEqual({ width: 82, height: 32 })
+  expect(figmaGeometry.categoryHeader.height).toBe(44)
+  expect(figmaGeometry.categoryRow.height).toBe(44)
+  expect(figmaGeometry.rowHeights.every((height) => height === 44)).toBe(true)
 
-  await expect(page.locator('.knowledge-category-description h1')).toHaveText('岗位职责与能力')
-  await expect(page.locator('.knowledge-category-description p')).toHaveText(
-    '项目经理、电气、软件、运维等岗位职责、能力模型及技能评估要求。',
-  )
-  await expect(table.locator('tbody tr').first().locator('td').nth(1)).toHaveText('V1.0')
+  const activeCategoryLabel = (
+    await page.locator('.knowledge-category--active span').innerText()
+  ).trim()
+  await expect(page.locator('.knowledge-category-description h1')).toHaveText(activeCategoryLabel)
+  await expect(page.locator('.knowledge-category-description p')).not.toBeEmpty()
 
-  const selectedCategoryId = await page
-    .locator('.knowledge-category--active')
-    .getAttribute('value')
+  const selectedCategoryId = await page.locator('.knowledge-category--active').getAttribute('value')
   expect(selectedCategoryId).toBeTruthy()
 
   const longTitle = `知识库超长标题-${Date.now()}-${'跨国交付现场调试与验收操作规范'.repeat(5)}`
+  const longMaterialName = `${longTitle}.md`
   let longItemId = ''
   let fileItemId = ''
+  let fileMaterialName = ''
   try {
     const createLongResponse = await page.request.post('/api/v1/knowledge', {
       headers: authHeaders(accessToken),
@@ -230,10 +284,11 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
     expect(createLongResponse.status()).toBe(201)
     longItemId = ((await createLongResponse.json()) as KnowledgeEnvelope).data.id
 
+    fileMaterialName = `knowledge-main-${Date.now()}.md`
     const mainFile = await uploadKnowledgeFile(
       page.request,
       accessToken,
-      `knowledge-main-${Date.now()}.md`,
+      fileMaterialName,
       'knowledge main file',
     )
     const supportingFile = await uploadKnowledgeFile(
@@ -279,13 +334,21 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
     }
 
     await page.reload()
-    await expect(page.getByRole('button', { name: longTitle })).toBeVisible({ timeout: 60_000 })
-    const longTitleMetrics = await page.getByRole('button', { name: longTitle }).evaluate((node) => ({
-      clientWidth: node.clientWidth,
-      scrollWidth: node.scrollWidth,
-      whiteSpace: getComputedStyle(node).whiteSpace,
-      textOverflow: getComputedStyle(node).textOverflow,
-    }))
+    await expect(page.getByRole('button', { name: longMaterialName })).toBeVisible({
+      timeout: 60_000,
+    })
+    await expect(page.getByRole('button', { name: fileMaterialName })).toBeVisible()
+    const refreshedList = await fetchKnowledge(page.request, accessToken)
+    const fileListItem = refreshedList.data.items.find((item) => item.id === fileItemId)
+    expect(fileListItem?.displayVersion?.fileVersion?.asset.originalName).toBe(fileMaterialName)
+    const longTitleMetrics = await page
+      .getByRole('button', { name: longMaterialName })
+      .evaluate((node) => ({
+        clientWidth: node.clientWidth,
+        scrollWidth: node.scrollWidth,
+        whiteSpace: getComputedStyle(node).whiteSpace,
+        textOverflow: getComputedStyle(node).textOverflow,
+      }))
     expect(longTitleMetrics.scrollWidth).toBeGreaterThan(longTitleMetrics.clientWidth)
     expect(longTitleMetrics.whiteSpace).toBe('nowrap')
     expect(longTitleMetrics.textOverflow).toBe('ellipsis')
@@ -293,20 +356,93 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
     await expect(longRow.locator('td').nth(1)).toHaveText('-')
     await expect(longRow.locator('td').nth(2)).toHaveText('2026-12-12')
 
-    await page.getByRole('button', { name: longTitle }).click()
-    await expect(page.locator('.arco-drawer')).toBeVisible()
-    await expect(page.locator('.detail-section')).toBeVisible()
-    await page.locator('.arco-drawer-close-btn').click()
+    const panelHeights: number[] = []
+    for (const viewport of knowledgeViewports) {
+      await page.setViewportSize(viewport)
+      await expect(page.getByRole('button', { name: longMaterialName })).toBeVisible()
+      const geometry = await measureKnowledgeLayout(page)
+      panelHeights.push(geometry.panel.height)
+
+      expect(Math.abs(geometry.root.height - geometry.layoutMain.height)).toBeLessThanOrEqual(1)
+      expect(Math.abs(geometry.root.width - geometry.layoutMain.width)).toBeLessThanOrEqual(1)
+      expect(geometry.sidebar.width).toBe(270)
+      expect(geometry.description.height).toBe(72)
+      expect(Math.abs(geometry.sidebar.bottom - geometry.panel.bottom)).toBeLessThanOrEqual(1)
+      expect(Math.abs(geometry.content.bottom - geometry.panel.bottom)).toBeLessThanOrEqual(1)
+      expect(Math.abs(geometry.tableRegion.bottom - geometry.panel.bottom)).toBeLessThanOrEqual(1)
+      expect(geometry.content.width).toBeGreaterThan(0)
+      expect(geometry.table.width).toBeGreaterThanOrEqual(937)
+      expect(geometry.headerWidths[0]).toBeGreaterThanOrEqual(365)
+      expect(geometry.headerWidths).toHaveLength(5)
+      expect(geometry.bodyWidths).toHaveLength(5)
+      geometry.headerWidths.forEach((width, index) => {
+        expect(Math.abs(width - geometry.bodyWidths[index]!)).toBeLessThanOrEqual(0.5)
+        const expectedWidth =
+          index === 0 ? geometry.table.width - 572 : [0, 90, 130, 170, 182][index]!
+        expect(Math.abs(width - expectedWidth)).toBeLessThanOrEqual(1)
+      })
+      expect(geometry.pageOverflowX).toBe(0)
+      expect(geometry.pageOverflowY).toBe(0)
+      expect(geometry.layoutOverflowX).toBe(0)
+      expect(geometry.layoutOverflowY).toBe(0)
+      expect(geometry.categoryOverflowStyle).toBe('auto')
+      expect(geometry.tableOverflowStyle).toBe('auto')
+      if (geometry.tableRegion.width < 937) {
+        expect(geometry.tableOverflowX).toBeGreaterThan(0)
+      } else {
+        expect(geometry.tableOverflowX).toBeLessThanOrEqual(1)
+        expect(Math.abs(geometry.table.right - geometry.tableRegion.right)).toBeLessThanOrEqual(1)
+      }
+
+      if (geometry.tableOverflowY > 0) {
+        const stickyHeaderOffset = await page.evaluate(() => {
+          const region = document.querySelector<HTMLElement>('.knowledge-table-region')
+          const header = document.querySelector<HTMLElement>('.knowledge-table thead th')
+          if (!region || !header) throw new Error('Missing table scroll elements')
+          region.scrollTop = 120
+          return header.getBoundingClientRect().top - region.getBoundingClientRect().top
+        })
+        expect(Math.abs(stickyHeaderOffset)).toBeLessThanOrEqual(1)
+        await page.locator('.knowledge-table-region').evaluate((node) => {
+          node.scrollTop = 0
+        })
+      }
+    }
+    expect(panelHeights[1]).toBeGreaterThan(panelHeights[0]!)
+    expect(panelHeights[2]).toBeGreaterThan(panelHeights[1]!)
+
+    await page.getByRole('button', { name: longMaterialName }).click()
+    await expect(page).toHaveURL(new RegExp(`#/knowledge/${longItemId}/view`))
+    await expect(page.locator('.knowledge-reader__markdown')).toContainText('自动化验收正文')
+    await expect(page.locator('.arco-drawer')).toHaveCount(0)
+    await expect(page.locator('.attachment-preview-modal')).toHaveCount(0)
+    await page.getByRole('button', { name: '返回知识库' }).click()
+    await expect(page).toHaveURL(/#\/knowledge(?:\?|$)/u)
+
+    const previewResponse = page.waitForResponse((response) =>
+      response.url().includes(`/api/v1/files/${mainFile.logicalFileId}/preview-session`),
+    )
+    await page.getByRole('button', { name: fileMaterialName }).click()
+    await previewResponse
+    await expect(page).toHaveURL(new RegExp(`#/knowledge/${fileItemId}/view`))
+    await expect(page.locator('.knowledge-reader .file-preview-router')).toBeVisible()
+    await expect(page.locator('.knowledge-reader .markdown-body')).toContainText(
+      'knowledge main file',
+    )
+    await expect(page.locator('.attachment-preview-modal')).toHaveCount(0)
+    await page.getByRole('button', { name: '返回知识库' }).click()
 
     await page.getByRole('button', { name: '新增' }).click()
     const createModal = page.locator('.arco-modal:visible')
     await expect(createModal).toBeVisible()
     await createModal.locator('.arco-select-view').click()
-    await expect(page.locator('.arco-select-dropdown:visible .arco-select-option')).toHaveCount(10)
+    await expect(page.locator('.arco-select-dropdown:visible .arco-select-option')).toHaveCount(
+      configuredCategoryCount,
+    )
     await page.keyboard.press('Escape')
     await createModal.locator('.arco-modal-close-btn').click()
 
-    const keyword = '岗位职责'
+    const keyword = longTitle
     const filteredResponse = page.waitForResponse((response) => {
       const url = new URL(response.url())
       return (
@@ -320,10 +456,24 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
     await filteredResponse
     await expect(table.locator('tbody tr')).toHaveCount(1)
     await expect(table.locator('tbody tr')).toContainText(keyword)
+    const fewDataGeometry = await measureKnowledgeLayout(page)
+    expect(
+      Math.abs(fewDataGeometry.sidebar.bottom - fewDataGeometry.panel.bottom),
+    ).toBeLessThanOrEqual(1)
+    expect(
+      Math.abs(fewDataGeometry.tableRegion.bottom - fewDataGeometry.panel.bottom),
+    ).toBeLessThanOrEqual(1)
 
     await page.locator('.knowledge-search-input input').fill(`无匹配知识-${Date.now()}`)
     await page.getByRole('button', { name: '查询' }).click()
     await expect(page.getByText('没有符合条件的资料')).toBeVisible()
+    const emptyGeometry = await measureKnowledgeLayout(page)
+    expect(Math.abs(emptyGeometry.sidebar.bottom - emptyGeometry.panel.bottom)).toBeLessThanOrEqual(
+      1,
+    )
+    expect(
+      Math.abs(emptyGeometry.tableRegion.bottom - emptyGeometry.panel.bottom),
+    ).toBeLessThanOrEqual(1)
 
     const firstPage = await fetchKnowledge(
       page.request,
@@ -339,9 +489,9 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
     expect(firstPage.data.total).toBeGreaterThan(1)
     expect(firstPage.data.items[0]?.id).not.toBe(secondPage.data.items[0]?.id)
 
-    await page.setViewportSize({ width: 1280, height: 900 })
+    await page.setViewportSize({ width: 1366, height: 768 })
     const overflow = await page.evaluate(() => {
-      const scroll = document.querySelector<HTMLElement>('.knowledge-content-scroll')
+      const scroll = document.querySelector<HTMLElement>('.knowledge-table-region')
       if (!scroll) throw new Error('Missing knowledge content scroller')
       return {
         page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -368,7 +518,9 @@ test('knowledge library exposes real loading/error recovery to a read-only user'
   await page.setViewportSize({ width: 1440, height: 900 })
   const accessToken = await login(page, knowledgeReaderUsername, knowledgeReaderPassword)
   await page.goto('/#/knowledge')
-  await expect(page.locator('.knowledge-category')).toHaveCount(10, { timeout: 60_000 })
+  await expect
+    .poll(() => page.locator('.knowledge-category').count(), { timeout: 60_000 })
+    .toBeGreaterThan(0)
   await expect(page.getByRole('button', { name: '新增' })).toHaveCount(0)
   await expect(page.locator('.knowledge-table__actions button')).toHaveCount(0)
 

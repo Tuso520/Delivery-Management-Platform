@@ -1221,6 +1221,11 @@
     "versionDraftHint": "Drafts can be saved repeatedly. Content locks after review submission and published versions are never overwritten.",
     "autoVersionPlaceholder": "Leave blank to increment automatically",
     "defaultFileName": "Knowledge Resource",
+    "reader": {
+      "back": "Back to Knowledge Base",
+      "loadFailed": "Failed to load the knowledge resource",
+      "unavailable": "This resource has no content available for direct viewing"
+    },
     "summary": {
       "aria": "Knowledge base summary",
       "total": "Total Standards",

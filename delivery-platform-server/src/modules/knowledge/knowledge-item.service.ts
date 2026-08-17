@@ -130,13 +130,13 @@ const publicKnowledgeItemSelect = {
   creator: { select: { id: true, realName: true } },
   updater: { select: { id: true, realName: true } },
   currentPublishedVersion: {
-    select: {
-      id: true,
-      version: true,
-      contentType: true,
-      status: true,
-      publishedAt: true,
-    },
+    select: publicKnowledgeVersionSelect,
+  },
+  versions: {
+    where: { archivedAt: null },
+    orderBy: [{ revision: 'desc' }, { updatedAt: 'desc' }],
+    take: 1,
+    select: publicKnowledgeVersionSelect,
   },
 } satisfies Prisma.KnowledgeItemSelect;
 
@@ -199,6 +199,14 @@ function mapPublicKnowledgeItem(
   record: PublicKnowledgeItemRecord,
   versions?: PublicKnowledgeVersionRecord[],
 ) {
+  const currentPublishedVersion = record.currentPublishedVersion
+    ? mapPublicKnowledgeVersion(record.currentPublishedVersion)
+    : null;
+  const latestVersion = record.versions?.[0] ? mapPublicKnowledgeVersion(record.versions[0]) : null;
+  const displayVersion = ['DRAFT', 'IN_REVIEW', 'REJECTED'].includes(record.status)
+    ? (latestVersion ?? currentPublishedVersion)
+    : (currentPublishedVersion ?? latestVersion);
+
   return {
     id: record.id,
     title: record.title,
@@ -207,15 +215,8 @@ function mapPublicKnowledgeItem(
     contentType: record.contentType,
     status: record.status,
     currentPublishedVersionId: record.currentPublishedVersionId,
-    currentPublishedVersion: record.currentPublishedVersion
-      ? {
-          id: record.currentPublishedVersion.id,
-          version: record.currentPublishedVersion.version,
-          contentType: record.currentPublishedVersion.contentType,
-          status: record.currentPublishedVersion.status,
-          publishedAt: record.currentPublishedVersion.publishedAt,
-        }
-      : null,
+    currentPublishedVersion,
+    displayVersion,
     effectiveAt: record.effectiveAt,
     createdBy: record.createdBy,
     updatedBy: record.updatedBy,
@@ -633,9 +634,7 @@ export class KnowledgeItemService {
       await tx.knowledgeItem.update({
         where: { id: itemId },
         data: {
-          ...(lockedItem.current_published_version_id
-            ? {}
-            : { contentType: content.contentType }),
+          ...(lockedItem.current_published_version_id ? {} : { contentType: content.contentType }),
           updatedBy: actor.sub,
           updatedAt: new Date(),
         },
@@ -872,11 +871,11 @@ export class KnowledgeItemService {
         }
       }
       await writeOperationLog(tx, {
-          userId: actor.sub,
-          module: 'knowledge',
-          action: 'archive',
-          targetType: 'knowledge_item',
-          targetId: id,
+        userId: actor.sub,
+        module: 'knowledge',
+        action: 'archive',
+        targetType: 'knowledge_item',
+        targetId: id,
       });
       return claimedAt;
     });
