@@ -400,7 +400,6 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
       const cells = [...row.querySelectorAll<HTMLElement>('.arco-table-td')]
       const selectors = new Map<number, string>([
         [0, '.project-link'],
-        [2, '.cell-left'],
         [3, '.stage-cell'],
         [4, '.progress'],
         [8, '.money-cell'],
@@ -413,7 +412,24 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
         return Math.round(content.getBoundingClientRect().left - cell.getBoundingClientRect().left)
       })
     })
-  expect(leftAlignedOffsets).toEqual([12, 12, 12, 12, 12, 12])
+  expect(leftAlignedOffsets).toEqual([12, 12, 12, 12, 12])
+
+  const regionAlignment = await page.evaluate(() => {
+    const header = document.querySelector<HTMLElement>(
+      '.project-list-panel thead .arco-table-th:nth-child(3) .arco-table-cell',
+    )
+    const cells = [
+      ...document.querySelectorAll<HTMLElement>(
+        '.project-list-panel tbody .arco-table-td:nth-child(3) .cell-center',
+      ),
+    ]
+    if (!header || cells.length === 0) throw new Error('Project region alignment nodes are incomplete')
+    return {
+      header: getComputedStyle(header).textAlign,
+      rows: [...new Set(cells.map((cell) => getComputedStyle(cell).textAlign))],
+    }
+  })
+  expect(regionAlignment).toEqual({ header: 'center', rows: ['center'] })
 
   const stageTag = page
     .locator('.project-list-panel tbody .arco-table-td:nth-child(4) .stage-tag')

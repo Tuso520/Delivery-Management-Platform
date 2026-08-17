@@ -62,6 +62,8 @@ async function addPayment(
   name: string,
   amount: string,
   condition: string,
+  expectedRatio?: string,
+  ratioProbeAmount?: string,
 ): Promise<void> {
   await dialog(page).getByRole('button', { name: '添加' }).click()
   const editor = page
@@ -73,8 +75,14 @@ async function addPayment(
   const paymentDateInput = formItem(editor, '付款日期').locator('input')
   await paymentDateInput.fill('2026-12-12')
   const paymentAmountInput = formItem(editor, '付款金额').locator('input')
+  const paymentRatioInput = formItem(editor, '付款比例').locator('input')
+  if (ratioProbeAmount) {
+    await paymentRatioInput.fill('30')
+    await expect(paymentAmountInput).toHaveValue(ratioProbeAmount)
+  }
   await paymentAmountInput.click({ force: true })
   await paymentAmountInput.fill(amount)
+  if (expectedRatio) await expect(paymentRatioInput).toHaveValue(expectedRatio)
   await formItem(editor, '付款条件').locator('textarea').fill(condition)
   await editor.getByRole('button', { name: '保存' }).click()
   await expect(editor).toBeHidden()
@@ -128,7 +136,7 @@ test('distinct create, edit and view dialogs match the Figma project-detail shel
     width: 1040,
     height: 760,
     headerHeight: 48,
-    bodyOverflowY: 'auto',
+    bodyOverflowY: 'scroll',
   })
   await expect(projectDialog.locator('.project-detail-form')).toHaveCount(1)
   await expect(projectDialog.locator('.project-detail-view')).toHaveCount(0)
@@ -179,15 +187,69 @@ test('distinct create, edit and view dialogs match the Figma project-detail shel
     '首付款',
     '4007199254740991.99',
     '合同签订并收到合规付款申请后支付，超长条件用于验证单行省略与悬停提示',
+    '44.49',
+    '2702159776422297.60',
   )
-  await addPayment(page, '尾款', '5000000000000000.00', '项目验收完成后支付')
+  await addPayment(page, '尾款', '5000000000000000.00', '项目验收完成后支付', '55.51')
   await expect(projectDialog.getByText('44.49%', { exact: true })).toBeVisible()
   await expect(projectDialog.getByText('55.51%', { exact: true })).toBeVisible()
   await expect(projectDialog.locator('.ratio-warning')).toHaveCount(0)
-  const paymentTableOverflow = await projectDialog.locator('.payment-table-scroll').evaluate(
-    (element) => element.scrollWidth > element.clientWidth,
+  const paymentTableLayout = await projectDialog.locator('.payment-table-scroll').evaluate(
+    (element) => {
+      const headers = [...element.querySelectorAll<HTMLElement>('thead .arco-table-th')]
+      const rows = [...element.querySelectorAll<HTMLElement>('tbody .arco-table-tr')]
+      const headerAlignment = (title: string) => {
+        const header = headers.find((item) => item.textContent?.trim() === title)
+        const content = header?.querySelector<HTMLElement>('.arco-table-cell')
+        return content ? getComputedStyle(content).textAlign : null
+      }
+      const rowAlignments = rows.map((row) => {
+        const cells = [...row.querySelectorAll<HTMLElement>('.arco-table-td')]
+        const alignment = (selector: string, index: number) => {
+          const content = cells[index]?.querySelector<HTMLElement>(selector)
+          return content ? getComputedStyle(content).textAlign : null
+        }
+        return {
+          paymentName: alignment('.arco-table-cell', 1),
+          dueDate: alignment('.arco-table-cell', 2),
+          ratio: alignment('.arco-table-cell', 4),
+          amount: alignment('.payment-cell-left', 5),
+          converted: alignment('.payment-cell-left', 6),
+          condition: alignment('.payment-condition', 7),
+        }
+      })
+      return {
+        overflowX: getComputedStyle(element).overflowX,
+        overflows: element.scrollWidth > element.clientWidth,
+        headerAlignments: Object.fromEntries(
+          ['付款项', '付款日期', '付款比例', '付款金额', '折算人民币', '付款条件'].map(
+            (title) => [title, headerAlignment(title)],
+          ),
+        ),
+        rowAlignments,
+      }
+    },
   )
-  expect(paymentTableOverflow).toBe(true)
+  expect(paymentTableLayout).toEqual({
+    overflowX: 'scroll',
+    overflows: true,
+    headerAlignments: {
+      付款项: 'center',
+      付款日期: 'center',
+      付款比例: 'center',
+      付款金额: 'center',
+      折算人民币: 'center',
+      付款条件: 'center',
+    },
+    rowAlignments: Array.from({ length: 2 }, () => ({
+      paymentName: 'center',
+      dueDate: 'center',
+      ratio: 'center',
+      amount: 'left',
+      converted: 'left',
+      condition: 'left',
+    })),
+  })
   await projectDialog.screenshot({ path: screenshotPaths.create, animations: 'disabled' })
 
   const createResponsePromise = page.waitForResponse(
