@@ -371,6 +371,7 @@ test('runtime bootstrap preserves live credentials without reading or printing l
 test('migration count belongs to the immutable release instead of long-lived server configuration', () => {
   assert.match(deploy, /\.migrations\.expectedCount/u)
   assert.match(deploy, /printf 'EXPECTED_MIGRATION_COUNT=%s\\n' "\$EXPECTED_MIGRATION_COUNT"/u)
+  assert.match(deploy, /printf 'DEPLOY_ENV=%s\\n' "\$DEPLOY_ENV"/u)
   for (const longLivedConfig of [runtimeConfigTemplate, runtimeBootstrap, serverPreflight]) {
     assert.doesNotMatch(longLivedConfig, /EXPECTED_MIGRATION_COUNT/u)
   }

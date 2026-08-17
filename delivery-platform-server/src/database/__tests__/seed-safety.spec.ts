@@ -22,6 +22,33 @@ jest.mock('bcrypt', () => ({
 }));
 
 describe('deployment seed safety', () => {
+  it('does not recreate legacy random standards and retires only the known test fixture signature', () => {
+    const seedSource = readFileSync(join(__dirname, '../../../prisma/seed-test-data.ts'), 'utf8');
+    const manifest = readFileSync(join(__dirname, '../../../prisma/test-data-manifest.ts'), 'utf8');
+    const retirement = readFileSync(
+      join(__dirname, '../../../prisma/retire-legacy-test-standards.ts'),
+      'utf8',
+    );
+    const migrationRunner = readFileSync(
+      join(__dirname, '../../../prisma/run-deployment-migrations.sh'),
+      'utf8',
+    );
+
+    expect(seedSource).not.toContain('随机测试标准');
+    expect(seedSource).not.toContain('standard.createMany');
+    expect(manifest).not.toContain("name: 'standards'");
+    expect(retirement).toContain("process.env.DEPLOY_ENV !== 'test'");
+    expect(retirement).toContain("code: { startsWith: 'TS-' }");
+    expect(retirement).toContain("name: { startsWith: '随机测试标准 ' }");
+    expect(retirement).toContain("status: 'DRAFT'");
+    expect(retirement).toContain('currentPublishedVersionId: null');
+    expect(retirement).toContain("action: 'retire_legacy_test_fixture'");
+    expect(retirement).not.toMatch(/\.delete(?:Many)?\s*\(/u);
+    expect(migrationRunner).toContain(
+      'ts-node --transpile-only prisma/retire-legacy-test-standards.ts --verify',
+    );
+  });
+
   it('creates fresh target standards with verified file-only content', () => {
     const source = readFileSync(
       join(__dirname, '../../../prisma/seed-data/target-standards.ts'),

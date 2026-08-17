@@ -11,7 +11,6 @@ export function testDatasetManifest(prisma: PrismaClient): TestDatasetCount[] {
     { name: 'projects', count: () => prisma.project.count({ where: { deletedAt: null } }) },
     { name: 'project process records', count: () => prisma.projectProcessRecord.count() },
     { name: 'project payments', count: () => prisma.projectPayment.count() },
-    { name: 'standards', count: () => prisma.standard.count() },
     { name: 'knowledge items', count: () => prisma.knowledgeItem.count() },
     { name: 'checklist templates', count: () => prisma.checklistTemplate.count() },
     { name: 'tools', count: () => prisma.toolItem.count() },

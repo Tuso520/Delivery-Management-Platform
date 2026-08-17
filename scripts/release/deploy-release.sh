@@ -165,6 +165,7 @@ read_manifest() {
   umask 077
   {
     printf 'RELEASE_ID=%s\n' "$SHORT_RELEASE_ID"
+    printf 'DEPLOY_ENV=%s\n' "$DEPLOY_ENV"
     printf 'BACKEND_IMAGE=%s\n' "$BACKEND_IMAGE"
     printf 'MIGRATION_IMAGE=%s\n' "$MIGRATION_IMAGE"
     printf 'EXPECTED_MIGRATION_COUNT=%s\n' "$EXPECTED_MIGRATION_COUNT"
