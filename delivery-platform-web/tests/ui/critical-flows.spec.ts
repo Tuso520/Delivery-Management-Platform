@@ -273,6 +273,12 @@ test('role permissions lifecycle is super-admin-only and new roles start empty',
   })
   expect(deleteResponse.status()).toBe(200)
 
+  const logoutResponse = await page.request.post('/api/v1/auth/logout', {
+    headers: authorization,
+  })
+  expect(logoutResponse.status()).toBe(200)
+  await page.reload()
+
   const limitedToken = await login(page, limitedUsername, limitedPassword)
   const deniedResponse = await page.request.get('/api/v1/roles', {
     headers: { authorization: `Bearer ${limitedToken}` },
