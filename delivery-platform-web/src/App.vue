@@ -22,6 +22,8 @@ const arcoLocale = computed(() =>
     <AttachmentPreviewModal
       :visible="filePreview.visible.value"
       :resource-id="filePreview.resourceId.value"
+      :content-type="filePreview.contentType.value"
+      :markdown-content="filePreview.markdownContent.value"
       :title="filePreview.title.value"
       @update:visible="filePreview.closePreview"
     />

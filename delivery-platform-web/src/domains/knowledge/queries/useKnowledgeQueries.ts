@@ -22,11 +22,3 @@ export function useKnowledgeCategoryCountsQuery(keyword: MaybeRefOrGetter<string
     queryFn: () => knowledgeApi.getCategoryCounts(toValue(keyword)),
   })
 }
-
-export function useKnowledgeDetailQuery(itemId: MaybeRefOrGetter<string>) {
-  return useQuery({
-    queryKey: computed(() => queryKeys.knowledge.detail(toValue(itemId))),
-    queryFn: () => knowledgeApi.getById(toValue(itemId)),
-    enabled: computed(() => Boolean(toValue(itemId))),
-  })
-}

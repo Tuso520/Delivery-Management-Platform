@@ -32,5 +32,7 @@ describe('unified file preview regression', () => {
     expect(modalSource).toContain(':body-style="{ padding: 0 }"')
     expect(modalSource).toContain(':align-center="false"')
     expect(modalSource).toContain('height="calc(100vh - 76px)"')
+    expect(modalSource).toContain("props.contentType !== 'MARKDOWN'")
+    expect(modalSource).toContain('renderSafeMarkdown(props.markdownContent')
   })
 })

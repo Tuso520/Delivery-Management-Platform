@@ -264,6 +264,7 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
   const longMaterialName = `${longTitle}.md`
   let longItemId = ''
   let fileItemId = ''
+  let uiCreatedItemId = ''
   let fileMaterialName = ''
   try {
     const createLongResponse = await page.request.post('/api/v1/knowledge', {
@@ -412,25 +413,27 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
     expect(panelHeights[2]).toBeGreaterThan(panelHeights[1]!)
 
     await page.getByRole('button', { name: longMaterialName }).click()
-    await expect(page).toHaveURL(new RegExp(`#/knowledge/${longItemId}/view`))
-    await expect(page.locator('.knowledge-reader__markdown')).toContainText('自动化验收正文')
-    await expect(page.locator('.arco-drawer')).toHaveCount(0)
-    await expect(page.locator('.attachment-preview-modal')).toHaveCount(0)
-    await page.getByRole('button', { name: '返回知识库' }).click()
     await expect(page).toHaveURL(/#\/knowledge(?:\?|$)/u)
+    await expect(page.locator('.attachment-preview-modal')).toBeVisible()
+    await expect(page.locator('.attachment-preview-modal .markdown-body')).toContainText(
+      '自动化验收正文',
+    )
+    await expect(page.locator('.arco-drawer')).toHaveCount(0)
+    await page.locator('.attachment-preview-modal .arco-modal-close-btn').click()
+    await expect(page.locator('.attachment-preview-modal')).toHaveCount(0)
 
     const previewResponse = page.waitForResponse((response) =>
       response.url().includes(`/api/v1/files/${mainFile.logicalFileId}/preview-session`),
     )
     await page.getByRole('button', { name: fileMaterialName }).click()
     await previewResponse
-    await expect(page).toHaveURL(new RegExp(`#/knowledge/${fileItemId}/view`))
-    await expect(page.locator('.knowledge-reader .file-preview-router')).toBeVisible()
-    await expect(page.locator('.knowledge-reader .markdown-body')).toContainText(
+    await expect(page).toHaveURL(/#\/knowledge(?:\?|$)/u)
+    await expect(page.locator('.attachment-preview-modal .file-preview-router')).toBeVisible()
+    await expect(page.locator('.attachment-preview-modal .markdown-body')).toContainText(
       'knowledge main file',
     )
-    await expect(page.locator('.attachment-preview-modal')).toHaveCount(0)
-    await page.getByRole('button', { name: '返回知识库' }).click()
+    await expect(page.locator('.arco-drawer')).toHaveCount(0)
+    await page.locator('.attachment-preview-modal .arco-modal-close-btn').click()
 
     await page.getByRole('button', { name: '新增' }).click()
     const createModal = page.locator('.arco-modal:visible')
@@ -440,7 +443,32 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
       configuredCategoryCount,
     )
     await page.keyboard.press('Escape')
-    await createModal.locator('.arco-modal-close-btn').click()
+    const uiFileName = `knowledge-ui-create-${Date.now()}.md`
+    await createModal.locator('input[placeholder="请输入资料标题"]').fill('新增后弹窗预览验收')
+    await createModal.locator('.arco-radio-button').filter({ hasText: '文件' }).click()
+    await createModal.locator('input[type="file"]').first().setInputFiles({
+      name: uiFileName,
+      mimeType: 'text/markdown',
+      buffer: Buffer.from('# ui create modal preview'),
+    })
+    const uiCreateResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return url.pathname === '/api/v1/knowledge' && response.request().method() === 'POST'
+    })
+    const uiPreviewResponse = page.waitForResponse((response) =>
+      response.url().includes('/preview-session'),
+    )
+    await createModal.getByRole('button', { name: '保存草稿' }).click()
+    const createdEnvelope = (await (await uiCreateResponse).json()) as KnowledgeEnvelope
+    uiCreatedItemId = createdEnvelope.data.id
+    await uiPreviewResponse
+    await expect(page).toHaveURL(/#\/knowledge(?:\?|$)/u)
+    await expect(page.locator('.attachment-preview-modal .file-preview-router')).toBeVisible()
+    await expect(page.locator('.attachment-preview-modal .markdown-body')).toContainText(
+      'ui create modal preview',
+    )
+    await expect(page.locator('.arco-drawer')).toHaveCount(0)
+    await page.locator('.attachment-preview-modal .arco-modal-close-btn').click()
 
     const keyword = longTitle
     const filteredResponse = page.waitForResponse((response) => {
@@ -501,7 +529,7 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
     expect(overflow.page).toBe(0)
     expect(overflow.table).toBeGreaterThan(0)
   } finally {
-    for (const itemId of [longItemId, fileItemId].filter(Boolean)) {
+    for (const itemId of [longItemId, fileItemId, uiCreatedItemId].filter(Boolean)) {
       const archiveResponse = await page.request.post(`/api/v1/knowledge/${itemId}/archive`, {
         headers: authHeaders(accessToken),
       })
