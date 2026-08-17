@@ -5,7 +5,6 @@ import { useI18n } from 'vue-i18n'
 import { IconSearch } from '@arco-design/web-vue/es/icon'
 import Message from '@arco-design/web-vue/es/message'
 import Modal from '@arco-design/web-vue/es/modal'
-import type { TableColumnData } from '@arco-design/web-vue'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 
 import downloadMetricIcon from '@/assets/figma/standard-library/download.svg'
@@ -16,26 +15,20 @@ import {
   knowledgeApi,
   type CreateKnowledgeItemPayload,
   type CreateKnowledgeVersionPayload,
-  type UpdateKnowledgeVersionPayload,
 } from '@/domains/knowledge/api/knowledge.api'
-import { BusinessTable } from '@/design-system'
 import {
   useKnowledgeCategoryCountsQuery,
-  useKnowledgeDetailQuery,
   useKnowledgeListQuery,
   useKnowledgeSummaryQuery,
 } from '@/domains/knowledge/queries/useKnowledgeQueries'
 import { useFieldConfig } from '@/platform/field-configuration'
 import { useFilePreview } from '@/platform/file-preview/useFilePreview'
 import { queryKeys } from '@/query/keys'
-import { firstRouteParam, preservedRouteQuery } from '@/router/query-state'
+import { preservedRouteQuery } from '@/router/query-state'
 import { usePermissionStore } from '@/store/permission'
 import type {
   KnowledgeContentType,
   KnowledgeItem,
-  KnowledgeItemStatus,
-  KnowledgeSupportingFile,
-  KnowledgeVersion,
 } from '@/domains/knowledge/types/knowledge'
 import {
   knowledgeContentPayload,
@@ -45,7 +38,6 @@ import {
   knowledgeMaterialName,
   selectKnowledgeDisplayVersion,
 } from '@/domains/knowledge/utils/knowledge-display'
-import { downloadBlob } from '@/utils/blob'
 
 const route = useRoute()
 const router = useRouter()
@@ -54,14 +46,6 @@ const permissionStore = usePermissionStore()
 const filePreview = useFilePreview()
 const queryClient = useQueryClient()
 const fieldConfig = useFieldConfig('knowledge')
-
-const statusMeta: Record<KnowledgeItemStatus, { label: string; color: string }> = {
-  DRAFT: { label: 'knowledge.status.DRAFT', color: 'gray' },
-  IN_REVIEW: { label: 'knowledge.status.IN_REVIEW', color: 'orange' },
-  REJECTED: { label: 'knowledge.status.REJECTED', color: 'red' },
-  PUBLISHED: { label: 'knowledge.status.PUBLISHED', color: 'green' },
-  ARCHIVED: { label: 'knowledge.status.ARCHIVED', color: 'arcoblue' },
-}
 
 const contentTypeOptions: Array<{ value: KnowledgeContentType; label: string }> = [
   { value: 'FILE', label: 'knowledge.contentTypes.FILE' },
@@ -78,22 +62,6 @@ const localizedContentTypeOptions = computed(() =>
 
 const KNOWLEDGE_TABLE_COLUMN_COUNT = 5
 
-const versionColumns = computed<TableColumnData[]>(() => [
-  { title: t('knowledge.fields.version'), dataIndex: 'version', width: 90 },
-  { title: t('knowledge.fields.contentType'), slotName: 'contentType', width: 108 },
-  { title: t('knowledge.fields.content'), slotName: 'content', minWidth: 190 },
-  { title: t('common.status'), dataIndex: 'status', slotName: 'status', width: 92 },
-  {
-    title: t('knowledge.fields.changeDescription'),
-    dataIndex: 'changeDescription',
-    slotName: 'changeDescription',
-    minWidth: 170,
-  },
-  { title: t('knowledge.fields.submitter'), slotName: 'submitter', width: 96 },
-  { title: t('knowledge.fields.time'), slotName: 'createdAt', width: 118 },
-  { title: t('common.action'), slotName: 'actions', width: 194, fixed: 'right' },
-])
-
 const keyword = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
 const appliedKeyword = ref(keyword.value.trim())
 const selectedCategoryId = ref(
@@ -104,9 +72,7 @@ function listRouteQuery() {
   return preservedRouteQuery(route.query, ['mode', 'id'])
 }
 
-const detailVisible = ref(false)
-const selectedDetailId = ref('')
-const selectedVersion = ref<KnowledgeVersion | null>(null)
+const detail = ref<KnowledgeItem | null>(null)
 
 const createVisible = ref(false)
 const createSelectedFile = ref<File | null>(null)
@@ -135,7 +101,6 @@ const editForm = reactive({
 })
 
 const versionVisible = ref(false)
-const editingVersionId = ref('')
 const versionSelectedFile = ref<File | null>(null)
 const versionSupportingFiles = ref<File[]>([])
 const versionForm = reactive({
@@ -204,7 +169,6 @@ const listParams = computed(() => ({
 const knowledgeListQuery = useKnowledgeListQuery(listParams)
 const knowledgeSummaryQuery = useKnowledgeSummaryQuery()
 const knowledgeCategoryCountsQuery = useKnowledgeCategoryCountsQuery(appliedKeyword)
-const knowledgeDetailQuery = useKnowledgeDetailQuery(selectedDetailId)
 const list = computed(() => knowledgeListQuery.data.value?.items ?? [])
 const categoryCountMap = computed(
   () =>
@@ -231,53 +195,17 @@ const summary = computed(
       archived: 0,
     },
 )
-const detail = computed<KnowledgeItem | null>(() => knowledgeDetailQuery.data.value ?? null)
 const loading = computed(() => knowledgeListQuery.isFetching.value)
 const loadError = computed(() =>
   knowledgeListQuery.isError.value ? t('knowledge.loadFailed') : '',
 )
-const detailLoading = computed(() => knowledgeDetailQuery.isFetching.value)
 
 const canCreate = computed(() => permissionStore.hasPermission('knowledge:create'))
 const canEdit = computed(() => permissionStore.hasPermission('knowledge:update_draft'))
-const canSubmitReview = computed(() => permissionStore.hasPermission('knowledge:submit_review'))
 const canArchive = computed(() => permissionStore.hasPermission('knowledge:archive'))
-const canDownload = computed(() => permissionStore.hasPermission('knowledge:download'))
-const hasActiveDraftVersion = computed(() =>
-  Boolean(
-    detail.value?.versions?.some((version) =>
-      ['DRAFT', 'IN_REVIEW', 'REJECTED'].includes(version.status),
-    ),
-  ),
-)
-
-function contentTypeLabel(value: KnowledgeContentType): string {
-  const option = contentTypeOptions.find((item) => item.value === value)
-  return option ? (option.label === 'Markdown' ? option.label : t(option.label)) : value
-}
-
-function statusLabel(value: string): string {
-  const meta = statusMeta[value as KnowledgeItemStatus]
-  return meta ? t(meta.label) : value
-}
-
-function statusColor(value: string): string {
-  return statusMeta[value as KnowledgeItemStatus]?.color ?? 'gray'
-}
 
 function formatDate(value?: string | null): string {
   return value ? value.slice(0, 10) : '-'
-}
-
-function versionFileName(version: KnowledgeVersion): string {
-  return version.fileVersion?.asset?.originalName || t('knowledge.defaultFileName')
-}
-
-function versionContentLabel(version: KnowledgeVersion): string {
-  if (version.contentType === 'FILE') return versionFileName(version)
-  if (version.contentType === 'LINK') return version.externalUrl || '-'
-  const text = version.markdownContent?.trim()
-  return text ? `${text.slice(0, 44)}${text.length > 44 ? '…' : ''}` : '-'
 }
 
 async function fetchList(): Promise<void> {
@@ -413,29 +341,11 @@ const updateKnowledgeMutation = useMutation({
   onSuccess: (_, variables) => invalidateKnowledge(variables.id),
 })
 
-type SaveKnowledgeVersionCommand =
-  | { kind: 'create'; itemId: string; data: CreateKnowledgeVersionPayload }
-  | {
-      kind: 'update'
-      itemId: string
-      versionId: string
-      data: UpdateKnowledgeVersionPayload
-    }
-
 const saveVersionMutation = useMutation({
-  mutationFn: (command: SaveKnowledgeVersionCommand) =>
-    command.kind === 'update'
-      ? knowledgeApi.updateVersion(command.versionId, command.data)
-      : knowledgeApi.createVersion(command.itemId, command.data),
+  mutationFn: (command: { itemId: string; data: CreateKnowledgeVersionPayload }) =>
+    knowledgeApi.createVersion(command.itemId, command.data),
   retry: false,
   onSuccess: (_, command) => invalidateKnowledge(command.itemId),
-})
-
-const submitReviewMutation = useMutation({
-  mutationFn: ({ versionId, revision }: { itemId: string; versionId: string; revision: number }) =>
-    knowledgeApi.submitReview(versionId, revision),
-  retry: false,
-  onSuccess: (_, variables) => invalidateKnowledge(variables.itemId),
 })
 
 const archiveKnowledgeMutation = useMutation({
@@ -499,26 +409,8 @@ async function submitCreate(): Promise<void> {
   const created = await createKnowledgeMutation.mutateAsync(payload)
   Message.success(t('knowledge.messages.created'))
   createVisible.value = false
-  await router.replace({
-    name: 'KnowledgeDetail',
-    params: { id: created.id },
-    query: listRouteQuery(),
-  })
-}
-
-async function loadDetail(id: string): Promise<void> {
-  detailVisible.value = true
-  const isCurrent = selectedDetailId.value === id
-  selectedDetailId.value = id
-  if (isCurrent) await knowledgeDetailQuery.refetch()
-}
-
-function openDetail(row: KnowledgeItem): void {
-  void router.push({
-    name: 'KnowledgeDetail',
-    params: { id: row.id },
-    query: listRouteQuery(),
-  })
+  await router.replace({ name: 'Knowledge', query: listRouteQuery() })
+  openKnowledgeMaterial(created)
 }
 
 function openKnowledgeMaterial(row: KnowledgeItem): void {
@@ -535,35 +427,31 @@ function openKnowledgeMaterial(row: KnowledgeItem): void {
     window.open(version.externalUrl, '_blank', 'noopener,noreferrer')
     return
   }
-  if (version.contentType === 'FILE' && !version.fileVersion?.logicalFileId) {
+  if (version.contentType === 'MARKDOWN') {
+    filePreview.openMarkdownPreview({
+      content: version.markdownContent ?? '',
+      title: knowledgeMaterialName(row),
+    })
+    return
+  }
+  const logicalFileId = version.fileVersion?.logicalFileId
+  if (!logicalFileId) {
     Message.warning(t('knowledge.messages.noPreviewFile'))
     return
   }
-  void router.push({
-    name: 'KnowledgeReader',
-    params: { id: row.id },
-    query: listRouteQuery(),
-  })
+  filePreview.openPreview({ id: logicalFileId, title: knowledgeMaterialName(row) })
 }
 
-function closeDetail(): void {
-  detailVisible.value = false
-  selectedDetailId.value = ''
-  selectedVersion.value = null
-  void router.push({ name: 'Knowledge', query: listRouteQuery() })
-}
-
-function handleDetailVisibility(visible: boolean): void {
-  if (!visible) closeDetail()
-}
-
-function openEdit(row?: KnowledgeItem): void {
-  const source = row ?? detail.value
-  if (!source || !canEdit.value) return
+async function openEdit(source: KnowledgeItem): Promise<void> {
+  if (!canEdit.value) return
   if (!['DRAFT', 'REJECTED'].includes(source.status)) {
-    if (row) openDetail(row)
+    if (source.status === 'PUBLISHED') {
+      detail.value = await knowledgeApi.getById(source.id)
+      openCreateVersion()
+    }
     return
   }
+  detail.value = source
   editingItemId.value = source.id
   Object.assign(editForm, {
     title: source.title,
@@ -597,7 +485,6 @@ function openCreateVersion(): void {
   const source =
     detail.value.versions?.find((item) => item.id === detail.value?.currentPublishedVersionId) ??
     detail.value.versions?.[0]
-  editingVersionId.value = ''
   Object.assign(versionForm, {
     version: '',
     contentType: source?.contentType ?? detail.value.contentType,
@@ -606,23 +493,6 @@ function openCreateVersion(): void {
     externalUrl: source?.externalUrl ?? '',
     changeDescription: '',
     supportingFileVersionIds: source?.supportingFiles.map((file) => file.fileVersionId) ?? [],
-  })
-  versionSelectedFile.value = null
-  versionSupportingFiles.value = []
-  versionVisible.value = true
-}
-
-function openEditVersion(version: KnowledgeVersion): void {
-  if (!canEdit.value || !['DRAFT', 'REJECTED'].includes(version.status)) return
-  editingVersionId.value = version.id
-  Object.assign(versionForm, {
-    version: version.version,
-    contentType: version.contentType,
-    fileVersionId: version.fileVersionId ?? '',
-    markdownContent: version.markdownContent ?? '',
-    externalUrl: version.externalUrl ?? '',
-    changeDescription: version.changeDescription ?? '',
-    supportingFileVersionIds: version.supportingFiles.map((file) => file.fileVersionId),
   })
   versionSelectedFile.value = null
   versionSupportingFiles.value = []
@@ -666,45 +536,12 @@ async function submitVersion(): Promise<void> {
       versionForm.externalUrl,
     ),
   }
-  if (editingVersionId.value) {
-    const revision = detail.value.versions?.find(
-      (version) => version.id === editingVersionId.value,
-    )?.revision
-    if (revision === undefined) return
-    await saveVersionMutation.mutateAsync({
-      kind: 'update',
-      itemId: detail.value.id,
-      versionId: editingVersionId.value,
-      data: { ...payload, revision },
-    })
-    Message.success(t('knowledge.messages.versionUpdated'))
-  } else {
-    await saveVersionMutation.mutateAsync({
-      kind: 'create',
-      itemId: detail.value.id,
-      data: payload,
-    })
-    Message.success(t('knowledge.messages.versionCreated'))
-  }
-  versionVisible.value = false
-}
-
-function submitReview(version: KnowledgeVersion): void {
-  Modal.confirm({
-    title: t('knowledge.review.title'),
-    content: t('knowledge.review.confirm', { version: version.version }),
-    okText: t('knowledge.review.action'),
-    cancelText: t('common.cancel'),
-    async onOk() {
-      if (!detail.value) return
-      await submitReviewMutation.mutateAsync({
-        itemId: detail.value.id,
-        versionId: version.id,
-        revision: version.revision,
-      })
-      Message.success(t('knowledge.messages.reviewSubmitted'))
-    },
+  await saveVersionMutation.mutateAsync({
+    itemId: detail.value.id,
+    data: payload,
   })
+  Message.success(t('knowledge.messages.versionCreated'))
+  versionVisible.value = false
 }
 
 function archiveKnowledge(row: KnowledgeItem): void {
@@ -716,33 +553,8 @@ function archiveKnowledge(row: KnowledgeItem): void {
     async onOk() {
       await archiveKnowledgeMutation.mutateAsync(row.id)
       Message.success(t('knowledge.messages.archived'))
-      if (detail.value?.id === row.id) closeDetail()
     },
   })
-}
-
-function viewVersion(version: KnowledgeVersion): void {
-  selectedVersion.value = version
-  if (version.contentType === 'FILE') {
-    const logicalFileId = version.fileVersion?.logicalFileId
-    if (!logicalFileId) {
-      Message.warning(t('knowledge.messages.noPreviewFile'))
-      return
-    }
-    filePreview.openPreview({ id: logicalFileId, title: versionFileName(version) })
-  } else if (version.contentType === 'LINK' && version.externalUrl) {
-    window.open(version.externalUrl, '_blank', 'noopener,noreferrer')
-  }
-}
-
-async function downloadVersion(version: KnowledgeVersion): Promise<void> {
-  const logicalFileId = version.fileVersion?.logicalFileId
-  if (!logicalFileId) {
-    Message.warning(t('knowledge.messages.noDownloadFile'))
-    return
-  }
-  const blob = await knowledgeApi.downloadFile(logicalFileId)
-  downloadBlob(blob, versionFileName(version))
 }
 
 function supportingFileName(fileVersionId: string): string {
@@ -759,26 +571,8 @@ function removeVersionSupportingFile(fileVersionId: string): void {
   )
 }
 
-function previewSupportingFile(fileVersionId: string, name: string): void {
-  filePreview.openPreview({ id: fileVersionId, title: name })
-}
-
-async function downloadSupportingFile(file: KnowledgeSupportingFile): Promise<void> {
-  const blob = await knowledgeApi.downloadFile(file.fileVersion.logicalFileId)
-  downloadBlob(blob, file.fileVersion.asset.originalName)
-}
-
-async function syncRouteIntent(): Promise<void> {
+function syncRouteIntent(): void {
   const mode = typeof route.query.mode === 'string' ? route.query.mode : ''
-  const id = firstRouteParam(route.params.id)
-  if (id) {
-    if (detail.value?.id !== id) await loadDetail(id)
-    return
-  }
-
-  detailVisible.value = false
-  selectedDetailId.value = ''
-  selectedVersion.value = null
   if (mode === 'create' && canCreate.value) {
     if (!createVisible.value) openCreate()
   }
@@ -801,22 +595,8 @@ watch(
 )
 
 watch(
-  () => knowledgeDetailQuery.data.value,
-  (record) => {
-    if (!record) return
-    if (
-      !selectedVersion.value ||
-      !record.versions?.some((item) => item.id === selectedVersion.value?.id)
-    ) {
-      selectedVersion.value = record.versions?.[0] ?? null
-    }
-  },
-  { immediate: true },
-)
-
-watch(
   () => route.fullPath,
-  () => void syncRouteIntent(),
+  syncRouteIntent,
   { immediate: true },
 )
 </script>
@@ -1006,189 +786,6 @@ watch(
       </div>
     </section>
 
-    <a-drawer
-      :visible="detailVisible"
-      width="80vw"
-      :title="detail?.title || t('knowledge.detailTitle')"
-      :footer="false"
-      unmount-on-close
-      @update:visible="handleDetailVisibility"
-    >
-      <a-spin :loading="detailLoading" class="detail-spin">
-        <template v-if="detail">
-          <div class="detail-command-bar">
-            <a-space size="small">
-              <a-button
-                v-if="canEdit && ['DRAFT', 'REJECTED'].includes(detail.status)"
-                size="small"
-                @click="openEdit()"
-              >
-                {{ t('knowledge.editMaster') }}
-              </a-button>
-              <a-button
-                v-if="canEdit && detail.status !== 'ARCHIVED' && !hasActiveDraftVersion"
-                size="small"
-                type="primary"
-                @click="openCreateVersion"
-              >
-                {{ t('knowledge.createVersion') }}
-              </a-button>
-              <a-button
-                v-if="canArchive && detail.status !== 'ARCHIVED' && detail.status !== 'IN_REVIEW'"
-                size="small"
-                status="danger"
-                @click="archiveKnowledge(detail)"
-              >
-                {{ t('knowledge.archive.actionShort') }}
-              </a-button>
-            </a-space>
-            <span>{{ t('knowledge.readonlyHint') }}</span>
-          </div>
-
-          <a-descriptions
-            :column="3"
-            bordered
-            size="small"
-            class="master-detail"
-          >
-            <a-descriptions-item :label="t('knowledge.fields.category')">
-              {{ detail.category?.name || '-' }}
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('knowledge.fields.contentType')">
-              {{ contentTypeLabel(detail.contentType) }}
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('common.status')">
-              <a-tag :color="statusMeta[detail.status].color" size="small">
-                {{ t(statusMeta[detail.status].label) }}
-              </a-tag>
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('knowledge.fields.effectiveAt')">
-              {{ formatDate(detail.effectiveAt) }}
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('knowledge.fields.creator')">
-              {{ detail.creator?.realName || '-' }}
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('knowledge.fields.updater')">
-              {{ detail.updater?.realName || '-' }}
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('common.updatedAt')">
-              {{ formatDate(detail.updatedAt) }}
-            </a-descriptions-item>
-            <a-descriptions-item :label="t('knowledge.fields.summary')" :span="3">
-              {{ detail.summary || '-' }}
-            </a-descriptions-item>
-          </a-descriptions>
-
-          <section class="detail-section">
-            <header>
-              <h2>{{ t('knowledge.versions') }}</h2>
-              <span>{{
-                t('knowledge.versionCount', { count: detail.versions?.length || 0 })
-              }}</span>
-            </header>
-            <BusinessTable
-              :columns="versionColumns"
-              :data="detail.versions || []"
-              :scroll="{ x: 1100 }"
-              row-key="id"
-              size="small"
-            >
-              <template #contentType="{ record }">
-                {{ contentTypeLabel(record.contentType) }}
-              </template>
-              <template #content="{ record }">
-                <span class="content-summary">{{ versionContentLabel(record) }}</span>
-              </template>
-              <template #status="{ record }">
-                <a-tag :color="statusColor(record.status)" size="small">
-                  {{ statusLabel(record.status) }}
-                </a-tag>
-              </template>
-              <template #changeDescription="{ record }">
-                {{ record.changeDescription || '-' }}
-              </template>
-              <template #submitter="{ record }">
-                {{ record.submitter?.realName || '-' }}
-              </template>
-              <template #createdAt="{ record }">
-                {{ formatDate(record.publishedAt || record.createdAt) }}
-              </template>
-              <template #actions="{ record }">
-                <a-space size="mini" :wrap="false">
-                  <a-button type="text" size="mini" @click="viewVersion(record)">
-                    {{ record.contentType === 'LINK' ? t('knowledge.open') : t('common.view') }}
-                  </a-button>
-                  <a-button
-                    v-if="canEdit && ['DRAFT', 'REJECTED'].includes(record.status)"
-                    type="text"
-                    size="mini"
-                    @click="openEditVersion(record)"
-                  >
-                    {{ t('knowledge.editDraft') }}
-                  </a-button>
-                  <a-button
-                    v-if="canDownload && record.contentType === 'FILE' && record.fileVersion"
-                    type="text"
-                    size="mini"
-                    @click="downloadVersion(record)"
-                  >
-                    {{ t('common.download') }}
-                  </a-button>
-                  <a-button
-                    v-if="canSubmitReview && ['DRAFT', 'REJECTED'].includes(record.status)"
-                    type="text"
-                    status="success"
-                    size="mini"
-                    @click="submitReview(record)"
-                  >
-                    {{ t('knowledge.review.action') }}
-                  </a-button>
-                </a-space>
-              </template>
-            </BusinessTable>
-
-            <div v-if="selectedVersion?.contentType === 'MARKDOWN'" class="online-content">
-              <div>
-                <strong>{{ selectedVersion.version }} {{ t('knowledge.markdownBody') }}</strong><span>{{ t('knowledge.readonly') }}</span>
-              </div>
-              <pre>{{ selectedVersion.markdownContent || t('knowledge.noContent') }}</pre>
-            </div>
-            <div v-else-if="selectedVersion?.contentType === 'LINK'" class="link-content">
-              <strong>{{ selectedVersion.version }} {{ t('knowledge.externalLink') }}</strong>
-              <a
-                :href="selectedVersion.externalUrl || undefined"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {{ selectedVersion.externalUrl || t('knowledge.noLink') }}
-              </a>
-            </div>
-            <div v-if="selectedVersion?.supportingFiles.length" class="supporting-files">
-              <strong>{{ t('knowledge.supportingFiles') }}</strong>
-              <div v-for="file in selectedVersion.supportingFiles" :key="file.id">
-                <button
-                  type="button"
-                  @click="
-                    previewSupportingFile(file.fileVersionId, file.fileVersion.asset.originalName)
-                  "
-                >
-                  {{ file.fileVersion.asset.originalName }}
-                </button>
-                <a-button
-                  v-if="canDownload"
-                  type="text"
-                  size="mini"
-                  @click="downloadSupportingFile(file)"
-                >
-                  {{ t('common.download') }}
-                </a-button>
-              </div>
-            </div>
-          </section>
-        </template>
-      </a-spin>
-    </a-drawer>
-
     <a-modal
       v-model:visible="createVisible"
       :title="t('knowledge.createTitle')"
@@ -1321,7 +918,7 @@ watch(
 
     <a-modal
       v-model:visible="versionVisible"
-      :title="editingVersionId ? t('knowledge.editVersionDraft') : t('knowledge.createVersion')"
+      :title="t('knowledge.createVersion')"
       :width="760"
       :ok-loading="versionSubmitting"
       :ok-text="t('knowledge.saveVersionDraft')"
@@ -1805,106 +1402,6 @@ watch(
   background: rgb(255 255 255 / 72%);
 }
 
-.detail-spin {
-  min-height: 240px;
-  display: block;
-}
-.detail-command-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-.detail-command-bar > span {
-  color: var(--color-text-3);
-  font-size: 12px;
-}
-.master-detail {
-  margin-bottom: 12px;
-}
-.detail-section {
-  margin-top: 14px;
-  border-top: 1px solid var(--color-border-2);
-  padding-top: 10px;
-}
-.detail-section > header {
-  min-height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-.detail-section h2 {
-  margin: 0;
-  font-size: 14px;
-}
-.detail-section header > span {
-  color: var(--color-text-3);
-  font-size: 12px;
-}
-
-.online-content,
-.link-content {
-  margin-top: 8px;
-  border: 1px solid var(--color-border-2);
-  background: var(--color-fill-1);
-}
-.online-content > div {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--color-border-2);
-}
-.online-content span {
-  color: var(--color-text-3);
-  font-size: 12px;
-}
-.online-content pre {
-  max-height: 360px;
-  margin: 0;
-  padding: 12px;
-  overflow: auto;
-  color: var(--color-text-2);
-  font:
-    12px/1.7 Consolas,
-    monospace;
-  white-space: pre-wrap;
-}
-.link-content {
-  display: grid;
-  gap: 6px;
-  padding: 10px;
-}
-.link-content a {
-  color: rgb(var(--primary-6));
-  overflow-wrap: anywhere;
-}
-.supporting-files {
-  display: grid;
-  gap: 7px;
-  margin-top: 8px;
-  padding: 10px;
-  border: 1px solid var(--color-border-2);
-  background: var(--color-fill-1);
-}
-.supporting-files > div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.supporting-files button {
-  min-width: 0;
-  padding: 0;
-  overflow: hidden;
-  border: 0;
-  color: rgb(var(--primary-6));
-  background: transparent;
-  cursor: pointer;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .supporting-tags {
   display: flex;
   flex-wrap: wrap;
@@ -1935,12 +1432,5 @@ watch(
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-@media (max-width: 900px) {
-  .detail-command-bar {
-    align-items: flex-start;
-    flex-direction: column;
-  }
 }
 </style>
