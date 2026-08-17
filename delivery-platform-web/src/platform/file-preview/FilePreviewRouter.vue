@@ -60,6 +60,7 @@ const deepZoomRef = ref<HTMLElement>()
 const officeRef = ref<HTMLElement>()
 const markdownHtml = ref('')
 const markdownToc = ref<Array<{ id: string; level: number; text: string }>>([])
+const previewContentUrl = ref('')
 const mediaError = ref('')
 const pdfPageCount = ref(0)
 const pdfError = ref('')
@@ -112,6 +113,8 @@ function clearViewers(): void {
   mediaError.value = ''
   markdownHtml.value = ''
   markdownToc.value = []
+  if (previewContentUrl.value) URL.revokeObjectURL(previewContentUrl.value)
+  previewContentUrl.value = ''
   if (pdfContainerRef.value) pdfContainerRef.value.innerHTML = ''
   imageViewer?.destroy()
   imageViewer = null
@@ -145,26 +148,38 @@ async function renderPreview(nextSession: FilePreviewSession): Promise<void> {
 async function renderActiveViewer(nextSession: FilePreviewSession): Promise<void> {
   switch (nextSession.route.viewer) {
     case 'pdf':
-      await renderPdf(nextSession.urls.content)
+      await renderPdf(await fileApi.loadPreviewContent(nextSession.file.id))
       break
     case 'image':
+      await loadPreviewContentUrl(nextSession.file.id)
       await enhanceImageViewer()
       break
     case 'deep-zoom-image':
-      await renderDeepZoom(nextSession.urls.content)
+      await loadPreviewContentUrl(nextSession.file.id)
+      await renderDeepZoom(previewContentUrl.value)
       break
     case 'markdown':
-      await renderMarkdown(nextSession.urls.content)
+      await renderMarkdown(await fileApi.loadPreviewContent(nextSession.file.id))
       break
     case 'onlyoffice':
       await renderOnlyOffice(nextSession)
+      break
+    case 'video':
+    case 'audio':
+      await loadPreviewContentUrl(nextSession.file.id)
       break
     default:
       break
   }
 }
 
-async function renderPdf(url: string): Promise<void> {
+async function loadPreviewContentUrl(fileId: string): Promise<void> {
+  const blob = await fileApi.loadPreviewContent(fileId)
+  previewContentUrl.value = URL.createObjectURL(blob)
+  await nextTick()
+}
+
+async function renderPdf(blob: Blob): Promise<void> {
   const token = ++pdfRenderToken
   const container = pdfContainerRef.value
   if (!container) return
@@ -173,7 +188,7 @@ async function renderPdf(url: string): Promise<void> {
   try {
     const pdfjsLib = await loadPdfjs()
     if (token !== pdfRenderToken) return
-    const loadingTask = pdfjsLib.getDocument({ url })
+    const loadingTask = pdfjsLib.getDocument({ data: await blob.arrayBuffer() })
     const pdf = await loadingTask.promise
     pdfPageCount.value = pdf.numPages
     const maxPages = Math.min(pdf.numPages, 80)
@@ -279,10 +294,8 @@ function loadOnlyOfficeScript(docsUrl: string): Promise<void> {
   return onlyOfficeScriptPromise
 }
 
-async function renderMarkdown(url: string): Promise<void> {
-  const response = await fetch(url)
-  if (!response.ok) throw new Error(`Markdown fetch failed: ${response.status}`)
-  const source = await response.text()
+async function renderMarkdown(blob: Blob): Promise<void> {
+  const source = await blob.text()
   const rendered = renderSafeMarkdown(source)
   markdownHtml.value = rendered.html
   markdownToc.value = rendered.toc
@@ -427,7 +440,7 @@ onBeforeUnmount(() => {
             </a-button>
           </div>
           <div ref="imageViewerRef" class="image-stage">
-            <img :src="session.urls.content" :alt="title" />
+            <img v-if="previewContentUrl" :src="previewContentUrl" :alt="title" />
           </div>
         </section>
 
@@ -473,10 +486,11 @@ onBeforeUnmount(() => {
 
         <section v-else-if="route?.viewer === 'video'" class="media-viewer">
           <video
+            v-if="previewContentUrl"
             controls
             playsinline
             preload="metadata"
-            :src="session.urls.content"
+            :src="previewContentUrl"
             @error="handleMediaError"
           />
           <a-empty v-if="mediaError" :description="mediaError" />
@@ -484,9 +498,10 @@ onBeforeUnmount(() => {
 
         <section v-else-if="route?.viewer === 'audio'" class="media-viewer audio-viewer">
           <audio
+            v-if="previewContentUrl"
             controls
             preload="metadata"
-            :src="session.urls.content"
+            :src="previewContentUrl"
             @error="handleMediaError"
           />
           <a-empty v-if="mediaError" :description="mediaError" />

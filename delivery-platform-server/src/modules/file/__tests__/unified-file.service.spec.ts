@@ -1348,6 +1348,39 @@ describe('UnifiedFileService', () => {
     );
   });
 
+  it('streams a resolved preview asset through the authenticated content path', async () => {
+    const prisma = {
+      logicalFile: { findFirst: jest.fn().mockResolvedValue(previewLogicalFile('md')) },
+      fileProcessingJob: { findMany: jest.fn().mockResolvedValue([]) },
+    } as unknown as PrismaService;
+    const stream = Readable.from('knowledge main file');
+    const storage = {
+      getObjectFrom: jest.fn().mockResolvedValue(stream),
+    } as unknown as FileStorageService;
+    const service = new UnifiedFileService(
+      prisma,
+      storage,
+      projectAccess,
+      reviewConfiguration,
+      reviewTasks,
+      operationLog,
+    );
+
+    const content = await service.getPreviewContent('logical-preview', previewActor());
+
+    expect(content).toEqual(
+      expect.objectContaining({
+        stream,
+        fileName: 'drawing.md',
+        mimeType: 'application/octet-stream',
+      }),
+    );
+    expect(storage.getObjectFrom).toHaveBeenCalledWith(
+      'delivery-platform',
+      'source/drawing.md',
+    );
+  });
+
   function pdfFile(originalname = 'drawing.pdf'): Express.Multer.File {
     const buffer = Buffer.from('%PDF-1.7\nmock');
     return {

@@ -305,7 +305,7 @@ flowchart TD
 
 1. 页面传入逻辑文件 ID 或文件版本 ID 和标题。
 2. `FilePreviewRouter` 请求 `GET /files/:id/preview-session`。
-3. 后端完成文件权限、待审可见性和下载权限判断，返回同源 `/storage/` 短期签名内容 URL、Viewer 类型和处理状态；前端 Nginx 保留签名 Host 代理到私有 MinIO，浏览器不接触容器内部主机名。
+3. 后端完成文件权限、待审可见性和下载权限判断，返回 Viewer 类型和处理状态；前端再通过带 JWT 的 `/files/:id/preview-content` 读取后端解析后的真实预览产物 Blob，浏览器不接触容器内部 MinIO 地址，预览内容接口继续执行 VIEW 权限、数据范围和历史版本可见性终检。
 4. 前端只在 `availability.state=READY` 时加载具体 Viewer。
 5. 下载按钮只在 `downloadAllowed=true` 时出现，下载再次调用受控 `/files/:id/download`。
 
