@@ -90,6 +90,7 @@ UI E2E 默认使用 Playwright 锁定版本的 Chromium，CI 通过 `playwright 
 7. 集成 Secret 迁移后，公开配置中不得残留明文 Secret；密钥、API 和 Outbox Worker 使用同一个加密密钥。
 8. 标准历史结构化正文必须物化为经流式 checksum 校验的真实 MinIO 文件；每个有效 StandardVersion 都有唯一主文件。KnowledgeVersion 必须严格满足 FILE/MARKDOWN/LINK 三选一，支持文件归属和 published pointer 一致。
    历史上只有 Standard 聚合、没有 StandardVersion 的记录不得删除：内容迁移必须先为可识别状态确定性规划 `V1.0`，再通过同一 MinIO 对象、checksum、LogicalFile、FileAsset 和 FileVersion 门禁落库；未知状态继续 fail closed。测试数据补齐后必须再次执行 strict dry-run、apply 和只读 strict verify，禁止把无版本聚合留给下一次发布。
+   测试服务器旧随机标准只允许按 `TS-* / 随机测试标准 * / DRAFT / 无当前发布版本` 四重签名软归档；清理前检查待审任务，清理后只读 verify 必须证明活动残留为 0。新测试数据不得再创建随机标准。
 9. UI 翻译退役只允许把 `translations` 原子归档为 `retired_ui_translations_20260713`，部署表计数报告必须证明行数未减少；运行时 Prisma、seed 和 API 不再读写该表。
 10. 迁移失败不得继续启动 API 或 Worker；回滚必须成对恢复数据库和 MinIO。
 11. `_prisma_migrations` 必须恰好包含源码中的 47 个有效迁移，每个迁移完成且 `migration.sql` SHA-256 与数据库记录一致；数据库中不得存在源码缺失的有效迁移。
@@ -110,7 +111,7 @@ UI E2E 默认使用 Playwright 锁定版本的 Chromium，CI 通过 `playwright 
 
 ## 2026-08-02 当前仓库侧验收状态
 
-源码静态事实由 `node scripts/verify-doc-facts.mjs` 在每次验收中重新计算。当前仓库扫描范围为 726 个受版本控制或待纳入版本控制的文件；前端 202 个 TypeScript/Vue 文件、25 个 `views/` Vue 文件、28 个运行时 API 文件和 47 个测试文件；后端 252 个 TypeScript 文件、28 个 Controller、43 个 Service、30 个 Module、177 个 HTTP 路由和 47 个 Prisma migration。以上数字只作为本次交付快照，后续发布仍以脚本实时计算结果为准。
+源码静态事实由 `node scripts/verify-doc-facts.mjs` 在每次验收中重新计算。当前仓库扫描范围为 727 个受版本控制或待纳入版本控制的文件；前端 202 个 TypeScript/Vue 文件、25 个 `views/` Vue 文件、28 个运行时 API 文件和 47 个测试文件；后端 252 个 TypeScript 文件、28 个 Controller、43 个 Service、30 个 Module、177 个 HTTP 路由和 47 个 Prisma migration。以上数字只作为本次交付快照，后续发布仍以脚本实时计算结果为准。
 
 发布迁移验收脚本核对应用迁移与校验和、二次 seed 全库表计数以及 MinIO/File Worker/Outbox Worker 一致性。日常本机不再启动这些依赖；相同正式发布物的真实依赖验收由 `.github/workflows/release.yml` 的 integration 作业执行。
 

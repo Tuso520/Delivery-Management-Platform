@@ -186,9 +186,11 @@ app_compose run --rm --no-deps -T \
   -e SYNC_FEISHU="$SYNC_FEISHU" \
   -e FEISHU_TEST_RECIPIENT_EMAIL="$FEISHU_TEST_RECIPIENT_EMAIL" \
   -e DMP_TEST_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
+  -e DMP_EXPECTED_RELEASE_ID="$EXPECTED_RELEASE_ID" \
   --entrypoint node backend-migrate - <<'NODE'
 const baseUrl = 'http://backend:3000/api/v1';
 const password = process.env.DMP_TEST_ADMIN_PASSWORD;
+const expectedReleaseId = process.env.DMP_EXPECTED_RELEASE_ID;
 const syncFeishu = process.env.SYNC_FEISHU === 'true';
 const configuredTestRecipientEmail = process.env.FEISHU_TEST_RECIPIENT_EMAIL || '';
 
@@ -259,6 +261,76 @@ const profile = await jsonRequest('/auth/profile', {
   headers: { authorization: `Bearer ${session.accessToken}` },
 });
 requireEnvelope(profile, 200, 'authenticated profile');
+
+const standardFieldsResult = await jsonRequest('/field-options/module/standard', {
+  headers: { authorization: `Bearer ${session.accessToken}` },
+});
+const standardFields = requireEnvelope(standardFieldsResult, 200, 'standard field configuration');
+function configuredValue(code, preferred) {
+  const field = standardFields.find((item) => item.fieldCode === code);
+  const enabled = field?.options?.filter((option) => option.enabled) || [];
+  const value = enabled.find((option) => option.value === preferred)?.value || enabled[0]?.value;
+  if (!value) fail(`standard field ${code} has no enabled option`);
+  return value;
+}
+
+const legacyStandards = await jsonRequest(
+  `/standards?keyword=${encodeURIComponent('随机测试标准')}&page=1&pageSize=100`,
+  { headers: { authorization: `Bearer ${session.accessToken}` } },
+);
+const legacyStandardPage = requireEnvelope(legacyStandards, 200, 'legacy standard cleanup');
+if (legacyStandardPage.total !== 0) {
+  fail(`legacy random standards remain active: ${legacyStandardPage.total}`);
+}
+
+if (!expectedReleaseId) fail('expected release id is unavailable inside runtime acceptance');
+const standardMarker = `${expectedReleaseId.slice(0, 12)}-${Date.now().toString(36)}`;
+const standardFile = new FormData();
+standardFile.append(
+  'file',
+  new Blob([`runtime standard archive acceptance ${standardMarker}\n`], {
+    type: 'text/markdown',
+  }),
+  `runtime-standard-${standardMarker}.md`,
+);
+standardFile.append('ownerType', 'STANDARD');
+standardFile.append('changeDescription', 'test runtime archive acceptance');
+const standardUploadResult = await jsonRequest('/files/drafts', {
+  method: 'POST',
+  headers: {
+    authorization: `Bearer ${session.accessToken}`,
+    'idempotency-key': `runtime-standard-${standardMarker}`,
+  },
+  body: standardFile,
+});
+const standardUpload = requireEnvelope(standardUploadResult, 201, 'standard file upload');
+const standardCreateResult = await jsonRequest('/standards', {
+  method: 'POST',
+  headers: {
+    authorization: `Bearer ${session.accessToken}`,
+    'content-type': 'application/json',
+  },
+  body: JSON.stringify({
+    code: `RTA-${standardMarker}`.slice(0, 50),
+    name: `运行时归档验收-${standardMarker}`,
+    type: configuredValue('STANDARD_TYPE', 'DOCUMENT_TEMPLATE'),
+    deliveryStageCode: configuredValue('STANDARD_DELIVERY_STAGE', 'PROJECT_STARTUP'),
+    businessTypeCode: configuredValue('STANDARD_BUSINESS_TYPE', 'GENERAL'),
+    countryCodes: [configuredValue('COUNTRY', 'CN')],
+    version: 'V1.0',
+    fileVersionId: standardUpload.fileVersionId,
+    changeDescription: 'test runtime archive acceptance',
+  }),
+});
+const runtimeStandard = requireEnvelope(standardCreateResult, 201, 'standard creation');
+const standardArchiveResult = await jsonRequest(`/standards/${runtimeStandard.id}/archive`, {
+  method: 'POST',
+  headers: { authorization: `Bearer ${session.accessToken}` },
+});
+const archivedStandard = requireEnvelope(standardArchiveResult, 200, 'standard archive');
+if (archivedStandard.id !== runtimeStandard.id || archivedStandard.status !== 'ARCHIVED') {
+  fail('standard archive returned an invalid state');
+}
 
 const integration = await jsonRequest('/integrations/FEISHU', {
   headers: { authorization: `Bearer ${session.accessToken}` },

@@ -75,6 +75,7 @@ jobs:
           DATA_PROJECT_NAME: delivery-platform-ci-data-config
           APP_PROJECT_NAME: delivery-platform-ci-app-config
           DATA_NETWORK_NAME: delivery-platform-ci-data-config
+          DEPLOY_ENV: test
           MYSQL_VOLUME_NAME: delivery-platform-ci-mysql-config
           REDIS_VOLUME_NAME: delivery-platform-ci-redis-config
           MINIO_VOLUME_NAME: delivery-platform-ci-minio-config

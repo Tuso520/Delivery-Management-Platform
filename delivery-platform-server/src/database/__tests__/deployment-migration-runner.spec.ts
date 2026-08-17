@@ -139,7 +139,9 @@ describe('deployment migration runner', () => {
     expect(source).toContain(
       'actor_username="${INTEGRATION_SECRET_MIGRATION_ACTOR_USERNAME:-admin}"',
     );
-    expect(source.match(/--apply "--actor-username=\$actor_username"/gu)).toHaveLength(3);
+    expect(source.match(/--apply "--actor-username=\$actor_username"/gu)).toHaveLength(4);
+    expect(source).toContain('if [ "${DEPLOY_ENV:-}" = \'test\' ]; then');
+    expect(source).toContain('prisma/retire-legacy-test-standards.ts --verify');
     expect(source).toContain('set -eu');
   });
 

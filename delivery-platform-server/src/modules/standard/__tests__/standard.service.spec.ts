@@ -532,6 +532,42 @@ describe('StandardService', () => {
     expect(result).toEqual(expect.objectContaining({ id: 'standard-1', status: 'ARCHIVED' }));
   });
 
+  it('archives a legacy versionless standard without issuing an empty review lookup', async () => {
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'standard-legacy', archived_at: null }]),
+      standardVersion: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      reviewTask: { findFirst: jest.fn() },
+      standard: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      operationLog: { create: jest.fn().mockResolvedValue({ id: 'log-legacy' }) },
+    };
+    const prisma = {
+      $transaction: jest
+        .fn()
+        .mockImplementation((callback: (client: typeof tx) => Promise<unknown>) => callback(tx)),
+    } as unknown as PrismaService;
+    const service = new StandardService(prisma, reviewConfiguration, reviewTasks);
+
+    const result = await service.archive('standard-legacy', {
+      sub: 'manager-1',
+      permissions: ['standard:archive'],
+    });
+
+    expect(tx.reviewTask.findFirst).not.toHaveBeenCalled();
+    expect(tx.standard.updateMany).toHaveBeenCalledWith({
+      where: { id: 'standard-legacy', archivedAt: null },
+      data: expect.objectContaining({
+        status: 'ARCHIVED',
+        isEnabled: false,
+        updatedBy: 'manager-1',
+      }),
+    });
+    expect(result).toEqual(expect.objectContaining({ id: 'standard-legacy', status: 'ARCHIVED' }));
+  });
+
   it('never exposes legacy snapshots or file storage metadata in public detail responses', async () => {
     const versionFindMany = jest.fn().mockResolvedValue([
       standardVersionRecord({

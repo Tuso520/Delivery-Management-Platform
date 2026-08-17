@@ -879,15 +879,17 @@ export class StandardService {
         where: { standardId: id },
         select: { id: true },
       });
-      const activeTask = await tx.reviewTask.findFirst({
-        where: {
-          sourceType: 'STANDARD',
-          status: 'PENDING',
-          archivedAt: null,
-          sourceVersionId: { in: versionIds.map((version) => version.id) },
-        },
-        select: { id: true },
-      });
+      const activeTask = versionIds.length
+        ? await tx.reviewTask.findFirst({
+            where: {
+              sourceType: 'STANDARD',
+              status: 'PENDING',
+              archivedAt: null,
+              sourceVersionId: { in: versionIds.map((version) => version.id) },
+            },
+            select: { id: true },
+          })
+        : null;
       if (inReview || activeTask) {
         throw new ConflictException('标准存在审核中版本，不能归档');
       }

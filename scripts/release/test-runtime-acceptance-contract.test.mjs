@@ -78,3 +78,13 @@ test('deployed authentication, refresh, permission and Feishu gates are explicit
     assert.ok(verifier.includes(contract), `missing runtime contract: ${contract}`)
   }
 })
+
+test('runtime acceptance exercises configured standard creation, real upload and archive cleanup', () => {
+  assert.match(verifier, /\/field-options\/module\/standard/u)
+  assert.match(verifier, /随机测试标准/u)
+  assert.match(verifier, /legacyStandardPage\.total !== 0/u)
+  assert.match(verifier, /new FormData\(\)/u)
+  assert.match(verifier, /\/files\/drafts/u)
+  assert.match(verifier, /\/standards\/\$\{runtimeStandard\.id\}\/archive/u)
+  assert.match(verifier, /archivedStandard\.status !== 'ARCHIVED'/u)
+})

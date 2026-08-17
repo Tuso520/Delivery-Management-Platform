@@ -152,6 +152,15 @@ ts-node --transpile-only prisma/migrate-target-content.ts --strict
 current_stage="target content apply"
 ts-node --transpile-only prisma/migrate-target-content.ts \
   --apply "--actor-username=$actor_username"
+if [ "${DEPLOY_ENV:-}" = 'test' ]; then
+  current_stage="legacy random test standard retirement dry-run"
+  ts-node --transpile-only prisma/retire-legacy-test-standards.ts
+  current_stage="legacy random test standard retirement apply"
+  ts-node --transpile-only prisma/retire-legacy-test-standards.ts \
+    --apply "--actor-username=$actor_username"
+  current_stage="legacy random test standard retirement verification"
+  ts-node --transpile-only prisma/retire-legacy-test-standards.ts --verify
+fi
 current_stage="target foundation strict dry-run"
 ts-node --transpile-only prisma/migrate-target-foundation.ts --strict
 current_stage="target foundation apply"
