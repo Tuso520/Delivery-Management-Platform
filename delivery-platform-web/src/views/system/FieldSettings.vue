@@ -237,6 +237,7 @@ onMounted(async () => {
           v-for="category in categories"
           :key="category.id"
           :value="category.id"
+          class="category-tab"
         >
           {{ category.categoryName }}
         </a-radio>

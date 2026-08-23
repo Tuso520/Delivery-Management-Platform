@@ -682,6 +682,7 @@ watch(
             type="text"
             class="knowledge-category"
             :class="{ 'knowledge-category--active': selectedCategoryId === category.id }"
+            v-bind="{ 'data-category-id': category.id }"
             @click="selectCategory(category.id)"
           >
             <span>{{ category.label }}</span>
@@ -716,16 +717,20 @@ watch(
               :retry-label="t('knowledge.retry')"
               @retry="fetchList"
             >
-              <a-table-column :title="t('knowledge.fields.title')" :min-width="360">
+              <a-table-column :title="t('knowledge.fields.title')" :min-width="365">
                 <template #cell="{ record }">
                   <a-tooltip :content="knowledgeMaterialName(record)" position="top">
-                    <a-link @click="openKnowledgeMaterial(record)">
+                    <a-button
+                      type="text"
+                      class="knowledge-table__title-button"
+                      @click="openKnowledgeMaterial(record)"
+                    >
                       {{ knowledgeMaterialName(record) }}
-                    </a-link>
+                    </a-button>
                   </a-tooltip>
                 </template>
               </a-table-column>
-              <a-table-column :title="t('knowledge.fields.currentVersion')" :width="100" align="center">
+              <a-table-column :title="t('knowledge.fields.currentVersion')" :width="90" align="center">
                 <template #cell="{ record }">
                   {{ record.currentPublishedVersion?.version || '-' }}
                 </template>
@@ -1281,40 +1286,13 @@ watch(
 .knowledge-table {
   width: 100%;
   min-width: 937px;
-  table-layout: fixed;
-  border-collapse: collapse;
   color: #1d2129;
   font-size: 13px;
 }
 
-.knowledge-table .column-title {
-  width: auto;
-}
-
-.knowledge-table .column-version {
-  width: 90px;
-}
-
-.knowledge-table .column-date {
-  width: 130px;
-}
-
-.knowledge-table .column-updater {
-  width: 170px;
-}
-
-.knowledge-table .column-actions {
-  width: 182px;
-}
-
-.knowledge-table-region--state .knowledge-table {
-  height: 100%;
-}
-
-.knowledge-table th,
-.knowledge-table td {
+.knowledge-table :deep(.arco-table-th),
+.knowledge-table :deep(.arco-table-td) {
   height: 44px;
-  padding: 0 12px;
   overflow: hidden;
   border-right: 1px solid var(--knowledge-border);
   border-bottom: 1px solid var(--knowledge-border);
@@ -1324,12 +1302,18 @@ watch(
   box-sizing: border-box;
 }
 
-.knowledge-table th:last-child,
-.knowledge-table td:last-child {
+.knowledge-table :deep(.arco-table-cell) {
+  padding: 0 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.knowledge-table :deep(.arco-table-th:last-child),
+.knowledge-table :deep(.arco-table-td:last-child) {
   border-right: 0;
 }
 
-.knowledge-table th {
+.knowledge-table :deep(.arco-table-th) {
   position: sticky;
   z-index: 1;
   top: 0;
@@ -1337,70 +1321,22 @@ watch(
   font-weight: 500;
 }
 
-.knowledge-table tbody tr:nth-child(even) {
-  background: #f7f8fa;
-}
-
-.knowledge-table__title {
-  text-align: left !important;
-}
-
-.knowledge-table__title button {
+.knowledge-table :deep(.knowledge-table__title-button) {
   width: 100%;
   display: block;
   overflow: hidden;
   padding: 0;
-  border: 0;
   color: #165dff;
-  background: transparent;
-  cursor: pointer;
-  font: inherit;
   font-weight: 500;
-  line-height: 43px;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.knowledge-table__person span {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.knowledge-table__actions button {
-  padding: 0;
-  border: 0;
-  color: #3878f5;
-  background: transparent;
-  cursor: pointer;
-  font: inherit;
-}
-
-.knowledge-table__actions button + button {
-  margin-left: 24px;
-}
-
-.knowledge-table__actions .knowledge-table__archive {
-  color: #e33836;
-}
-
-.knowledge-table__state {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  color: #86909c;
-}
-
-.knowledge-table-loading {
-  position: absolute;
-  z-index: 3;
-  inset: 44px 0 0;
-  display: grid;
-  place-items: center;
-  background: rgb(255 255 255 / 72%);
+.knowledge-table :deep(.knowledge-table__title-button:hover),
+.knowledge-table :deep(.knowledge-table__title-button:focus-visible) {
+  color: #0e42d2;
+  text-decoration: underline;
 }
 
 .supporting-tags {

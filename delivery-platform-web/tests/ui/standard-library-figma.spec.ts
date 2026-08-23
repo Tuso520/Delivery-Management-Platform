@@ -205,7 +205,7 @@ test('standard library matches Figma node 70:322 geometry and real configured co
   await page.locator('.category-tabs button').nth(0).click()
   await expect(page.locator('.category-tabs button').nth(0)).toHaveClass(/active/u)
 
-  await table.locator('.title-cell button').first().click()
+  await table.locator('.standard-table__title-button').first().click()
   await expect(page.locator('.attachment-preview-modal')).toBeVisible()
   await expect(page.locator('.arco-drawer')).toHaveCount(0)
   await page.locator('.attachment-preview-modal .arco-modal-close-btn').click()
@@ -298,8 +298,8 @@ test('standard library keeps real loading, empty and validation errors inside th
 
   const emptyKeyword = `standard-library-empty-${Date.now()}`
   await page.goto(`/#/standards?keyword=${emptyKeyword}`)
-  await expect(page.locator('.table-loading')).toBeVisible()
-  await expect(page.locator('.standard-table .empty-cell')).toContainText('暂无标准')
+  await expect(page.locator('.standard-table .arco-spin-loading')).toBeVisible()
+  await expect(page.locator('.standard-table').getByText('暂无标准', { exact: true })).toBeVisible()
   await expect(page.locator('.library-panel')).toBeVisible()
 
   const firstPageResponse = await page.request.get(
@@ -438,7 +438,7 @@ test('standard library renders a real long draft, published actions and minimum-
     await page.goto(`/#/standards?keyword=${encodeURIComponent(standardCode)}`)
     const row = page.locator('.standard-table tbody tr').filter({ hasText: longFileName })
     await expect(row).toHaveCount(1)
-    const titleButton = row.locator('.title-cell button')
+    const titleButton = row.locator('.standard-table__title-button')
     await expect(titleButton).toHaveAttribute('title', longFileName)
     expect(
       await titleButton.evaluate((element) => element.scrollWidth > element.clientWidth),
@@ -449,7 +449,7 @@ test('standard library renders a real long draft, published actions and minimum-
     await expect(row.getByRole('button', { name: '归档', exact: true })).toBeVisible()
 
     await page.setViewportSize({ width: 1280, height: 800 })
-    const horizontalScroll = page.locator('.content-scroll')
+    const horizontalScroll = page.locator('.standard-table .business-table__viewport')
     const dimensions = await horizontalScroll.evaluate((element) => ({
       clientWidth: element.clientWidth,
       scrollWidth: element.scrollWidth,
@@ -458,7 +458,7 @@ test('standard library renders a real long draft, published actions and minimum-
     await horizontalScroll.evaluate((element) => {
       element.scrollLeft = element.scrollWidth
     })
-    await expect(row.locator('.action-cell')).toBeInViewport()
+    await expect(row.getByRole('button', { name: '归档', exact: true })).toBeInViewport()
 
     await page.locator('.keyword-input input').clear()
     await page.getByRole('button', { name: '查询', exact: true }).click()

@@ -257,7 +257,9 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
   await expect(page.locator('.knowledge-category-description h1')).toHaveText(activeCategoryLabel)
   await expect(page.locator('.knowledge-category-description p')).not.toBeEmpty()
 
-  const selectedCategoryId = await page.locator('.knowledge-category--active').getAttribute('value')
+  const selectedCategoryId = await page
+    .locator('.knowledge-category--active')
+    .getAttribute('data-category-id')
   expect(selectedCategoryId).toBeTruthy()
 
   const longTitle = `知识库超长标题-${Date.now()}-${'跨国交付现场调试与验收操作规范'.repeat(5)}`
@@ -550,7 +552,7 @@ test('knowledge library exposes real loading/error recovery to a read-only user'
     .poll(() => page.locator('.knowledge-category').count(), { timeout: 60_000 })
     .toBeGreaterThan(0)
   await expect(page.getByRole('button', { name: '新增' })).toHaveCount(0)
-  await expect(page.locator('.knowledge-table__actions button')).toHaveCount(0)
+  await expect(page.locator('.knowledge-table tbody button')).toHaveCount(0)
 
   const list = await fetchKnowledge(page.request, accessToken, 'page=1&pageSize=1')
   const forbiddenCreate = await page.request.post('/api/v1/knowledge', {
@@ -576,8 +578,8 @@ test('knowledge library exposes real loading/error recovery to a read-only user'
   })
   await page.locator('.knowledge-search-input input').fill('延迟加载验收')
   await page.getByRole('button', { name: '查询' }).click()
-  await expect(page.locator('.knowledge-table-loading')).toBeVisible()
-  await expect(page.locator('.knowledge-table-loading')).toBeHidden({ timeout: 60_000 })
+  await expect(page.locator('.knowledge-table .arco-spin-loading')).toBeVisible()
+  await expect(page.locator('.knowledge-table .arco-spin-loading')).toBeHidden({ timeout: 60_000 })
   await page.unroute('**/api/v1/knowledge?**')
 
   await page.route('**/api/v1/knowledge?**', async (route) => {

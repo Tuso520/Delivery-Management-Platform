@@ -681,9 +681,14 @@ function archiveStandard(row: Standard): void {
             >
               <a-table-column :title="t('standard.fields.title')" :min-width="365">
                 <template #cell="{ record: row }">
-                  <a-link v-bind="{ title: standardFileName(row) }" @click="previewStandard(row)">
+                  <a-button
+                    type="text"
+                    class="standard-table__title-button"
+                    v-bind="{ title: standardFileName(row) }"
+                    @click="previewStandard(row)"
+                  >
                     {{ standardFileName(row) }}
-                  </a-link>
+                  </a-button>
                 </template>
               </a-table-column>
               <a-table-column
@@ -1395,34 +1400,10 @@ function archiveStandard(row: Standard): void {
 .standard-table {
   width: 100%;
   min-width: 937px;
-  border-spacing: 0;
-  border-collapse: separate;
-  table-layout: fixed;
 
-  .column-title {
-    width: auto;
-  }
-
-  .column-version {
-    width: 90px;
-  }
-
-  .column-date {
-    width: 130px;
-  }
-
-  .column-updater {
-    width: 170px;
-  }
-
-  .column-actions {
-    width: 182px;
-  }
-
-  th,
-  td {
+  :deep(.arco-table-th),
+  :deep(.arco-table-td) {
     height: 44px;
-    padding: 0 12px;
     overflow: hidden;
     border-right: 1px solid #e5e6eb;
     border-bottom: 1px solid #e5e6eb;
@@ -1433,7 +1414,13 @@ function archiveStandard(row: Standard): void {
     white-space: nowrap;
   }
 
-  th {
+  :deep(.arco-table-cell) {
+    padding: 0 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  :deep(.arco-table-th) {
     position: sticky;
     z-index: 2;
     top: 0;
@@ -1442,29 +1429,12 @@ function archiveStandard(row: Standard): void {
     text-align: center;
   }
 
-  tbody tr:nth-child(odd) td {
-    background: #fff;
-  }
-
-  tbody tr:nth-child(even) td {
-    background: #f7f8fa;
-  }
-
-  .title-cell button,
-  .action-cell button,
-  .version-link {
-    padding: 0;
-    border: 0;
-    background: transparent;
-    font: inherit;
-    cursor: pointer;
-  }
-
-  .title-cell button {
+  :deep(.standard-table__title-button) {
     width: 100%;
     max-width: 100%;
     display: block;
     overflow: hidden;
+    padding: 0;
     color: #165dff;
     font-weight: 500;
     text-align: left;
@@ -1472,54 +1442,11 @@ function archiveStandard(row: Standard): void {
     white-space: nowrap;
   }
 
-  .title-cell button:hover,
-  .title-cell button:focus-visible,
-  .action-edit:hover,
-  .action-edit:focus-visible {
+  :deep(.standard-table__title-button:hover),
+  :deep(.standard-table__title-button:focus-visible) {
     color: #0e42d2;
     text-decoration: underline;
   }
-
-  .center-cell {
-    text-align: center;
-  }
-
-  .action-cell {
-    text-align: center;
-
-    button + button {
-      margin-left: 24px;
-    }
-  }
-
-  .action-edit {
-    color: #3878f5;
-  }
-
-  .action-archive {
-    color: #e33836;
-  }
-
-  .action-archive:hover,
-  .action-archive:focus-visible {
-    color: #b71c1c;
-    text-decoration: underline;
-  }
-
-  .empty-cell {
-    color: #86909c;
-    text-align: center;
-  }
-}
-
-.table-loading {
-  position: absolute;
-  z-index: 3;
-  inset: 44px 0 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgb(255 255 255 / 64%);
 }
 
 .detail-loading {
