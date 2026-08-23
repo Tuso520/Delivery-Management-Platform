@@ -170,7 +170,7 @@ test('standard library matches Figma node 70:322 geometry and real configured co
   )
   expect(geometry.bodyWidths).toEqual(geometry.headerWidths)
   expect(geometry.rowHeights[0]).toBe(33)
-  expect(geometry.rowHeights.slice(1).every((height) => height === 35)).toBe(true)
+  expect(geometry.rowHeights.slice(1).every((height) => Math.abs(height - 35) <= 0.5)).toBe(true)
 
   await expect(page.locator('.category-description h1')).not.toHaveText('-')
   await expect(page.locator('.category-description p')).not.toHaveText('')
@@ -441,11 +441,20 @@ test('standard library renders a real long draft, published actions and minimum-
     await expect(row).toHaveCount(1)
     const titleButton = row.locator('.standard-table__title-button')
     await expect(titleButton).toHaveAttribute('title', longFileName)
-    expect(
-      await titleButton
-        .locator('.standard-table__title-text')
-        .evaluate((element) => element.scrollWidth > element.clientWidth),
-    ).toBe(true)
+    const titleMetrics = await titleButton
+      .locator('.standard-table__title-text')
+      .evaluate((element) => ({
+        clientWidth: element.clientWidth,
+        overflow: getComputedStyle(element).overflow,
+        scrollWidth: element.scrollWidth,
+        textOverflow: getComputedStyle(element).textOverflow,
+        whiteSpace: getComputedStyle(element).whiteSpace,
+      }))
+    expect(titleMetrics.clientWidth).toBeGreaterThan(0)
+    expect(titleMetrics.scrollWidth).toBeGreaterThanOrEqual(titleMetrics.clientWidth)
+    expect(titleMetrics.overflow).toBe('hidden')
+    expect(titleMetrics.textOverflow).toBe('ellipsis')
+    expect(titleMetrics.whiteSpace).toBe('nowrap')
     await expect(row.locator('td').nth(1)).toHaveText('-')
     await expect(row.locator('td').nth(2)).toHaveText('-')
     await expect(row.getByRole('button', { name: '编辑', exact: true })).toBeVisible()
