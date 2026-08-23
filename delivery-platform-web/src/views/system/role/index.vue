@@ -68,6 +68,7 @@ const permDialogVisible = ref(false)
 const currentRoleForPerm = ref<Role | null>(null)
 const currentRoleId = computed(() => currentRoleForPerm.value?.id ?? '')
 const selectedPermIds = ref<string[]>([])
+const hydratedPermissionRoleId = ref('')
 const permissionGroupsQuery = usePermissionGroupsQuery(permDialogVisible)
 const roleDetailQuery = useRoleDetailQuery(currentRoleId, permDialogVisible)
 const permissionModules = computed<PermissionModule[]>(() => permissionGroupsQuery.data.value ?? [])
@@ -222,6 +223,7 @@ function handleDelete(row: Role): void {
 function openAssignPermissions(row: Role): void {
   currentRoleForPerm.value = row
   selectedPermIds.value = []
+  hydratedPermissionRoleId.value = ''
   permDialogVisible.value = true
 }
 
@@ -280,8 +282,13 @@ function allActionPermissions(actionGroup: ActionGroup): Permission[] {
 watch(
   [() => permDialogVisible.value, () => roleDetailQuery.data.value],
   ([visible, detail]) => {
-    if (visible && detail?.id === currentRoleId.value) {
+    if (
+      visible &&
+      detail?.id === currentRoleId.value &&
+      hydratedPermissionRoleId.value !== currentRoleId.value
+    ) {
       selectedPermIds.value = detail.permissions.map((permission: Permission) => permission.id)
+      hydratedPermissionRoleId.value = currentRoleId.value
     }
   },
   { immediate: true },

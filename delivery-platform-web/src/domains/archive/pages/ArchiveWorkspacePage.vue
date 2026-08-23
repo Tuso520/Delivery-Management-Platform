@@ -21,7 +21,10 @@ import type {
   ProjectArchiveTargetFolder,
   ProjectArchiveTargetItem,
 } from '@/domains/archive/types/archive'
-import { resolveProjectArchiveFileName } from '@/domains/archive/utils/project-archive-file'
+import {
+  resolveArchiveUploadTargetLabel,
+  resolveProjectArchiveFileName,
+} from '@/domains/archive/utils/project-archive-file'
 import { BusinessTable, PageContainer } from '@/design-system'
 import { usePermission } from '@/composables/usePermission'
 import { useFieldConfig } from '@/platform/field-configuration'
@@ -82,7 +85,7 @@ const uploadItem = computed<ProjectArchiveTargetItem | null>(
 const uploadItemOptions = computed(() =>
   uploadCandidates.value.map(({ folderName, item }) => ({
     value: item.id,
-    label: `${folderName} / ${item.name}`,
+    label: resolveArchiveUploadTargetLabel(folderName, item.name),
   })),
 )
 

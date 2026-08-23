@@ -226,19 +226,21 @@ onMounted(async () => {
     </h1>
 
     <a-spin :loading="loadingCategories" class="category-tabs-spin">
-      <div class="category-tabs" role="tablist" aria-label="字段分类">
-        <button
+      <a-radio-group
+        :model-value="selectedCategoryId"
+        type="button"
+        class="category-tabs"
+        v-bind="{ 'aria-label': '字段分类' }"
+        @change="selectCategory(String($event))"
+      >
+        <a-radio
           v-for="category in categories"
           :key="category.id"
-          type="button"
-          role="tab"
-          :aria-selected="category.id === selectedCategoryId"
-          :class="['category-tab', { active: category.id === selectedCategoryId }]"
-          @click="selectCategory(category.id)"
+          :value="category.id"
         >
           {{ category.categoryName }}
-        </button>
-      </div>
+        </a-radio>
+      </a-radio-group>
     </a-spin>
 
     <BusinessTable
@@ -384,7 +386,7 @@ onMounted(async () => {
   border-bottom: 1px solid #e5e6eb;
   scrollbar-width: thin;
 }
-.category-tab {
+.category-tabs :deep(.arco-radio-button) {
   height: 40px;
   flex: 0 0 auto;
   padding: 0;
@@ -395,8 +397,8 @@ onMounted(async () => {
   font-size: 14px;
   cursor: pointer;
 }
-.category-tab:hover { color: #165dff; }
-.category-tab.active {
+.category-tabs :deep(.arco-radio-button:hover) { color: #165dff; }
+.category-tabs :deep(.arco-radio-button.arco-radio-checked) {
   border-bottom-color: #165dff;
   color: #165dff;
   font-weight: 500;

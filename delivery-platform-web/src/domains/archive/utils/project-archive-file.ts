@@ -1,5 +1,7 @@
 import type { ProjectArchiveTargetItem } from '@/domains/archive/types/archive'
 
+const GENERIC_ARCHIVE_ITEM_NAMES = new Set(['项目交付文件'])
+
 const FILE_EXTENSION_PATTERN = /\.[^./\\]+$/u
 
 export function resolveProjectArchiveFileName(item: ProjectArchiveTargetItem): string {
@@ -11,4 +13,17 @@ export function resolveProjectArchiveFileName(item: ProjectArchiveTargetItem): s
 
   if (!candidate || !extension || FILE_EXTENSION_PATTERN.test(candidate)) return candidate
   return `${candidate}.${extension}`
+}
+
+export function resolveArchiveUploadTargetLabel(folderName: string, itemName: string): string {
+  const normalizedFolderName = folderName.trim()
+  const normalizedItemName = itemName.trim()
+
+  if (!normalizedItemName || GENERIC_ARCHIVE_ITEM_NAMES.has(normalizedItemName)) {
+    return normalizedFolderName
+  }
+  if (!normalizedFolderName || normalizedFolderName === normalizedItemName) {
+    return normalizedItemName
+  }
+  return `${normalizedFolderName} / ${normalizedItemName}`
 }

@@ -46,4 +46,11 @@ describe('administration server-state contract', () => {
     expect(readSource('src/views/currency/index.vue')).toContain('<BusinessModal')
     expect(readSource('src/views/system/user/UserFormDialog.vue')).toContain('<BusinessDrawer')
   })
+
+  it('hydrates role permissions once per dialog session so query refreshes cannot undo selections', () => {
+    const source = readSource('src/views/system/role/index.vue')
+    expect(source).toContain("const hydratedPermissionRoleId = ref('')")
+    expect(source).toContain('hydratedPermissionRoleId.value !== currentRoleId.value')
+    expect(source).toContain('hydratedPermissionRoleId.value = currentRoleId.value')
+  })
 })

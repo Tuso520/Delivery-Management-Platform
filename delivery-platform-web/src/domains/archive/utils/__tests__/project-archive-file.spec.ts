@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ProjectArchiveTargetItem } from '@/domains/archive/types/archive'
-import { resolveProjectArchiveFileName } from '../project-archive-file'
+import {
+  resolveArchiveUploadTargetLabel,
+  resolveProjectArchiveFileName,
+} from '../project-archive-file'
 
 function archiveItem(
   currentVersion: ProjectArchiveTargetItem['currentVersion'],
@@ -58,5 +61,19 @@ describe('resolveProjectArchiveFileName', () => {
 
   it('does not invent an extension without file metadata', () => {
     expect(resolveProjectArchiveFileName(archiveItem(null))).toBe('项目需求沟通记录')
+  })
+})
+
+describe('resolveArchiveUploadTargetLabel', () => {
+  it('keeps the template folder and concrete archive item name', () => {
+    expect(resolveArchiveUploadTargetLabel('设计管理', '施工图纸')).toBe('设计管理 / 施工图纸')
+  })
+
+  it('removes the shared 项目交付文件 suffix', () => {
+    expect(resolveArchiveUploadTargetLabel('项目启动', '项目交付文件')).toBe('项目启动')
+  })
+
+  it('does not repeat an item name that is identical to its folder', () => {
+    expect(resolveArchiveUploadTargetLabel('验收资料', '验收资料')).toBe('验收资料')
   })
 })

@@ -97,11 +97,11 @@ onBeforeUnmount(() => {
         @select="handleMenuSelect"
         @toggle="appStore.toggleSidebar"
       />
-      <button
+      <a-button
         v-if="isMobile && !sidebarCollapsed"
         class="drawer-backdrop"
-        type="button"
-        :aria-label="t('shell.closeMenu')"
+        type="text"
+        v-bind="{ 'aria-label': t('shell.closeMenu') }"
         @click="appStore.setSidebarCollapsed(true)"
       />
       <div class="layout-content">

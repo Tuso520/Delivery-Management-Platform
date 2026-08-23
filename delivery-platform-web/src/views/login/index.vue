@@ -201,20 +201,22 @@ watch([() => route.path, () => route.query.ticket, () => route.query.feishu_erro
 
     <section class="login-workspace">
       <div class="language-switch" :aria-label="t('login.languageAria')">
-        <button
-          type="button"
+        <a-button
+          type="text"
+          size="mini"
           :class="{ active: localeStore.currentLocale === 'zh-CN' }"
           @click="setLocale('zh-CN')"
         >
           {{ t('shell.locale.zhCN') }}
-        </button>
-        <button
-          type="button"
+        </a-button>
+        <a-button
+          type="text"
+          size="mini"
           :class="{ active: localeStore.currentLocale === 'en-US' }"
           @click="setLocale('en-US')"
         >
           EN
-        </button>
+        </a-button>
       </div>
 
       <div class="login-panel">
@@ -262,15 +264,18 @@ watch([() => route.path, () => route.query.ticket, () => route.query.feishu_erro
                 <IconLock />
               </template>
               <template #suffix>
-                <button
-                  type="button"
+                <a-button
+                  type="text"
+                  size="mini"
                   class="password-visibility"
-                  :aria-label="passwordVisible ? copy.hidePassword : copy.showPassword"
+                  v-bind="{
+                    'aria-label': passwordVisible ? copy.hidePassword : copy.showPassword,
+                  }"
                   @click="passwordVisible = !passwordVisible"
                 >
                   <IconEyeInvisible v-if="passwordVisible" />
                   <IconEye v-else />
-                </button>
+                </a-button>
               </template>
             </a-input>
           </a-form-item>
@@ -470,7 +475,7 @@ watch([() => route.path, () => route.query.ticket, () => route.query.feishu_erro
   background: #fff;
 }
 
-.language-switch button {
+.language-switch :deep(.arco-btn) {
   min-width: 46px;
   height: 28px;
   padding: 0 10px;
@@ -482,7 +487,7 @@ watch([() => route.path, () => route.query.ticket, () => route.query.feishu_erro
   cursor: pointer;
 }
 
-.language-switch button.active {
+.language-switch :deep(.arco-btn.active) {
   background: #e8f3ff;
   color: #165dff;
   font-weight: 650;

@@ -667,27 +667,26 @@ watch(
       >
         <a-table-column :min-width="280" align="left">
           <template #title>
-            <button
+            <a-button
               class="column-sort"
-              type="button"
-              :aria-label="t('archiveTemplate.sortByName')"
+              type="text"
+              v-bind="{ 'aria-label': t('archiveTemplate.sortByName') }"
               @click="toggleSort('templateName')"
             >
               <span>{{ t('archiveTemplate.columns.name') }}</span>
               <span class="column-sort__indicator" aria-hidden="true">
                 {{ sortIndicator('templateName') }}
               </span>
-            </button>
+            </a-button>
           </template>
           <template #cell="{ record }">
-            <button
+            <a-link
               class="template-link"
-              type="button"
-              :title="record.templateName"
+              v-bind="{ title: record.templateName }"
               @click="openDetail(record)"
             >
               {{ record.templateName }}
-            </button>
+            </a-link>
           </template>
         </a-table-column>
         <a-table-column
@@ -703,17 +702,17 @@ watch(
         </a-table-column>
         <a-table-column :width="111" align="center">
           <template #title>
-            <button
+            <a-button
               class="column-sort"
-              type="button"
-              :aria-label="t('archiveTemplate.sortByVersion')"
+              type="text"
+              v-bind="{ 'aria-label': t('archiveTemplate.sortByVersion') }"
               @click="toggleSort('currentVersion')"
             >
               <span>{{ t('archiveTemplate.columns.currentVersion') }}</span>
               <span class="column-sort__indicator" aria-hidden="true">
                 {{ sortIndicator('currentVersion') }}
               </span>
-            </button>
+            </a-button>
           </template>
           <template #cell="{ record }">
             {{ record.currentPublishedVersion?.versionNo || t('archiveTemplate.notPublished') }}
@@ -760,32 +759,40 @@ watch(
         >
           <template #cell="{ record }">
             <span class="table-actions">
-              <button class="table-action" type="button" @click="openDetail(record)">
+              <a-button
+                class="table-action"
+                type="text"
+                size="mini"
+                @click="openDetail(record)"
+              >
                 {{ t('common.view') }}
-              </button>
-              <button
+              </a-button>
+              <a-button
                 v-if="
                   record.status !== 'DISABLED' &&
                     permissionStore.hasPermission('archive_template:update_draft')
                 "
                 class="table-action"
-                type="button"
+                type="text"
+                size="mini"
                 :disabled="creatingVersionFor === record.id"
                 @click="createNewVersion(record)"
               >
                 {{ t('archiveTemplate.createVersion') }}
-              </button>
-              <button
+              </a-button>
+              <a-button
                 v-if="
                   record.status !== 'DISABLED' &&
                     permissionStore.hasPermission('archive_template:disable')
                 "
                 class="table-action table-action--danger"
-                type="button"
+                type="text"
+                size="mini"
+                status="danger"
                 @click="disableTemplate(record)"
               >
                 {{ t('archiveTemplate.disable.action') }}
-              </button>
+              </a-button>
             </span>
           </template>
         </a-table-column>

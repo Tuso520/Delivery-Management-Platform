@@ -14,18 +14,18 @@ const emit = defineEmits<{ select: [] }>()
 </script>
 
 <template>
-  <button
+  <a-button
     v-if="interactive"
     class="stat-card"
     :class="[`stat-card--${tone}`, { 'stat-card--active': active, 'stat-card--interactive': interactive }]"
-    type="button"
-    :aria-pressed="active"
+    type="text"
+    v-bind="{ 'aria-pressed': active }"
     @click="emit('select')"
   >
     <span class="stat-card__label">{{ label }}</span>
     <strong class="stat-card__value">{{ value }}</strong>
     <slot />
-  </button>
+  </a-button>
   <div v-else class="stat-card" :class="`stat-card--${tone}`">
     <span class="stat-card__label">{{ label }}</span>
     <strong class="stat-card__value">{{ value }}</strong>

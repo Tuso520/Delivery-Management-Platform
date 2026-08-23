@@ -364,10 +364,10 @@ watch(
 
           <a-table-column :title="t('review.columns.fileName')" :width="230" fixed="left">
             <template #cell="{ record: row }">
-              <button type="button" class="file-name-button" @click="openDetail(row)">
+              <a-button type="text" class="file-name-button" @click="openDetail(row)">
                 <span>{{ reviewFileName(row) }}</span>
                 <small>{{ row.title }}</small>
-              </button>
+              </a-button>
             </template>
           </a-table-column>
           <a-table-column :title="t('review.columns.version')" :width="80" align="center">

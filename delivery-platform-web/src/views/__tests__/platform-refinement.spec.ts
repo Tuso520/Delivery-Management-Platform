@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -65,5 +65,17 @@ describe('platform refinement regression', () => {
     expect(tools).toContain('column-gap: 24px')
     expect(tools).toContain('row-gap: 20px')
     expect(tools).not.toContain('class="category-panel"')
+  })
+
+  it('uses Arco components for interactive controls and tables on every production Vue page', () => {
+    const sourceRoot = resolve(process.cwd(), 'src')
+    const vueFiles = readdirSync(sourceRoot, { recursive: true })
+      .map(String)
+      .filter((path) => path.endsWith('.vue') && !path.includes('__tests__'))
+
+    for (const path of vueFiles) {
+      const page = readFileSync(resolve(sourceRoot, path), 'utf8')
+      expect(page, path).not.toMatch(/<(?:button|input|select|textarea|table|dialog|form)(?:\s|>)/u)
+    }
   })
 })

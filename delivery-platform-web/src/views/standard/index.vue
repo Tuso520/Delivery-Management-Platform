@@ -8,6 +8,7 @@ import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import { useI18n } from 'vue-i18n'
 
 import { standardApi } from '@/api/standard'
+import { BusinessTable } from '@/design-system'
 import {
   useStandardCategoryCountsQuery,
   useStandardDetailQuery,
@@ -34,6 +35,10 @@ import type {
   UpdateStandardDto,
 } from '@/types/standard'
 import { downloadBlob } from '@/utils/blob'
+
+interface ArcoUploadFileItem {
+  file?: File
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -342,8 +347,8 @@ function openCreate(): void {
   createVisible.value = true
 }
 
-function selectCreateFile(event: Event): void {
-  createSelectedFile.value = (event.target as HTMLInputElement).files?.[0] ?? null
+function selectCreateFile(fileList: ArcoUploadFileItem[]): void {
+  createSelectedFile.value = fileList.at(-1)?.file ?? null
   createForm.fileVersionId = ''
 }
 
@@ -479,8 +484,8 @@ function openEditVersion(version: StandardVersion): void {
   versionVisible.value = true
 }
 
-function selectVersionFile(event: Event): void {
-  versionSelectedFile.value = (event.target as HTMLInputElement).files?.[0] ?? null
+function selectVersionFile(fileList: ArcoUploadFileItem[]): void {
+  versionSelectedFile.value = fileList.at(-1)?.file ?? null
   if (versionSelectedFile.value) versionForm.fileVersionId = ''
 }
 
@@ -626,32 +631,32 @@ function archiveStandard(row: Standard): void {
     <div class="library-panel">
       <aside class="category-sidebar">
         <div class="category-tabs">
-          <button
-            type="button"
+          <a-button
+            type="text"
             :class="{ active: dimension === 'DELIVERY_STAGE' }"
             @click="switchDimension('DELIVERY_STAGE')"
           >
             {{ fieldName('STANDARD_DELIVERY_STAGE', t('standard.fields.deliveryStage')) }}
-          </button>
-          <button
-            type="button"
+          </a-button>
+          <a-button
+            type="text"
             :class="{ active: dimension === 'MANAGEMENT_DOMAIN' }"
             @click="switchDimension('MANAGEMENT_DOMAIN')"
           >
             {{ fieldName('STANDARD_MANAGEMENT_DOMAIN', t('standard.fields.managementDomain')) }}
-          </button>
+          </a-button>
         </div>
         <div class="category-list">
-          <button
+          <a-button
             v-for="option in categoryOptions"
             :key="option.id"
-            type="button"
+            type="text"
             :class="{ active: selectedCategoryCode === option.value }"
             @click="selectCategory(option.value)"
           >
             <span>{{ option.label }}</span>
             <small>{{ categoryCountMap.get(option.value) ?? 0 }}</small>
-          </button>
+          </a-button>
         </div>
       </aside>
 
@@ -663,81 +668,73 @@ function archiveStandard(row: Standard): void {
           </header>
 
           <div class="table-region">
-            <table class="standard-table">
-              <colgroup>
-                <col class="column-title" />
-                <col v-if="fieldEnabled('STANDARD_CURRENT_VERSION')" class="column-version" />
-                <col v-if="fieldEnabled('STANDARD_EFFECTIVE_DATE')" class="column-date" />
-                <col class="column-updater" />
-                <col class="column-actions" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>{{ t('standard.fields.title') }}</th>
-                  <th v-if="fieldEnabled('STANDARD_CURRENT_VERSION')">
-                    {{ fieldName('STANDARD_CURRENT_VERSION', t('standard.fields.currentVersion')) }}
-                  </th>
-                  <th v-if="fieldEnabled('STANDARD_EFFECTIVE_DATE')">
-                    {{ fieldName('STANDARD_EFFECTIVE_DATE', t('standard.fields.effectiveAt')) }}
-                  </th>
-                  <th>{{ t('standard.fields.updater') }}</th>
-                  <th>{{ t('common.action') }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="row in list" :key="row.id">
-                  <td class="title-cell">
-                    <button
-                      type="button"
-                      :title="standardFileName(row)"
-                      @click="previewStandard(row)"
-                    >
-                      {{ standardFileName(row) }}
-                    </button>
-                  </td>
-                  <td v-if="fieldEnabled('STANDARD_CURRENT_VERSION')" class="center-cell">
-                    {{ currentVersion(row) }}
-                  </td>
-                  <td v-if="fieldEnabled('STANDARD_EFFECTIVE_DATE')" class="center-cell">
-                    {{ effectiveDate(row) }}
-                  </td>
-                  <td class="center-cell">
-                    {{ row.updater?.realName || '-' }}
-                  </td>
-                  <td class="action-cell">
-                    <button
+            <BusinessTable
+              class="standard-table"
+              :data="list"
+              :loading="loading"
+              row-key="id"
+              size="small"
+              bordered
+              stripe
+              fit-container
+              :empty-title="t('standard.empty')"
+            >
+              <a-table-column :title="t('standard.fields.title')" :min-width="365">
+                <template #cell="{ record: row }">
+                  <a-link v-bind="{ title: standardFileName(row) }" @click="previewStandard(row)">
+                    {{ standardFileName(row) }}
+                  </a-link>
+                </template>
+              </a-table-column>
+              <a-table-column
+                v-if="fieldEnabled('STANDARD_CURRENT_VERSION')"
+                :title="fieldName('STANDARD_CURRENT_VERSION', t('standard.fields.currentVersion'))"
+                :width="90"
+                align="center"
+              >
+                <template #cell="{ record: row }">
+                  {{ currentVersion(row) }}
+                </template>
+              </a-table-column>
+              <a-table-column
+                v-if="fieldEnabled('STANDARD_EFFECTIVE_DATE')"
+                :title="fieldName('STANDARD_EFFECTIVE_DATE', t('standard.fields.effectiveAt'))"
+                :width="130"
+                align="center"
+              >
+                <template #cell="{ record: row }">
+                  {{ effectiveDate(row) }}
+                </template>
+              </a-table-column>
+              <a-table-column :title="t('standard.fields.updater')" :width="170" align="center">
+                <template #cell="{ record: row }">
+                  {{ row.updater?.realName || '-' }}
+                </template>
+              </a-table-column>
+              <a-table-column :title="t('common.action')" :width="182" align="center">
+                <template #cell="{ record: row }">
+                  <a-space :size="12">
+                    <a-button
                       v-if="canEdit"
-                      type="button"
-                      class="action-edit"
+                      type="text"
+                      size="mini"
                       @click="openEdit(row)"
                     >
                       {{ t('common.edit') }}
-                    </button>
-                    <button
+                    </a-button>
+                    <a-button
                       v-if="canArchive && row.status !== 'IN_REVIEW'"
-                      type="button"
-                      class="action-archive"
+                      type="text"
+                      size="mini"
+                      status="danger"
                       @click="archiveStandard(row)"
                     >
                       {{ t('standard.archive.actionShort') }}
-                    </button>
-                  </td>
-                </tr>
-                <tr v-if="!loading && !list.length">
-                  <td
-                    class="empty-cell"
-                    :colspan="
-                      3 +
-                        Number(fieldEnabled('STANDARD_CURRENT_VERSION')) +
-                        Number(fieldEnabled('STANDARD_EFFECTIVE_DATE'))
-                    "
-                  >
-                    {{ t('standard.empty') }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            <a-spin v-if="loading" class="table-loading" />
+                    </a-button>
+                  </a-space>
+                </template>
+              </a-table-column>
+            </BusinessTable>
           </div>
         </div>
       </div>
@@ -820,9 +817,8 @@ function archiveStandard(row: Standard): void {
 
           <section class="version-section">
             <h2>{{ t('standard.versions') }}</h2>
-            <a-table
+            <BusinessTable
               :data="detail.versions || []"
-              :pagination="false"
               row-key="id"
               size="small"
               :scroll="{ x: 690 }"
@@ -830,9 +826,9 @@ function archiveStandard(row: Standard): void {
               <a-table-column :title="t('standard.fields.version')" data-index="version" :width="80" />
               <a-table-column :title="t('standard.fields.fileName')" :width="210">
                 <template #cell="{ record }">
-                  <button class="version-link" type="button" @click="previewVersion(record)">
+                  <a-link class="version-link" @click="previewVersion(record)">
                     {{ versionFileName(record) }}
-                  </button>
+                  </a-link>
                 </template>
               </a-table-column>
               <a-table-column :title="fieldName('STANDARD_STATUS', t('common.status'))" :width="90">
@@ -881,7 +877,7 @@ function archiveStandard(row: Standard): void {
                   </a-space>
                 </template>
               </a-table-column>
-            </a-table>
+            </BusinessTable>
           </section>
         </template>
       </a-spin>
@@ -959,10 +955,18 @@ function archiveStandard(row: Standard): void {
           <a-textarea v-model="createForm.changeDescription" />
         </a-form-item>
         <a-form-item :label="t('standard.standardFile')" required>
-          <label class="file-picker">
-            <input type="file" @change="selectCreateFile" />
-            <span>{{ createSelectedFile?.name || t('standard.selectFile') }}</span>
-          </label>
+          <a-upload
+            :auto-upload="false"
+            :limit="1"
+            :show-file-list="false"
+            @change="selectCreateFile"
+          >
+            <template #upload-button>
+              <a-button class="file-picker">
+                {{ createSelectedFile?.name || t('standard.selectFile') }}
+              </a-button>
+            </template>
+          </a-upload>
         </a-form-item>
       </a-form>
     </a-modal>
@@ -1057,13 +1061,21 @@ function archiveStandard(row: Standard): void {
           <a-textarea v-model="versionForm.changeDescription" />
         </a-form-item>
         <a-form-item :label="t('standard.newVersionFile')">
-          <label class="file-picker">
-            <input type="file" @change="selectVersionFile" />
-            <span>{{
-              versionSelectedFile?.name ||
-                (versionForm.fileVersionId ? t('standard.keepCurrentFile') : t('standard.selectFile'))
-            }}</span>
-          </label>
+          <a-upload
+            :auto-upload="false"
+            :limit="1"
+            :show-file-list="false"
+            @change="selectVersionFile"
+          >
+            <template #upload-button>
+              <a-button class="file-picker">
+                {{
+                  versionSelectedFile?.name ||
+                    (versionForm.fileVersionId ? t('standard.keepCurrentFile') : t('standard.selectFile'))
+                }}
+              </a-button>
+            </template>
+          </a-upload>
         </a-form-item>
       </a-form>
     </a-modal>

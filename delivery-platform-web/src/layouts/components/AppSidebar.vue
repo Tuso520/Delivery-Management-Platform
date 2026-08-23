@@ -107,10 +107,15 @@ function isActiveGroup(menu: MenuItem): boolean {
       {{ menuReady ? t('shell.noAccessibleMenu') : t('shell.loadingMenu') }}
     </div>
     <div class="collapse-area">
-      <button class="collapse-button" type="button" @click="emit('toggle')">
+      <a-button
+        class="collapse-button"
+        type="text"
+        size="mini"
+        @click="emit('toggle')"
+      >
         <img :class="{ 'is-collapsed': collapsed }" :src="menuFoldIcon" alt="" />
         <span class="sr-only">{{ t('shell.toggleSidebar') }}</span>
-      </button>
+      </a-button>
     </div>
   </aside>
 </template>

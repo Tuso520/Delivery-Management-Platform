@@ -36,13 +36,12 @@ function actionLabel(action: string): string {
         <p class="activity-copy">
           <strong>{{ activity.actorName }}</strong>
           {{ actionLabel(activity.action) }}
-          <button
+          <a-link
             class="project-link"
-            type="button"
             @click="router.push(`/projects/${activity.projectId}`)"
           >
             {{ activity.projectName }}
-          </button>
+          </a-link>
         </p>
         <span class="activity-time">{{ formatDate(activity.occurredAt) }}</span>
       </div>

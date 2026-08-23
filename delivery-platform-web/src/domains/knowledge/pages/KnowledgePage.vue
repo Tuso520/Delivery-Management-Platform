@@ -11,6 +11,7 @@ import downloadMetricIcon from '@/assets/figma/standard-library/download.svg'
 import eyeMetricIcon from '@/assets/figma/standard-library/eye.svg'
 import fileMetricIcon from '@/assets/figma/standard-library/file-text.svg'
 import plusIcon from '@/assets/figma/standard-library/plus.svg'
+import { BusinessTable } from '@/design-system'
 import {
   knowledgeApi,
   type CreateKnowledgeItemPayload,
@@ -60,7 +61,9 @@ const localizedContentTypeOptions = computed(() =>
   })),
 )
 
-const KNOWLEDGE_TABLE_COLUMN_COUNT = 5
+interface ArcoUploadFileItem {
+  file?: File
+}
 
 const keyword = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
 const appliedKeyword = ref(keyword.value.trim())
@@ -264,25 +267,29 @@ function closeCreate(): void {
   }
 }
 
-function selectCreateFile(event: Event): void {
-  createSelectedFile.value = (event.target as HTMLInputElement).files?.[0] ?? null
+function selectedFiles(fileList: ArcoUploadFileItem[]): File[] {
+  return fileList.flatMap((item) => (item.file ? [item.file] : []))
+}
+
+function selectCreateFile(fileList: ArcoUploadFileItem[]): void {
+  createSelectedFile.value = selectedFiles(fileList).at(-1) ?? null
   createForm.fileVersionId = ''
   if (createSelectedFile.value && !createForm.title.trim()) {
     createForm.title = createSelectedFile.value.name.replace(/\.[^.]+$/u, '')
   }
 }
 
-function selectVersionFile(event: Event): void {
-  versionSelectedFile.value = (event.target as HTMLInputElement).files?.[0] ?? null
+function selectVersionFile(fileList: ArcoUploadFileItem[]): void {
+  versionSelectedFile.value = selectedFiles(fileList).at(-1) ?? null
   versionForm.fileVersionId = ''
 }
 
-function selectCreateSupportingFiles(event: Event): void {
-  createSupportingFiles.value = Array.from((event.target as HTMLInputElement).files ?? [])
+function selectCreateSupportingFiles(fileList: ArcoUploadFileItem[]): void {
+  createSupportingFiles.value = selectedFiles(fileList)
 }
 
-function selectVersionSupportingFiles(event: Event): void {
-  versionSupportingFiles.value = Array.from((event.target as HTMLInputElement).files ?? [])
+function selectVersionSupportingFiles(fileList: ArcoUploadFileItem[]): void {
+  versionSupportingFiles.value = selectedFiles(fileList)
 }
 
 async function uploadSupportingFiles(files: File[], changeDescription: string): Promise<string[]> {
@@ -669,18 +676,17 @@ watch(
           {{ t('knowledge.categoryHeader') }}
         </header>
         <div class="knowledge-category-list">
-          <button
+          <a-button
             v-for="category in sidebarCategoryOptions"
             :key="category.id"
-            type="button"
-            :value="category.id"
+            type="text"
             class="knowledge-category"
             :class="{ 'knowledge-category--active': selectedCategoryId === category.id }"
             @click="selectCategory(category.id)"
           >
             <span>{{ category.label }}</span>
             <small>{{ categoryCountMap.get(category.id) ?? 0 }}</small>
-          </button>
+          </a-button>
         </div>
       </aside>
 
@@ -691,96 +697,77 @@ watch(
             <p>{{ selectedCategory?.description || '-' }}</p>
           </header>
 
-          <div
-            class="knowledge-table-region"
-            :class="{ 'knowledge-table-region--state': loadError || !list.length }"
-          >
-            <table class="knowledge-table">
-              <colgroup>
-                <col class="column-title" />
-                <col class="column-version" />
-                <col class="column-date" />
-                <col class="column-updater" />
-                <col class="column-actions" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>{{ t('knowledge.fields.title') }}</th>
-                  <th>{{ t('knowledge.fields.currentVersion') }}</th>
-                  <th>{{ t('knowledge.fields.effectiveAt') }}</th>
-                  <th>{{ t('knowledge.fields.updater') }}</th>
-                  <th>{{ t('common.action') }}</th>
-                </tr>
-              </thead>
-              <tbody v-if="loadError">
-                <tr class="knowledge-table__state-row">
-                  <td :colspan="KNOWLEDGE_TABLE_COLUMN_COUNT">
-                    <div class="knowledge-table__state">
-                      <span>{{ loadError }}</span>
-                      <a-button size="mini" @click="fetchList">
-                        {{ t('knowledge.retry') }}
-                      </a-button>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-              <tbody v-else-if="list.length">
-                <tr v-for="record in list" :key="record.id">
-                  <td class="knowledge-table__title">
-                    <a-tooltip :content="knowledgeMaterialName(record)" position="top">
-                      <button type="button" @click="openKnowledgeMaterial(record)">
-                        {{ knowledgeMaterialName(record) }}
-                      </button>
-                    </a-tooltip>
-                  </td>
-                  <td>{{ record.currentPublishedVersion?.version || '-' }}</td>
-                  <td>{{ formatDate(record.effectiveAt) }}</td>
-                  <td class="knowledge-table__person">
-                    <a-tooltip :content="record.updater?.realName || '-'" position="top">
-                      <span>{{ record.updater?.realName || '-' }}</span>
-                    </a-tooltip>
-                  </td>
-                  <td class="knowledge-table__actions">
-                    <button
+          <div class="knowledge-table-region">
+            <BusinessTable
+              class="knowledge-table"
+              :data="list"
+              :loading="loading"
+              :error="loadError || null"
+              row-key="id"
+              size="small"
+              bordered
+              stripe
+              fit-container
+              :empty-title="
+                appliedKeyword || selectedCategoryId
+                  ? t('knowledge.emptyFiltered')
+                  : t('knowledge.empty')
+              "
+              :retry-label="t('knowledge.retry')"
+              @retry="fetchList"
+            >
+              <a-table-column :title="t('knowledge.fields.title')" :min-width="360">
+                <template #cell="{ record }">
+                  <a-tooltip :content="knowledgeMaterialName(record)" position="top">
+                    <a-link @click="openKnowledgeMaterial(record)">
+                      {{ knowledgeMaterialName(record) }}
+                    </a-link>
+                  </a-tooltip>
+                </template>
+              </a-table-column>
+              <a-table-column :title="t('knowledge.fields.currentVersion')" :width="100" align="center">
+                <template #cell="{ record }">
+                  {{ record.currentPublishedVersion?.version || '-' }}
+                </template>
+              </a-table-column>
+              <a-table-column :title="t('knowledge.fields.effectiveAt')" :width="130" align="center">
+                <template #cell="{ record }">
+                  {{ formatDate(record.effectiveAt) }}
+                </template>
+              </a-table-column>
+              <a-table-column :title="t('knowledge.fields.updater')" :width="170" align="center">
+                <template #cell="{ record }">
+                  <a-tooltip :content="record.updater?.realName || '-'" position="top">
+                    <span>{{ record.updater?.realName || '-' }}</span>
+                  </a-tooltip>
+                </template>
+              </a-table-column>
+              <a-table-column :title="t('common.action')" :width="182" align="center">
+                <template #cell="{ record }">
+                  <a-space :size="12">
+                    <a-button
                       v-if="canEdit && record.status !== 'ARCHIVED'"
-                      type="button"
+                      type="text"
+                      size="mini"
                       @click="openEdit(record)"
                     >
                       {{ t('common.edit') }}
-                    </button>
-                    <button
+                    </a-button>
+                    <a-button
                       v-if="
                         canArchive && record.status !== 'ARCHIVED' && record.status !== 'IN_REVIEW'
                       "
-                      type="button"
-                      class="knowledge-table__archive"
+                      type="text"
+                      size="mini"
+                      status="danger"
                       @click="archiveKnowledge(record)"
                     >
                       {{ t('knowledge.archive.actionShort') }}
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
-              <tbody v-else>
-                <tr class="knowledge-table__state-row">
-                  <td :colspan="KNOWLEDGE_TABLE_COLUMN_COUNT">
-                    <a-empty
-                      :description="
-                        appliedKeyword || selectedCategoryId
-                          ? t('knowledge.emptyFiltered')
-                          : t('knowledge.empty')
-                      "
-                    />
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            <a-spin
-              v-if="loading"
-              class="knowledge-table-loading"
-              :loading="true"
-              :tip="t('common.loading')"
-            />
+                    </a-button>
+                  </a-space>
+                </template>
+              </a-table-column>
+            </BusinessTable>
           </div>
         </div>
       </div>
@@ -848,14 +835,19 @@ watch(
           required
           :extra="t('knowledge.fileDraftHint')"
         >
-          <label class="file-picker">
-            <input
-              type="file"
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.md,.png,.jpg,.jpeg"
-              @change="selectCreateFile"
-            />
-            <span>{{ createSelectedFile?.name || t('knowledge.selectFile') }}</span>
-          </label>
+          <a-upload
+            :auto-upload="false"
+            :limit="1"
+            :show-file-list="false"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.md,.png,.jpg,.jpeg"
+            @change="selectCreateFile"
+          >
+            <template #upload-button>
+              <a-button class="file-picker">
+                {{ createSelectedFile?.name || t('knowledge.selectFile') }}
+              </a-button>
+            </template>
+          </a-upload>
         </a-form-item>
         <a-form-item
           v-else-if="createForm.contentType === 'MARKDOWN'"
@@ -872,21 +864,23 @@ watch(
           <a-input v-model="createForm.externalUrl" placeholder="https://example.com/resource" />
         </a-form-item>
         <a-form-item :label="t('knowledge.supportingFiles')" :extra="t('knowledge.supportingHint')">
-          <label class="file-picker">
-            <input
-              type="file"
-              multiple
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.md,.png,.jpg,.jpeg,.zip"
-              @change="selectCreateSupportingFiles"
-            />
-            <span>
-              {{
-                createSupportingFiles.length
-                  ? t('knowledge.selectedAttachments', { count: createSupportingFiles.length })
-                  : t('knowledge.selectSupportingFiles')
-              }}
-            </span>
-          </label>
+          <a-upload
+            :auto-upload="false"
+            multiple
+            :show-file-list="false"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.md,.png,.jpg,.jpeg,.zip"
+            @change="selectCreateSupportingFiles"
+          >
+            <template #upload-button>
+              <a-button class="file-picker">
+                {{
+                  createSupportingFiles.length
+                    ? t('knowledge.selectedAttachments', { count: createSupportingFiles.length })
+                    : t('knowledge.selectSupportingFiles')
+                }}
+              </a-button>
+            </template>
+          </a-upload>
         </a-form-item>
       </a-form>
     </a-modal>
@@ -954,19 +948,24 @@ watch(
           required
           :extra="t('knowledge.keepFileHint')"
         >
-          <label class="file-picker">
-            <input
-              type="file"
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.md,.png,.jpg,.jpeg"
-              @change="selectVersionFile"
-            />
-            <span>{{
-              versionSelectedFile?.name ||
-                (versionForm.fileVersionId
-                  ? t('knowledge.keepCurrentFile')
-                  : t('knowledge.selectFile'))
-            }}</span>
-          </label>
+          <a-upload
+            :auto-upload="false"
+            :limit="1"
+            :show-file-list="false"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.md,.png,.jpg,.jpeg"
+            @change="selectVersionFile"
+          >
+            <template #upload-button>
+              <a-button class="file-picker">
+                {{
+                  versionSelectedFile?.name ||
+                    (versionForm.fileVersionId
+                      ? t('knowledge.keepCurrentFile')
+                      : t('knowledge.selectFile'))
+                }}
+              </a-button>
+            </template>
+          </a-upload>
         </a-form-item>
         <a-form-item
           v-else-if="versionForm.contentType === 'MARKDOWN'"
@@ -995,21 +994,23 @@ watch(
               {{ supportingFileName(fileVersionId) }}
             </a-tag>
           </div>
-          <label class="file-picker">
-            <input
-              type="file"
-              multiple
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.md,.png,.jpg,.jpeg,.zip"
-              @change="selectVersionSupportingFiles"
-            />
-            <span>
-              {{
-                versionSupportingFiles.length
-                  ? t('knowledge.pendingAttachments', { count: versionSupportingFiles.length })
-                  : t('knowledge.appendSupportingFiles')
-              }}
-            </span>
-          </label>
+          <a-upload
+            :auto-upload="false"
+            multiple
+            :show-file-list="false"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.md,.png,.jpg,.jpeg,.zip"
+            @change="selectVersionSupportingFiles"
+          >
+            <template #upload-button>
+              <a-button class="file-picker">
+                {{
+                  versionSupportingFiles.length
+                    ? t('knowledge.pendingAttachments', { count: versionSupportingFiles.length })
+                    : t('knowledge.appendSupportingFiles')
+                }}
+              </a-button>
+            </template>
+          </a-upload>
         </a-form-item>
       </a-form>
     </a-modal>

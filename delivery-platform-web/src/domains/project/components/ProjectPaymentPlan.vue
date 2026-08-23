@@ -298,15 +298,12 @@ function remove(): void {
           </template>
         </template>
         <template #completed="{ record }">
-          <span
+          <a-radio
             class="payment-completion-toggle"
-            role="radio"
-            :aria-checked="record.completed"
-            :aria-disabled="!canOperate"
-            @click="updateCompleted(record.rowKey, !record.completed)"
-          >
-            <a-radio :model-value="record.completed" :disabled="!canOperate" />
-          </span>
+            :model-value="record.completed"
+            :disabled="!canOperate"
+            @change="updateCompleted(record.rowKey, Boolean($event))"
+          />
         </template>
         <template #ratio="{ record }">
           {{ ratio(record) }}

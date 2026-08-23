@@ -33,19 +33,19 @@ function handleUserCommand(command: DropdownCommand): void {
 
 <template>
   <header class="layout-header">
-    <button
+    <a-button
       class="brand"
-      type="button"
-      :aria-label="t('shell.toggleSidebar')"
+      type="text"
+      v-bind="{ 'aria-label': t('shell.toggleSidebar') }"
       @click="emit('toggleSidebar')"
     >
       <span class="brand-mark">D</span>
       <span class="brand-title">{{ t('shell.productTitle') }}</span>
-    </button>
+    </a-button>
 
     <div class="header-right">
       <a-dropdown trigger="click" position="br" @select="handleUserCommand">
-        <button class="user-trigger" type="button">
+        <a-button class="user-trigger" type="text">
           <a-avatar :size="32" shape="circle" class="user-avatar">
             <img
               v-if="showAvatarImage"
@@ -56,7 +56,7 @@ function handleUserCommand(command: DropdownCommand): void {
             <span v-else class="user-avatar-fallback">{{ userInitial }}</span>
           </a-avatar>
           <span class="user-name">{{ userName }}</span>
-        </button>
+        </a-button>
         <template #content>
           <a-doption value="logout">
             {{ t('app.logout') }}
