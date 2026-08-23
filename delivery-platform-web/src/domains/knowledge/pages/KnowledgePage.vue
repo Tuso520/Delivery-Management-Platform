@@ -1286,38 +1286,11 @@ watch(
   overflow: auto;
 }
 
-.knowledge-table {
-  width: 100%;
+:deep(.knowledge-table) {
   min-width: 937px;
-  color: #1d2129;
-  font-size: 13px;
 }
 
-.knowledge-table :deep(.arco-table-th),
-.knowledge-table :deep(.arco-table-td) {
-  overflow: hidden;
-  border-right: 1px solid var(--knowledge-border);
-  border-bottom: 1px solid var(--knowledge-border);
-  text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  box-sizing: border-box;
-}
-
-.knowledge-table :deep(.arco-table-th:last-child),
-.knowledge-table :deep(.arco-table-td:last-child) {
-  border-right: 0;
-}
-
-.knowledge-table :deep(.arco-table-th) {
-  position: sticky;
-  z-index: 1;
-  top: 0;
-  background: #f2f3f5;
-  font-weight: 500;
-}
-
-.knowledge-table :deep(.knowledge-table__title-button) {
+.knowledge-table__title-button {
   width: 100%;
   display: block;
   overflow: hidden;
@@ -1329,13 +1302,13 @@ watch(
   white-space: nowrap;
 }
 
-.knowledge-table :deep(.knowledge-table__title-button:hover),
-.knowledge-table :deep(.knowledge-table__title-button:focus-visible) {
+.knowledge-table__title-button:hover,
+.knowledge-table__title-button:focus-visible {
   color: #0e42d2;
   text-decoration: underline;
 }
 
-.knowledge-table :deep(.knowledge-table__title-text) {
+.knowledge-table__title-text {
   width: 100%;
   min-width: 0;
   display: block;

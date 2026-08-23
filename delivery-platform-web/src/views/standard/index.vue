@@ -1398,58 +1398,36 @@ function archiveStandard(row: Standard): void {
   overflow-y: auto;
 }
 
-.standard-table {
-  width: 100%;
+:deep(.standard-table) {
   min-width: 937px;
+}
 
-  :deep(.arco-table-th),
-  :deep(.arco-table-td) {
-    overflow: hidden;
-    border-right: 1px solid #e5e6eb;
-    border-bottom: 1px solid #e5e6eb;
-    color: #1d2129;
-    font-size: 13px;
-    line-height: normal;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+.standard-table__title-button {
+  width: 100%;
+  max-width: 100%;
+  display: block;
+  overflow: hidden;
+  padding: 0;
+  color: #165dff;
+  font-weight: 500;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
-  :deep(.arco-table-th) {
-    position: sticky;
-    z-index: 2;
-    top: 0;
-    background: #f2f3f5;
-    font-weight: 500;
-    text-align: center;
-  }
+.standard-table__title-button:hover,
+.standard-table__title-button:focus-visible {
+  color: #0e42d2;
+  text-decoration: underline;
+}
 
-  :deep(.standard-table__title-button) {
-    width: 100%;
-    max-width: 100%;
-    display: block;
-    overflow: hidden;
-    padding: 0;
-    color: #165dff;
-    font-weight: 500;
-    text-align: left;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  :deep(.standard-table__title-button:hover),
-  :deep(.standard-table__title-button:focus-visible) {
-    color: #0e42d2;
-    text-decoration: underline;
-  }
-
-  :deep(.standard-table__title-text) {
-    width: 100%;
-    min-width: 0;
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+.standard-table__title-text {
+  width: 100%;
+  min-width: 0;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .detail-loading {
