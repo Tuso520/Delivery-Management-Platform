@@ -468,6 +468,7 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
                 type="text"
                 size="mini"
                 class="manager-sort-button"
+                v-bind="{ 'aria-label': t('projects.managerSort') }"
                 @click="toggleManagerSort"
               >
                 {{ t('projects.columns.manager') }}

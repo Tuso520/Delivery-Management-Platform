@@ -150,7 +150,9 @@ async function alignmentMetrics(page: Page, zoom: 1 | 2, requireSelect = true) {
       const selectValue = document.querySelector<HTMLElement>(
         '.scope-field .arco-select-view-value',
       )
-      const selectArrow = document.querySelector<HTMLElement>('.scope-field .select-arrow-box')
+      const selectArrow = document.querySelector<HTMLElement>(
+        '.scope-field .arco-select-view-suffix',
+      )
       if (shouldRequireSelect && (!select || !selectValue || !selectArrow)) {
         throw new Error('Project scope select alignment nodes are incomplete')
       }
@@ -169,7 +171,7 @@ async function alignmentMetrics(page: Page, zoom: 1 | 2, requireSelect = true) {
         ),
         selectValueDelta: select && selectValue ? delta(select, selectValue) : 0,
         selectArrowDelta: select && selectArrow ? delta(select, selectArrow) : 0,
-        selectArrowCount: document.querySelectorAll('.scope-field .select-arrow-box').length,
+        selectArrowCount: document.querySelectorAll('.scope-field .arco-select-view-suffix').length,
         defaultSelectArrowCount: document.querySelectorAll('.scope-field .arco-icon-down').length,
         menuIconDisplay: getComputedStyle(document.querySelector<HTMLElement>('.figma-menu-icon')!)
           .display,
@@ -634,7 +636,7 @@ test('sidebar and project scope select remain centered at 100% and 200%', async 
     expect(metrics).toMatchObject({
       primaryCount: 4,
       selectArrowCount: 1,
-      defaultSelectArrowCount: 0,
+      defaultSelectArrowCount: 1,
       menuIconDisplay: 'block',
       menuIconBoxDisplay: 'flex',
       menuChevronBoxDisplay: 'flex',
