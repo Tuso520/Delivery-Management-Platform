@@ -441,7 +441,9 @@ test('standard library renders a real long draft, published actions and minimum-
     const titleButton = row.locator('.standard-table__title-button')
     await expect(titleButton).toHaveAttribute('title', longFileName)
     expect(
-      await titleButton.evaluate((element) => element.scrollWidth > element.clientWidth),
+      await titleButton
+        .locator('.arco-btn-content')
+        .evaluate((element) => element.scrollWidth > element.clientWidth),
     ).toBe(true)
     await expect(row.locator('td').nth(1)).toHaveText('-')
     await expect(row.locator('td').nth(2)).toHaveText('-')

@@ -346,6 +346,7 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
     expect(fileListItem?.displayVersion?.fileVersion?.asset.originalName).toBe(fileMaterialName)
     const longTitleMetrics = await page
       .getByRole('button', { name: longMaterialName })
+      .locator('.arco-btn-content')
       .evaluate((node) => ({
         clientWidth: node.clientWidth,
         scrollWidth: node.scrollWidth,
@@ -552,7 +553,7 @@ test('knowledge library exposes real loading/error recovery to a read-only user'
     .poll(() => page.locator('.knowledge-category').count(), { timeout: 60_000 })
     .toBeGreaterThan(0)
   await expect(page.getByRole('button', { name: '新增' })).toHaveCount(0)
-  await expect(page.locator('.knowledge-table tbody button')).toHaveCount(0)
+  await expect(page.locator('.knowledge-table__actions button')).toHaveCount(0)
 
   const list = await fetchKnowledge(page.request, accessToken, 'page=1&pageSize=1')
   const forbiddenCreate = await page.request.post('/api/v1/knowledge', {

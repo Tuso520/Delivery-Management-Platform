@@ -1415,6 +1415,8 @@ function archiveStandard(row: Standard): void {
   }
 
   :deep(.arco-table-cell) {
+    height: 43px;
+    min-height: 43px;
     padding: 0 12px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1446,6 +1448,15 @@ function archiveStandard(row: Standard): void {
   :deep(.standard-table__title-button:focus-visible) {
     color: #0e42d2;
     text-decoration: underline;
+  }
+
+  :deep(.standard-table__title-button .arco-btn-content) {
+    width: 100%;
+    min-width: 0;
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 

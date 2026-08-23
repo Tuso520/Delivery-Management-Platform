@@ -749,7 +749,7 @@ watch(
               </a-table-column>
               <a-table-column :title="t('common.action')" :width="182" align="center">
                 <template #cell="{ record }">
-                  <a-space :size="12">
+                  <a-space class="knowledge-table__actions" :size="12">
                     <a-button
                       v-if="canEdit && record.status !== 'ARCHIVED'"
                       type="text"
@@ -1303,6 +1303,8 @@ watch(
 }
 
 .knowledge-table :deep(.arco-table-cell) {
+  height: 43px;
+  min-height: 43px;
   padding: 0 12px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1337,6 +1339,15 @@ watch(
 .knowledge-table :deep(.knowledge-table__title-button:focus-visible) {
   color: #0e42d2;
   text-decoration: underline;
+}
+
+.knowledge-table :deep(.knowledge-table__title-button .arco-btn-content) {
+  width: 100%;
+  min-width: 0;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .supporting-tags {
