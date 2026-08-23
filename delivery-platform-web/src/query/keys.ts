@@ -110,6 +110,7 @@ export const queryKeys = {
     all: ['settings'] as const,
     system: () => ['settings', 'system'] as const,
     systemTime: () => ['settings', 'system-time'] as const,
+    documentPreview: () => ['settings', 'document-preview'] as const,
     approvalTemplateLists: () => ['settings', 'approval-templates'] as const,
     approvalTemplates: <T extends QueryParams>(params: T) =>
       ['settings', 'approval-templates', snapshot(params)] as const,

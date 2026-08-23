@@ -582,7 +582,7 @@ export class UnifiedFileService {
     const downloadAllowed = this.hasOwnerActionPermission(file.ownerType, actor, 'DOWNLOAD');
     const onlyOffice =
       viewerType === 'ONLYOFFICE_VIEW'
-        ? this.buildOnlyOfficeViewSession({
+        ? await this.buildOnlyOfficeViewSession({
             fileVersionId: current.id,
             fileName: current.asset.originalName,
             extension: current.asset.extension,
@@ -1599,7 +1599,7 @@ export class UnifiedFileService {
     return Buffer.concat(chunks, size);
   }
 
-  private buildOnlyOfficeViewSession(input: {
+  private async buildOnlyOfficeViewSession(input: {
     fileVersionId: string;
     fileName: string;
     extension: string | null;
@@ -1607,13 +1607,18 @@ export class UnifiedFileService {
     downloadAllowed: boolean;
     actor: UnifiedFileAccessActor & Pick<JwtPayload, 'username' | 'realName'>;
   }) {
-    const fallbackConfig = this.configService ? null : resolveDocumentConfig();
+    const managedConfig = this.systemConfig
+      ? await this.systemConfig.getOnlyOfficeRuntimeConfig()
+      : null;
+    const fallbackConfig = managedConfig ? null : resolveDocumentConfig();
     const docsUrl = this.normalizeBaseUrl(
-      this.configService?.get<string>('document.onlyOfficeDocsUrl') ??
+      managedConfig?.docsUrl ??
+        this.configService?.get<string>('document.onlyOfficeDocsUrl') ??
         fallbackConfig?.onlyOfficeDocsUrl ??
         '',
     );
     const secret = (
+      managedConfig?.jwtSecret ??
       this.configService?.get<string>('document.onlyOfficeJwtSecret') ??
       fallbackConfig?.onlyOfficeJwtSecret ??
       ''

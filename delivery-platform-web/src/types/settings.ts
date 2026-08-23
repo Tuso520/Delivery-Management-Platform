@@ -39,6 +39,21 @@ export interface SystemTime {
   utcOffsetMinutes: number
 }
 
+export interface DocumentPreviewSettings {
+  enabled: boolean
+  docsUrl: string
+  jwtSecretConfigured: boolean
+  ready: boolean
+  source: 'DATABASE' | 'ENVIRONMENT' | 'NONE'
+  updatedAt: string | null
+}
+
+export interface UpdateDocumentPreviewSettingsDto {
+  enabled?: boolean
+  docsUrl?: string
+  jwtSecret?: string
+}
+
 export type IntegrationProvider = 'FEISHU'
 
 export interface IntegrationConfiguration {

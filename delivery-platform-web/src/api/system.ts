@@ -1,5 +1,11 @@
 import request from './request'
-import type { SystemSettings, SystemTime, UpdateSystemSettingsDto } from '@/types/settings'
+import type {
+  DocumentPreviewSettings,
+  SystemSettings,
+  SystemTime,
+  UpdateDocumentPreviewSettingsDto,
+  UpdateSystemSettingsDto,
+} from '@/types/settings'
 
 export const systemSettingsApi = {
   get() {
@@ -12,6 +18,16 @@ export const systemSettingsApi = {
 
   getSystemTime() {
     return request.get<SystemTime>('/system-time')
+  },
+}
+
+export const documentPreviewSettingsApi = {
+  get() {
+    return request.get<DocumentPreviewSettings>('/document-preview-settings')
+  },
+
+  update(data: UpdateDocumentPreviewSettingsDto) {
+    return request.patch<DocumentPreviewSettings>('/document-preview-settings', data)
   },
 }
 

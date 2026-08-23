@@ -14,12 +14,14 @@
 
 路由 `/archive` 只通过 `src/domains/archive/api/archive.api.ts` 和统一文件 API 访问后端。
 
-1. 项目选择器把关键字提交给项目列表接口，由服务端做数据范围、搜索、排序和分页。
+1. 项目选择器优先显示“项目简称”，简称为空时回退项目全称；下拉辅助显示企业/客户名称与项目全称。关键字提交给项目列表接口，服务端同时匹配 `shortName`、`customerName` 和 `projectName`，并继续执行数据范围、排序和分页。
 2. 选择项目后请求 `GET /projects/:projectId/archive-tree`；URL 保存稳定项目主键。
 3. 文件夹按快照 `sortOrder/name` 排序，目录数量显示有效档案项数量。
 4. 文件名点击进入统一只读预览；更新沿用 `currentVersion.logicalFileId` 创建新版本；下载走鉴权下载接口。
 5. “删除”调用 `POST /files/:logicalFileId/archive`，软归档逻辑文件和 `ProjectArchiveFile` 关联，保留 MinIO 对象、不可变版本与审计记录。页面不再把“删除文件”误实现为归档档案项。
-6. 上传控件从 `project-archive` 模块的 `FILE_TYPE` 字段配置读取启用扩展名，并与项目快照 `allowedExtensions` 取交集。
+6. 顶部“上传”默认选择当前目录中优先未上传的可上传档案项；“档案项”使用 Arco Select，可切换到其他目录的可上传档案项。Arco Upload 仅负责选取文件并隐藏内置“开始/重试”动作，实际上传统一由弹窗底部“上传”提交。
+7. 上传控件从 `project-archive` 模块的 `FILE_TYPE` 字段配置读取启用扩展名，并与项目快照 `allowedExtensions` 取交集。
+8. Office 文件预览优先读取“系统设置 → 文档预览配置”中的 ONLYOFFICE Docs 地址与加密 JWT Secret；数据库尚无配置时兼容部署环境变量。Secret 只写入、不回显。
 
 ## 后端与数据模型
 

@@ -44,6 +44,7 @@ describe('application navigation', () => {
       'menu.systemApproval',
       'menu.systemFields',
       'menu.systemConfig',
+      'menu.documentPreview',
       'menu.userCenter',
       'menu.rolePermissions',
       'menu.systemIntegration',

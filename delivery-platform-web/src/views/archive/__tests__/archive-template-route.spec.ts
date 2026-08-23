@@ -21,6 +21,13 @@ describe('archive template route state', () => {
     expect(page).toContain(':scroll="{ x: 937 }"')
     expect(page).toContain(':title="resolveProjectArchiveFileName(record)"')
     expect(page).toContain('v-if="canDownloadItem(record) && record.currentVersion"')
+    expect(page).toContain(':label="projectDisplayName(project)"')
+    expect(page).toContain(':show-retry-button="false"')
+    expect(page).toContain(':options="uploadItemOptions"')
+    expect(page).toContain('<a-modal')
+    expect(page).toContain('<a-menu')
+    expect(page).not.toContain('<BusinessModal')
+    expect(page).not.toContain('<button')
     expect(page).not.toContain('class="project-selector"')
   })
 
