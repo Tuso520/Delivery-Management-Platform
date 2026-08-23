@@ -4,6 +4,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsOptional,
@@ -13,6 +14,7 @@ import {
   MaxLength,
   Min,
   ValidateNested,
+  IsUrl,
 } from 'class-validator';
 
 export class ProjectSystemSettingsDto {
@@ -120,4 +122,23 @@ export class PatchSystemSettingsDto {
   @ValidateNested()
   @Type(() => SecuritySystemSettingsDto)
   security?: SecuritySystemSettingsDto;
+}
+
+export class PatchDocumentPreviewSettingsDto {
+  @ApiPropertyOptional({ description: '是否启用 ONLYOFFICE 在线预览' })
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+
+  @ApiPropertyOptional({ description: '浏览器可访问的 ONLYOFFICE Docs 根地址' })
+  @IsOptional()
+  @IsUrl({ require_tld: false, protocols: ['http', 'https'], require_protocol: true })
+  @MaxLength(500)
+  docsUrl?: string;
+
+  @ApiPropertyOptional({ description: 'ONLYOFFICE JWT Secret；仅写入，不回显' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  jwtSecret?: string;
 }

@@ -1,3 +1,6 @@
+import type { ConfigService } from '@nestjs/config';
+import type { Prisma } from '@prisma/client';
+
 import type { PrismaService } from '../../../database/prisma.service';
 import { SystemConfigService } from '../system-config.service';
 
@@ -96,5 +99,65 @@ describe('SystemConfigService target settings', () => {
         where: { configKey: 'file.allowed_extensions' },
       }),
     );
+  });
+
+  it('stores ONLYOFFICE JWT configuration encrypted and never returns the secret', async () => {
+    let record:
+      | {
+          id: string;
+          provider: string;
+          configValue: Prisma.JsonValue;
+          encryptedConfig: string | null;
+          isEnabled: boolean;
+          updatedAt: Date;
+        }
+      | undefined;
+    const prisma = {
+      integrationConfig: {
+        findFirst: jest.fn(async () => record ?? null),
+        create: jest.fn(async ({ data }) => {
+          record = {
+            id: 'onlyoffice-1',
+            provider: data.provider,
+            configValue: data.configValue,
+            encryptedConfig: data.encryptedConfig,
+            isEnabled: data.isEnabled,
+            updatedAt: new Date('2026-08-24T00:00:00.000Z'),
+          };
+          return record;
+        }),
+        update: jest.fn(),
+      },
+    } as unknown as PrismaService;
+    const config = {
+      get: jest.fn().mockReturnValue(Buffer.alloc(32, 9).toString('base64')),
+    } as unknown as ConfigService;
+    const service = new SystemConfigService(prisma, config);
+
+    const response = await service.updateDocumentPreviewSettings(
+      {
+        enabled: true,
+        docsUrl: 'https://office.example.com/',
+        jwtSecret: 'onlyoffice-secret',
+      },
+      'admin-1',
+    );
+
+    expect(record?.encryptedConfig).toMatch(/^v1:/);
+    expect(record?.encryptedConfig).not.toContain('onlyoffice-secret');
+    expect(response).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        docsUrl: 'https://office.example.com',
+        jwtSecretConfigured: true,
+        ready: true,
+        source: 'DATABASE',
+      }),
+    );
+    expect(JSON.stringify(response)).not.toContain('onlyoffice-secret');
+    await expect(service.getOnlyOfficeRuntimeConfig()).resolves.toEqual({
+      docsUrl: 'https://office.example.com',
+      jwtSecret: 'onlyoffice-secret',
+    });
   });
 });

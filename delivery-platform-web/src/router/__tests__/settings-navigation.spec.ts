@@ -15,6 +15,7 @@ describe('settings navigation contract', () => {
       'menu.systemApproval',
       'menu.systemFields',
       'menu.systemConfig',
+      'menu.documentPreview',
       'menu.userCenter',
       'menu.rolePermissions',
       'menu.systemIntegration',
@@ -24,6 +25,7 @@ describe('settings navigation contract', () => {
       '/settings/approvals',
       '/settings/fields',
       '/settings/system',
+      '/settings/document-preview',
       '/settings',
       '/settings/role-permissions',
       '/settings/integrations',
@@ -43,6 +45,7 @@ describe('settings navigation contract', () => {
       Notifications: ['notification_rule:view', 'notification_rule:manage'],
       Approvals: ['approval_config:view', 'approval_config:manage'],
       SystemConfig: ['system_setting:view', 'system_setting:manage'],
+      DocumentPreviewSettings: ['system_setting:view', 'system_setting:manage'],
       Integrations: ['integration:view', 'integration:manage'],
     })
     expect(
@@ -54,7 +57,7 @@ describe('settings navigation contract', () => {
     const group = shellRoutes.find((route) => route.name === 'SettingsGroup')
     const settingRoutes = group?.children ?? []
 
-    expect(settingRoutes).toHaveLength(8)
+    expect(settingRoutes).toHaveLength(9)
     expect(settingRoutes.every((route) => route.component !== undefined)).toBe(true)
     expect(settingRoutes.every((route) => route.beforeEnter === undefined)).toBe(true)
     expect(settingRoutes.map((route) => route.name)).not.toContain('Logs')

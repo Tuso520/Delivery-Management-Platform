@@ -386,6 +386,18 @@ export const shellRoutes: RouteRecordRaw[] = [
         },
       },
       {
+        path: 'document-preview',
+        name: 'DocumentPreviewSettings',
+        component: () => import('@/views/system/document-preview.vue'),
+        meta: {
+          title: 'menu.documentPreview',
+          icon: 'File',
+          permissions: ['system_setting:view', 'system_setting:manage'],
+          menu: true,
+          order: 45,
+        },
+      },
+      {
         path: 'system',
         name: 'SystemConfig',
         component: () => import('@/views/system/config.vue'),

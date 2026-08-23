@@ -49,6 +49,7 @@ describe('sidebar navigation contract', () => {
           'menu.systemApproval',
           'menu.systemFields',
           'menu.systemConfig',
+          'menu.documentPreview',
             'menu.userCenter',
             'menu.rolePermissions',
             'menu.systemIntegration',
@@ -74,6 +75,7 @@ describe('sidebar navigation contract', () => {
     ['/settings/currency', '/settings-group'],
     ['/settings/approvals', '/settings-group'],
     ['/settings/fields', '/settings-group'],
+    ['/settings/document-preview', '/settings-group'],
     ['/settings/system', '/settings-group'],
     ['/settings/integrations', '/settings-group'],
   ])('maps route %s to the matching active group %s', (routePath, groupPath) => {

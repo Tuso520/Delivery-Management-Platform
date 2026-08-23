@@ -7,7 +7,7 @@ import { Public } from '../../common/decorators/public.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 
-import { PatchSystemSettingsDto } from './dto/system-config.dto';
+import { PatchDocumentPreviewSettingsDto, PatchSystemSettingsDto } from './dto/system-config.dto';
 import { SystemConfigService } from './system-config.service';
 
 @ApiTags('PublicSystemConfig')
@@ -43,6 +43,23 @@ export class SystemSettingsController {
   @ApiOperation({ summary: '按明确 Schema 局部更新系统配置' })
   updateSettings(@Body() dto: PatchSystemSettingsDto, @CurrentUser('sub') userId: string) {
     return this.systemConfigService.updateSettings(dto, userId);
+  }
+
+  @Get('document-preview-settings')
+  @RequirePermissions({ any: ['system_setting:view', 'system_setting:manage'] })
+  @ApiOperation({ summary: '获取 ONLYOFFICE 只读预览配置状态（Secret 不回显）' })
+  getDocumentPreviewSettings() {
+    return this.systemConfigService.getDocumentPreviewSettings();
+  }
+
+  @Patch('document-preview-settings')
+  @RequirePermissions({ all: ['system_setting:manage'] })
+  @ApiOperation({ summary: '更新 ONLYOFFICE 只读预览配置' })
+  updateDocumentPreviewSettings(
+    @Body() dto: PatchDocumentPreviewSettingsDto,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.systemConfigService.updateDocumentPreviewSettings(dto, userId);
   }
 
   @Get('system-time')

@@ -1,8 +1,12 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 
+import { decryptConfigSecrets, encryptConfigSecrets } from '../../common/security/encrypted-config';
+import { resolveDocumentConfig } from '../../config/document.config';
 import { PrismaService } from '../../database/prisma.service';
 
-import { PatchSystemSettingsDto } from './dto/system-config.dto';
+import { PatchDocumentPreviewSettingsDto, PatchSystemSettingsDto } from './dto/system-config.dto';
 
 export interface SystemSettings {
   project: {
@@ -26,6 +30,21 @@ const TARGET_SETTING_KEYS = [
   'security.session_hours',
   'security.login_max_attempts',
 ] as const;
+const ONLYOFFICE_PROVIDER = 'ONLYOFFICE';
+
+export interface DocumentPreviewSettings {
+  enabled: boolean;
+  docsUrl: string;
+  jwtSecretConfigured: boolean;
+  ready: boolean;
+  source: 'DATABASE' | 'ENVIRONMENT' | 'NONE';
+  updatedAt: Date | null;
+}
+
+export interface OnlyOfficeRuntimeConfig {
+  docsUrl: string;
+  jwtSecret: string;
+}
 
 @Injectable()
 export class SystemConfigService {
@@ -36,7 +55,10 @@ export class SystemConfigService {
     'platform.default_language',
   ];
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly config?: ConfigService,
+  ) {}
 
   private async getMany(keys: readonly string[]): Promise<Record<string, string | null>> {
     const configs = await this.prisma.systemConfig.findMany({
@@ -83,6 +105,109 @@ export class SystemConfigService {
         loginMaxAttempts: this.parseInteger(values['security.login_max_attempts'], 5),
       },
     };
+  }
+
+  async getDocumentPreviewSettings(): Promise<DocumentPreviewSettings> {
+    const record = await this.findOnlyOfficeRecord();
+    if (record) {
+      const values = this.asRecord(record.configValue);
+      const docsUrl = this.normalizeBaseUrl(values.docsUrl);
+      const jwtSecretConfigured = Boolean(record.encryptedConfig);
+      return {
+        enabled: record.isEnabled,
+        docsUrl,
+        jwtSecretConfigured,
+        ready: record.isEnabled && Boolean(docsUrl) && jwtSecretConfigured,
+        source: 'DATABASE',
+        updatedAt: record.updatedAt,
+      };
+    }
+
+    const fallback = resolveDocumentConfig();
+    const docsUrl = this.normalizeBaseUrl(fallback.onlyOfficeDocsUrl);
+    const jwtSecretConfigured = Boolean(fallback.onlyOfficeJwtSecret.trim());
+    const ready = Boolean(docsUrl) && jwtSecretConfigured;
+    return {
+      enabled: ready,
+      docsUrl,
+      jwtSecretConfigured,
+      ready,
+      source: ready ? 'ENVIRONMENT' : 'NONE',
+      updatedAt: null,
+    };
+  }
+
+  async getOnlyOfficeRuntimeConfig(): Promise<OnlyOfficeRuntimeConfig> {
+    const record = await this.findOnlyOfficeRecord();
+    if (!record) {
+      const fallback = resolveDocumentConfig();
+      return {
+        docsUrl: this.normalizeBaseUrl(fallback.onlyOfficeDocsUrl),
+        jwtSecret: fallback.onlyOfficeJwtSecret.trim(),
+      };
+    }
+    if (!record.isEnabled) return { docsUrl: '', jwtSecret: '' };
+    const values = this.asRecord(record.configValue);
+    const secrets = record.encryptedConfig
+      ? decryptConfigSecrets(
+          this.config,
+          ONLYOFFICE_PROVIDER,
+          record.encryptedConfig,
+          '文档预览',
+        )
+      : {};
+    return {
+      docsUrl: this.normalizeBaseUrl(values.docsUrl),
+      jwtSecret: this.stringValue(secrets.jwtSecret),
+    };
+  }
+
+  async updateDocumentPreviewSettings(
+    dto: PatchDocumentPreviewSettingsDto,
+    _userId: string,
+  ): Promise<DocumentPreviewSettings> {
+    if (Object.keys(dto).length === 0) {
+      throw new BadRequestException('至少需要提供一个文档预览配置项');
+    }
+    const existing = await this.findOnlyOfficeRecord();
+    const existingValues = this.asRecord(existing?.configValue);
+    const docsUrl =
+      dto.docsUrl === undefined
+        ? this.normalizeBaseUrl(existingValues.docsUrl)
+        : this.normalizeBaseUrl(dto.docsUrl);
+    const enabled = dto.enabled ?? existing?.isEnabled ?? false;
+    let encryptedConfig = existing?.encryptedConfig ?? null;
+
+    if (dto.jwtSecret !== undefined) {
+      const jwtSecret = dto.jwtSecret.trim();
+      if (!jwtSecret || jwtSecret.includes('*')) {
+        throw new BadRequestException('修改 ONLYOFFICE JWT Secret 时必须重新输入完整明文');
+      }
+      encryptedConfig = encryptConfigSecrets(
+        this.config,
+        ONLYOFFICE_PROVIDER,
+        { jwtSecret },
+        '文档预览',
+      );
+    }
+    if (enabled && (!docsUrl || !encryptedConfig)) {
+      throw new BadRequestException('启用 ONLYOFFICE 前必须配置 Docs 地址和 JWT Secret');
+    }
+
+    const data = {
+      provider: ONLYOFFICE_PROVIDER,
+      configName: 'ONLYOFFICE Docs',
+      configValue: { docsUrl } as Prisma.InputJsonValue,
+      encryptedConfig,
+      isEnabled: enabled,
+      description: '系统设置中的 Office 文件只读预览配置',
+    };
+    if (existing) {
+      await this.prisma.integrationConfig.update({ where: { id: existing.id }, data });
+    } else {
+      await this.prisma.integrationConfig.create({ data });
+    }
+    return this.getDocumentPreviewSettings();
   }
 
   async getDefaultProjectRiskLevel(): Promise<SystemSettings['project']['defaultRiskLevel']> {
@@ -199,5 +324,26 @@ export class SystemConfigService {
       .map((item) => item.trim().toLowerCase())
       .filter((item) => /^[a-z0-9]+$/.test(item));
     return parsed.length ? Array.from(new Set(parsed)) : fallback;
+  }
+
+  private findOnlyOfficeRecord() {
+    return this.prisma.integrationConfig.findFirst({
+      where: { provider: ONLYOFFICE_PROVIDER },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
+  private asRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  }
+
+  private stringValue(value: unknown): string {
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
+  private normalizeBaseUrl(value: unknown): string {
+    return this.stringValue(value).replace(/\/+$/u, '');
   }
 }

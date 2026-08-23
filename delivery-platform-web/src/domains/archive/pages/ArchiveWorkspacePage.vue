@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
+import type { TableColumnData } from '@arco-design/web-vue'
 import Message from '@arco-design/web-vue/es/message'
+import { IconFolder, IconUpload } from '@arco-design/web-vue/es/icon'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -20,7 +22,7 @@ import type {
   ProjectArchiveTargetItem,
 } from '@/domains/archive/types/archive'
 import { resolveProjectArchiveFileName } from '@/domains/archive/utils/project-archive-file'
-import { BusinessModal, BusinessTable, PageContainer } from '@/design-system'
+import { BusinessTable, PageContainer } from '@/design-system'
 import { usePermission } from '@/composables/usePermission'
 import { useFieldConfig } from '@/platform/field-configuration'
 import { useFilePreview } from '@/platform/file-preview/useFilePreview'
@@ -46,7 +48,7 @@ const selectedProjectId = ref(normalizeProjectId(route.query.projectId))
 const projectKeyword = ref('')
 const selectedFolderId = ref('')
 const uploadVisible = ref(false)
-const uploadItem = ref<ProjectArchiveTargetItem | null>(null)
+const uploadItemId = ref('')
 const uploadFile = ref<File | null>(null)
 const uploadProgress = ref(0)
 const uploadForm = reactive({ changeDescription: '' })
@@ -66,6 +68,22 @@ const selectedFolder = computed<ProjectArchiveTargetFolder | null>(
 )
 const selectedFolderItems = computed(() =>
   (selectedFolder.value?.items ?? []).filter((item) => !item.archivedAt),
+)
+const uploadCandidates = computed(() =>
+  activeFolders.value.flatMap((folder) =>
+    folder.items
+      .filter((item) => !item.archivedAt && item.canUpload)
+      .map((item) => ({ folderId: folder.id, folderName: folder.name, item })),
+  ),
+)
+const uploadItem = computed<ProjectArchiveTargetItem | null>(
+  () => uploadCandidates.value.find(({ item }) => item.id === uploadItemId.value)?.item ?? null,
+)
+const uploadItemOptions = computed(() =>
+  uploadCandidates.value.map(({ folderName, item }) => ({
+    value: item.id,
+    label: `${folderName} / ${item.name}`,
+  })),
 )
 
 const totalItems = computed(() =>
@@ -132,6 +150,15 @@ const metrics = computed(() => [
   },
 ])
 
+const fileColumns = computed<TableColumnData[]>(() => [
+  { title: t('archive.columns.fileName'), slotName: 'fileName', width: 340, align: 'left' },
+  { title: t('archive.columns.version'), slotName: 'version', width: 80, align: 'center' },
+  { title: t('archive.columns.fileSize'), slotName: 'fileSize', width: 100, align: 'center' },
+  { title: t('archive.columns.uploader'), slotName: 'uploader', width: 113, align: 'center' },
+  { title: t('archive.columns.uploadedAt'), slotName: 'uploadedAt', width: 122, align: 'center' },
+  { title: t('common.action'), slotName: 'action', width: 182, align: 'center' },
+])
+
 const uploadAccept = computed(() => {
   const enabledTypes = new Set(
     fieldConfig.getFieldOptions('FILE_TYPE').map((option) => option.value.toLowerCase()),
@@ -187,6 +214,16 @@ function normalizeProjectId(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
+function projectDisplayName(project: (typeof projects.value)[number]): string {
+  return project.shortName?.trim() || project.projectName
+}
+
+function projectOptionDescription(project: (typeof projects.value)[number]): string {
+  return [project.customerName?.trim(), project.projectName]
+    .filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index)
+    .join(' · ')
+}
+
 async function changeProject(value: unknown): Promise<void> {
   const projectId = typeof value === 'string' ? value : ''
   selectedProjectId.value = projectId
@@ -235,7 +272,7 @@ function previewItem(item: ProjectArchiveTargetItem): void {
 }
 
 function openUpload(item: ProjectArchiveTargetItem): void {
-  uploadItem.value = item
+  uploadItemId.value = item.id
   uploadFile.value = null
   uploadProgress.value = 0
   uploadForm.changeDescription = ''
@@ -244,8 +281,10 @@ function openUpload(item: ProjectArchiveTargetItem): void {
 
 function openFolderUpload(): void {
   const target =
-    selectedFolderItems.value.find((item) => item.canUpload && !item.currentVersion) ??
-    selectedFolderItems.value.find((item) => item.canUpload)
+    uploadCandidates.value.find(
+      ({ folderId, item }) => folderId === selectedFolderId.value && !item.currentVersion,
+    )?.item ??
+    uploadCandidates.value.find(({ folderId }) => folderId === selectedFolderId.value)?.item
   if (!target) {
     Message.info(t('archive.messages.noUploadTarget'))
     return
@@ -295,16 +334,16 @@ async function deleteFile(item: ProjectArchiveTargetItem): Promise<void> {
 }
 
 function handleUploadSelection(
-  _fileList: ArcoUploadFileItem[],
-  fileItem?: ArcoUploadFileItem,
+  fileList: ArcoUploadFileItem[],
+  _fileItem?: ArcoUploadFileItem,
 ): void {
-  uploadFile.value = fileItem?.file ?? null
+  uploadFile.value = fileList.at(-1)?.file ?? null
 }
 
-async function submitUpload(): Promise<void> {
+async function submitUpload(): Promise<boolean> {
   if (!uploadItem.value || !selectedProjectId.value || !uploadFile.value) {
     Message.warning(t('archive.validation.uploadFileRequired'))
-    return
+    return false
   }
   const extension = uploadFile.value.name.split('.').pop()?.toLowerCase() ?? ''
   const enabledTypes = new Set(
@@ -312,20 +351,26 @@ async function submitUpload(): Promise<void> {
   )
   if (!enabledTypes.has(extension)) {
     Message.warning(t('archive.validation.fileTypeDisabled'))
-    return
+    return false
   }
-  await uploadMutation.mutateAsync({
-    projectId: selectedProjectId.value,
-    itemId: uploadItem.value.id,
-    file: uploadFile.value,
-    logicalFileId: uploadItem.value.currentVersion?.logicalFileId,
-  })
-  Message.success(
-    uploadItem.value.reviewRequired
-      ? t('archive.messages.uploadedForReview')
-      : t('archive.messages.uploaded'),
-  )
-  uploadVisible.value = false
+  try {
+    await uploadMutation.mutateAsync({
+      projectId: selectedProjectId.value,
+      itemId: uploadItem.value.id,
+      file: uploadFile.value,
+      logicalFileId: uploadItem.value.currentVersion?.logicalFileId,
+    })
+    Message.success(
+      uploadItem.value.reviewRequired
+        ? t('archive.messages.uploadedForReview')
+        : t('archive.messages.uploaded'),
+    )
+    uploadVisible.value = false
+    return true
+  } catch {
+    Message.error(t('archive.messages.uploadFailed'))
+    return false
+  }
 }
 
 watch(
@@ -364,7 +409,12 @@ watch(
 <template>
   <PageContainer class="archive-page" gap="normal" :scrollable="false">
     <section class="archive-metrics" :aria-label="t('archive.metricsAria')">
-      <article v-for="metric in metrics" :key="metric.key" class="archive-metric">
+      <a-card
+        v-for="metric in metrics"
+        :key="metric.key"
+        class="archive-metric"
+        :bordered="false"
+      >
         <span class="archive-metric__icon" aria-hidden="true">
           <img :src="metric.icon" alt="" />
         </span>
@@ -376,7 +426,7 @@ watch(
           </span>
           <small v-if="metric.caption">{{ metric.caption }}</small>
         </span>
-      </article>
+      </a-card>
     </section>
 
     <section class="archive-toolbar">
@@ -395,8 +445,13 @@ watch(
             v-for="project in projects"
             :key="project.id"
             :value="project.id"
-            :label="project.projectName"
-          />
+            :label="projectDisplayName(project)"
+          >
+            <div class="archive-project-option">
+              <strong>{{ projectDisplayName(project) }}</strong>
+              <span>{{ projectOptionDescription(project) }}</span>
+            </div>
+          </a-option>
         </a-select>
       </div>
       <div class="archive-toolbar__right">
@@ -415,14 +470,9 @@ watch(
             :disabled="!selectedFolder"
             @click="openFolderUpload"
           >
-            <span class="archive-upload-icon" aria-hidden="true">
-              <i class="archive-upload-icon__tray" />
-              <i class="archive-upload-icon__left" />
-              <i class="archive-upload-icon__right" />
-              <i class="archive-upload-icon__shaft" />
-              <i class="archive-upload-icon__arrow-left" />
-              <i class="archive-upload-icon__arrow-right" />
-            </span>
+            <template #icon>
+              <IconUpload />
+            </template>
             {{ t('common.upload') }}
           </a-button>
         </Can>
@@ -433,24 +483,24 @@ watch(
       <section v-if="tree && activeFolders.length" class="archive-workspace">
         <aside class="archive-directory" :aria-label="t('archive.projectDirectory')">
           <header>{{ t('archive.projectDirectory') }}</header>
-          <nav class="archive-directory__scroll">
-            <button
+          <a-menu
+            class="archive-directory__scroll"
+            :selected-keys="selectedFolderId ? [selectedFolderId] : []"
+            @menu-item-click="selectedFolderId = $event"
+          >
+            <a-menu-item
               v-for="folder in activeFolders"
               :key="folder.id"
-              type="button"
-              :class="['archive-directory__item', { active: folder.id === selectedFolderId }]"
+              class="archive-directory__item"
               :title="folder.name"
-              @click="selectedFolderId = folder.id"
             >
-              <span class="archive-folder-icon" aria-hidden="true">
-                <i class="archive-folder-icon__back" />
-                <i class="archive-folder-icon__tab" />
-                <i class="archive-folder-icon__front" />
-              </span>
+              <template #icon>
+                <IconFolder />
+              </template>
               <span class="archive-directory__name">{{ folder.name }}</span>
               <small>{{ folder.totalCount }}</small>
-            </button>
-          </nav>
+            </a-menu-item>
+          </a-menu>
         </aside>
 
         <section v-if="selectedFolder" class="archive-files">
@@ -468,72 +518,61 @@ watch(
             bordered
             stripe
             preserve-column-widths
+            :columns="fileColumns"
             :batch-size="Math.max(20, selectedFolderItems.length)"
             :scroll="{ x: 937 }"
             :empty-title="t('archive.emptyFolder')"
           >
-            <template #columns>
-              <a-table-column :title="t('archive.columns.fileName')" :width="340" align="left">
-                <template #cell="{ record }">
-                  <button
-                    class="archive-file-name"
-                    :class="{
-                      disabled:
-                        !record.currentVersion || record.currentVersion.canPreview === false,
-                    }"
-                    type="button"
-                    :disabled="!record.currentVersion || record.currentVersion.canPreview === false"
-                    :title="resolveProjectArchiveFileName(record)"
-                    @click="previewItem(record)"
-                  >
-                    {{ resolveProjectArchiveFileName(record) }}
-                  </button>
-                </template>
-              </a-table-column>
-              <a-table-column :title="t('archive.columns.version')" :width="80" align="center">
-                <template #cell="{ record }">
-                  {{ record.currentVersion?.version || '—' }}
-                </template>
-              </a-table-column>
-              <a-table-column :title="t('archive.columns.fileSize')" :width="100" align="center">
-                <template #cell="{ record }">
-                  {{ formatFileSize(record.currentVersion?.fileSize) }}
-                </template>
-              </a-table-column>
-              <a-table-column :title="t('archive.columns.uploader')" :width="113" align="center">
-                <template #cell="{ record }">
-                  {{ record.currentVersion?.uploader?.realName || '—' }}
-                </template>
-              </a-table-column>
-              <a-table-column :title="t('archive.columns.uploadedAt')" :width="122" align="center">
-                <template #cell="{ record }">
-                  {{ formatDate(record.currentVersion?.uploadedAt) }}
-                </template>
-              </a-table-column>
-              <a-table-column :title="t('common.action')" :width="182" align="center">
-                <template #cell="{ record }">
-                  <span class="archive-row-actions">
-                    <button v-if="record.canUpload" type="button" @click="openUpload(record)">
-                      {{ t('archive.updateFile') }}
-                    </button>
-                    <button
-                      v-if="canDownloadItem(record) && record.currentVersion"
-                      type="button"
-                      @click="downloadItem(record)"
-                    >
-                      {{ t('common.download') }}
-                    </button>
-                    <button
-                      v-if="record.canDeleteFile && record.currentVersion"
-                      type="button"
-                      class="danger"
-                      @click="deleteFile(record)"
-                    >
-                      {{ t('common.delete') }}
-                    </button>
-                  </span>
-                </template>
-              </a-table-column>
+            <template #fileName="{ record }">
+              <span class="archive-file-name" :title="resolveProjectArchiveFileName(record)">
+                <a-link
+                  :disabled="!record.currentVersion || record.currentVersion.canPreview === false"
+                  @click="previewItem(record)"
+                >
+                  {{ resolveProjectArchiveFileName(record) }}
+                </a-link>
+              </span>
+            </template>
+            <template #version="{ record }">
+              {{ record.currentVersion?.version || '—' }}
+            </template>
+            <template #fileSize="{ record }">
+              {{ formatFileSize(record.currentVersion?.fileSize) }}
+            </template>
+            <template #uploader="{ record }">
+              {{ record.currentVersion?.uploader?.realName || '—' }}
+            </template>
+            <template #uploadedAt="{ record }">
+              {{ formatDate(record.currentVersion?.uploadedAt) }}
+            </template>
+            <template #action="{ record }">
+              <a-space class="archive-row-actions" :size="12">
+                <a-button
+                  v-if="record.canUpload"
+                  type="text"
+                  size="mini"
+                  @click="openUpload(record)"
+                >
+                  {{ t('archive.updateFile') }}
+                </a-button>
+                <a-button
+                  v-if="canDownloadItem(record) && record.currentVersion"
+                  type="text"
+                  size="mini"
+                  @click="downloadItem(record)"
+                >
+                  {{ t('common.download') }}
+                </a-button>
+                <a-button
+                  v-if="record.canDeleteFile && record.currentVersion"
+                  type="text"
+                  status="danger"
+                  size="mini"
+                  @click="deleteFile(record)"
+                >
+                  {{ t('common.delete') }}
+                </a-button>
+              </a-space>
             </template>
           </BusinessTable>
         </section>
@@ -544,22 +583,32 @@ watch(
       />
     </a-spin>
 
-    <BusinessModal
+    <a-modal
       v-model:visible="uploadVisible"
       :title="t('archive.uploadTitle')"
       :width="560"
-      :footer="false"
       :mask-closable="!uploading"
       :closable="!uploading"
+      :ok-loading="uploading"
+      :ok-text="t('common.upload')"
+      :cancel-text="t('common.cancel')"
+      :on-before-ok="submitUpload"
     >
       <a-form :model="uploadForm" layout="vertical">
         <a-form-item :label="t('archive.archiveItemLabel')">
-          <a-input :model-value="uploadItem?.name" disabled />
+          <a-select
+            v-model="uploadItemId"
+            :options="uploadItemOptions"
+            allow-search
+            :disabled="uploading"
+            :placeholder="t('archive.selectArchiveItem')"
+          />
         </a-form-item>
         <a-form-item :label="t('archive.file')" required>
           <a-upload
             :auto-upload="false"
             :limit="1"
+            :show-retry-button="false"
             :accept="uploadAccept || undefined"
             :disabled="uploading || fieldConfig.loading.value"
             @change="handleUploadSelection"
@@ -574,16 +623,8 @@ watch(
           />
         </a-form-item>
         <a-progress v-if="uploading" :percent="uploadProgress / 100" />
-        <div class="archive-modal-actions">
-          <a-button :disabled="uploading" @click="uploadVisible = false">
-            {{ t('common.cancel') }}
-          </a-button>
-          <a-button type="primary" :loading="uploading" @click="submitUpload">
-            {{ t('common.upload') }}
-          </a-button>
-        </div>
       </a-form>
-    </BusinessModal>
+    </a-modal>
   </PageContainer>
 </template>
 
@@ -614,10 +655,15 @@ watch(
 .archive-metric {
   min-width: 0;
   height: 100px;
+  overflow: hidden;
+  border-radius: 0;
+}
+
+.archive-metric :deep(.arco-card-body) {
+  height: 100%;
   display: flex;
   align-items: center;
   gap: 12px;
-  overflow: hidden;
   padding: 14px 16px;
 }
 
@@ -720,6 +766,25 @@ watch(
   font-size: 12px;
 }
 
+.archive-project-option {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.archive-project-option strong,
+.archive-project-option span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.archive-project-option span {
+  color: var(--color-text-3);
+  font-size: 12px;
+}
+
 .archive-toolbar__right {
   display: flex;
   align-items: center;
@@ -748,67 +813,6 @@ watch(
   background: #2563eb;
   font-size: 14px;
   font-weight: 400;
-}
-
-.archive-upload-icon {
-  width: 14px;
-  height: 14px;
-  position: relative;
-  display: block;
-  flex: 0 0 14px;
-}
-
-.archive-upload-icon i {
-  position: absolute;
-  display: block;
-  border-radius: 0.5px;
-  background: #fff;
-}
-
-.archive-upload-icon__tray {
-  width: 12px;
-  height: 1.5px;
-  left: 1px;
-  top: 12.5px;
-}
-
-.archive-upload-icon__left,
-.archive-upload-icon__right {
-  width: 1.5px;
-  height: 4px;
-  top: 9px;
-}
-
-.archive-upload-icon__left {
-  left: 1px;
-}
-
-.archive-upload-icon__right {
-  left: 11.5px;
-}
-
-.archive-upload-icon__shaft {
-  width: 1.5px;
-  height: 8px;
-  left: 6.25px;
-  top: 1.5px;
-}
-
-.archive-upload-icon__arrow-left,
-.archive-upload-icon__arrow-right {
-  width: 5px;
-  height: 1.5px;
-  top: 1.6px;
-}
-
-.archive-upload-icon__arrow-left {
-  left: 2.8px;
-  transform: rotate(-45deg);
-}
-
-.archive-upload-icon__arrow-right {
-  left: 6.1px;
-  transform: rotate(45deg);
 }
 
 .archive-loading {
@@ -871,6 +875,8 @@ watch(
   overflow-y: auto;
   scrollbar-color: #bec1c8 rgba(240, 240, 242, 0.5);
   scrollbar-width: thin;
+  padding: 0;
+  background: #fff;
 }
 
 .archive-directory__scroll::-webkit-scrollbar {
@@ -900,15 +906,26 @@ watch(
   border-bottom: 0.5px solid var(--archive-border);
   background: #fff;
   color: #1d2129;
-  cursor: pointer;
-  font: inherit;
-  text-align: left;
+  border-radius: 0;
 }
 
-.archive-directory__item.active {
+.archive-directory__item.arco-menu-selected {
   background: #e8effc;
   color: #2563eb;
   font-weight: 500;
+}
+
+.archive-directory__item :deep(.arco-menu-icon) {
+  margin-right: 6px;
+  color: #2563eb;
+  font-size: 16px;
+}
+
+.archive-directory__item :deep(.arco-menu-item-inner) {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  align-items: center;
 }
 
 .archive-directory__name {
@@ -927,56 +944,6 @@ watch(
   font-size: 11px;
   font-weight: 400;
   line-height: normal;
-}
-
-.archive-folder-icon {
-  width: 16px;
-  height: 14px;
-  position: relative;
-  display: block;
-  flex: 0 0 16px;
-  overflow: hidden;
-  border-radius: 1px;
-}
-
-.archive-folder-icon i {
-  position: absolute;
-  left: 0;
-  display: block;
-}
-
-.archive-folder-icon__back {
-  width: 16px;
-  height: 11px;
-  top: 3px;
-  border-radius: 1.5px;
-  background: #2563eb;
-}
-
-.archive-folder-icon__tab {
-  width: 7px;
-  height: 4px;
-  top: 0;
-  border-radius: 1.5px 1.5px 0 0;
-  background: #2563eb;
-}
-
-.archive-folder-icon__front {
-  display: none !important;
-}
-
-.archive-directory__item.active .archive-folder-icon__back,
-.archive-directory__item.active .archive-folder-icon__tab {
-  background: #1c52d1;
-}
-
-.archive-directory__item.active .archive-folder-icon__front {
-  width: 16px;
-  height: 9px;
-  top: 5px;
-  display: block !important;
-  border-radius: 0 2px 2px;
-  background: #4785f2;
 }
 
 .archive-files {
@@ -1092,73 +1059,17 @@ watch(
   width: 100%;
   overflow: hidden;
   padding: 0;
-  border: 0;
-  background: transparent;
-  color: #165dff;
-  cursor: pointer;
-  font: inherit;
   font-weight: 500;
-  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.archive-file-name.disabled {
-  color: #333;
-  cursor: default;
-}
-
-.archive-file-name:not(:disabled):hover,
-.archive-file-name:not(:disabled):focus-visible {
-  color: #0e42d2;
-  text-decoration: underline;
-}
-
-.archive-file-name:not(:disabled):active {
-  color: #072ca6;
-}
-
 .archive-row-actions {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 24px;
   white-space: nowrap;
 }
 
-.archive-row-actions button {
+.archive-row-actions :deep(.arco-btn-text) {
   padding: 0;
-  border: 0;
-  background: transparent;
-  color: #3878f5;
-  cursor: pointer;
-  font: inherit;
-}
-
-.archive-row-actions button:hover,
-.archive-row-actions button:focus-visible {
-  color: #0e42d2;
-  text-decoration: underline;
-}
-
-.archive-row-actions button:active {
-  color: #072ca6;
-}
-
-.archive-row-actions button.danger {
-  color: #e33836;
-}
-
-.archive-row-actions button.danger:hover,
-.archive-row-actions button.danger:focus-visible {
-  color: #b71c1c;
-}
-
-.archive-modal-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 22px;
+  min-width: auto;
 }
 </style>

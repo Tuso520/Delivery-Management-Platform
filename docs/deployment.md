@@ -307,7 +307,7 @@ docker compose ps
 
 平台常规文件入口统一使用接近全视口的弹窗预览：弹窗左右各保留 12 像素，内容区默认占满可用高度，紧凑模式不重复展示文件信息栏。预览内容通过登录态接口、短时签名链接或受控内容流获取，不向浏览器暴露 MinIO 存储路径。
 
-ONLYOFFICE 为可选增强能力：
+ONLYOFFICE 为可选增强能力。推荐由具备 `system_setting:manage` 权限的管理员在“系统设置 → 文档预览配置”中维护 Docs 地址和 JWT Secret；Secret 使用 `INTEGRATION_SECRET_ENCRYPTION_KEY` 做 AES-256-GCM 加密且接口永不回显。数据库尚未创建 ONLYOFFICE 配置时，以下环境变量作为兼容回退：
 
 ```text
 ONLYOFFICE_DOCS_URL=https://onlyoffice.example.com
@@ -315,7 +315,7 @@ ONLYOFFICE_JWT_SECRET=<与 ONLYOFFICE Docs 一致的 JWT 密钥，如启用 JWT>
 PUBLIC_API_BASE_URL=https://delivery-platform.example.com
 ```
 
-- 配置 `ONLYOFFICE_DOCS_URL`、`ONLYOFFICE_JWT_SECRET` 和可回调的公共 API 地址后，Office 只返回签名只读会话；全平台没有编辑模式、编辑按钮或保存回调。
+- 在系统设置启用并完整配置 Docs 地址与 JWT Secret，或通过兼容环境变量完整配置后，Office 只返回签名只读会话；全平台没有编辑模式、编辑按钮或保存回调。浏览器必须能访问所填 Docs 地址。
 - 未配置 ONLYOFFICE 或会话不可用时明确提示下载原文件，不恢复旧附件 HTML 兼容预览。
 - PDF、图片、大图、Markdown、XMind、视频和音频使用统一只读 Viewer。CAD/Visio/不受浏览器支持的视频只有转换产物为 `READY` 时才能预览；处理中和失败均返回显式状态。
 - MinIO bucket/key 只在服务端保存；浏览器获得短时签名 URL。预览与下载分别审计，读取预览内容不计为下载。
