@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 
-import { getAllPermissionCodes } from '../../../../prisma/seed-data/permissions';
+import { getAllPermissionCodes, permissionDefs } from '../../../../prisma/seed-data/permissions';
 import { roleDefs } from '../../../../prisma/seed-data/roles';
+import { permissionPageMetadata } from '../permission-catalog';
 
 describe('role seed permission matrix', () => {
   const roles = new Map(roleDefs.map((role) => [role.roleCode, new Set(role.permissionCodes)]));
@@ -88,6 +89,18 @@ describe('role seed permission matrix', () => {
     expect(permissions?.has('file_review:view')).toBe(true);
     expect(permissions?.has('file_review:act')).toBe(true);
     expect(Array.from(permissions ?? []).some((code) => code.startsWith('checklist:'))).toBe(false);
+  });
+
+  it('publishes project editing capabilities under the current role-permission pages', () => {
+    expect(permissionPageMetadata('project').pageName).toBe('项目概览');
+    expect(permissionPageMetadata('payment').pageName).toBe('款项计划');
+
+    const permissions = new Map(
+      permissionDefs.map((permission) => [permission.permissionCode, permission.permissionName]),
+    );
+    expect(permissions.get('project:update')).toBe('编辑项目');
+    expect(permissions.get('project:progress:update')).toBe('修改项目进度');
+    expect(permissions.get('payment:operate')).toBe('编辑款项计划');
   });
 
   it('gives system administrators only target settings permissions', () => {

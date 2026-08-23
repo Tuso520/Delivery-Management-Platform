@@ -2,6 +2,18 @@
 import { computed, ref, type CSSProperties } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import {
+  IconCalendarClock,
+  IconCheckCircle,
+  IconLayers,
+  IconPlayCircle,
+  IconPlus,
+  IconSearch,
+  IconSort,
+  IconSortAscending,
+  IconSortDescending,
+  IconUp,
+} from '@arco-design/web-vue/es/icon'
 
 import { BusinessTable, PageContainer, PageToolbar } from '@/design-system'
 import {
@@ -21,15 +33,6 @@ import {
   projectDictionaryColor,
   type ProjectDictionaryKind,
 } from '@/domains/project/adapters/project-dictionaries'
-import statTrendingUpIcon from '@/assets/figma/project-overview/stat-trending-up.svg'
-import statCheckCircleIcon from '@/assets/figma/project-overview/stat-check-circle.svg'
-import statLayersIcon from '@/assets/figma/project-overview/stat-layers.svg'
-import statPlayIcon from '@/assets/figma/project-overview/stat-play.svg'
-import statClipboardCheckIcon from '@/assets/figma/project-overview/stat-clipboard-check.svg'
-import selectDownIcon from '@/assets/figma/project-overview/select-down.svg'
-import toolbarPlusIcon from '@/assets/figma/project-overview/toolbar-plus.svg'
-import toolbarQueryAsset from '@/assets/figma/project-overview/toolbar-query.png'
-
 import ProjectDetailDialog from '../components/ProjectDetailDialog.vue'
 
 const route = useRoute()
@@ -124,37 +127,42 @@ const summary = computed(() => ({
 const summaryMetrics = computed(() => [
   {
     id: 'amount',
-    icon: statTrendingUpIcon,
+    icon: IconUp,
     label: t('projects.stats.totalAmount', { currency: configuredBaseCurrencyCode.value }),
     value: amountInTenThousands(summary.value.totalConvertedAmount),
+    precision: 1,
     unit: summary.value.totalConvertedAmount === null ? '' : t('projects.stats.tenThousands'),
   },
   {
     id: 'acceptedAmount',
-    icon: statCheckCircleIcon,
+    icon: IconCheckCircle,
     label: t('projects.stats.acceptedAmount', { currency: configuredBaseCurrencyCode.value }),
     value: amountInTenThousands(summary.value.acceptedConvertedAmount),
+    precision: 1,
     unit: summary.value.acceptedConvertedAmount === null ? '' : t('projects.stats.tenThousands'),
   },
   {
     id: 'total',
-    icon: statLayersIcon,
+    icon: IconLayers,
     label: t('projects.stats.total'),
-    value: String(summary.value.total),
+    value: summary.value.total,
+    precision: 0,
     unit: t('projects.stats.items'),
   },
   {
     id: 'active',
-    icon: statPlayIcon,
+    icon: IconPlayCircle,
     label: t('projects.stats.activeProjects'),
-    value: String(summary.value.active),
+    value: summary.value.active,
+    precision: 0,
     unit: t('projects.stats.items'),
   },
   {
     id: 'accepted',
-    icon: statClipboardCheckIcon,
+    icon: IconCalendarClock,
     label: t('projects.stats.acceptedThisYear'),
-    value: String(summary.value.acceptedThisYear),
+    value: summary.value.acceptedThisYear,
+    precision: 0,
     unit: t('projects.stats.items'),
   },
 ])
@@ -226,6 +234,13 @@ async function saved(): Promise<void> {
   await closeOverlay()
   await refresh()
 }
+async function editProject(): Promise<void> {
+  if (!drawerProjectId.value) return
+  await router.push({
+    path: `/projects/${drawerProjectId.value}/edit`,
+    query: route.query,
+  })
+}
 
 function displayName(project: Project): string {
   return project.shortName?.trim() || project.projectName
@@ -251,9 +266,9 @@ function currencyCodeLabel(currencyCode?: string | null): string {
   const option = configuredOption('CURRENCY', currencyCode)
   return option?.code || option?.value || currencyCode
 }
-function amountInTenThousands(value?: number | null): string {
-  if (value === null || value === undefined) return '-'
-  return formatAdaptiveNumber(value / 10_000, { placeholder: '-', fractionDigits: 1 })
+function amountInTenThousands(value?: number | null): number | undefined {
+  if (value === null || value === undefined) return undefined
+  return value / 10_000
 }
 function progressValue(project: Project): number {
   const value = Number(project.progressPercent ?? 0)
@@ -357,13 +372,24 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
         :key="metric.id"
         class="summary-metric"
       >
-        <span class="metric-icon"><img :src="metric.icon" alt="" /></span>
-        <span class="metric-copy">
-          <span class="metric-label">{{ metric.label }}</span>
-          <span class="metric-value">
-            <strong>{{ metric.value }}</strong><small>{{ metric.unit }}</small>
-          </span>
+        <span class="metric-icon" aria-hidden="true">
+          <component :is="metric.icon" />
         </span>
+        <a-statistic
+          class="metric-copy"
+          :title="metric.label"
+          :value="metric.value"
+          :precision="metric.precision"
+          :placeholder="metric.value === undefined ? '-' : undefined"
+          show-group-separator
+        >
+          <template #title>
+            <span class="metric-label">{{ metric.label }}</span>
+          </template>
+          <template #suffix>
+            {{ metric.unit }}
+          </template>
+        </a-statistic>
       </article>
       <a-spin v-if="summaryQuery.isFetching.value" class="summary-loading" :size="18" />
     </section>
@@ -376,11 +402,6 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
               <a-option value="mine" :label="t('projects.scope.mine')" />
               <a-option value="all" :label="t('projects.scope.all')" />
               <a-option value="archived" :label="t('projects.scope.archived')" />
-              <template #arrow-icon>
-                <span class="select-arrow-box">
-                  <img class="select-down-icon" :src="selectDownIcon" alt="" />
-                </span>
-              </template>
             </a-select>
           </div>
           <div class="search-group">
@@ -393,9 +414,7 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
             />
             <a-button type="primary" class="search-button" @click="search">
               <template #icon>
-                <span class="figma-button-icon figma-button-icon--sprite">
-                  <img :src="toolbarQueryAsset" alt="" />
-                </span>
+                <IconSearch />
               </template>{{ t('projects.query') }}
             </a-button>
           </div>
@@ -403,7 +422,7 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
         <template #actions>
           <a-button v-if="canCreateProject" type="primary" @click="router.push('/projects/create')">
             <template #icon>
-              <img class="figma-button-icon" :src="toolbarPlusIcon" alt="" />
+              <IconPlus />
             </template>
             {{ t('projects.create') }}
           </a-button>
@@ -433,9 +452,9 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
           >
             <template #cell="{ record: row }">
               <a-tooltip :content="displayName(row)">
-                <button class="project-link" @click="openProject(row)">
+                <a-link class="project-link" @click="openProject(row)">
                   {{ displayName(row) }}
-                </button>
+                </a-link>
               </a-tooltip>
             </template>
           </a-table-column>
@@ -445,17 +464,19 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
             align="center"
           >
             <template #title>
-              <button
-                type="button"
+              <a-button
+                type="text"
+                size="mini"
                 class="manager-sort-button"
-                :aria-label="t('projects.managerSort')"
                 @click="toggleManagerSort"
               >
                 {{ t('projects.columns.manager') }}
                 <span class="manager-sort-icon" aria-hidden="true">
-                  {{ managerSort === 'projectManager:asc' ? '↑' : managerSort === 'projectManager:desc' ? '↓' : '↕' }}
+                  <IconSortAscending v-if="managerSort === 'projectManager:asc'" />
+                  <IconSortDescending v-else-if="managerSort === 'projectManager:desc'" />
+                  <IconSort v-else />
                 </span>
-              </button>
+              </a-button>
             </template>
             <template #cell="{ record: row }">
               {{ row.projectManager?.realName || memberName(row, 'PROJECT_MANAGER') }}
@@ -469,29 +490,27 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
           <a-table-column :title="t('projects.columns.currentStage')" :width="200" align="center">
             <template #cell="{ record: row }">
               <span class="stage-cell">
-                <span
+                <a-tag
                   v-for="stage in projectStages(row)"
                   :key="stage"
                   class="stage-tag"
+                  bordered
                   :style="stageStyle(stage)"
                 >
                   {{ fieldConfig.getFieldLabel('PROJECT_STAGE', stage) }}
-                </span>
+                </a-tag>
               </span>
             </template>
           </a-table-column>
           <a-table-column :title="t('projects.columns.progress')" :width="180" align="center">
             <template #cell="{ record: row }">
-              <div class="progress">
-                <span class="progress-track">
-                  <span
-                    class="progress-fill"
-                    :class="{ 'is-complete': progressValue(row) === 100 }"
-                    :style="{ width: `${progressValue(row)}%` }"
-                  />
-                </span>
-                <span>{{ progressValue(row) }}%</span>
-              </div>
+              <a-progress
+                class="progress"
+                :percent="progressValue(row) / 100"
+                :status="progressValue(row) === 100 ? 'success' : 'normal'"
+                :stroke-width="6"
+                show-text
+              />
             </template>
           </a-table-column>
           <a-table-column :title="t('projects.columns.signedAt')" :width="120" align="center">
@@ -506,13 +525,14 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
           </a-table-column>
           <a-table-column :title="t('projects.columns.contractCurrency')" :width="80" align="center">
             <template #cell="{ record: row }">
-              <span
+              <a-tag
                 v-if="row.contractCurrency"
                 class="dictionary-tag"
+                bordered
                 :style="currencyStyle(row.contractCurrency)"
               >
                 {{ currencyCodeLabel(row.contractCurrency) }}
-              </span>
+              </a-tag>
               <span v-else>-</span>
             </template>
           </a-table-column>
@@ -532,14 +552,17 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
           </a-table-column>
           <a-table-column :title="t('projects.columns.customerType')" :width="120" align="center">
             <template #cell="{ record: row }">
-              <span
+              <a-tag
                 v-if="row.customerType"
                 class="dictionary-tag"
+                bordered
                 :style="dictionaryStyle('customerType', row.customerType)"
               >
                 {{
                   configuredOption('CUSTOMER_TYPE', row.customerType)?.label || row.customerType
-                }} </span><span v-else>-</span>
+                }}
+              </a-tag>
+              <span v-else>-</span>
             </template>
           </a-table-column>
           <a-table-column
@@ -548,14 +571,17 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
             align="center"
           >
             <template #cell="{ record: row }">
-              <span
+              <a-tag
                 v-if="row.contractType"
                 class="dictionary-tag"
+                bordered
                 :style="dictionaryStyle('contractType', row.contractType)"
               >
                 {{
                   configuredOption('CONTRACT_TYPE', row.contractType)?.label || row.contractType
-                }} </span><span v-else>-</span>
+                }}
+              </a-tag>
+              <span v-else>-</span>
             </template>
           </a-table-column>
           <a-table-column :title="t('projects.columns.sales')" :width="100" align="center">
@@ -566,14 +592,15 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
           <a-table-column :title="t('projects.columns.keywords')" :width="200" align="center">
             <template #cell="{ record: row }">
               <span v-if="row.keywords?.length" class="stage-cell">
-                <span
+                <a-tag
                   v-for="keyword in row.keywords ?? []"
                   :key="keyword"
                   class="stage-tag"
+                  bordered
                   :style="dictionaryStyle('projectKeyword', keyword)"
                 >
                   {{ fieldConfig.getFieldLabel('PROJECT_KEYWORD', keyword) }}
-                </span>
+                </a-tag>
               </span>
               <span v-else>-</span>
             </template>
@@ -587,6 +614,7 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
       v-model:visible="projectDialogVisible"
       :mode="drawerMode"
       :project-id="drawerProjectId"
+      @edit="editProject"
       @saved="saved"
     />
   </PageContainer>
@@ -643,18 +671,18 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
   background: transparent;
   overflow: hidden;
 }
-.metric-icon img {
+.metric-icon :deep(.arco-icon) {
   width: 28px;
   height: 28px;
   display: block;
+  color: rgb(var(--primary-6));
 }
 .metric-copy {
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex: 1;
 }
-.metric-label {
+.summary-metric :deep(.arco-statistic-title) {
+  margin-bottom: 6px;
   overflow: hidden;
   color: var(--project-text-muted);
   font-size: 12px;
@@ -662,7 +690,7 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.metric-value {
+.summary-metric :deep(.arco-statistic-content) {
   display: flex;
   align-items: baseline;
   gap: 4px;
@@ -672,11 +700,10 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.metric-value strong {
-  font: inherit;
+.summary-metric :deep(.arco-statistic-value) {
   font-weight: 700;
 }
-.metric-value small {
+.summary-metric :deep(.arco-statistic-suffix) {
   font-size: 12px;
   font-weight: 400;
 }
@@ -757,20 +784,6 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
   background: #f2f3f5;
   border-color: #f2f3f5;
 }
-.select-arrow-box {
-  width: 12px;
-  height: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 0;
-}
-.select-down-icon {
-  width: 12px;
-  height: 12px;
-  display: block;
-}
-
 .keyword-input {
   width: var(--project-search-width);
   flex: 0 0 var(--project-search-width);
@@ -822,38 +835,20 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
   margin-left: 0;
   border-radius: 0 !important;
 }
-.figma-button-icon {
-  width: 14px;
-  height: 14px;
-  display: block;
-}
-.figma-button-icon--sprite {
-  position: relative;
-  overflow: hidden;
-}
-.figma-button-icon--sprite img {
-  position: absolute;
-  top: -9px;
-  left: -16px;
-  width: 82px;
-  height: 32px;
-  max-width: none;
-}
-
 .project-link {
   width: 100%;
   display: block;
   max-width: 100%;
   overflow: hidden;
-  border: 0;
-  background: none;
   color: #165dff;
   font-size: 13px;
   font-weight: 500;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
-  cursor: pointer;
+}
+.project-link :deep(.arco-link-icon) {
+  display: none;
 }
 
 .nowrap {
@@ -887,22 +882,14 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
   font-size: 13px;
   white-space: nowrap;
 }
-.progress-track {
+.progress :deep(.arco-progress-line-bar) {
   min-width: 0;
-  height: 6px;
   flex: 1 1 auto;
-  display: block;
-  overflow: hidden;
-  border-radius: 10px;
-  background: #e5e6eb;
 }
-.progress-fill {
-  height: 100%;
-  display: block;
-  background: var(--project-action);
-}
-.progress-fill.is-complete {
-  background: var(--project-complete);
+.progress :deep(.arco-progress-line-text) {
+  width: 36px;
+  color: var(--project-text-secondary);
+  font-size: 13px;
 }
 .stage-cell {
   width: 100%;
@@ -946,14 +933,10 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
   color: inherit;
   cursor: pointer;
 }
-.manager-sort-icon {
-  width: 19px;
-  display: inline-flex;
-  justify-content: center;
+.manager-sort-icon :deep(.arco-icon) {
+  width: 16px;
+  height: 16px;
   color: #999;
-  font-size: 13px;
-  font-weight: 400;
-  line-height: 16px;
 }
 .manager-sort-button:hover,
 .manager-sort-button:focus-visible {

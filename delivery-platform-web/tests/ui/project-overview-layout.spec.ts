@@ -231,7 +231,7 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
     const toolbarBox = toolbar.getBoundingClientRect()
     const tableBox = tableFrame.getBoundingClientRect()
     const metricIcon = document.querySelector<HTMLElement>('.metric-icon')
-    const metricImage = metricIcon?.querySelector<HTMLImageElement>('img')
+    const metricImage = metricIcon?.querySelector<SVGElement>('svg')
     const scope = document.querySelector<HTMLElement>('.scope-field')
     const keyword = document.querySelector<HTMLElement>('.keyword-input')
     const searchButton = document.querySelector<HTMLElement>('.search-button')
@@ -327,7 +327,7 @@ test('project overview matches the Figma shell with real API data at 1440x900', 
     .allTextContents()
   expect(tableHeaders.slice(0, 14).map((value) => value.trim())).toEqual([
     '项目名称',
-    '项目经理 ↕',
+    '项目经理',
     '项目地点',
     '当前阶段',
     '项目进度',

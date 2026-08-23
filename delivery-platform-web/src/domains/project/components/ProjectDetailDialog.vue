@@ -3,7 +3,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import type { FormInstance } from '@arco-design/web-vue'
 import Message from '@arco-design/web-vue/es/message'
 import Modal from '@arco-design/web-vue/es/modal'
-import { IconClose, IconSave } from '@arco-design/web-vue/es/icon'
+import { IconClose, IconEdit, IconSave } from '@arco-design/web-vue/es/icon'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 
 import { projectApi } from '@/domains/project/api/project.api'
@@ -55,6 +55,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   'update:visible': [value: boolean]
+  edit: []
   saved: []
 }>()
 
@@ -77,6 +78,11 @@ const fieldConfig = useFieldConfig('project')
 const project = computed(() => projectQuery.data.value)
 const readonly = computed(() => isView.value || (props.mode === 'edit' && project.value?.canEdit === false))
 const renderView = computed(() => isView.value || readonly.value)
+const canEditProject = computed(() =>
+  isView.value &&
+  project.value?.canEdit === true &&
+  hasPermission('project:update'),
+)
 const canEditFinancial = computed(() => !readonly.value && hasAnyPermission(['project:view_financial']))
 const canEditContract = computed(() => !readonly.value && hasAnyPermission(['project:view_contract']))
 const canUpdateProgress = computed(() =>
@@ -696,6 +702,16 @@ async function retryLoad(): Promise<void> {
         <h2>项目详情</h2>
         <div class="dialog-actions">
           <a-button
+            v-if="canEditProject"
+            type="primary"
+            @click="emit('edit')"
+          >
+            <template #icon>
+              <IconEdit />
+            </template>
+            编辑项目
+          </a-button>
+          <a-button
             v-if="!readonly"
             type="primary"
             :loading="mutation.isPending.value"
@@ -706,14 +722,14 @@ async function retryLoad(): Promise<void> {
             </template>
             保存
           </a-button>
-          <button
-            type="button"
+          <a-button
+            type="text"
             class="dialog-close"
-            aria-label="关闭"
             @click="close"
           >
             <IconClose />
-          </button>
+            <span class="sr-only">关闭</span>
+          </a-button>
         </div>
       </header>
 
@@ -1162,8 +1178,9 @@ async function retryLoad(): Promise<void> {
 .dialog-header h2 { margin: 0; font-size: 16px; font-weight: 700; line-height: 24px; }
 .dialog-actions { display: flex; align-items: center; gap: 12px; }
 .dialog-actions :deep(.arco-btn) { width: 82px; height: 32px; padding: 0; border-radius: 0; }
-.dialog-close { width: 54px; height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0 16px; border: 0; border-radius: 0; background: transparent; color: #165dff; cursor: pointer; }
+.dialog-actions :deep(.dialog-close) { width: 54px; height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0 16px; border: 0; border-radius: 0; background: transparent; color: #165dff; cursor: pointer; }
 .dialog-close:hover { background: #f2f3f5; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 .dialog-body { min-height: 0; flex: 1; overflow-x: hidden; overflow-y: scroll; scrollbar-color: #c9cdd4 #f2f3f5; scrollbar-width: thin; scrollbar-gutter: stable; }
 .dialog-body::-webkit-scrollbar { width: 4px; height: 4px; }
 .dialog-body::-webkit-scrollbar-track { background: #f2f3f5; }

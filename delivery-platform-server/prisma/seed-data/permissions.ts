@@ -192,7 +192,7 @@ export const permissionDefs = [
   // project payments
   {
     permissionCode: 'payment:view',
-    permissionName: '查看项目回款',
+    permissionName: '查看款项计划',
     resource: 'payment',
     action: 'view',
   },
@@ -210,7 +210,7 @@ export const permissionDefs = [
   },
   {
     permissionCode: 'payment:operate',
-    permissionName: '操作项目回款',
+    permissionName: '编辑款项计划',
     resource: 'payment',
     action: 'operate',
   },

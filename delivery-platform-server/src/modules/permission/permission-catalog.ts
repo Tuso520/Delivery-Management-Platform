@@ -12,8 +12,8 @@ export interface PermissionPageMetadata {
 const PAGE_CATALOG: Record<string, Omit<PermissionPageMetadata, 'pageCode'>> = {
   auth: { moduleCode: 'workspace', moduleName: '工作台', moduleOrder: 10, pageName: '登录与个人信息', pageOrder: 10 },
   dashboard: { moduleCode: 'workspace', moduleName: '工作台', moduleOrder: 10, pageName: '工作台', pageOrder: 20 },
-  project: { moduleCode: 'delivery', moduleName: '项目交付', moduleOrder: 20, pageName: '项目台账', pageOrder: 10 },
-  payment: { moduleCode: 'delivery', moduleName: '项目交付', moduleOrder: 20, pageName: '项目回款', pageOrder: 20 },
+  project: { moduleCode: 'delivery', moduleName: '项目交付', moduleOrder: 20, pageName: '项目概览', pageOrder: 10 },
+  payment: { moduleCode: 'delivery', moduleName: '项目交付', moduleOrder: 20, pageName: '款项计划', pageOrder: 20 },
   archive: { moduleCode: 'delivery', moduleName: '项目交付', moduleOrder: 20, pageName: '项目档案', pageOrder: 30 },
   file: { moduleCode: 'delivery', moduleName: '项目交付', moduleOrder: 20, pageName: '统一文件', pageOrder: 40 },
   file_review: { moduleCode: 'delivery', moduleName: '项目交付', moduleOrder: 20, pageName: '文件审核', pageOrder: 50 },

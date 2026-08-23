@@ -279,6 +279,7 @@ function remove(): void {
         :data="keyedRows"
         :columns="columns"
         :loading="loading"
+        :bordered="{ wrapper: true, cell: true }"
         :row-selection="canOperate ? { type: 'radio', showCheckedAll: false } : undefined"
         row-key="rowKey"
         size="small"

@@ -249,18 +249,38 @@ test('role permissions lifecycle is super-admin-only and new roles start empty',
   const catalogResponse = await page.request.get('/api/v1/permissions', { headers: authorization })
   expect(catalogResponse.status()).toBe(200)
   const catalog = (await catalogResponse.json()) as {
-    data: Array<{ pages: Array<{ permissions: Array<{ id: string }> }> }>
+    data: Array<{
+      pages: Array<{
+        pageName: string
+        permissions: Array<{
+          id: string
+          permissionCode: string
+          permissionName: string
+        }>
+      }>
+    }>
   }
-  const permissionId = catalog.data[0]?.pages[0]?.permissions[0]?.id
-  expect(permissionId).toEqual(expect.any(String))
+  const catalogPages = catalog.data.flatMap(({ pages }) => pages)
+  const projectPage = catalogPages.find(({ pageName }) => pageName === '项目概览')
+  const paymentPage = catalogPages.find(({ pageName }) => pageName === '款项计划')
+  const projectUpdatePermission = projectPage?.permissions.find(
+    ({ permissionCode }) => permissionCode === 'project:update',
+  )
+  const paymentOperatePermission = paymentPage?.permissions.find(
+    ({ permissionCode }) => permissionCode === 'payment:operate',
+  )
+  expect(projectUpdatePermission).toMatchObject({ permissionName: '编辑项目' })
+  expect(paymentOperatePermission).toMatchObject({ permissionName: '编辑款项计划' })
+  const permissionIds = [projectUpdatePermission?.id, paymentOperatePermission?.id]
+  expect(permissionIds).toEqual([expect.any(String), expect.any(String)])
 
   const assignResponse = await page.request.post(`/api/v1/roles/${created.data.id}/permissions`, {
     headers: authorization,
-    data: { permissionIds: [permissionId] },
+    data: { permissionIds },
   })
   expect(assignResponse.status()).toBe(200)
   const assigned = (await assignResponse.json()) as { data: { permissions: Array<{ id: string }> } }
-  expect(assigned.data.permissions.map(({ id }) => id)).toEqual([permissionId])
+  expect(assigned.data.permissions.map(({ id }) => id).sort()).toEqual([...permissionIds].sort())
 
   const updateResponse = await page.request.put(`/api/v1/roles/${created.data.id}`, {
     headers: authorization,

@@ -198,6 +198,9 @@ test('distinct create, edit and view dialogs match the Figma project-detail shel
     (element) => {
       const headers = [...element.querySelectorAll<HTMLElement>('thead .arco-table-th')]
       const rows = [...element.querySelectorAll<HTMLElement>('tbody .arco-table-tr')]
+      const firstRowCells = rows[0]
+        ? [...rows[0].querySelectorAll<HTMLElement>('.arco-table-td')]
+        : []
       const headerAlignment = (title: string) => {
         const header = headers.find((item) => item.textContent?.trim() === title)
         const content = header?.querySelector<HTMLElement>('.arco-table-cell')
@@ -227,6 +230,9 @@ test('distinct create, edit and view dialogs match the Figma project-detail shel
           ),
         ),
         rowAlignments,
+        verticalCellBorders: firstRowCells.slice(0, -1).map((cell) =>
+          getComputedStyle(cell).borderRightWidth,
+        ),
       }
     },
   )
@@ -249,6 +255,7 @@ test('distinct create, edit and view dialogs match the Figma project-detail shel
       converted: 'left',
       condition: 'left',
     })),
+    verticalCellBorders: Array.from({ length: 7 }, () => '1px'),
   })
   await projectDialog.screenshot({ path: screenshotPaths.create, animations: 'disabled' })
 
@@ -334,7 +341,7 @@ test('distinct create, edit and view dialogs match the Figma project-detail shel
   await page.goto(`/#/projects/${projectId}`)
   await expect(projectDialog).toBeVisible({ timeout: 60_000 })
   await expect(projectDialog.getByRole('button', { name: '保存' })).toHaveCount(0)
-  await expect(projectDialog.getByRole('button', { name: /添加|编辑|删除/u })).toHaveCount(0)
+  await expect(projectDialog.getByRole('button', { name: /添加|删除/u })).toHaveCount(0)
   await expect(projectDialog.locator('.project-detail-form')).toHaveCount(0)
   await expect(projectDialog.locator('.project-detail-view')).toHaveCount(1)
   await expect(
@@ -354,9 +361,14 @@ test('distinct create, edit and view dialogs match the Figma project-detail shel
   await expect(projectDialog.locator('input:not([disabled])')).toHaveCount(0)
   await expect(projectDialog.locator('.payment-table-scroll .arco-radio:not(.arco-radio-disabled)'))
     .toHaveCount(0)
+  await expect(projectDialog.getByRole('button', { name: '编辑项目' })).toBeVisible()
   await expect(page.locator('.arco-message')).toHaveCount(0, { timeout: 6_000 })
 
   await projectDialog.screenshot({ path: screenshotPaths.view, animations: 'disabled' })
+  await projectDialog.getByRole('button', { name: '编辑项目' }).click()
+  await expect(page).toHaveURL(new RegExp(`/#/projects/${projectId}/edit(?:\\?|$)`, 'u'))
+  await expect(projectDialog.locator('.project-detail-form')).toHaveCount(1)
+  await expect(projectDialog.getByRole('button', { name: '保存' })).toBeVisible()
   expect({ browserErrors, failedResponses }).toEqual({
     browserErrors: [],
     failedResponses: [],
