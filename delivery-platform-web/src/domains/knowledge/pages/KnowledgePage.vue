@@ -722,10 +722,13 @@ watch(
                   <a-tooltip :content="knowledgeMaterialName(record)" position="top">
                     <a-button
                       type="text"
+                      size="mini"
                       class="knowledge-table__title-button"
                       @click="openKnowledgeMaterial(record)"
                     >
-                      {{ knowledgeMaterialName(record) }}
+                      <span class="knowledge-table__title-text">
+                        {{ knowledgeMaterialName(record) }}
+                      </span>
                     </a-button>
                   </a-tooltip>
                 </template>
@@ -1292,7 +1295,6 @@ watch(
 
 .knowledge-table :deep(.arco-table-th),
 .knowledge-table :deep(.arco-table-td) {
-  height: 44px;
   overflow: hidden;
   border-right: 1px solid var(--knowledge-border);
   border-bottom: 1px solid var(--knowledge-border);
@@ -1300,14 +1302,6 @@ watch(
   text-overflow: ellipsis;
   white-space: nowrap;
   box-sizing: border-box;
-}
-
-.knowledge-table :deep(.arco-table-cell) {
-  height: 43px;
-  min-height: 43px;
-  padding: 0 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .knowledge-table :deep(.arco-table-th:last-child),
@@ -1341,7 +1335,7 @@ watch(
   text-decoration: underline;
 }
 
-.knowledge-table :deep(.knowledge-table__title-button .arco-btn-content) {
+.knowledge-table :deep(.knowledge-table__title-text) {
   width: 100%;
   min-width: 0;
   display: block;

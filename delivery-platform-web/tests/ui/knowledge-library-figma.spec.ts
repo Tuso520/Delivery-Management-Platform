@@ -249,7 +249,8 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
   expect(figmaGeometry.addButton).toEqual({ width: 82, height: 32 })
   expect(figmaGeometry.categoryHeader.height).toBe(44)
   expect(figmaGeometry.categoryRow.height).toBe(44)
-  expect(figmaGeometry.rowHeights.every((height) => height === 44)).toBe(true)
+  expect(figmaGeometry.rowHeights[0]).toBe(33)
+  expect(figmaGeometry.rowHeights.slice(1).every((height) => height === 35)).toBe(true)
 
   const activeCategoryLabel = (
     await page.locator('.knowledge-category--active span').innerText()
@@ -346,7 +347,7 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
     expect(fileListItem?.displayVersion?.fileVersion?.asset.originalName).toBe(fileMaterialName)
     const longTitleMetrics = await page
       .getByRole('button', { name: longMaterialName })
-      .locator('.arco-btn-content')
+      .locator('.knowledge-table__title-text')
       .evaluate((node) => ({
         clientWidth: node.clientWidth,
         scrollWidth: node.scrollWidth,

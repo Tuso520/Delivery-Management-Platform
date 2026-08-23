@@ -169,7 +169,8 @@ test('standard library matches Figma node 70:322 geometry and real configured co
     0,
   )
   expect(geometry.bodyWidths).toEqual(geometry.headerWidths)
-  expect(geometry.rowHeights.every((height) => height === 44)).toBe(true)
+  expect(geometry.rowHeights[0]).toBe(33)
+  expect(geometry.rowHeights.slice(1).every((height) => height === 35)).toBe(true)
 
   await expect(page.locator('.category-description h1')).not.toHaveText('-')
   await expect(page.locator('.category-description p')).not.toHaveText('')
@@ -442,7 +443,7 @@ test('standard library renders a real long draft, published actions and minimum-
     await expect(titleButton).toHaveAttribute('title', longFileName)
     expect(
       await titleButton
-        .locator('.arco-btn-content')
+        .locator('.standard-table__title-text')
         .evaluate((element) => element.scrollWidth > element.clientWidth),
     ).toBe(true)
     await expect(row.locator('td').nth(1)).toHaveText('-')

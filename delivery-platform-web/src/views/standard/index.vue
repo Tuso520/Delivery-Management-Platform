@@ -683,11 +683,12 @@ function archiveStandard(row: Standard): void {
                 <template #cell="{ record: row }">
                   <a-button
                     type="text"
+                    size="mini"
                     class="standard-table__title-button"
                     v-bind="{ title: standardFileName(row) }"
                     @click="previewStandard(row)"
                   >
-                    {{ standardFileName(row) }}
+                    <span class="standard-table__title-text">{{ standardFileName(row) }}</span>
                   </a-button>
                 </template>
               </a-table-column>
@@ -1403,7 +1404,6 @@ function archiveStandard(row: Standard): void {
 
   :deep(.arco-table-th),
   :deep(.arco-table-td) {
-    height: 44px;
     overflow: hidden;
     border-right: 1px solid #e5e6eb;
     border-bottom: 1px solid #e5e6eb;
@@ -1412,14 +1412,6 @@ function archiveStandard(row: Standard): void {
     line-height: normal;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  :deep(.arco-table-cell) {
-    height: 43px;
-    min-height: 43px;
-    padding: 0 12px;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   :deep(.arco-table-th) {
@@ -1450,7 +1442,7 @@ function archiveStandard(row: Standard): void {
     text-decoration: underline;
   }
 
-  :deep(.standard-table__title-button .arco-btn-content) {
+  :deep(.standard-table__title-text) {
     width: 100%;
     min-width: 0;
     display: block;

@@ -32,13 +32,13 @@ test('管理员可以完成字段配置全流程并保持 Figma 桌面布局', a
   const fieldPage = page.locator('.field-config-page')
   await expect(fieldPage).toBeVisible()
   await expect(fieldPage.locator('.category-tab')).toHaveCount(10)
-  await expect(fieldPage.getByRole('radio', { name: '合同币种' })).toBeVisible()
+  await expect(fieldPage.locator('.category-tab').filter({ hasText: '合同币种' })).toBeVisible()
   await expect(fieldPage.getByRole('columnheader', { name: '名称' })).toBeVisible()
   await expect(fieldPage.getByRole('columnheader', { name: '编码' })).toBeVisible()
   await expect(fieldPage.getByRole('columnheader', { name: '排序' })).toBeVisible()
   await expect(fieldPage.getByRole('columnheader', { name: '状态' })).toBeVisible()
   await expect(fieldPage.getByRole('columnheader', { name: '操作' })).toBeVisible()
-  await fieldPage.getByRole('radio', { name: '项目类型' }).click()
+  await fieldPage.locator('.category-tab').filter({ hasText: '项目类型' }).click()
   await expect(page.locator('.arco-message')).toHaveCount(0, { timeout: 5_000 })
   const fieldCode = `E2E_FIELD_${Date.now().toString(36).toUpperCase()}`
   const fieldName = `端到端验收类型 ${fieldCode.slice(-6)}`
@@ -114,7 +114,7 @@ test('管理员可以完成字段配置全流程并保持 Figma 桌面布局', a
   await deleteResponse
   await expect(acceptanceRow).toHaveCount(0)
 
-  await fieldPage.getByRole('radio', { name: '国家' }).click()
+  await fieldPage.locator('.category-tab').filter({ hasText: '国家' }).click()
   await expect(fieldPage.getByText('中国', { exact: true })).toBeVisible()
   await expect(page.locator('.arco-message')).toHaveCount(0, { timeout: 5_000 })
 
