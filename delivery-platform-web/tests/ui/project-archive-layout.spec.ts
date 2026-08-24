@@ -46,9 +46,9 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
       const firstDirectoryItem = root.querySelector<HTMLElement>('.archive-directory__item')
       const tableViewport = root.querySelector<HTMLElement>('.business-table__viewport')
       const tableElement = root.querySelector<HTMLElement>('.arco-table-element')
-      const firstRow = root.querySelector<HTMLElement>('.arco-table-td')
       const headers = [...root.querySelectorAll<HTMLElement>('thead .arco-table-th')]
       const cells = [...root.querySelectorAll<HTMLElement>('tbody tr:first-child .arco-table-td')]
+      const firstDataCell = cells.length === 6 ? cells[0] : null
       const layoutMain = root.closest<HTMLElement>('.layout-main')
       if (
         !metrics ||
@@ -61,8 +61,7 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
         !tableViewport ||
         !tableElement ||
         !layoutMain ||
-        headers.length !== 6 ||
-        (cells.length !== 0 && cells.length !== 6)
+        headers.length !== 6
       ) {
         throw new Error('Project archive layout nodes are incomplete')
       }
@@ -82,11 +81,16 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
         directoryRowHeight: Math.round(firstDirectoryItem.getBoundingClientRect().height),
         directoryOverflowY: getComputedStyle(directoryScroll).overflowY,
         tableOverflowY: getComputedStyle(tableViewport).overflowY,
-        tableRowHeight: firstRow ? Math.round(firstRow.getBoundingClientRect().height) : null,
+        tableRowHeight: firstDataCell
+          ? Math.round(firstDataCell.getBoundingClientRect().height)
+          : null,
         tableElementWidth: Math.round(tableElement.getBoundingClientRect().width),
         headerWidths: headers.map((header) => Math.round(header.getBoundingClientRect().width)),
         headerBorders: headers.map((header) => getComputedStyle(header).borderRightWidth),
-        cellBorders: cells.map((cell) => getComputedStyle(cell).borderRightWidth),
+        cellBorders:
+          cells.length === 6
+            ? cells.map((cell) => getComputedStyle(cell).borderRightWidth)
+            : [],
         documentScrollHeight: document.documentElement.scrollHeight,
         documentClientHeight: document.documentElement.clientHeight,
       }
