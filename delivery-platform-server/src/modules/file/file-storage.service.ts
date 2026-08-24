@@ -1,7 +1,10 @@
 import { createHash } from 'crypto';
-import { createReadStream } from 'fs';
-import { basename, extname } from 'path';
+import { createReadStream, createWriteStream } from 'fs';
+import { mkdtemp, rm } from 'fs/promises';
+import { tmpdir } from 'os';
+import { basename, extname, join } from 'path';
 import { Transform, type Readable } from 'stream';
+import { pipeline } from 'stream/promises';
 
 import {
   BadRequestException,
@@ -13,10 +16,7 @@ import { ConfigService } from '@nestjs/config';
 import { Client } from 'minio';
 import { v4 as uuidv4 } from 'uuid';
 
-import {
-  isStreamedMulterFile,
-  type StreamedUploadMetadata,
-} from './streamed-upload.types';
+import { isStreamedMulterFile, type StreamedUploadMetadata } from './streamed-upload.types';
 import { withNormalizedUploadFileName } from './upload-file-name.util';
 
 interface StorageConfig {
@@ -30,6 +30,7 @@ interface StorageConfig {
 
 const MAX_OBJECT_NAME_SEGMENT_BYTES = 240;
 const MAX_STORAGE_EXTENSION_BYTES = 24;
+const INCOMING_UPLOAD_RETRY_DELAYS_MS = [300, 900, 1_800, 3_600] as const;
 
 @Injectable()
 export class FileStorageService {
@@ -98,7 +99,6 @@ export class FileStorageService {
     mimeType: string,
     maxBytes: number,
   ): Promise<StreamedUploadMetadata & { size: number }> {
-    await this.ensureBucket();
     const normalizedName = withNormalizedUploadFileName({
       originalname: originalName,
     } as Express.Multer.File).originalname;
@@ -111,6 +111,9 @@ export class FileStorageService {
     const headChunks: Buffer[] = [];
     let headBytes = 0;
     let size = 0;
+    const stagingDirectory = await mkdtemp(join(tmpdir(), 'delivery-upload-'));
+    const stagingPath = join(stagingDirectory, 'content');
+    let uploadAttempted = false;
     const meter = new Transform({
       transform(chunk: Buffer, _encoding, callback) {
         size += chunk.length;
@@ -127,17 +130,20 @@ export class FileStorageService {
         callback(null, chunk);
       },
     });
-    input.pipe(meter);
 
     try {
-      await this.client.putObject(this.bucket, objectName, meter, undefined, {
-        'Content-Type': mimeType,
-        'X-Amz-Meta-Original-Name': encodeURIComponent(normalizedName),
-      });
+      await pipeline(input, meter, createWriteStream(stagingPath, { flags: 'wx', mode: 0o600 }));
       if (size === 0) {
-        await this.client.removeObject(this.bucket, objectName);
         throw new BadRequestException('上传文件内容为空');
       }
+      await this.retryIncomingUpload(async () => {
+        await this.ensureBucket();
+        uploadAttempted = true;
+        await this.client.fPutObject(this.bucket, objectName, stagingPath, {
+          'Content-Type': mimeType,
+          'X-Amz-Meta-Original-Name': encodeURIComponent(normalizedName),
+        });
+      }, objectName);
       this.logger.log(`Object streamed: ${this.bucket}/${objectName}`);
       return {
         streamedToObjectStorage: true,
@@ -148,14 +154,20 @@ export class FileStorageService {
         size,
       };
     } catch (error) {
-      try {
-        await this.client.removeObject(this.bucket, objectName);
-      } catch {
-        // MinIO may not have committed an object for the failed stream.
+      if (uploadAttempted) {
+        try {
+          await this.client.removeObject(this.bucket, objectName);
+        } catch {
+          // MinIO may not have committed an object for the failed upload.
+        }
       }
       if (error instanceof BadRequestException) throw error;
       this.logger.error(`MinIO streaming upload failed for ${objectName}`, error);
       throw new ServiceUnavailableException('文件存储服务暂不可用');
+    } finally {
+      await rm(stagingDirectory, { recursive: true, force: true }).catch((error: unknown) => {
+        this.logger.error(`Failed to remove upload staging directory ${stagingDirectory}`, error);
+      });
     }
   }
 
@@ -282,6 +294,27 @@ export class FileStorageService {
     return this.readyPromise;
   }
 
+  private async retryIncomingUpload(
+    operation: () => Promise<void>,
+    objectName: string,
+  ): Promise<void> {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await operation();
+        return;
+      } catch (error) {
+        const delay = INCOMING_UPLOAD_RETRY_DELAYS_MS[attempt];
+        if (delay === undefined || error instanceof BadRequestException) throw error;
+        this.logger.warn(`Retrying MinIO upload for ${objectName} after attempt ${attempt + 1}`);
+        await this.waitBeforeStorageRetry(delay);
+      }
+    }
+  }
+
+  private async waitBeforeStorageRetry(delayMs: number): Promise<void> {
+    await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+  }
+
   private async initializeBucket(): Promise<void> {
     try {
       const exists = await this.client.bucketExists(this.bucket);
@@ -329,16 +362,12 @@ export class FileStorageService {
       MAX_STORAGE_EXTENSION_BYTES,
     );
     const prefix = `${uuidv4()}-`;
-    const safeBaseName = basename(originalName, rawExtension).replace(
-      /[^\p{L}\p{N}._-]+/gu,
-      '-',
-    );
+    const safeBaseName = basename(originalName, rawExtension).replace(/[^\p{L}\p{N}._-]+/gu, '-');
     const availableBaseNameBytes =
       MAX_OBJECT_NAME_SEGMENT_BYTES -
       Buffer.byteLength(prefix, 'utf8') -
       Buffer.byteLength(extension, 'utf8');
-    const boundedBaseName =
-      this.truncateUtf8(safeBaseName, availableBaseNameBytes) || 'file';
+    const boundedBaseName = this.truncateUtf8(safeBaseName, availableBaseNameBytes) || 'file';
     return `${prefix}${boundedBaseName}${extension}`;
   }
 

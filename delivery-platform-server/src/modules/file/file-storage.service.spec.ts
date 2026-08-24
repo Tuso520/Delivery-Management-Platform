@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import { existsSync, readFileSync } from 'fs';
 import { Readable } from 'stream';
 
 import { BadRequestException } from '@nestjs/common';
@@ -61,28 +62,19 @@ describe('FileStorageService readiness', () => {
 
   it('streams incoming content while calculating checksum and signature bytes', async () => {
     const service = createService(jest.fn().mockResolvedValue(true));
-    const putObject = jest.fn(
-      (
-        _bucket: string,
-        _objectName: string,
-        stream: Readable,
-        _size: number | undefined,
-        _metadata: Record<string, string>,
-      ): Promise<void> =>
-        new Promise((resolve, reject) => {
-          stream.on('data', () => undefined);
-          stream.once('end', resolve);
-          stream.once('error', reject);
-        }),
-    );
+    const content = Buffer.from('streamed upload content');
+    let stagingPath = '';
+    const fPutObject = jest.fn(async (_bucket: string, _objectName: string, filePath: string) => {
+      stagingPath = filePath;
+      expect(readFileSync(filePath)).toEqual(content);
+    });
     Object.defineProperty(service, 'client', {
       value: {
         bucketExists: jest.fn().mockResolvedValue(true),
-        putObject,
+        fPutObject,
         removeObject: jest.fn().mockResolvedValue(undefined),
       },
     });
-    const content = Buffer.from('streamed upload content');
 
     const result = await service.uploadIncoming(
       Readable.from([content.subarray(0, 7), content.subarray(7)]),
@@ -99,29 +91,17 @@ describe('FileStorageService readiness', () => {
       headBuffer: content.subarray(0, 16),
     });
     expect(result.storageKey).toMatch(/^incoming\/\d{4}-\d{2}-\d{2}\//u);
-    expect(putObject).toHaveBeenCalledTimes(1);
+    expect(fPutObject).toHaveBeenCalledTimes(1);
+    expect(existsSync(stagingPath)).toBe(false);
   });
 
   it('keeps the full original name in metadata while bounding a multibyte storage key', async () => {
     const service = createService(jest.fn().mockResolvedValue(true));
-    const putObject = jest.fn(
-      (
-        _bucket: string,
-        _objectName: string,
-        stream: Readable,
-        _size: number | undefined,
-        _metadata: Record<string, string>,
-      ): Promise<void> =>
-        new Promise((resolve, reject) => {
-          stream.on('data', () => undefined);
-          stream.once('end', resolve);
-          stream.once('error', reject);
-        }),
-    );
+    const fPutObject = jest.fn().mockResolvedValue(undefined);
     Object.defineProperty(service, 'client', {
       value: {
         bucketExists: jest.fn().mockResolvedValue(true),
-        putObject,
+        fPutObject,
         removeObject: jest.fn().mockResolvedValue(undefined),
       },
     });
@@ -134,39 +114,74 @@ describe('FileStorageService readiness', () => {
       500,
     );
 
-    const objectName = putObject.mock.calls[0]?.[1] as string;
+    const objectName = fPutObject.mock.calls[0]?.[1] as string;
     const objectNameSegment = objectName.split('/').at(-1) ?? '';
-    const metadata = putObject.mock.calls[0]?.[4] as Record<string, string>;
+    const metadata = fPutObject.mock.calls[0]?.[3] as Record<string, string>;
     expect(Buffer.byteLength(objectNameSegment, 'utf8')).toBeLessThanOrEqual(240);
     expect(objectNameSegment).toMatch(/\.md$/u);
     expect(metadata['X-Amz-Meta-Original-Name']).toBe(encodeURIComponent(originalName));
   });
 
-  it('preserves an oversize upload as a bad request and removes any partial object', async () => {
+  it('rejects an oversize upload before object storage and removes its staging file', async () => {
     const service = createService(jest.fn().mockResolvedValue(true));
     const removeObject = jest.fn().mockResolvedValue(undefined);
+    const fPutObject = jest.fn().mockResolvedValue(undefined);
     Object.defineProperty(service, 'client', {
       value: {
         bucketExists: jest.fn().mockResolvedValue(true),
-        putObject: jest.fn(
-          (
-            _bucket: string,
-            _objectName: string,
-            stream: Readable,
-          ): Promise<void> =>
-            new Promise((resolve, reject) => {
-              stream.on('data', () => undefined);
-              stream.once('end', resolve);
-              stream.once('error', reject);
-            }),
-        ),
+        fPutObject,
         removeObject,
       },
     });
 
     await expect(
-      service.uploadIncoming(Readable.from([Buffer.alloc(6)]), 'large.bin', 'application/octet-stream', 5),
+      service.uploadIncoming(
+        Readable.from([Buffer.alloc(6)]),
+        'large.bin',
+        'application/octet-stream',
+        5,
+      ),
     ).rejects.toBeInstanceOf(BadRequestException);
-    expect(removeObject).toHaveBeenCalledTimes(1);
+    expect(fPutObject).not.toHaveBeenCalled();
+    expect(removeObject).not.toHaveBeenCalled();
+  });
+
+  it('reopens the second staged upload after a transient MinIO connection failure', async () => {
+    const service = createService(jest.fn().mockResolvedValue(true));
+    const firstContent = Buffer.from('first upload content');
+    const secondContent = Buffer.from('second retryable upload content');
+    const connectionError = Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' });
+    const fPutObject = jest
+      .fn()
+      .mockImplementationOnce(async (_bucket: string, _objectName: string, filePath: string) => {
+        expect(readFileSync(filePath)).toEqual(firstContent);
+      })
+      .mockRejectedValueOnce(connectionError)
+      .mockImplementationOnce(async (_bucket: string, _objectName: string, filePath: string) => {
+        expect(readFileSync(filePath)).toEqual(secondContent);
+      });
+    Object.defineProperty(service, 'client', {
+      value: {
+        bucketExists: jest.fn().mockResolvedValue(true),
+        fPutObject,
+        removeObject: jest.fn().mockResolvedValue(undefined),
+      },
+    });
+    jest
+      .spyOn(
+        service as unknown as {
+          waitBeforeStorageRetry(delayMs: number): Promise<void>;
+        },
+        'waitBeforeStorageRetry',
+      )
+      .mockResolvedValue(undefined);
+
+    await expect(
+      service.uploadIncoming(Readable.from([firstContent]), 'first.txt', 'text/plain', 500),
+    ).resolves.toMatchObject({ size: firstContent.length });
+    await expect(
+      service.uploadIncoming(Readable.from([secondContent]), 'second.txt', 'text/plain', 500),
+    ).resolves.toMatchObject({ size: secondContent.length });
+    expect(fPutObject).toHaveBeenCalledTimes(3);
   });
 });
