@@ -387,10 +387,12 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
       expect(geometry.bodyWidths).toHaveLength(5)
       geometry.headerWidths.forEach((width, index) => {
         expect(Math.abs(width - geometry.bodyWidths[index]!)).toBeLessThanOrEqual(0.5)
-        const expectedWidth =
-          index === 0 ? geometry.table.width - 572 : [0, 90, 130, 170, 182][index]!
-        expect(Math.abs(width - expectedWidth)).toBeLessThanOrEqual(1)
+        if (index > 0) {
+          expect(Math.abs(width - [0, 90, 130, 170, 182][index]!)).toBeLessThanOrEqual(1)
+        }
       })
+      const columnWidth = geometry.headerWidths.reduce((total, width) => total + width, 0)
+      expect(Math.abs(columnWidth + 2 - geometry.table.width)).toBeLessThanOrEqual(1)
       expect(geometry.pageOverflowX).toBe(0)
       expect(geometry.pageOverflowY).toBe(0)
       expect(geometry.layoutOverflowX).toBe(0)

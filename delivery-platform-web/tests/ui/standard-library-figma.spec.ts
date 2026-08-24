@@ -461,7 +461,7 @@ test('standard library renders a real long draft, published actions and minimum-
     await expect(row.getByRole('button', { name: '归档', exact: true })).toBeVisible()
 
     await page.setViewportSize({ width: 1280, height: 800 })
-    const horizontalScroll = page.locator('.standard-table .business-table__viewport')
+    const horizontalScroll = page.locator('.table-region .business-table__viewport')
     const dimensions = await horizontalScroll.evaluate((element) => ({
       clientWidth: element.clientWidth,
       scrollWidth: element.scrollWidth,
