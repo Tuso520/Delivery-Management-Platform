@@ -51,6 +51,11 @@ export class FileStorageService {
       useSSL: config.useSSL,
       accessKey: config.accessKey,
       secretKey: config.secretKey,
+      retryOptions: {
+        maximumRetryCount: 3,
+        baseDelayMs: 250,
+        maximumDelayMs: 2_000,
+      },
     });
   }
 

@@ -12,6 +12,7 @@ import { fileApi } from '@/platform/file/file.api'
 
 describe('project archive upload contract', () => {
   beforeEach(() => {
+    vi.useRealTimers()
     request.get.mockReset()
     request.post.mockReset()
   })
@@ -51,6 +52,32 @@ describe('project archive upload contract', () => {
     const [, body] = request.post.mock.calls[0]
     expect((body as FormData).get('createNewLogicalFile')).toBe('true')
     expect((body as FormData).get('logicalFileId')).toBeNull()
+  })
+
+  it('retries a transient 503 with the same idempotency key and fresh multipart data', async () => {
+    vi.useFakeTimers()
+    request.post
+      .mockRejectedValueOnce({ response: { status: 503 } })
+      .mockResolvedValue({ id: 'logical-1' })
+    const file = new File(['archive content'], 'drawing.pdf', {
+      type: 'application/pdf',
+    })
+
+    const upload = archiveApi.uploadFile('project-1', 'item-1', file, {
+      uploadMode: 'REPLACE',
+      revisionLevel: 'MINOR',
+      createNewLogicalFile: true,
+    })
+    await vi.runAllTimersAsync()
+    await expect(upload).resolves.toEqual({ id: 'logical-1' })
+
+    expect(request.post).toHaveBeenCalledTimes(2)
+    const firstOptions = request.post.mock.calls[0][2]
+    const secondOptions = request.post.mock.calls[1][2]
+    expect(firstOptions.headers['Idempotency-Key']).toBe(secondOptions.headers['Idempotency-Key'])
+    expect(firstOptions.silent).toBe(true)
+    expect(request.post.mock.calls[0][1]).not.toBe(request.post.mock.calls[1][1])
+    expect((request.post.mock.calls[1][1] as FormData).get('file')).toBe(file)
   })
 
   it('deletes a displayed archive row through logical-file archival', async () => {

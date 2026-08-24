@@ -332,6 +332,92 @@ if (archivedStandard.id !== runtimeStandard.id || archivedStandard.status !== 'A
   fail('standard archive returned an invalid state');
 }
 
+const projectPageResult = await jsonRequest('/projects?page=1&pageSize=20', {
+  headers: { authorization: `Bearer ${session.accessToken}` },
+});
+const projectPage = requireEnvelope(projectPageResult, 200, 'project archive upload project list');
+const archiveProject = projectPage?.items?.[0];
+if (!archiveProject?.id) fail('project archive upload acceptance has no accessible project');
+const archiveTreeBeforeResult = await jsonRequest(`/projects/${archiveProject.id}/archive-tree`, {
+  headers: { authorization: `Bearer ${session.accessToken}` },
+});
+const archiveTreeBefore = requireEnvelope(
+  archiveTreeBeforeResult,
+  200,
+  'project archive tree before upload',
+);
+const archiveFolder = archiveTreeBefore?.folders?.find(
+  (folder) => !folder.archivedAt && folder.uploadTarget?.canUpload,
+);
+if (!archiveFolder?.uploadTarget?.id) fail('project archive has no uploadable folder');
+const archiveItemId = archiveFolder.uploadTarget.id;
+const archiveFileNames = [
+  `runtime-project-archive-a-${standardMarker}.md`,
+  `runtime-project-archive-b-${standardMarker}.md`,
+];
+const uploadedArchiveLogicalIds = [];
+try {
+  for (const [index, fileName] of archiveFileNames.entries()) {
+    const archiveFile = new FormData();
+    archiveFile.append(
+      'file',
+      new Blob([`runtime project archive upload ${index + 1} ${standardMarker}\n`], {
+        type: 'text/markdown',
+      }),
+      fileName,
+    );
+    archiveFile.append('uploadMode', 'REPLACE');
+    archiveFile.append('revisionLevel', 'MINOR');
+    archiveFile.append('createNewLogicalFile', 'true');
+    archiveFile.append('changeDescription', 'test runtime project archive multi-file upload');
+    const uploadResult = await jsonRequest(
+      `/projects/${archiveProject.id}/archive-items/${archiveItemId}/files`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${session.accessToken}`,
+          'idempotency-key': `runtime-project-archive-${index}-${standardMarker}`,
+        },
+        body: archiveFile,
+      },
+    );
+    const uploaded = requireEnvelope(uploadResult, 201, `project archive upload ${index + 1}`);
+    if (!uploaded?.id) fail(`project archive upload ${index + 1}: logical file id missing`);
+    uploadedArchiveLogicalIds.push(uploaded.id);
+  }
+
+  const archiveTreeAfterResult = await jsonRequest(`/projects/${archiveProject.id}/archive-tree`, {
+    headers: { authorization: `Bearer ${session.accessToken}` },
+  });
+  const archiveTreeAfter = requireEnvelope(
+    archiveTreeAfterResult,
+    200,
+    'project archive tree after upload',
+  );
+  const verifiedFolder = archiveTreeAfter?.folders?.find((folder) => folder.id === archiveFolder.id);
+  const uploadedNames = new Set(
+    (verifiedFolder?.files || []).map(
+      (file) => file.currentVersion?.originalName || file.currentVersion?.displayName,
+    ),
+  );
+  for (const fileName of archiveFileNames) {
+    if (!uploadedNames.has(fileName)) fail(`project archive tree is missing uploaded file ${fileName}`);
+  }
+  if (verifiedFolder.totalCount < archiveFolder.totalCount + 2) {
+    fail('project archive folder count did not increase by two');
+  }
+} finally {
+  for (const logicalFileId of uploadedArchiveLogicalIds) {
+    const cleanup = await jsonRequest(`/files/${logicalFileId}/archive`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${session.accessToken}` },
+    });
+    if (cleanup.response.status !== 200 || cleanup.body?.code !== 0) {
+      fail(`project archive upload cleanup failed for ${logicalFileId}`);
+    }
+  }
+}
+
 const integration = await jsonRequest('/integrations/FEISHU', {
   headers: { authorization: `Bearer ${session.accessToken}` },
 });
@@ -437,6 +523,7 @@ console.log(JSON.stringify({
   refreshRotation: 'PASS',
   refreshReplayRejected: 'PASS',
   logoutRevocation: 'PASS',
+  projectArchiveMultiFileUpload: 'PASS',
   feishuEnabled: Boolean(integrationData?.isEnabled),
   feishuSync: feishuSummary,
   feishuNotification,

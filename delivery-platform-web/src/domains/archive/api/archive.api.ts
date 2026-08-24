@@ -2,6 +2,7 @@ import type { AxiosProgressEvent } from 'axios'
 
 import request from '@/api/request'
 import { runIdempotentUpload } from '@/platform/file/upload-idempotency'
+import { retryTransientUpload } from '@/platform/file/upload-retry'
 import type {
   ProjectArchiveTargetTree,
 } from '@/domains/archive/types/archive'
@@ -43,32 +44,35 @@ export const archiveApi = {
     data: UploadProjectArchiveFilePayload,
     onProgress?: (percentage: number) => void,
   ) {
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('uploadMode', data.uploadMode)
-    formData.append('revisionLevel', data.revisionLevel)
-    if (data.logicalFileId) formData.append('logicalFileId', data.logicalFileId)
-    if (data.createNewLogicalFile) formData.append('createNewLogicalFile', 'true')
-    if (data.changeDescription) formData.append('changeDescription', data.changeDescription)
-
     const operation = JSON.stringify({ projectId, itemId, ...data })
     return runIdempotentUpload(file, operation, (idempotencyKey) =>
-      request.post<UnifiedLogicalFile>(
-        `/projects/${projectId}/archive-items/${itemId}/files`,
-        formData,
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-            'Idempotency-Key': idempotencyKey,
+      retryTransientUpload(() => {
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('uploadMode', data.uploadMode)
+        formData.append('revisionLevel', data.revisionLevel)
+        if (data.logicalFileId) formData.append('logicalFileId', data.logicalFileId)
+        if (data.createNewLogicalFile) formData.append('createNewLogicalFile', 'true')
+        if (data.changeDescription) formData.append('changeDescription', data.changeDescription)
+
+        return request.post<UnifiedLogicalFile>(
+          `/projects/${projectId}/archive-items/${itemId}/files`,
+          formData,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+              'Idempotency-Key': idempotencyKey,
+            },
+            silent: true,
+            timeout: 120000,
+            onUploadProgress: (event: AxiosProgressEvent) => {
+              if (!onProgress) return
+              const total = event.total ?? file.size
+              onProgress(total > 0 ? Math.round((event.loaded / total) * 100) : 0)
+            },
           },
-          timeout: 120000,
-          onUploadProgress: (event: AxiosProgressEvent) => {
-            if (!onProgress) return
-            const total = event.total ?? file.size
-            onProgress(total > 0 ? Math.round((event.loaded / total) * 100) : 0)
-          },
-        },
-      ),
+        )
+      }),
     )
   },
 }

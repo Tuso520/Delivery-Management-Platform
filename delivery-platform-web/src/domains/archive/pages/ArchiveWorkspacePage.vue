@@ -22,6 +22,7 @@ import type {
   ProjectArchiveTargetFolder,
   ProjectArchiveTargetItem,
 } from '@/domains/archive/types/archive'
+import { summarizeArchiveProgress } from '@/domains/archive/utils/archive-progress'
 import {
   resolveArchiveUploadTargetLabel,
   resolveProjectArchiveFileName,
@@ -102,15 +103,9 @@ const requiredTotal = computed(() =>
 const requiredCompleted = computed(() =>
   activeFolders.value.reduce((total, folder) => total + folder.requiredCompletedCount, 0),
 )
-const completedFolders = computed(
-  () =>
-    activeFolders.value.filter(
-      (folder) => folder.totalCount > 0 && folder.completedCount === folder.totalCount,
-    ).length,
-)
-const completionRate = computed(() =>
-  totalItems.value > 0 ? Math.round((completedItems.value / totalItems.value) * 100) : 0,
-)
+const folderProgress = computed(() => summarizeArchiveProgress(activeFolders.value))
+const completedFolders = computed(() => folderProgress.value.completedFolders)
+const completionRate = computed(() => folderProgress.value.completionRate)
 const metrics = computed(() => [
   {
     key: 'completion',
