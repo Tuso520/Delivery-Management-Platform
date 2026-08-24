@@ -184,7 +184,7 @@ jobs:
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
             "$SERVER_USER@$SERVER_HOST" 'bash -s' -- \
-            "$backend_rootfs_sha256" "$migration_rootfs_sha256" <<'REMOTE'
+            "$backend_rootfs_sha256" "$migration_rootfs_sha256" "$RELEASE_ID" <<'REMOTE'
           set -Eeuo pipefail
           find_matching_relay() {
             local role="$1" expected="$2" tag actual
@@ -203,7 +203,10 @@ jobs:
           }
           backend_tag="$(find_matching_relay backend "$1")"
           migration_tag="$(find_matching_relay migrator "$2")"
+          [[ "$3" =~ ^[0-9a-f]{40}$ ]]
           docker image inspect "$backend_tag" "$migration_tag" >/dev/null
+          docker image tag "$backend_tag" "delivery-platform-relay/backend:$3"
+          docker image tag "$migration_tag" "delivery-platform-relay/migrator:$3"
           printf '[release] reusable image layers found: %s, %s\n' "$backend_tag" "$migration_tag"
           REMOTE
           then
@@ -242,6 +245,8 @@ jobs:
             "docker login ghcr.io -u '$GITHUB_ACTOR' --password-stdin"
 
       - name: 上传发布控制文件
+        env:
+          PRELOAD_IMAGE_BUNDLE: ${{ steps.image_cache.outputs.preload }}
         run: |
           set -Eeuo pipefail
           remote_stage="/tmp/delivery-release-${RELEASE_ID}-${GITHUB_RUN_ID}"
@@ -249,12 +254,18 @@ jobs:
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
             "$SERVER_USER@$SERVER_HOST" "install -d -m 700 '$remote_stage'"
+          control_files=(
+            release/frontend.tar.gz release/release-manifest.json
+            deploy/compose/app.yml deploy/compose/data.yml
+            scripts/release/deploy-release.sh scripts/release/restore-release.sh
+          )
+          if [ "$PRELOAD_IMAGE_BUNDLE" = true ]; then
+            control_files+=(release/image-bundle.map.json)
+          fi
           scp -i ~/.ssh/deploy_key -P "$SERVER_PORT" \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
-            release/frontend.tar.gz release/release-manifest.json \
-            deploy/compose/app.yml deploy/compose/data.yml \
-            scripts/release/deploy-release.sh scripts/release/restore-release.sh \
+            "${control_files[@]}" \
             "$SERVER_USER@$SERVER_HOST:$remote_stage/"
           printf 'REMOTE_STAGE=%s\n' "$remote_stage" >> "$GITHUB_ENV"
 
@@ -415,8 +426,8 @@ jobs:
       - name: 执行服务器原地切换
         env:
           PRELOAD_IMAGE_BUNDLE: >-
-            ${{ steps.image_cache.outputs.preload == 'true' &&
-                steps.content_image_cache.outputs.reuse != 'true' }}
+            ${{ steps.image_cache.outputs.preload == 'true' }}
+          REUSE_IMAGE_CONTENT: ${{ steps.content_image_cache.outputs.reuse == 'true' }}
         run: |
           set -Eeuo pipefail
           ssh -i ~/.ssh/deploy_key -p "$SERVER_PORT" \
@@ -425,7 +436,8 @@ jobs:
             "$SERVER_USER@$SERVER_HOST" \
             'bash -c '\''script="$(cat)"; exec bash -c "$script" "$@"'\'' buffer' -- \
             "$APP_ROOT" "$REMOTE_STAGE" "$DEPLOY_ENV" "$DEPLOY_TARGET_ID" \
-            "$INTERNAL_ORIGIN" "$PUBLIC_ORIGIN" "$RESET_TEST_DATA" "$PRELOAD_IMAGE_BUNDLE" <<'REMOTE'
+            "$INTERNAL_ORIGIN" "$PUBLIC_ORIGIN" "$RESET_TEST_DATA" "$PRELOAD_IMAGE_BUNDLE" \
+            "$REUSE_IMAGE_CONTENT" <<'REMOTE'
           set -Eeuo pipefail
           APP_ROOT="$1"
           REMOTE_STAGE="$2"
@@ -435,6 +447,7 @@ jobs:
           PUBLIC_ORIGIN="$6"
           RESET_TEST_DATA="$7"
           PRELOAD_IMAGE_BUNDLE="$8"
+          REUSE_IMAGE_CONTENT="$9"
 
           test -d "$APP_ROOT" && test ! -L "$APP_ROOT"
           test -f "$APP_ROOT/state/target-id" && test ! -L "$APP_ROOT/state/target-id"
@@ -452,33 +465,39 @@ jobs:
 
           case "$PRELOAD_IMAGE_BUNDLE" in
             true)
-              expected_sha="$(tr -d '\r\n' < "$REMOTE_STAGE/image-bundle.sha256")"
-              expected_bytes="$(tr -d '\r\n' < "$REMOTE_STAGE/image-bundle.bytes")"
               bundle_map="$REMOTE_STAGE/image-bundle.map.json"
-              [[ "$expected_sha" =~ ^[0-9a-f]{64}$ ]]
-              [[ "$expected_bytes" =~ ^[1-9][0-9]*$ ]]
               test -f "$bundle_map" && test ! -L "$bundle_map"
               test "$(jq -er '.schemaVersion' "$bundle_map")" = 1
               test "$(jq -er '.images | keys | join(",")' "$bundle_map")" = 'backend,migrator'
-              mapfile -t image_parts < <(
-                find "$REMOTE_STAGE" -maxdepth 1 -type f -name 'image-bundle.part-*' \
-                  -printf '%f\n' | sort
-              )
-              test "${#image_parts[@]}" -gt 0
               image_bundle="$APP_ROOT/incoming/application-images.tar.gz"
-              image_bundle_part="$image_bundle.part"
-              trap 'rm -f -- "$image_bundle_part" "$image_bundle"' EXIT
-              : > "$image_bundle_part"
-              for part in "${image_parts[@]}"; do
-                [[ "$part" =~ ^image-bundle\.part-[0-9]{4}$ ]]
-                test -f "$REMOTE_STAGE/$part" && test ! -L "$REMOTE_STAGE/$part"
-                cat -- "$REMOTE_STAGE/$part" >> "$image_bundle_part"
-              done
-              test "$(stat -c '%s' "$image_bundle_part")" = "$expected_bytes"
-              test "$(sha256sum "$image_bundle_part" | awk '{print $1}')" = "$expected_sha"
-              gzip -t "$image_bundle_part"
-              mv -f -- "$image_bundle_part" "$image_bundle"
-              gzip -dc "$image_bundle" | docker load
+              case "$REUSE_IMAGE_CONTENT" in
+                false)
+                  expected_sha="$(tr -d '\r\n' < "$REMOTE_STAGE/image-bundle.sha256")"
+                  expected_bytes="$(tr -d '\r\n' < "$REMOTE_STAGE/image-bundle.bytes")"
+                  [[ "$expected_sha" =~ ^[0-9a-f]{64}$ ]]
+                  [[ "$expected_bytes" =~ ^[1-9][0-9]*$ ]]
+                  mapfile -t image_parts < <(
+                    find "$REMOTE_STAGE" -maxdepth 1 -type f -name 'image-bundle.part-*' \
+                      -printf '%f\n' | sort
+                  )
+                  test "${#image_parts[@]}" -gt 0
+                  image_bundle_part="$image_bundle.part"
+                  trap 'rm -f -- "$image_bundle_part" "$image_bundle"' EXIT
+                  : > "$image_bundle_part"
+                  for part in "${image_parts[@]}"; do
+                    [[ "$part" =~ ^image-bundle\.part-[0-9]{4}$ ]]
+                    test -f "$REMOTE_STAGE/$part" && test ! -L "$REMOTE_STAGE/$part"
+                    cat -- "$REMOTE_STAGE/$part" >> "$image_bundle_part"
+                  done
+                  test "$(stat -c '%s' "$image_bundle_part")" = "$expected_bytes"
+                  test "$(sha256sum "$image_bundle_part" | awk '{print $1}')" = "$expected_sha"
+                  gzip -t "$image_bundle_part"
+                  mv -f -- "$image_bundle_part" "$image_bundle"
+                  gzip -dc "$image_bundle" | docker load
+                  ;;
+                true) ;;
+                *) printf '[release][error] invalid image content reuse state\n' >&2; exit 1 ;;
+              esac
 
               backend_image="$(jq -er '.components.backend.image' "$APP_ROOT/incoming/release-manifest.json")"
               migration_image="$(jq -er '.components.migrator.image' "$APP_ROOT/incoming/release-manifest.json")"
@@ -508,12 +527,12 @@ jobs:
               images=("$backend_image" "$migration_image")
               for image in "${images[@]}"; do
                 pulled='false'
-                for attempt in 1 2; do
-                  if timeout --foreground 2m docker pull "$image"; then
+                for attempt in 1 2 3 4 5 6; do
+                  if timeout --foreground 5m docker pull "$image"; then
                     pulled='true'
                     break
                   fi
-                  sleep $((attempt * 5))
+                  sleep $((attempt * 10))
                 done
                 test "$pulled" = true
                 docker image inspect "$image" >/dev/null
