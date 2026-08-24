@@ -341,73 +341,44 @@ const projectPageResult = await jsonRequest('/projects?page=1&pageSize=20', {
 const projectPage = requireEnvelope(projectPageResult, 200, 'project archive upload project list');
 const runtimeProjectName = '运行时档案上传验收项目';
 let archiveProject = projectPage?.items?.[0];
-let managedArchiveProject = false;
 if (!archiveProject?.id) {
-  const archivedProjectsResult = await jsonRequest(
-    `/projects/archived?keyword=${encodeURIComponent(runtimeProjectName)}&page=1&pageSize=20`,
-    { headers: { authorization: `Bearer ${session.accessToken}` } },
-  );
-  const archivedProjects = requireEnvelope(
-    archivedProjectsResult,
+  const archiveTemplatesResult = await jsonRequest('/archive-templates', {
+    headers: { authorization: `Bearer ${session.accessToken}` },
+  });
+  const archiveTemplates = requireEnvelope(
+    archiveTemplatesResult,
     200,
-    'reusable project archive upload fixture list',
+    'project archive upload template list',
   );
-  const reusableProject = archivedProjects?.items?.find(
-    (project) => project.projectName === runtimeProjectName,
+  const archiveTemplate = archiveTemplates.find(
+    (template) =>
+      template.status === 'PUBLISHED' &&
+      template.currentPublishedVersion?.status === 'PUBLISHED' &&
+      template.currentPublishedVersion?._count?.folders > 0,
   );
-  if (reusableProject?.id) {
-    const restoreResult = await jsonRequest(`/projects/${reusableProject.id}/restore`, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${session.accessToken}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        revision: reusableProject.revision,
-        reason: 'test runtime project archive upload acceptance',
-      }),
-    });
-    archiveProject = requireEnvelope(restoreResult, 201, 'restore project archive upload fixture');
-  } else {
-    const archiveTemplatesResult = await jsonRequest('/archive-templates', {
-      headers: { authorization: `Bearer ${session.accessToken}` },
-    });
-    const archiveTemplates = requireEnvelope(
-      archiveTemplatesResult,
-      200,
-      'project archive upload template list',
-    );
-    const archiveTemplate = archiveTemplates.find(
-      (template) =>
-        template.status === 'PUBLISHED' &&
-        template.currentPublishedVersion?.status === 'PUBLISHED' &&
-        template.currentPublishedVersion?._count?.folders > 0,
-    );
-    if (!archiveTemplate?.id || !archiveTemplate.currentPublishedVersion?.id) {
-      fail('project archive upload acceptance has no published folder template');
-    }
-    const createProjectResult = await jsonRequest('/projects', {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${session.accessToken}`,
-        'content-type': 'application/json',
-        'idempotency-key': `runtime-project-${standardMarker}`,
-      },
-      body: JSON.stringify({
-        projectName: runtimeProjectName,
-        countryCode: configuredValue('COUNTRY', 'CN'),
-        archiveTemplateId: archiveTemplate.id,
-        archiveTemplateVersionId: archiveTemplate.currentPublishedVersion.id,
-        saveAsDraft: true,
-      }),
-    });
-    archiveProject = requireEnvelope(
-      createProjectResult,
-      201,
-      'create project archive upload fixture',
-    );
+  if (!archiveTemplate?.id || !archiveTemplate.currentPublishedVersion?.id) {
+    fail('project archive upload acceptance has no published folder template');
   }
-  managedArchiveProject = true;
+  const createProjectResult = await jsonRequest('/projects', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${session.accessToken}`,
+      'content-type': 'application/json',
+      'idempotency-key': `runtime-project-${standardMarker}`,
+    },
+    body: JSON.stringify({
+      projectName: runtimeProjectName,
+      countryCode: configuredValue('COUNTRY', 'CN'),
+      archiveTemplateId: archiveTemplate.id,
+      archiveTemplateVersionId: archiveTemplate.currentPublishedVersion.id,
+      saveAsDraft: true,
+    }),
+  });
+  archiveProject = requireEnvelope(
+    createProjectResult,
+    201,
+    'create project archive upload fixture',
+  );
 }
 if (!archiveProject?.id) fail('project archive upload acceptance could not prepare a project');
 const uploadedArchiveLogicalIds = [];
@@ -525,35 +496,6 @@ try {
     if (cleanup.response.status !== 200 || cleanup.body?.code !== 0) {
       cleanupFailure ||= `project archive upload cleanup failed for ${logicalFileId}`;
     }
-  }
-  if (managedArchiveProject) {
-    let cleanupProject = archiveProject;
-    if (!['COMPLETED', 'CANCELLED'].includes(cleanupProject.status)) {
-      const cancelResult = await jsonRequest(`/projects/${cleanupProject.id}/cancel`, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${session.accessToken}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          revision: cleanupProject.revision,
-          reason: 'test runtime project archive upload acceptance cleanup',
-        }),
-      });
-      cleanupProject = requireEnvelope(cancelResult, 201, 'cancel project archive upload fixture');
-    }
-    const archiveResult = await jsonRequest(`/projects/${cleanupProject.id}/archive`, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${session.accessToken}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        revision: cleanupProject.revision,
-        reason: 'test runtime project archive upload acceptance cleanup',
-      }),
-    });
-    requireEnvelope(archiveResult, 201, 'archive project archive upload fixture');
   }
   if (cleanupFailure) fail(cleanupFailure);
 }
