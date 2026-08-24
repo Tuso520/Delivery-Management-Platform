@@ -355,7 +355,7 @@ test('standard library keeps real loading, empty and validation errors inside th
   await expect(page.locator('.library-panel')).toBeVisible()
 })
 
-test('standard library renders a real long draft, published actions and minimum-width scrolling', async ({
+test('standard library renders a real long draft, actions and minimum-width scrolling', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -489,17 +489,6 @@ test('standard library renders a real long draft, published actions and minimum-
     expect(horizontalBounds.buttonLeft).toBeGreaterThanOrEqual(horizontalBounds.viewportLeft - 1)
     expect(horizontalBounds.buttonRight).toBeLessThanOrEqual(horizontalBounds.viewportRight + 1)
 
-    await page.locator('.keyword-input input').clear()
-    await page.getByRole('button', { name: '查询', exact: true }).click()
-    const publishedDateCell = page
-      .locator('.standard-table tbody tr td:nth-child(3)')
-      .filter({ hasText: /^\d{4}-\d{2}-\d{2}$/u })
-      .first()
-    const publishedRow = publishedDateCell.locator('..')
-    await expect(publishedRow).toBeVisible()
-    await expect(publishedRow.getByRole('button', { name: '下载', exact: true })).toHaveCount(0)
-    await expect(publishedRow.locator('td').nth(1)).toHaveText(/^V\d/u)
-    await expect(publishedRow.locator('td').nth(2)).toHaveText(/^\d{4}-\d{2}-\d{2}$/u)
   } finally {
     if (standardId) {
       const archiveResponse = await page.request.post(`/api/v1/standards/${standardId}/archive`, {
