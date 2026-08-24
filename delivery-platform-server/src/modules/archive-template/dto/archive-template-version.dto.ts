@@ -100,9 +100,10 @@ export class ArchiveTemplateVersionFolderDto {
   sortOrder?: number;
 
   @IsArray()
+  @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => ArchiveTemplateVersionItemDto)
-  items: ArchiveTemplateVersionItemDto[];
+  items?: ArchiveTemplateVersionItemDto[];
 }
 
 export class UpdateArchiveTemplateVersionDto {

@@ -18,11 +18,11 @@ import {
   useArchiveTreeQuery,
 } from '@/domains/archive/queries/useArchiveQueries'
 import type {
+  ProjectArchiveTargetFile,
   ProjectArchiveTargetFolder,
   ProjectArchiveTargetItem,
 } from '@/domains/archive/types/archive'
 import {
-  isEmptyStandardFolderPlaceholder,
   resolveArchiveUploadTargetLabel,
   resolveProjectArchiveFileName,
 } from '@/domains/archive/utils/project-archive-file'
@@ -49,6 +49,7 @@ const projectKeyword = ref('')
 const selectedFolderId = ref('')
 const uploadVisible = ref(false)
 const uploadItemId = ref('')
+const uploadLogicalFileId = ref('')
 const uploadFileItems = ref<FileItem[]>([])
 const uploadFiles = computed(() =>
   uploadFileItems.value.flatMap((item) => (item.file ? [item.file] : [])),
@@ -70,15 +71,13 @@ const selectedFolder = computed<ProjectArchiveTargetFolder | null>(
   () => activeFolders.value.find((folder) => folder.id === selectedFolderId.value) ?? null,
 )
 const selectedFolderItems = computed(() =>
-  (selectedFolder.value?.items ?? []).filter(
-    (item) => !item.archivedAt && !isEmptyStandardFolderPlaceholder(item),
-  ),
+  (selectedFolder.value?.files ?? []).filter((file) => !file.archivedAt),
 )
 const uploadCandidates = computed(() =>
   activeFolders.value.flatMap((folder) =>
-    folder.items
-      .filter((item) => !item.archivedAt && item.canUpload)
-      .map((item) => ({ folderId: folder.id, folderName: folder.name, item })),
+    folder.uploadTarget?.canUpload
+      ? [{ folderId: folder.id, folderName: folder.name, item: folder.uploadTarget }]
+      : [],
   ),
 )
 const uploadItem = computed<ProjectArchiveTargetItem | null>(
@@ -164,18 +163,10 @@ const fileColumns = computed<TableColumnData[]>(() => [
   { title: t('common.action'), slotName: 'action', width: 182, align: 'center' },
 ])
 
-const uploadItemExtensions = computed(() =>
-  (uploadItem.value?.allowedExtensions ?? [])
-    .filter((extension): extension is string => typeof extension === 'string')
-    .map((extension) => extension.replace(/^\./u, '').toLowerCase()),
-)
-
 const uploadAccept = computed(() => {
-  const enabledTypes = new Set(
-    fieldConfig.getFieldOptions('FILE_TYPE').map((option) => option.value.toLowerCase()),
-  )
-  return uploadItemExtensions.value
-    .filter((extension) => enabledTypes.has(extension))
+  return fieldConfig
+    .getFieldOptions('FILE_TYPE')
+    .map((option) => option.value.toLowerCase())
     .map((extension) => `.${extension}`)
     .join(',')
 })
@@ -186,27 +177,24 @@ const uploadMutation = useMutation({
     itemId,
     files,
     logicalFileId,
-    allowMultipleFiles,
   }: {
     projectId: string
     itemId: string
     files: File[]
     logicalFileId?: string
-    allowMultipleFiles: boolean
   }) => {
-    const batchUpload = files.length > 1
     return files.reduce<Promise<void>>(async (previous, file, index) => {
       await previous
-      const createNewLogicalFile = batchUpload && allowMultipleFiles
+      const updateExistingFile = index === 0 && Boolean(logicalFileId)
       await archiveApi.uploadFile(
         projectId,
         itemId,
         file,
         {
-          uploadMode: !createNewLogicalFile && logicalFileId ? 'NEW_VERSION' : 'REPLACE',
+          uploadMode: updateExistingFile ? 'NEW_VERSION' : 'REPLACE',
           revisionLevel: 'MINOR',
-          logicalFileId: createNewLogicalFile ? undefined : logicalFileId,
-          createNewLogicalFile,
+          logicalFileId: updateExistingFile ? logicalFileId : undefined,
+          createNewLogicalFile: !updateExistingFile,
           changeDescription: uploadForm.changeDescription.trim() || undefined,
         },
         (percentage) => {
@@ -237,7 +225,9 @@ function projectDisplayName(project: (typeof projects.value)[number]): string {
 
 function projectOptionDescription(project: (typeof projects.value)[number]): string {
   return [project.customerName?.trim(), project.projectName]
-    .filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index)
+    .filter(
+      (value, index, values): value is string => Boolean(value) && values.indexOf(value) === index,
+    )
     .join(' · ')
 }
 
@@ -277,7 +267,7 @@ function formatFileSize(value?: string | null): string {
   return format(bytes / 1024 ** 3, 'GB')
 }
 
-function previewItem(item: ProjectArchiveTargetItem): void {
+function previewItem(item: ProjectArchiveTargetFile): void {
   if (!item.currentVersion || item.currentVersion.canPreview === false) return
   const previewIdentifier =
     item.currentVersion.previewIdentifier || item.currentVersion.logicalFileId
@@ -288,8 +278,9 @@ function previewItem(item: ProjectArchiveTargetItem): void {
   })
 }
 
-function openUpload(item: ProjectArchiveTargetItem): void {
-  uploadItemId.value = item.id
+function openUpload(item: ProjectArchiveTargetFile): void {
+  uploadItemId.value = item.archiveItemId
+  uploadLogicalFileId.value = item.currentVersion?.logicalFileId ?? ''
   uploadFileItems.value = []
   uploadProgress.value = 0
   uploadForm.changeDescription = ''
@@ -297,19 +288,22 @@ function openUpload(item: ProjectArchiveTargetItem): void {
 }
 
 function openFolderUpload(): void {
-  const target =
-    uploadCandidates.value.find(
-      ({ folderId, item }) => folderId === selectedFolderId.value && !item.currentVersion,
-    )?.item ??
-    uploadCandidates.value.find(({ folderId }) => folderId === selectedFolderId.value)?.item
+  const target = uploadCandidates.value.find(
+    ({ folderId }) => folderId === selectedFolderId.value,
+  )?.item
   if (!target) {
     Message.info(t('archive.messages.noUploadTarget'))
     return
   }
-  openUpload(target)
+  uploadItemId.value = target.id
+  uploadLogicalFileId.value = ''
+  uploadFileItems.value = []
+  uploadProgress.value = 0
+  uploadForm.changeDescription = ''
+  uploadVisible.value = true
 }
 
-async function downloadItem(item: ProjectArchiveTargetItem): Promise<void> {
+async function downloadItem(item: ProjectArchiveTargetFile): Promise<void> {
   const logicalFileId = item.currentVersion?.logicalFileId
   if (!logicalFileId || !canDownloadItem(item)) return
   try {
@@ -320,11 +314,11 @@ async function downloadItem(item: ProjectArchiveTargetItem): Promise<void> {
   }
 }
 
-function canDownloadItem(item: ProjectArchiveTargetItem): boolean {
+function canDownloadItem(item: ProjectArchiveTargetFile): boolean {
   return item.canDownload ?? hasPermission('file:download')
 }
 
-async function deleteFile(item: ProjectArchiveTargetItem): Promise<void> {
+async function deleteFile(item: ProjectArchiveTargetFile): Promise<void> {
   const logicalFileId = item.currentVersion?.logicalFileId
   if (!logicalFileId) return
   const fileName = resolveProjectArchiveFileName(item)
@@ -350,15 +344,13 @@ async function deleteFile(item: ProjectArchiveTargetItem): Promise<void> {
   }
 }
 
-function handleUploadSelection(
-  fileList: FileItem[],
-  _fileItem?: FileItem,
-): void {
+function handleUploadSelection(fileList: FileItem[], _fileItem?: FileItem): void {
   uploadFileItems.value = fileList
 }
 
-function removeUploadFile(fileItem: FileItem): void {
-  uploadFileItems.value = uploadFileItems.value.filter((item) => item.uid !== fileItem.uid)
+function changeUploadTarget(value: unknown): void {
+  uploadItemId.value = typeof value === 'string' ? value : ''
+  uploadLogicalFileId.value = ''
 }
 
 async function submitUpload(): Promise<boolean> {
@@ -366,17 +358,12 @@ async function submitUpload(): Promise<boolean> {
     Message.warning(t('archive.validation.uploadFileRequired'))
     return false
   }
-  if (uploadFiles.value.length > 1 && !uploadItem.value.allowMultipleFiles) {
-    Message.warning(t('archive.validation.multipleFilesNotAllowed'))
-    return false
-  }
   const enabledTypes = new Set(
     fieldConfig.getFieldOptions('FILE_TYPE').map((option) => option.value.toLowerCase()),
   )
-  const itemTypes = new Set(uploadItemExtensions.value)
   const containsDisabledType = uploadFiles.value.some((file) => {
     const extension = file.name.split('.').pop()?.toLowerCase() ?? ''
-    return !enabledTypes.has(extension) || (itemTypes.size > 0 && !itemTypes.has(extension))
+    return !enabledTypes.has(extension)
   })
   if (containsDisabledType) {
     Message.warning(t('archive.validation.fileTypeDisabled'))
@@ -387,8 +374,7 @@ async function submitUpload(): Promise<boolean> {
       projectId: selectedProjectId.value,
       itemId: uploadItem.value.id,
       files: uploadFiles.value,
-      logicalFileId: uploadItem.value.currentVersion?.logicalFileId,
-      allowMultipleFiles: uploadItem.value.allowMultipleFiles,
+      logicalFileId: uploadLogicalFileId.value || undefined,
     })
     Message.success(
       uploadItem.value.reviewRequired
@@ -544,7 +530,7 @@ watch(
           <BusinessTable
             class="archive-file-table"
             :data="selectedFolderItems"
-            row-key="id"
+            row-key="rowKey"
             size="small"
             bordered
             stripe
@@ -628,11 +614,12 @@ watch(
       <a-form :model="uploadForm" layout="vertical">
         <a-form-item :label="t('archive.archiveItemLabel')">
           <a-select
-            v-model="uploadItemId"
+            :model-value="uploadItemId"
             :options="uploadItemOptions"
             allow-search
             :disabled="uploading"
             :placeholder="t('archive.selectArchiveItem')"
+            @change="changeUploadTarget"
           />
         </a-form-item>
         <a-form-item :label="t('archive.file')" required>
@@ -640,32 +627,11 @@ watch(
             :file-list="uploadFileItems"
             :auto-upload="false"
             multiple
-            :show-file-list="false"
             :show-retry-button="false"
             :accept="uploadAccept || undefined"
             :disabled="uploading || fieldConfig.loading.value"
             @change="handleUploadSelection"
           />
-          <div v-if="uploadFileItems.length" class="archive-upload-files">
-            <div
-              v-for="fileItem in uploadFileItems"
-              :key="fileItem.uid || fileItem.file?.name"
-              class="archive-upload-file"
-            >
-              <span :title="fileItem.file?.name || fileItem.name">
-                {{ fileItem.file?.name || fileItem.name }}
-              </span>
-              <a-button
-                type="text"
-                status="danger"
-                size="mini"
-                :disabled="uploading"
-                @click="removeUploadFile(fileItem)"
-              >
-                {{ t('common.delete') }}
-              </a-button>
-            </div>
-          </div>
         </a-form-item>
         <a-form-item :label="t('archive.changeDescription')">
           <a-textarea
@@ -694,32 +660,6 @@ watch(
   padding: 13px;
   color: #1d2129;
   font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-}
-
-.archive-upload-files {
-  width: 100%;
-  display: grid;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.archive-upload-file {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 6px 8px;
-  border: 1px solid var(--archive-border);
-  border-radius: 4px;
-  background: #f7f8fa;
-}
-
-.archive-upload-file > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .archive-metrics {

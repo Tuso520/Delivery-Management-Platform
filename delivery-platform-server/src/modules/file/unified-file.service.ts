@@ -21,10 +21,7 @@ import { resolveDocumentConfig } from '../../config/document.config';
 import { PrismaService } from '../../database/prisma.service';
 import type { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { FieldConfigurationService } from '../field-configuration/field-configuration.service';
-import {
-  OperationLogService,
-  writeOperationLog,
-} from '../operation-log/operation-log.service';
+import { OperationLogService, writeOperationLog } from '../operation-log/operation-log.service';
 import { ProjectAccessService } from '../project/project-access.service';
 import { ReviewConfigurationService } from '../review/review-configuration.service';
 import { ReviewTaskService } from '../review/review-task.service';
@@ -226,16 +223,16 @@ export class UnifiedFileService {
           data: { currentVersionId: fileVersionId },
         });
         await writeOperationLog(tx, {
-            userId,
-            module: 'file',
-            action: 'upload_draft',
-            targetType: 'logical_file',
-            targetId: logicalFileId,
-            afterData: {
-              ownerType: dto.ownerType,
-              fileVersionId,
-              originalName: file.originalname,
-            },
+          userId,
+          module: 'file',
+          action: 'upload_draft',
+          targetType: 'logical_file',
+          targetId: logicalFileId,
+          afterData: {
+            ownerType: dto.ownerType,
+            fileVersionId,
+            originalName: file.originalname,
+          },
         });
       });
     } catch (error) {
@@ -299,10 +296,6 @@ export class UnifiedFileService {
         folder: { select: { name: true } },
         reviewRequired: true,
         approvalTemplateId: true,
-        allowMultipleFiles: true,
-        allowedExtensions: true,
-        maxFileSize: true,
-        namingRule: true,
       },
     });
     if (!archiveItem) {
@@ -313,7 +306,7 @@ export class UnifiedFileService {
     const extension = this.extensionOf(file.originalname);
     await this.assertSystemUploadPolicy(file, extension);
     await this.fieldConfiguration?.assertConfiguredValue('FILE_TYPE', extension);
-    this.assertUploadPolicy(file, extension, archiveItem);
+    this.assertFileSignature(file, extension);
     const checksum = this.checksum(file);
     if (idempotencyKey) {
       const replay = await this.resolveProjectIdempotentUpload(
@@ -330,7 +323,6 @@ export class UnifiedFileService {
     const existing = await this.resolveExistingArchiveFile(
       projectId,
       archiveItemId,
-      archiveItem.allowMultipleFiles,
       dto.logicalFileId,
       dto.createNewLogicalFile,
     );
@@ -458,18 +450,18 @@ export class UnifiedFileService {
           reviewTaskId = await this.reviewTasks.createPreparedTask(tx, preparedReview);
         }
         await writeOperationLog(tx, {
-            userId,
-            module: 'file',
-            action: dto.uploadMode === 'REPLACE' ? 'replace' : 'new_version',
-            targetType: 'logical_file',
-            targetId: logicalFileId,
-            afterData: {
-              fileVersionId,
-              version: nextVersion,
-              projectId,
-              archiveItemId,
-              reviewTaskId,
-            },
+          userId,
+          module: 'file',
+          action: dto.uploadMode === 'REPLACE' ? 'replace' : 'new_version',
+          targetType: 'logical_file',
+          targetId: logicalFileId,
+          afterData: {
+            fileVersionId,
+            version: nextVersion,
+            projectId,
+            archiveItemId,
+            reviewTaskId,
+          },
         });
         await enqueueDomainEvent(tx, {
           eventType: 'ArchiveFileUploaded',
@@ -746,11 +738,11 @@ export class UnifiedFileService {
         });
       }
       await writeOperationLog(tx, {
-          userId: actor.sub,
-          module: 'file',
-          action: 'archive',
-          targetType: 'logical_file',
-          targetId: logicalFileId,
+        userId: actor.sub,
+        module: 'file',
+        action: 'archive',
+        targetType: 'logical_file',
+        targetId: logicalFileId,
       });
     });
     return { id: logicalFileId, archivedAt };
@@ -860,27 +852,12 @@ export class UnifiedFileService {
   private async resolveExistingArchiveFile(
     projectId: string,
     archiveItemId: string,
-    allowMultipleFiles: boolean,
     logicalFileId?: string,
     createNewLogicalFile = false,
   ) {
     if (createNewLogicalFile) {
       if (logicalFileId) {
         throw new BadRequestException('新建独立文件时不能同时指定 logicalFileId');
-      }
-      if (!allowMultipleFiles) {
-        const existing = await this.prisma.projectArchiveFile.findFirst({
-          where: {
-            projectId,
-            archiveItemId,
-            archivedAt: null,
-            logicalFile: { archivedAt: null },
-          },
-          select: { id: true },
-        });
-        if (existing) {
-          throw new BadRequestException('该档案项不允许上传多个独立文件');
-        }
       }
       return null;
     }
@@ -909,7 +886,6 @@ export class UnifiedFileService {
       orderBy: { createdAt: 'asc' },
       take: 2,
     });
-    if (!allowMultipleFiles) return existing[0] ?? null;
     if (existing.length === 1) return existing[0];
     if (existing.length > 1) {
       throw new BadRequestException('该档案项包含多个业务文件，请指定 logicalFileId');
@@ -1106,11 +1082,12 @@ export class UnifiedFileService {
     if (domain === 'STANDARD') {
       if (action === 'DOWNLOAD') return actor.permissions.includes('standard:download');
       if (action === 'UPDATE') {
-        const domainPermission = ownerType === 'STANDARD_DRAFT'
-          ? actor.permissions.some((permission) =>
-              ['standard:create', 'standard:update_draft'].includes(permission),
-            )
-          : actor.permissions.includes('standard:archive');
+        const domainPermission =
+          ownerType === 'STANDARD_DRAFT'
+            ? actor.permissions.some((permission) =>
+                ['standard:create', 'standard:update_draft'].includes(permission),
+              )
+            : actor.permissions.includes('standard:archive');
         return actor.permissions.includes('file:archive') && domainPermission;
       }
       return actor.permissions.includes('standard:view');
@@ -1118,11 +1095,12 @@ export class UnifiedFileService {
     if (domain === 'KNOWLEDGE') {
       if (action === 'DOWNLOAD') return actor.permissions.includes('knowledge:download');
       if (action === 'UPDATE') {
-        const domainPermission = ownerType === 'KNOWLEDGE_DRAFT'
-          ? actor.permissions.some((permission) =>
-              ['knowledge:create', 'knowledge:update_draft'].includes(permission),
-            )
-          : actor.permissions.includes('knowledge:archive');
+        const domainPermission =
+          ownerType === 'KNOWLEDGE_DRAFT'
+            ? actor.permissions.some((permission) =>
+                ['knowledge:create', 'knowledge:update_draft'].includes(permission),
+              )
+            : actor.permissions.includes('knowledge:archive');
         return actor.permissions.includes('file:archive') && domainPermission;
       }
       return actor.permissions.includes('knowledge:view');
@@ -1143,7 +1121,9 @@ export class UnifiedFileService {
     ) {
       return;
     }
-    throw new ForbiddenException(`当前用户缺少${ownerType === 'STANDARD' ? '标准' : '知识'}文件上传权限`);
+    throw new ForbiddenException(
+      `当前用户缺少${ownerType === 'STANDARD' ? '标准' : '知识'}文件上传权限`,
+    );
   }
 
   private assertPermission(actor: UnifiedFileAccessActor, permission: string): void {
@@ -1343,32 +1323,6 @@ export class UnifiedFileService {
     throw new ForbiddenException('当前用户无权预览该文件版本');
   }
 
-  private assertUploadPolicy(
-    file: Express.Multer.File,
-    extension: string,
-    policy: {
-      allowedExtensions: Prisma.JsonValue | null;
-      maxFileSize: bigint | null;
-      namingRule: string | null;
-    },
-  ): void {
-    const allowedExtensions = Array.isArray(policy.allowedExtensions)
-      ? policy.allowedExtensions
-          .filter((value): value is string => typeof value === 'string')
-          .map((value) => value.replace(/^\./, '').toLowerCase())
-      : [];
-    if (allowedExtensions.length > 0 && !allowedExtensions.includes(extension)) {
-      throw new BadRequestException(`档案项不允许上传 .${extension} 文件`);
-    }
-    if (policy.maxFileSize !== null && BigInt(file.size) > policy.maxFileSize) {
-      throw new BadRequestException('文件大小超过档案项限制');
-    }
-    if (policy.namingRule && !this.matchesSafeGlob(file.originalname, policy.namingRule)) {
-      throw new BadRequestException('文件名不符合档案项命名规则');
-    }
-    this.assertFileSignature(file, extension);
-  }
-
   private async assertSystemUploadPolicy(
     file: Express.Multer.File,
     extension: string,
@@ -1411,21 +1365,6 @@ export class UnifiedFileService {
     if (check && !check(buffer)) {
       throw new BadRequestException('文件内容与扩展名不匹配');
     }
-  }
-
-  private matchesSafeGlob(fileName: string, rule: string): boolean {
-    if (rule.length > 200) return false;
-    const versionToken = 'VERSIONTOKEN';
-    const pattern = rule
-      .replace(/\{version\}/giu, versionToken)
-      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-      .replace(/\*/g, '.*')
-      .replace(/\?/g, '.')
-      .replaceAll(versionToken, 'V?\\d+(?:\\.\\d+){0,2}');
-    const matcher = new RegExp(`^${pattern}$`, 'iu');
-    const extensionSeparator = fileName.lastIndexOf('.');
-    const baseName = extensionSeparator > 0 ? fileName.slice(0, extensionSeparator) : fileName;
-    return matcher.test(fileName) || matcher.test(baseName);
   }
 
   private extensionOf(fileName: string): string {

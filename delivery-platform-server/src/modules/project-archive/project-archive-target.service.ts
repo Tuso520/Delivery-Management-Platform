@@ -9,8 +9,6 @@ type ArchiveActor = Pick<JwtPayload, 'sub' | 'permissions' | 'roles'>;
 
 const pendingReviewStatuses = ['PENDING', 'IN_PROGRESS'] as const;
 const completedArchiveStatuses = new Set(['APPROVED', 'PUBLISHED', 'COMPLETED', 'ARCHIVED']);
-const emptyStandardFolderPlaceholderName = '相关交付文件';
-const standardFolderPlaceholderKey = /^standard-folder-\d+-files$/u;
 
 @Injectable()
 export class ProjectArchiveTargetService {
@@ -284,22 +282,117 @@ export class ProjectArchiveTargetService {
           },
         };
       });
-      const activeItems = items.filter(
-        (item) =>
-          !item.archivedAt &&
-          !(
-            item.name.trim() === emptyStandardFolderPlaceholderName &&
-            standardFolderPlaceholderKey.test(item.sourceStableKey?.trim() ?? '') &&
-            item.fileCount === 0
-          ),
+      const files = folder.items.flatMap((item) =>
+        item.files.map((file) => {
+          const versionCandidates = file.logicalFile.versions.map((version) => ({ file, version }));
+          const newestFirst = (
+            left: (typeof versionCandidates)[number],
+            right: (typeof versionCandidates)[number],
+          ) => right.version.uploadedAt.getTime() - left.version.uploadedAt.getTime();
+          const pendingCandidates = versionCandidates.filter((candidate) =>
+            candidate.version.reviewTasks.some((task) =>
+              pendingReviewStatuses.includes(task.status as (typeof pendingReviewStatuses)[number]),
+            ),
+          );
+          const pendingCandidate = pendingCandidates.sort(newestFirst)[0];
+          const rejectedCandidate = versionCandidates
+            .filter((candidate) => candidate.version.status === 'REJECTED')
+            .sort(newestFirst)[0];
+          const workflowCandidate = pendingCandidate ?? rejectedCandidate;
+          const presentedVersion = workflowCandidate?.version ?? file.logicalFile.currentVersion;
+          const pendingTasks = pendingCandidates.flatMap((candidate) =>
+            candidate.version.reviewTasks.filter((task) =>
+              pendingReviewStatuses.includes(task.status as (typeof pendingReviewStatuses)[number]),
+            ),
+          );
+          const workflowTasks = workflowCandidate?.version.reviewTasks ?? [];
+          const canPreviewWorkflowVersion =
+            !workflowCandidate ||
+            actor.roles.includes('SUPER_ADMIN') ||
+            actor.permissions.some((permission) =>
+              ['file:preview_pending', 'file:preview_history'].includes(permission),
+            ) ||
+            workflowCandidate.version.uploadedBy === actor.sub ||
+            workflowTasks.some(
+              (task) =>
+                task.submittedBy === actor.sub ||
+                task.steps.some((step) =>
+                  step.assignees.some((assignee) => assignee.assigneeUserId === actor.sub),
+                ),
+            );
+          const status = item.archivedAt
+            ? 'ARCHIVED'
+            : pendingTasks.length > 0
+              ? 'REVIEWING'
+              : (workflowCandidate?.version.status ??
+                file.logicalFile.currentVersion?.status ??
+                file.status);
+          return {
+            rowKey: file.id,
+            id: item.id,
+            archiveItemId: item.id,
+            name: item.name,
+            description: item.description,
+            required: item.required,
+            reviewRequired: item.reviewRequired,
+            approvalTemplateId: item.approvalTemplateId,
+            ownerRoleId: item.ownerRoleId,
+            allowMultipleFiles: true,
+            allowedExtensions: item.allowedExtensions,
+            maxFileSize: item.maxFileSize,
+            namingRule: item.namingRule,
+            sourceStableKey: item.sourceStableKey,
+            isTemporary: item.isTemporary,
+            temporaryReason: item.temporaryReason,
+            archivedAt: item.archivedAt,
+            status,
+            currentVersion: presentedVersion
+              ? {
+                  id: presentedVersion.id,
+                  version: presentedVersion.version,
+                  status: presentedVersion.status,
+                  uploadedAt: presentedVersion.uploadedAt,
+                  logicalFileId: file.logicalFile.id,
+                  previewIdentifier: workflowCandidate
+                    ? workflowCandidate.version.id
+                    : file.logicalFile.id,
+                  displayName: file.logicalFile.displayName,
+                  originalName: presentedVersion.asset?.originalName,
+                  extension: presentedVersion.asset?.extension,
+                  fileSize: presentedVersion.asset?.size?.toString() ?? '0',
+                  uploader: presentedVersion.uploader,
+                  pendingReview: Boolean(pendingCandidate),
+                  canPreview: canPreviewWorkflowVersion,
+                }
+              : null,
+            fileCount: 1,
+            owner: item.ownerUser,
+            updatedAt: presentedVersion?.uploadedAt ?? file.updatedAt,
+            canUpload: canUpload && !item.archivedAt && !folder.archivedAt,
+            canDownload:
+              canDownload && !item.archivedAt && !folder.archivedAt && Boolean(presentedVersion),
+            canDeleteFile:
+              canDeleteFile && !item.archivedAt && !folder.archivedAt && Boolean(presentedVersion),
+            pendingReviewSummary: {
+              count: pendingTasks.length,
+              tasks: pendingTasks.map((task) => ({
+                id: task.id,
+                title: task.title,
+                status: task.status,
+                dueAt: task.dueAt,
+              })),
+            },
+          };
+        }),
       );
-      const completedItems = activeItems.filter((item) =>
+      const completedItems = files.filter((item) =>
         completedArchiveStatuses.has(item.status.toUpperCase()),
       );
-      const requiredItems = activeItems.filter((item) => item.required);
+      const requiredItems = files.filter((item) => item.required);
       const requiredCompletedItems = requiredItems.filter((item) =>
         completedArchiveStatuses.has(item.status.toUpperCase()),
       );
+      const uploadTarget = items.find((item) => !item.archivedAt) ?? null;
       return {
         id: folder.id,
         name: folder.name,
@@ -309,9 +402,20 @@ export class ProjectArchiveTargetService {
         isTemporary: folder.isTemporary,
         archivedAt: folder.archivedAt,
         completedCount: completedItems.length,
-        totalCount: activeItems.length,
+        totalCount: files.length,
         requiredCompletedCount: requiredCompletedItems.length,
         requiredTotalCount: requiredItems.length,
+        uploadTarget: uploadTarget
+          ? {
+              ...uploadTarget,
+              allowMultipleFiles: true,
+              currentVersion: null,
+              fileCount: 0,
+              canDownload: false,
+              canDeleteFile: false,
+            }
+          : null,
+        files,
         items,
       };
     });

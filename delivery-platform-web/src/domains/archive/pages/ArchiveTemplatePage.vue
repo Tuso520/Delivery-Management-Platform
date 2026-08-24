@@ -28,27 +28,15 @@ import type {
   ArchiveTemplate,
   ArchiveTemplateStatus,
   ArchiveTemplateVersionFolder,
-  ArchiveTemplateVersionItem,
 } from '@/domains/archive/types/archive'
 import type { Language } from '@/types/language'
 import { arcoConfirm } from '@/utils/arco-dialog'
-
-interface EditableVersionItem extends Omit<
-  ArchiveTemplateVersionItem,
-  'maxFileSize' | 'description' | 'namingRule'
-> {
-  description: string
-  namingRule: string
-  maxFileSizeMb?: number
-  allowedExtensionsText: string
-}
 
 interface EditableVersionFolder extends Omit<
   ArchiveTemplateVersionFolder,
   'items' | 'description'
 > {
   description: string
-  items: EditableVersionItem[]
 }
 
 const standardFolderNames = [
@@ -169,10 +157,7 @@ const canEditVersion = computed(() =>
   ),
 )
 
-const directoryScale = computed(() => ({
-  folders: editableFolders.value.length,
-  items: editableFolders.value.reduce((total, folder) => total + folder.items.length, 0),
-}))
+const directoryScale = computed(() => editableFolders.value.length)
 
 function makeStableKey(prefix: string): string {
   const random =
@@ -340,17 +325,11 @@ async function createTemplate(): Promise<void> {
 
 function toEditableFolders(folders: ArchiveTemplateVersionFolder[]): EditableVersionFolder[] {
   return folders.map((folder) => ({
-    ...folder,
+    id: folder.id,
+    stableKey: folder.stableKey,
+    name: folder.name,
+    sortOrder: folder.sortOrder,
     description: folder.description ?? '',
-    items: folder.items.map((item) => ({
-      ...item,
-      description: item.description ?? '',
-      namingRule: item.namingRule ?? '',
-      maxFileSizeMb: item.maxFileSize
-        ? Math.round(Number(item.maxFileSize) / 1024 / 1024)
-        : undefined,
-      allowedExtensionsText: (item.allowedExtensions ?? []).join(', '),
-    })),
   }))
 }
 
@@ -457,34 +436,11 @@ function addFolder(): void {
     name: t('archiveTemplate.newFolder'),
     description: '',
     sortOrder: editableFolders.value.length,
-    items: [],
-  })
-}
-
-function addItem(folder: EditableVersionFolder): void {
-  folder.items.push({
-    stableKey: makeStableKey('item'),
-    name: t('archiveTemplate.newItem'),
-    description: '',
-    required: true,
-    reviewRequired: false,
-    approvalTemplateId: null,
-    ownerRoleId: null,
-    allowMultipleFiles: false,
-    allowedExtensions: [],
-    allowedExtensionsText: '',
-    maxFileSizeMb: 100,
-    namingRule: '',
-    sortOrder: folder.items.length,
   })
 }
 
 function removeFolder(index: number): void {
   editableFolders.value.splice(index, 1)
-}
-
-function removeItem(folder: EditableVersionFolder, index: number): void {
-  folder.items.splice(index, 1)
 }
 
 function applyStandardFolders(): void {
@@ -497,7 +453,6 @@ function applyStandardFolders(): void {
       name,
       description: '',
       sortOrder: editableFolders.value.length,
-      items: [],
     })
   })
   Message.success(t('archiveTemplate.messages.standardFoldersAdded'))
@@ -511,23 +466,6 @@ function structurePayload(): ArchiveTemplateDraftStructurePayload {
       name: folder.name.trim(),
       description: folder.description?.trim() || undefined,
       sortOrder: folderIndex,
-      items: folder.items.map((item, itemIndex) => ({
-        stableKey: item.stableKey,
-        name: item.name.trim(),
-        description: item.description?.trim() || undefined,
-        required: item.required,
-        reviewRequired: item.reviewRequired,
-        approvalTemplateId: item.approvalTemplateId || undefined,
-        ownerRoleId: item.ownerRoleId || undefined,
-        allowMultipleFiles: item.allowMultipleFiles,
-        allowedExtensions: item.allowedExtensionsText
-          .split(/[，,\s]+/u)
-          .map((extension) => extension.replace(/^\./u, '').trim().toLowerCase())
-          .filter(Boolean),
-        maxFileSize: item.maxFileSizeMb ? Math.round(item.maxFileSizeMb * 1024 * 1024) : undefined,
-        namingRule: item.namingRule?.trim() || undefined,
-        sortOrder: itemIndex,
-      })),
     })),
   }
 }
@@ -539,10 +477,6 @@ function validateStructure(): boolean {
   }
   if (editableFolders.value.some((folder) => !folder.name.trim())) {
     Message.warning(t('archiveTemplate.validation.folderNameRequired'))
-    return false
-  }
-  if (editableFolders.value.some((folder) => folder.items.some((item) => !item.name.trim()))) {
-    Message.warning(t('archiveTemplate.validation.itemNameRequired'))
     return false
   }
   return true
@@ -705,8 +639,11 @@ watch(
         <a-table-column :title="t('archiveTemplate.columns.scale')" :width="111" align="center">
           <template #cell="{ record }">
             <span v-if="record.currentPublishedVersion?._count">
-              {{ record.currentPublishedVersion._count.folders }} /
-              {{ record.currentPublishedVersion._count.versionItems }}
+              {{
+                t('archiveTemplate.folderCount', {
+                  count: record.currentPublishedVersion._count.folders,
+                })
+              }}
             </span>
             <span v-else>—</span>
           </template>
@@ -858,7 +795,7 @@ watch(
     <a-modal
       class="archive-template-detail-modal"
       :visible="detailVisible"
-      :width="'80vw'"
+      :width="960"
       :top="24"
       :align-center="false"
       :body-style="{
@@ -915,11 +852,13 @@ watch(
           </a-alert>
 
           <div v-if="selectedVersion" class="scale-line">
-            <span>{{ t('archiveTemplate.folderCount', { count: directoryScale.folders }) }}</span>
-            <span>{{ t('archiveTemplate.itemCount', { count: directoryScale.items }) }}</span>
+            <a-tag color="arcoblue">
+              {{ t('archiveTemplate.folderCount', { count: directoryScale }) }}
+            </a-tag>
             <span>{{
               t('archiveTemplate.versionLabel', { version: selectedVersion.versionNo })
             }}</span>
+            <span>{{ t('archiveTemplate.folderTemplateHint') }}</span>
           </div>
 
           <a-empty
@@ -931,115 +870,36 @@ watch(
             <a-card
               v-for="(folder, folderIndex) in editableFolders"
               :key="folder.stableKey"
-              :bordered="false"
+              :bordered="true"
               class="folder-editor"
             >
-              <template #title>
-                <div class="folder-editor-title">
-                  <div v-if="canEditVersion" class="folder-fields">
-                    <a-input
-                      v-model="folder.name"
-                      :placeholder="t('archiveTemplate.folderNamePlaceholder')"
-                    />
-                    <a-input
-                      v-model="folder.description"
-                      :placeholder="t('archiveTemplate.folderDescriptionPlaceholder')"
-                    />
-                  </div>
-                  <div v-else>
-                    <strong>{{ folder.name }}</strong>
-                    <span v-if="folder.description">{{ folder.description }}</span>
-                  </div>
-                  <a-space v-if="canEditVersion">
-                    <a-button type="text" size="mini" @click="addItem(folder)">
-                      {{ t('archiveTemplate.addItem') }}
-                    </a-button>
-                    <a-button
-                      type="text"
-                      size="mini"
-                      status="danger"
-                      @click="removeFolder(folderIndex)"
-                    >
-                      {{ t('archiveTemplate.deleteFolder') }}
-                    </a-button>
-                  </a-space>
+              <div class="folder-editor-title">
+                <a-tag class="folder-index" size="large">
+                  {{ folderIndex + 1 }}
+                </a-tag>
+                <div v-if="canEditVersion" class="folder-fields">
+                  <a-input
+                    v-model="folder.name"
+                    :placeholder="t('archiveTemplate.folderNamePlaceholder')"
+                  />
+                  <a-input
+                    v-model="folder.description"
+                    :placeholder="t('archiveTemplate.folderDescriptionPlaceholder')"
+                  />
                 </div>
-              </template>
-
-              <a-empty
-                v-if="!folder.items.length"
-                :description="t('archiveTemplate.emptyFolder')"
-              />
-              <div v-else class="item-list">
-                <article
-                  v-for="(item, itemIndex) in folder.items"
-                  :key="item.stableKey"
-                  class="item-editor"
+                <div v-else class="folder-summary">
+                  <strong>{{ folder.name }}</strong>
+                  <span>{{ folder.description || t('archiveTemplate.noDescription') }}</span>
+                </div>
+                <a-button
+                  v-if="canEditVersion"
+                  type="text"
+                  size="mini"
+                  status="danger"
+                  @click="removeFolder(folderIndex)"
                 >
-                  <template v-if="canEditVersion">
-                    <div class="item-main-fields">
-                      <a-input
-                        v-model="item.name"
-                        :placeholder="t('archiveTemplate.itemNamePlaceholder')"
-                      />
-                      <a-input
-                        v-model="item.description"
-                        :placeholder="t('archiveTemplate.itemDescriptionPlaceholder')"
-                      />
-                      <a-input
-                        v-model="item.allowedExtensionsText"
-                        :placeholder="t('archiveTemplate.extensionsPlaceholder')"
-                      />
-                      <a-input
-                        v-model="item.namingRule"
-                        :placeholder="t('archiveTemplate.namingRulePlaceholder')"
-                      />
-                    </div>
-                    <div class="item-policies">
-                      <a-checkbox v-model="item.required">
-                        {{ t('archiveTemplate.required') }}
-                      </a-checkbox>
-                      <a-checkbox v-model="item.reviewRequired">
-                        {{ t('archiveTemplate.reviewRequired') }}
-                      </a-checkbox>
-                      <a-checkbox v-model="item.allowMultipleFiles">
-                        {{ t('archiveTemplate.allowMultipleFiles') }}
-                      </a-checkbox>
-                      <a-input-number
-                        v-model="item.maxFileSizeMb"
-                        :min="1"
-                        :max="500"
-                        hide-button
-                      >
-                        <template #suffix>
-                          MB
-                        </template>
-                      </a-input-number>
-                      <a-button type="text" status="danger" @click="removeItem(folder, itemIndex)">
-                        {{ t('common.delete') }}
-                      </a-button>
-                    </div>
-                  </template>
-                  <template v-else>
-                    <div class="readonly-item">
-                      <div>
-                        <strong>{{ item.name }}</strong>
-                        <p>{{ item.description || t('archiveTemplate.noDescription') }}</p>
-                      </div>
-                      <a-space>
-                        <a-tag v-if="item.required" color="red">
-                          {{ t('archiveTemplate.required') }}
-                        </a-tag>
-                        <a-tag v-if="item.reviewRequired" color="orange">
-                          {{ t('archiveTemplate.reviewRequiredShort') }}
-                        </a-tag>
-                        <a-tag v-if="item.allowMultipleFiles">
-                          {{ t('archiveTemplate.allowMultipleFilesShort') }}
-                        </a-tag>
-                      </a-space>
-                    </div>
-                  </template>
-                </article>
+                  {{ t('archiveTemplate.deleteFolder') }}
+                </a-button>
               </div>
             </a-card>
           </section>
@@ -1065,7 +925,6 @@ watch(
 
 .detail-toolbar,
 .folder-editor-title,
-.readonly-item,
 .modal-actions,
 .scale-line {
   display: flex;
@@ -1300,12 +1159,6 @@ watch(
   font-size: 12px;
 }
 
-.update-cell,
-.folder-editor-title > div:first-child {
-  display: grid;
-  gap: 3px;
-}
-
 .modal-actions {
   justify-content: flex-end;
   margin-top: 20px;
@@ -1350,7 +1203,7 @@ watch(
 }
 
 .folder-editor :deep(.arco-card-body) {
-  padding: 0;
+  padding: 14px 16px;
 }
 
 .folder-editor-title {
@@ -1359,49 +1212,23 @@ watch(
 
 .folder-fields {
   display: grid !important;
-  grid-template-columns: minmax(220px, 0.8fr) minmax(300px, 1.2fr);
-  width: min(720px, 70%);
+  grid-template-columns: minmax(220px, 0.8fr) minmax(320px, 1.2fr);
+  min-width: 0;
+  flex: 1;
   gap: 10px !important;
 }
 
-.item-list {
+.folder-index {
+  width: 30px;
+  flex: 0 0 30px;
+  justify-content: center;
+}
+
+.folder-summary {
   display: grid;
-}
-
-.item-editor {
-  display: grid;
-  gap: 10px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--color-border-2);
-}
-
-.item-editor:last-child {
-  border-bottom: 0;
-}
-
-.item-main-fields {
-  display: grid;
-  grid-template-columns: 1fr 1.4fr 1fr 1fr;
-  gap: 10px;
-}
-
-.item-policies {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.item-policies :deep(.arco-input-number) {
-  width: 120px;
-}
-
-.readonly-item {
-  align-items: flex-start;
-}
-
-.readonly-item p {
-  margin: 4px 0 0;
-  color: var(--color-text-3);
+  min-width: 0;
+  flex: 1;
+  gap: 4px;
 }
 
 @media (max-width: 1100px) {
@@ -1411,8 +1238,7 @@ watch(
     flex-direction: column;
   }
 
-  .folder-fields,
-  .item-main-fields {
+  .folder-fields {
     width: 100%;
     grid-template-columns: 1fr 1fr;
   }

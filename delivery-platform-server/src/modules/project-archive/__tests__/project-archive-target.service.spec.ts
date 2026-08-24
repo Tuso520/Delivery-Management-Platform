@@ -178,6 +178,11 @@ describe('ProjectArchiveTargetService', () => {
       totalCount: 0,
       completedCount: 0,
       requiredTotalCount: 0,
+      files: [],
+      uploadTarget: expect.objectContaining({
+        id: 'item-placeholder',
+        allowMultipleFiles: true,
+      }),
       items: [
         expect.objectContaining({
           id: 'item-placeholder',
@@ -205,8 +210,31 @@ describe('ProjectArchiveTargetService', () => {
 
     expect(withFile.folders[0]).toMatchObject({
       totalCount: 1,
+      files: [
+        expect.objectContaining({
+          rowKey: 'archive-file-1',
+          archiveItemId: 'item-placeholder',
+        }),
+      ],
       items: [expect.objectContaining({ id: 'item-placeholder', fileCount: 1 })],
     });
+
+    placeholderFiles.push({
+      id: 'archive-file-2',
+      status: 'DRAFT',
+      updatedAt,
+      logicalFile: {
+        id: 'logical-file-2',
+        displayName: '第二个真实交付文件',
+        status: 'ACTIVE',
+        currentVersion: null,
+        versions: [],
+      },
+    });
+
+    const withTwoFiles = await service.getArchiveTree('project-1', actor);
+    expect(withTwoFiles.folders[0].files).toHaveLength(2);
+    expect(withTwoFiles.folders[0].totalCount).toBe(2);
   });
 
   it('returns original file metadata and action permissions for the Figma file row', async () => {

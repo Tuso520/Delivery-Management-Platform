@@ -50,7 +50,7 @@ describe('ProjectArchiveSnapshotService', () => {
     archiveTemplate: { findMany: jest.Mock };
     projectMember: { findMany: jest.Mock };
     projectArchiveFolder: { create: jest.Mock };
-    projectArchiveEntry: { createMany: jest.Mock };
+    projectArchiveEntry: { create: jest.Mock; createMany: jest.Mock };
     project: { update: jest.Mock };
   };
 
@@ -72,12 +72,47 @@ describe('ProjectArchiveSnapshotService', () => {
       projectArchiveFolder: {
         create: jest.fn().mockResolvedValue({ id: 'project-folder-1' }),
       },
-      projectArchiveEntry: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      projectArchiveEntry: {
+        create: jest.fn().mockResolvedValue({ id: 'project-entry-1' }),
+        createMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       project: { update: jest.fn().mockResolvedValue({}) },
     };
   });
 
-  it('copies the current published two-level version with stable keys', async () => {
+  it('creates one internal unlimited upload target for a folder-only template', async () => {
+    tx.archiveTemplateVersion.findFirst.mockResolvedValue({
+      ...publishedVersion,
+      folders: [{ ...publishedVersion.folders[0], items: [] }],
+    });
+
+    const result = await service.createProjectSnapshot(
+      tx as unknown as Prisma.TransactionClient,
+      'project-1',
+      {
+        countryCode: 'VN',
+        archiveTemplateId: 'template-1',
+        archiveTemplateVersionId: 'version-2',
+      },
+    );
+
+    expect(tx.projectArchiveEntry.createMany).not.toHaveBeenCalled();
+    expect(tx.projectArchiveEntry.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        projectId: 'project-1',
+        folderId: 'project-folder-1',
+        templateVersionId: 'version-2',
+        sourceStableKey: 'folder-contract-files',
+        name: '相关交付文件',
+        required: false,
+        reviewRequired: false,
+        allowMultipleFiles: true,
+      }),
+    });
+    expect(result.itemCount).toBe(1);
+  });
+
+  it('copies published template folders without importing legacy file-item limits', async () => {
     const result = await service.createProjectSnapshot(
       tx as unknown as Prisma.TransactionClient,
       'project-1',
@@ -105,17 +140,17 @@ describe('ProjectArchiveSnapshotService', () => {
       }),
       select: { id: true },
     });
-    expect(tx.projectArchiveEntry.createMany).toHaveBeenCalledWith({
-      data: [
-        expect.objectContaining({
-          projectId: 'project-1',
-          folderId: 'project-folder-1',
-          templateVersionId: 'version-2',
-          sourceTemplateItemId: 'template-item-1',
-          sourceStableKey: 'item-contract',
-          ownerUserId: 'manager-1',
-        }),
-      ],
+    expect(tx.projectArchiveEntry.createMany).not.toHaveBeenCalled();
+    expect(tx.projectArchiveEntry.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        projectId: 'project-1',
+        folderId: 'project-folder-1',
+        templateVersionId: 'version-2',
+        sourceStableKey: 'folder-contract-files',
+        name: '相关交付文件',
+        required: false,
+        allowMultipleFiles: true,
+      }),
     });
     expect(tx.project.update).toHaveBeenCalledWith({
       where: { id: 'project-1' },

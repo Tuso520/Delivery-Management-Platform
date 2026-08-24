@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 
 import type { ProjectArchiveTargetItem } from '@/domains/archive/types/archive'
 import {
-  isEmptyStandardFolderPlaceholder,
   resolveArchiveUploadTargetLabel,
   resolveProjectArchiveFileName,
 } from '../project-archive-file'
@@ -80,22 +79,5 @@ describe('resolveArchiveUploadTargetLabel', () => {
 
   it('does not repeat an item name that is identical to its folder', () => {
     expect(resolveArchiveUploadTargetLabel('验收资料', '验收资料')).toBe('验收资料')
-  })
-})
-
-describe('isEmptyStandardFolderPlaceholder', () => {
-  it('hides only an empty standard-folder placeholder from the file table', () => {
-    const item = archiveItem(null)
-    item.name = '相关交付文件'
-    item.sourceStableKey = 'standard-folder-01-files'
-
-    expect(isEmptyStandardFolderPlaceholder(item)).toBe(true)
-
-    item.fileCount = 1
-    expect(isEmptyStandardFolderPlaceholder(item)).toBe(false)
-
-    item.fileCount = 0
-    item.sourceStableKey = 'custom-item'
-    expect(isEmptyStandardFolderPlaceholder(item)).toBe(false)
   })
 })

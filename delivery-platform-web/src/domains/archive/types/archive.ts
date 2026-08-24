@@ -76,6 +76,11 @@ export interface ProjectArchiveTargetItem {
   }
 }
 
+export interface ProjectArchiveTargetFile extends ProjectArchiveTargetItem {
+  rowKey: string
+  archiveItemId: string
+}
+
 export interface ProjectArchiveTargetFolder {
   id: string
   name: string
@@ -88,6 +93,8 @@ export interface ProjectArchiveTargetFolder {
   totalCount: number
   requiredCompletedCount: number
   requiredTotalCount: number
+  uploadTarget?: ProjectArchiveTargetItem | null
+  files: ProjectArchiveTargetFile[]
   items: ProjectArchiveTargetItem[]
 }
 

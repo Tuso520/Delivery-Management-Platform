@@ -167,7 +167,7 @@ describe('ArchiveTemplateVersionService', () => {
     const service = new ArchiveTemplateVersionService(prisma, operationLog);
 
     await expect(service.publishVersion('version-1', 'user-1')).rejects.toThrow(
-      new BadRequestException('档案模板版本至少需要一个文件夹和一个文件项'),
+      new BadRequestException('档案模板版本至少需要一个文件夹'),
     );
   });
 
@@ -187,7 +187,7 @@ describe('ArchiveTemplateVersionService', () => {
           status: 'DRAFT',
           revision: 4,
           template: { id: 'template-1', status: 'DRAFT' },
-          _count: { folders: 1, versionItems: 1 },
+          _count: { folders: 1, versionItems: 0 },
         }),
       },
       $transaction: jest

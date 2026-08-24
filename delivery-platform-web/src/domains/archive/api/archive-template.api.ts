@@ -34,20 +34,6 @@ export interface ArchiveTemplateDraftStructurePayload {
     name: string
     description?: string
     sortOrder?: number
-    items: Array<{
-      stableKey: string
-      name: string
-      description?: string
-      required?: boolean
-      reviewRequired?: boolean
-      approvalTemplateId?: string
-      ownerRoleId?: string
-      allowMultipleFiles?: boolean
-      allowedExtensions?: string[]
-      maxFileSize?: number
-      namingRule?: string
-      sortOrder?: number
-    }>
   }>
 }
 

@@ -200,12 +200,10 @@ export class ProjectArchiveSnapshotService {
     projectId: string,
     version: PublishedVersionSnapshot,
   ): Promise<ProjectArchiveSnapshotResult> {
-    const itemCount = version.folders.reduce((total, folder) => total + folder.items.length, 0);
-    if (version.folders.length === 0 || itemCount === 0) {
+    if (version.folders.length === 0) {
       throw new BadRequestException('已发布档案模板版本为空，不能创建项目');
     }
 
-    const ownerByRoleId = await this.buildOwnerByRoleId(tx, projectId);
     for (const templateFolder of version.folders) {
       const folder = await tx.projectArchiveFolder.create({
         data: {
@@ -219,30 +217,21 @@ export class ProjectArchiveSnapshotService {
         },
         select: { id: true },
       });
-      if (templateFolder.items.length > 0) {
-        await tx.projectArchiveEntry.createMany({
-          data: templateFolder.items.map((item) => ({
-            projectId,
-            folderId: folder.id,
-            templateVersionId: version.id,
-            sourceTemplateItemId: item.id,
-            sourceStableKey: item.stableKey,
-            name: item.name,
-            description: item.description,
-            required: item.required,
-            reviewRequired: item.reviewRequired,
-            approvalTemplateId: item.approvalTemplateId,
-            ownerUserId: item.ownerRoleId ? (ownerByRoleId.get(item.ownerRoleId) ?? null) : null,
-            ownerRoleId: item.ownerRoleId,
-            allowMultipleFiles: item.allowMultipleFiles,
-            allowedExtensions: item.allowedExtensions ?? Prisma.JsonNull,
-            maxFileSize: item.maxFileSize,
-            namingRule: item.namingRule,
-            sortOrder: item.sortOrder,
-            isTemporary: false,
-          })),
-        });
-      }
+      await tx.projectArchiveEntry.create({
+        data: {
+          projectId,
+          folderId: folder.id,
+          templateVersionId: version.id,
+          sourceStableKey: `${templateFolder.stableKey}-files`.slice(0, 100),
+          name: '相关交付文件',
+          required: false,
+          reviewRequired: false,
+          allowMultipleFiles: true,
+          allowedExtensions: Prisma.JsonNull,
+          sortOrder: 0,
+          isTemporary: false,
+        },
+      });
     }
 
     await tx.project.update({
@@ -257,36 +246,7 @@ export class ProjectArchiveSnapshotService {
       templateVersionId: version.id,
       source: 'PUBLISHED_VERSION',
       folderCount: version.folders.length,
-      itemCount,
+      itemCount: version.folders.length,
     };
-  }
-
-  private async buildOwnerByRoleId(
-    tx: Prisma.TransactionClient,
-    projectId: string,
-  ): Promise<Map<string, string>> {
-    const members = await tx.projectMember.findMany({
-      where: { projectId, deletedAt: null },
-      select: {
-        userId: true,
-        user: {
-          select: {
-            userRoles: {
-              where: { role: { status: 'Active' } },
-              select: { roleId: true },
-            },
-          },
-        },
-      },
-    });
-    const result = new Map<string, string>();
-    for (const member of members) {
-      for (const assignment of member.user.userRoles) {
-        if (!result.has(assignment.roleId)) {
-          result.set(assignment.roleId, member.userId);
-        }
-      }
-    }
-    return result;
   }
 }

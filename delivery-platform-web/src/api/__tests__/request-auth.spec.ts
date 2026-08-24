@@ -174,13 +174,13 @@ describe('request authentication', () => {
 
   it('shows the backend validation message for HTTP 400 responses', async () => {
     const error: RequestError = {
-      response: { status: 400, data: { message: '档案模板版本至少需要一个文件项' } },
+      response: { status: 400, data: { message: '档案模板版本至少需要一个文件夹' } },
       config: { url: '/archive-template-versions/version-1/publish', headers: {} },
       message: 'Request failed with status code 400',
     }
 
     await expect(rejectionHandler(error)).rejects.toBe(error)
-    expect(mocks.messageError).toHaveBeenCalledWith('档案模板版本至少需要一个文件项')
+    expect(mocks.messageError).toHaveBeenCalledWith('档案模板版本至少需要一个文件夹')
     expect(mocks.messageError).not.toHaveBeenCalledWith('Request failed with status code 400')
   })
 

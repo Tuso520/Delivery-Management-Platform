@@ -228,23 +228,18 @@ describe('UnifiedFileService', () => {
     });
     expect(reviewTasks.prepareTask).not.toHaveBeenCalled();
 
-    (prisma.projectArchiveFile.findFirst as jest.Mock).mockResolvedValueOnce({
-      id: 'archive-file-existing',
-    });
-    await expect(
-      service.uploadProjectArchiveFile(
-        'project-1',
-        'item-1',
-        pdfFile('drawing-V1.3.pdf'),
-        {
-          uploadMode: 'NEW_VERSION',
-          revisionLevel: 'MINOR',
-          createNewLogicalFile: true,
-        },
-        fileActor(['archive:upload']),
-      ),
-    ).rejects.toThrow(new BadRequestException('该档案项不允许上传多个独立文件'));
-    expect(storage.upload).toHaveBeenCalledTimes(1);
+    await service.uploadProjectArchiveFile(
+      'project-1',
+      'item-1',
+      pdfFile('drawing-V1.3.pdf'),
+      {
+        uploadMode: 'REPLACE',
+        revisionLevel: 'MINOR',
+        createNewLogicalFile: true,
+      },
+      fileActor(['archive:upload', 'archive:replace']),
+    );
+    expect(storage.upload).toHaveBeenCalledTimes(2);
   });
 
   it('creates a controlled draft FileVersion for standard and knowledge forms', async () => {
@@ -1375,10 +1370,7 @@ describe('UnifiedFileService', () => {
         mimeType: 'application/octet-stream',
       }),
     );
-    expect(storage.getObjectFrom).toHaveBeenCalledWith(
-      'delivery-platform',
-      'source/drawing.md',
-    );
+    expect(storage.getObjectFrom).toHaveBeenCalledWith('delivery-platform', 'source/drawing.md');
   });
 
   function pdfFile(originalname = 'drawing.pdf'): Express.Multer.File {

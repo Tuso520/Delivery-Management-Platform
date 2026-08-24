@@ -23,11 +23,12 @@ describe('archive template route state', () => {
     expect(page).toContain('v-if="canDownloadItem(record) && record.currentVersion"')
     expect(page).toContain(':label="projectDisplayName(project)"')
     expect(page).toContain(':show-retry-button="false"')
-    expect(page).toContain(':show-file-list="false"')
+    expect(page).not.toContain(':show-file-list="false"')
     expect(page).toContain('multiple')
     expect(page).toContain('uploadFileItems')
-    expect(page).toContain('const createNewLogicalFile = batchUpload && allowMultipleFiles')
-    expect(page).toContain('!isEmptyStandardFolderPlaceholder(item)')
+    expect(page).toContain('createNewLogicalFile: !updateExistingFile')
+    expect(page).toContain('selectedFolder.value?.files')
+    expect(page).toContain('row-key="rowKey"')
     expect(page).not.toContain(':limit="1"')
     expect(page).toContain(':options="uploadItemOptions"')
     expect(page).toContain('<a-modal')
@@ -41,8 +42,10 @@ describe('archive template route state', () => {
     const page = source('src/domains/archive/pages/ArchiveTemplatePage.vue')
 
     expect(page).toContain('function applyStandardFolders(): void')
-    expect(page).toContain('items: []')
+    expect(page).toContain("t('archiveTemplate.folderTemplateHint')")
+    expect(page).not.toContain('folder.items')
     expect(page).not.toContain("name: '相关交付文件'")
+    expect(page).not.toContain("t('archiveTemplate.emptyFolder')")
   })
 
   it('loads shared template URLs through query-backed detail and version state', () => {

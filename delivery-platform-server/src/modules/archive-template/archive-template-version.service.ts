@@ -229,9 +229,9 @@ export class ArchiveTemplateVersionService {
           },
           select: { id: true },
         });
-        if (folderDto.items.length > 0) {
+        if ((folderDto.items?.length ?? 0) > 0) {
           await tx.archiveTemplateVersionItem.createMany({
-            data: folderDto.items.map((item) => ({
+            data: (folderDto.items ?? []).map((item) => ({
               templateVersionId: versionId,
               folderId: folder.id,
               stableKey: item.stableKey,
@@ -264,7 +264,7 @@ export class ArchiveTemplateVersionService {
       targetId: versionId,
       afterData: {
         folderCount: dto.folders.length,
-        itemCount: dto.folders.reduce((total, folder) => total + folder.items.length, 0),
+        itemCount: dto.folders.reduce((total, folder) => total + (folder.items?.length ?? 0), 0),
       },
     });
     return this.findVersion(versionId);
@@ -287,8 +287,8 @@ export class ArchiveTemplateVersionService {
     if (version.template.status === 'DISABLED') {
       throw new BadRequestException('已停用的档案模板不能发布版本');
     }
-    if (version._count.folders === 0 || version._count.versionItems === 0) {
-      throw new BadRequestException('档案模板版本至少需要一个文件夹和一个文件项');
+    if (version._count.folders === 0) {
+      throw new BadRequestException('档案模板版本至少需要一个文件夹');
     }
 
     const publishedAt = new Date();
@@ -384,7 +384,7 @@ export class ArchiveTemplateVersionService {
         throw new BadRequestException(`文件夹稳定标识重复：${folder.stableKey}`);
       }
       folderKeys.add(folder.stableKey);
-      for (const item of folder.items) {
+      for (const item of folder.items ?? []) {
         if (itemKeys.has(item.stableKey)) {
           throw new BadRequestException(`文件项稳定标识重复：${item.stableKey}`);
         }
@@ -394,7 +394,7 @@ export class ArchiveTemplateVersionService {
   }
 
   private async assertReferencedConfiguration(dto: UpdateArchiveTemplateVersionDto): Promise<void> {
-    const items = dto.folders.flatMap((folder) => folder.items);
+    const items = dto.folders.flatMap((folder) => folder.items ?? []);
     const roleIds = Array.from(
       new Set(items.map((item) => item.ownerRoleId).filter((id): id is string => Boolean(id))),
     );
