@@ -408,16 +408,20 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
 
       if (geometry.tableOverflowY > 0) {
         const stickyHeaderOffset = await page.evaluate(() => {
-          const region = document.querySelector<HTMLElement>('.knowledge-table-region')
+          const region = document.querySelector<HTMLElement>(
+            '.knowledge-table-region .business-table__viewport',
+          )
           const header = document.querySelector<HTMLElement>('.knowledge-table thead th')
           if (!region || !header) throw new Error('Missing table scroll elements')
           region.scrollTop = 120
           return header.getBoundingClientRect().top - region.getBoundingClientRect().top
         })
         expect(Math.abs(stickyHeaderOffset)).toBeLessThanOrEqual(1)
-        await page.locator('.knowledge-table-region').evaluate((node) => {
-          node.scrollTop = 0
-        })
+        await page
+          .locator('.knowledge-table-region .business-table__viewport')
+          .evaluate((node) => {
+            node.scrollTop = 0
+          })
       }
     }
     expect(panelHeights[1]).toBeGreaterThan(panelHeights[0]!)
@@ -530,7 +534,9 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
 
     await page.setViewportSize({ width: 1366, height: 768 })
     const overflow = await page.evaluate(() => {
-      const scroll = document.querySelector<HTMLElement>('.knowledge-table-region')
+      const scroll = document.querySelector<HTMLElement>(
+        '.knowledge-table-region .business-table__viewport',
+      )
       if (!scroll) throw new Error('Missing knowledge content scroller')
       return {
         page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
