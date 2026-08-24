@@ -336,27 +336,96 @@ const projectPageResult = await jsonRequest('/projects?page=1&pageSize=20', {
   headers: { authorization: `Bearer ${session.accessToken}` },
 });
 const projectPage = requireEnvelope(projectPageResult, 200, 'project archive upload project list');
-const archiveProject = projectPage?.items?.[0];
-if (!archiveProject?.id) fail('project archive upload acceptance has no accessible project');
-const archiveTreeBeforeResult = await jsonRequest(`/projects/${archiveProject.id}/archive-tree`, {
-  headers: { authorization: `Bearer ${session.accessToken}` },
-});
-const archiveTreeBefore = requireEnvelope(
-  archiveTreeBeforeResult,
-  200,
-  'project archive tree before upload',
-);
-const archiveFolder = archiveTreeBefore?.folders?.find(
-  (folder) => !folder.archivedAt && folder.uploadTarget?.canUpload,
-);
-if (!archiveFolder?.uploadTarget?.id) fail('project archive has no uploadable folder');
-const archiveItemId = archiveFolder.uploadTarget.id;
+const runtimeProjectName = '运行时档案上传验收项目';
+let archiveProject = projectPage?.items?.[0];
+let managedArchiveProject = false;
+if (!archiveProject?.id) {
+  const archivedProjectsResult = await jsonRequest(
+    `/projects/archived?keyword=${encodeURIComponent(runtimeProjectName)}&page=1&pageSize=20`,
+    { headers: { authorization: `Bearer ${session.accessToken}` } },
+  );
+  const archivedProjects = requireEnvelope(
+    archivedProjectsResult,
+    200,
+    'reusable project archive upload fixture list',
+  );
+  const reusableProject = archivedProjects?.items?.find(
+    (project) => project.projectName === runtimeProjectName,
+  );
+  if (reusableProject?.id) {
+    const restoreResult = await jsonRequest(`/projects/${reusableProject.id}/restore`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${session.accessToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        revision: reusableProject.revision,
+        reason: 'test runtime project archive upload acceptance',
+      }),
+    });
+    archiveProject = requireEnvelope(restoreResult, 201, 'restore project archive upload fixture');
+  } else {
+    const archiveTemplatesResult = await jsonRequest('/archive-templates', {
+      headers: { authorization: `Bearer ${session.accessToken}` },
+    });
+    const archiveTemplates = requireEnvelope(
+      archiveTemplatesResult,
+      200,
+      'project archive upload template list',
+    );
+    const archiveTemplate = archiveTemplates.find(
+      (template) =>
+        template.status === 'PUBLISHED' &&
+        template.currentPublishedVersion?.status === 'PUBLISHED' &&
+        template.currentPublishedVersion?._count?.folders > 0,
+    );
+    if (!archiveTemplate?.id || !archiveTemplate.currentPublishedVersion?.id) {
+      fail('project archive upload acceptance has no published folder template');
+    }
+    const createProjectResult = await jsonRequest('/projects', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${session.accessToken}`,
+        'content-type': 'application/json',
+        'idempotency-key': `runtime-project-${standardMarker}`,
+      },
+      body: JSON.stringify({
+        projectName: runtimeProjectName,
+        countryCode: configuredValue('COUNTRY', 'CN'),
+        archiveTemplateId: archiveTemplate.id,
+        archiveTemplateVersionId: archiveTemplate.currentPublishedVersion.id,
+        saveAsDraft: true,
+      }),
+    });
+    archiveProject = requireEnvelope(
+      createProjectResult,
+      201,
+      'create project archive upload fixture',
+    );
+  }
+  managedArchiveProject = true;
+}
+if (!archiveProject?.id) fail('project archive upload acceptance could not prepare a project');
 const archiveFileNames = [
   `runtime-project-archive-a-${standardMarker}.md`,
   `runtime-project-archive-b-${standardMarker}.md`,
 ];
 const uploadedArchiveLogicalIds = [];
 try {
+  const archiveTreeBeforeResult = await jsonRequest(`/projects/${archiveProject.id}/archive-tree`, {
+    headers: { authorization: `Bearer ${session.accessToken}` },
+  });
+  const archiveTreeBefore = requireEnvelope(
+    archiveTreeBeforeResult,
+    200,
+    'project archive tree before upload',
+  );
+  const archiveFolder = archiveTreeBefore?.folders?.find(
+    (folder) => !folder.archivedAt && folder.uploadTarget?.canUpload,
+  );
+  if (!archiveFolder?.uploadTarget?.id) fail('project archive has no uploadable folder');
+  const archiveItemId = archiveFolder.uploadTarget.id;
   for (const [index, fileName] of archiveFileNames.entries()) {
     const archiveFile = new FormData();
     archiveFile.append(
@@ -407,15 +476,46 @@ try {
     fail('project archive folder count did not increase by two');
   }
 } finally {
+  let cleanupFailure = null;
   for (const logicalFileId of uploadedArchiveLogicalIds) {
     const cleanup = await jsonRequest(`/files/${logicalFileId}/archive`, {
       method: 'POST',
       headers: { authorization: `Bearer ${session.accessToken}` },
     });
     if (cleanup.response.status !== 200 || cleanup.body?.code !== 0) {
-      fail(`project archive upload cleanup failed for ${logicalFileId}`);
+      cleanupFailure ||= `project archive upload cleanup failed for ${logicalFileId}`;
     }
   }
+  if (managedArchiveProject) {
+    let cleanupProject = archiveProject;
+    if (!['COMPLETED', 'CANCELLED'].includes(cleanupProject.status)) {
+      const cancelResult = await jsonRequest(`/projects/${cleanupProject.id}/cancel`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${session.accessToken}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          revision: cleanupProject.revision,
+          reason: 'test runtime project archive upload acceptance cleanup',
+        }),
+      });
+      cleanupProject = requireEnvelope(cancelResult, 201, 'cancel project archive upload fixture');
+    }
+    const archiveResult = await jsonRequest(`/projects/${cleanupProject.id}/archive`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${session.accessToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        revision: cleanupProject.revision,
+        reason: 'test runtime project archive upload acceptance cleanup',
+      }),
+    });
+    requireEnvelope(archiveResult, 201, 'archive project archive upload fixture');
+  }
+  if (cleanupFailure) fail(cleanupFailure);
 }
 
 const integration = await jsonRequest('/integrations/FEISHU', {

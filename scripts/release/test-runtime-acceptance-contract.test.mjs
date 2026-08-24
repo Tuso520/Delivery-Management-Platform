@@ -88,3 +88,22 @@ test('runtime acceptance exercises configured standard creation, real upload and
   assert.match(verifier, /\/standards\/\$\{runtimeStandard\.id\}\/archive/u)
   assert.match(verifier, /archivedStandard\.status !== 'ARCHIVED'/u)
 })
+
+test('runtime acceptance provisions, reuses and cleans up its project archive upload fixture', () => {
+  for (const contract of [
+    "const runtimeProjectName = '运行时档案上传验收项目'",
+    '/projects/archived?keyword=',
+    '/archive-templates',
+    "template.status === 'PUBLISHED'",
+    "'idempotency-key': `runtime-project-${standardMarker}`",
+    'saveAsDraft: true',
+    'managedArchiveProject = true',
+    '/cancel',
+    '/archive',
+  ]) {
+    assert.ok(verifier.includes(contract), `missing project fixture contract: ${contract}`)
+  }
+  assert.match(verifier, /archiveFileNames[\s\S]*runtime-project-archive-a-/u)
+  assert.match(verifier, /archiveFileNames[\s\S]*runtime-project-archive-b-/u)
+  assert.match(verifier, /verifiedFolder\.totalCount < archiveFolder\.totalCount \+ 2/u)
+})
