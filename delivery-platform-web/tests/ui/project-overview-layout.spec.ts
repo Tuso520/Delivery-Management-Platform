@@ -805,9 +805,7 @@ test('archive template matches Figma 69:305 geometry and server query behavior',
     .locator('tbody .arco-table-tr')
     .filter({ hasText: '标准项目档案模板' })
   await expect(publishedRow).toHaveCount(1)
-  await expect(publishedRow.locator('.arco-table-td').nth(3)).toContainText(
-    /^\s*\d+\s*\/\s*\d+\s*$/,
-  )
+  await expect(publishedRow.locator('.arco-table-td').nth(3)).toContainText(/^\s*\d+\s*个文件夹\s*$/)
   await expect(publishedRow.locator('.arco-table-td').nth(6)).toContainText(
     /^\s*\d{4}-\d{2}-\d{2}\s*$/,
   )
@@ -815,6 +813,8 @@ test('archive template matches Figma 69:305 geometry and server query behavior',
   await publishedRow.locator('.template-link').click()
   const detailModal = page.locator('.archive-template-detail-modal .arco-modal')
   await expect(detailModal).toBeVisible({ timeout: 60_000 })
+  await expect(detailModal.locator('.folder-editor').first()).toBeVisible()
+  await expect(detailModal).not.toContainText('该文件夹暂无文件项')
   await expect(page.locator('.arco-drawer')).toHaveCount(0)
   await expect(page).toHaveURL(/#\/archive-templates\/[^?]+/u)
   await detailModal.locator('.arco-modal-close-btn').click()
