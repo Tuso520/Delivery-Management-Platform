@@ -111,7 +111,7 @@ UI E2E 默认使用 Playwright 锁定版本的 Chromium，CI 通过 `playwright 
 
 ## 2026-08-02 当前仓库侧验收状态
 
-源码静态事实由 `node scripts/verify-doc-facts.mjs` 在每次验收中重新计算。当前仓库扫描范围为 730 个受版本控制或待纳入版本控制的文件；前端 202 个 TypeScript/Vue 文件、26 个 `views/` Vue 文件、28 个运行时 API 文件和 47 个测试文件；后端 254 个 TypeScript 文件、28 个 Controller、43 个 Service、30 个 Module、180 个 HTTP 路由和 48 个 Prisma migration。以上数字只作为本次交付快照，后续发布仍以脚本实时计算结果为准。
+源码静态事实由 `node scripts/verify-doc-facts.mjs` 在每次验收中重新计算。当前仓库扫描范围为 735 个受版本控制或待纳入版本控制的文件；前端 206 个 TypeScript/Vue 文件、26 个 `views/` Vue 文件、28 个运行时 API 文件和 49 个测试文件；后端 255 个 TypeScript 文件、28 个 Controller、43 个 Service、30 个 Module、180 个 HTTP 路由和 48 个 Prisma migration。以上数字只作为本次交付快照，后续发布仍以脚本实时计算结果为准。
 
 发布迁移验收脚本核对应用迁移与校验和、二次 seed 全库表计数以及 MinIO/File Worker/Outbox Worker 一致性。日常本机不再启动这些依赖；相同正式发布物的真实依赖验收由 `.github/workflows/release.yml` 的 integration 作业执行。
 
