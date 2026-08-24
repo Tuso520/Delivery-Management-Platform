@@ -391,59 +391,23 @@ try {
     200,
     'project archive tree before upload',
   );
-  const archivePayloads = {
-    pdf: {
-      mimeType: 'application/pdf',
-      content: '%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<<>>\n%%EOF\n',
-    },
-    png: {
-      mimeType: 'image/png',
-      content: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    },
-    jpg: {
-      mimeType: 'image/jpeg',
-      content: new Uint8Array([0xff, 0xd8, 0xff, 0xd9]),
-    },
-    jpeg: {
-      mimeType: 'image/jpeg',
-      content: new Uint8Array([0xff, 0xd8, 0xff, 0xd9]),
-    },
-    zip: {
-      mimeType: 'application/zip',
-      content: new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00]),
-    },
-  };
-  const archiveFolder = archiveTreeBefore?.folders?.find((folder) => {
-    const allowedExtensions = Array.isArray(folder.uploadTarget?.allowedExtensions)
-      ? folder.uploadTarget.allowedExtensions.map((extension) =>
-          String(extension).replace(/^\./, '').toLowerCase(),
-        )
-      : [];
-    return (
-      !folder.archivedAt &&
-      folder.uploadTarget?.canUpload &&
-      allowedExtensions.some((extension) => archivePayloads[extension])
-    );
-  });
+  const archiveFolder = archiveTreeBefore?.folders?.find(
+    (folder) => !folder.archivedAt && folder.uploadTarget?.canUpload,
+  );
   if (!archiveFolder?.uploadTarget?.id) fail('project archive has no uploadable folder');
   const archiveItemId = archiveFolder.uploadTarget.id;
-  const allowedArchiveExtensions = archiveFolder.uploadTarget.allowedExtensions.map((extension) =>
-    String(extension).replace(/^\./, '').toLowerCase(),
-  );
-  const archiveExtension = allowedArchiveExtensions.includes('pdf')
-    ? 'pdf'
-    : allowedArchiveExtensions.find((extension) => archivePayloads[extension]);
-  if (!archiveExtension) fail('project archive upload target has no supported test file type');
-  const archivePayload = archivePayloads[archiveExtension];
   const archiveFileNames = [
-    `runtime-project-archive-a-${standardMarker}.${archiveExtension}`,
-    `runtime-project-archive-b-${standardMarker}.${archiveExtension}`,
+    `runtime-project-archive-a-${standardMarker}.pdf`,
+    `runtime-project-archive-b-${standardMarker}.pdf`,
   ];
   for (const [index, fileName] of archiveFileNames.entries()) {
     const archiveFile = new FormData();
     archiveFile.append(
       'file',
-      new Blob([archivePayload.content], { type: archivePayload.mimeType }),
+      new Blob(
+        ['%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<<>>\n%%EOF\n'],
+        { type: 'application/pdf' },
+      ),
       fileName,
     );
     archiveFile.append('uploadMode', 'REPLACE');

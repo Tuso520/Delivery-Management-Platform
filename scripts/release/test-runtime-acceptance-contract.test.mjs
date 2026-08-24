@@ -96,9 +96,8 @@ test('runtime acceptance provisions one reusable project and cleans up uploaded 
     "template.status === 'PUBLISHED'",
     "'idempotency-key': `runtime-project-${standardMarker}`",
     'saveAsDraft: true',
-    "mimeType: 'application/pdf'",
-    "content: '%PDF-1.4",
-    "allowedArchiveExtensions.includes('pdf')",
+    "['%PDF-1.4",
+    "{ type: 'application/pdf' }",
     '/files/${logicalFileId}/archive',
   ]) {
     assert.ok(verifier.includes(contract), `missing project fixture contract: ${contract}`)
@@ -107,4 +106,5 @@ test('runtime acceptance provisions one reusable project and cleans up uploaded 
   assert.match(verifier, /archiveFileNames[\s\S]*runtime-project-archive-a-/u)
   assert.match(verifier, /archiveFileNames[\s\S]*runtime-project-archive-b-/u)
   assert.match(verifier, /verifiedFolder\.totalCount < archiveFolder\.totalCount \+ 2/u)
+  assert.doesNotMatch(verifier, /uploadTarget\.allowedExtensions/u)
 })
