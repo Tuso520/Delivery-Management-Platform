@@ -98,6 +98,9 @@ test('runtime acceptance provisions, reuses and cleans up its project archive up
     "'idempotency-key': `runtime-project-${standardMarker}`",
     'saveAsDraft: true',
     'managedArchiveProject = true',
+    "mimeType: 'application/pdf'",
+    "content: '%PDF-1.4",
+    "allowedArchiveExtensions.includes('pdf')",
     '/cancel',
     '/archive',
   ]) {

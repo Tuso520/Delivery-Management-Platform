@@ -210,7 +210,10 @@ async function jsonRequest(path, init = {}) {
 }
 
 function requireEnvelope(result, status, label) {
-  if (result.response.status !== status) fail(`${label}: HTTP ${result.response.status}`);
+  if (result.response.status !== status) {
+    const detail = JSON.stringify(result.body?.message ?? result.body?.data ?? null).slice(0, 500);
+    fail(`${label}: HTTP ${result.response.status} detail=${detail}`);
+  }
   if (!result.body || result.body.code !== 0 || typeof result.body.traceId !== 'string') {
     fail(`${label}: invalid API envelope`);
   }
@@ -407,10 +410,6 @@ if (!archiveProject?.id) {
   managedArchiveProject = true;
 }
 if (!archiveProject?.id) fail('project archive upload acceptance could not prepare a project');
-const archiveFileNames = [
-  `runtime-project-archive-a-${standardMarker}.md`,
-  `runtime-project-archive-b-${standardMarker}.md`,
-];
 const uploadedArchiveLogicalIds = [];
 try {
   const archiveTreeBeforeResult = await jsonRequest(`/projects/${archiveProject.id}/archive-tree`, {
@@ -421,18 +420,59 @@ try {
     200,
     'project archive tree before upload',
   );
-  const archiveFolder = archiveTreeBefore?.folders?.find(
-    (folder) => !folder.archivedAt && folder.uploadTarget?.canUpload,
-  );
+  const archivePayloads = {
+    pdf: {
+      mimeType: 'application/pdf',
+      content: '%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<<>>\n%%EOF\n',
+    },
+    png: {
+      mimeType: 'image/png',
+      content: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    },
+    jpg: {
+      mimeType: 'image/jpeg',
+      content: new Uint8Array([0xff, 0xd8, 0xff, 0xd9]),
+    },
+    jpeg: {
+      mimeType: 'image/jpeg',
+      content: new Uint8Array([0xff, 0xd8, 0xff, 0xd9]),
+    },
+    zip: {
+      mimeType: 'application/zip',
+      content: new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00]),
+    },
+  };
+  const archiveFolder = archiveTreeBefore?.folders?.find((folder) => {
+    const allowedExtensions = Array.isArray(folder.uploadTarget?.allowedExtensions)
+      ? folder.uploadTarget.allowedExtensions.map((extension) =>
+          String(extension).replace(/^\./, '').toLowerCase(),
+        )
+      : [];
+    return (
+      !folder.archivedAt &&
+      folder.uploadTarget?.canUpload &&
+      allowedExtensions.some((extension) => archivePayloads[extension])
+    );
+  });
   if (!archiveFolder?.uploadTarget?.id) fail('project archive has no uploadable folder');
   const archiveItemId = archiveFolder.uploadTarget.id;
+  const allowedArchiveExtensions = archiveFolder.uploadTarget.allowedExtensions.map((extension) =>
+    String(extension).replace(/^\./, '').toLowerCase(),
+  );
+  const archiveExtension = allowedArchiveExtensions.includes('pdf')
+    ? 'pdf'
+    : allowedArchiveExtensions.find((extension) => archivePayloads[extension]);
+  if (!archiveExtension) fail('project archive upload target has no supported test file type');
+  const archivePayload = archivePayloads[archiveExtension];
+  const archiveFileNames = [
+    `runtime-project-archive-a-${standardMarker}.${archiveExtension}`,
+    `runtime-project-archive-b-${standardMarker}.${archiveExtension}`,
+  ];
   for (const [index, fileName] of archiveFileNames.entries()) {
     const archiveFile = new FormData();
     archiveFile.append(
       'file',
-      new Blob([`runtime project archive upload ${index + 1} ${standardMarker}\n`], {
-        type: 'text/markdown',
-      }),
+      new Blob([archivePayload.content], { type: archivePayload.mimeType }),
       fileName,
     );
     archiveFile.append('uploadMode', 'REPLACE');
