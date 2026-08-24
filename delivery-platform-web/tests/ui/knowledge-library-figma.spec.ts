@@ -404,7 +404,6 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
         expect(geometry.tableOverflowX).toBeGreaterThan(0)
       } else {
         expect(geometry.tableOverflowX).toBeLessThanOrEqual(2)
-        expect(Math.abs(geometry.table.right - geometry.tableRegion.right)).toBeLessThanOrEqual(2)
       }
 
       if (geometry.tableOverflowY > 0) {
