@@ -161,6 +161,7 @@ async function measureKnowledgeLayout(page: Page) {
     const layoutMain = element('.layout-main')
     const categoryList = element('.knowledge-category-list')
     const tableRegion = element('.knowledge-table-region')
+    const tableViewport = element('.knowledge-table-region .business-table__viewport')
 
     return {
       root: rect('.knowledge-library'),
@@ -177,11 +178,11 @@ async function measureKnowledgeLayout(page: Page) {
       pageOverflowY: document.documentElement.scrollHeight - document.documentElement.clientHeight,
       layoutOverflowX: layoutMain.scrollWidth - layoutMain.clientWidth,
       layoutOverflowY: layoutMain.scrollHeight - layoutMain.clientHeight,
-      tableOverflowX: tableRegion.scrollWidth - tableRegion.clientWidth,
-      tableOverflowY: tableRegion.scrollHeight - tableRegion.clientHeight,
+      tableOverflowX: tableViewport.scrollWidth - tableViewport.clientWidth,
+      tableOverflowY: tableViewport.scrollHeight - tableViewport.clientHeight,
       categoryOverflowY: categoryList.scrollHeight - categoryList.clientHeight,
       categoryOverflowStyle: getComputedStyle(categoryList).overflowY,
-      tableOverflowStyle: getComputedStyle(tableRegion).overflow,
+      tableOverflowStyle: getComputedStyle(tableViewport).overflow,
     }
   })
 }

@@ -468,9 +468,26 @@ test('standard library renders a real long draft, published actions and minimum-
     }))
     expect(dimensions.scrollWidth).toBeGreaterThan(dimensions.clientWidth)
     await horizontalScroll.evaluate((element) => {
-      element.scrollLeft = element.scrollWidth
+      element.scrollTo({ left: element.scrollWidth, behavior: 'instant' })
     })
-    await expect(row.getByRole('button', { name: '归档', exact: true })).toBeInViewport()
+    await expect
+      .poll(() => horizontalScroll.evaluate((element) => element.scrollLeft))
+      .toBeGreaterThan(0)
+    const archiveButton = row.getByRole('button', { name: '归档', exact: true })
+    const horizontalBounds = await archiveButton.evaluate((element) => {
+      const viewport = element.closest('.business-table')?.querySelector('.business-table__viewport')
+      if (!(viewport instanceof HTMLElement)) throw new Error('Missing BusinessTable viewport')
+      const buttonRect = element.getBoundingClientRect()
+      const viewportRect = viewport.getBoundingClientRect()
+      return {
+        buttonLeft: buttonRect.left,
+        buttonRight: buttonRect.right,
+        viewportLeft: viewportRect.left,
+        viewportRight: viewportRect.right,
+      }
+    })
+    expect(horizontalBounds.buttonLeft).toBeGreaterThanOrEqual(horizontalBounds.viewportLeft - 1)
+    expect(horizontalBounds.buttonRight).toBeLessThanOrEqual(horizontalBounds.viewportRight + 1)
 
     await page.locator('.keyword-input input').clear()
     await page.getByRole('button', { name: '查询', exact: true }).click()
