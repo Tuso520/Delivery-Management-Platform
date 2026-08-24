@@ -497,23 +497,7 @@ function applyStandardFolders(): void {
       name,
       description: '',
       sortOrder: editableFolders.value.length,
-      items: [
-        {
-          stableKey: `${stableKey}-files`,
-          name: '相关交付文件',
-          description: '',
-          required: false,
-          reviewRequired: false,
-          approvalTemplateId: null,
-          ownerRoleId: null,
-          allowMultipleFiles: true,
-          allowedExtensions: [],
-          allowedExtensionsText: '',
-          maxFileSizeMb: 100,
-          namingRule: '',
-          sortOrder: 0,
-        },
-      ],
+      items: [],
     })
   })
   Message.success(t('archiveTemplate.messages.standardFoldersAdded'))

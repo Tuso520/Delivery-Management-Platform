@@ -114,6 +114,101 @@ describe('ProjectArchiveTargetService', () => {
     expect(result.folders[0].items[0]).not.toHaveProperty('canRestore');
   });
 
+  it('omits empty standard-folder placeholders from rows and folder counts', async () => {
+    const updatedAt = new Date('2026-08-24T00:00:00.000Z');
+    const placeholderFiles: Array<{
+      id: string;
+      status: string;
+      updatedAt: Date;
+      logicalFile: {
+        id: string;
+        displayName: string;
+        status: string;
+        currentVersion: null;
+        versions: [];
+      };
+    }> = [];
+    prisma.project.findFirst.mockResolvedValue({
+      id: 'project-1',
+      projectCode: 'P-001',
+      projectName: 'Archive project',
+      currentStage: 'EXECUTION',
+      archiveTemplateId: null,
+      archiveTemplateVersionId: null,
+      archiveTemplateVersion: null,
+      archiveTemplate: null,
+      archiveFolders: [
+        {
+          id: 'folder-1',
+          name: '项目启动',
+          description: null,
+          sortOrder: 0,
+          sourceStableKey: 'standard-folder-01',
+          isTemporary: false,
+          archivedAt: null,
+          items: [
+            {
+              id: 'item-placeholder',
+              name: '相关交付文件',
+              description: null,
+              required: false,
+              reviewRequired: false,
+              approvalTemplateId: null,
+              ownerRoleId: null,
+              allowMultipleFiles: true,
+              allowedExtensions: [],
+              maxFileSize: BigInt(100_000_000),
+              namingRule: null,
+              sourceStableKey: 'standard-folder-01-files',
+              isTemporary: false,
+              temporaryReason: null,
+              archivedAt: null,
+              updatedAt,
+              ownerUser: null,
+              files: placeholderFiles,
+            },
+          ],
+        },
+      ],
+    });
+
+    const result = await service.getArchiveTree('project-1', actor);
+
+    expect(result.folders[0]).toMatchObject({
+      totalCount: 0,
+      completedCount: 0,
+      requiredTotalCount: 0,
+      items: [
+        expect.objectContaining({
+          id: 'item-placeholder',
+          fileCount: 0,
+          allowMultipleFiles: true,
+          canUpload: false,
+        }),
+      ],
+    });
+
+    placeholderFiles.push({
+      id: 'archive-file-1',
+      status: 'DRAFT',
+      updatedAt,
+      logicalFile: {
+        id: 'logical-file-1',
+        displayName: '真实交付文件',
+        status: 'ACTIVE',
+        currentVersion: null,
+        versions: [],
+      },
+    });
+
+    const withFile = await service.getArchiveTree('project-1', actor);
+
+    expect(withFile.folders[0]).toMatchObject({
+      totalCount: 1,
+      items: [expect.objectContaining({ id: 'item-placeholder', fileCount: 1 })],
+    });
+  });
+
   it('returns original file metadata and action permissions for the Figma file row', async () => {
     const uploadedAt = new Date('2026-07-20T00:00:00.000Z');
     prisma.project.findFirst.mockResolvedValue({

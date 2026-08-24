@@ -1,6 +1,7 @@
 import type { ProjectArchiveTargetItem } from '@/domains/archive/types/archive'
 
-const GENERIC_ARCHIVE_ITEM_NAMES = new Set(['项目交付文件'])
+const GENERIC_ARCHIVE_ITEM_NAMES = new Set(['项目交付文件', '相关交付文件'])
+const STANDARD_FOLDER_PLACEHOLDER_KEY = /^standard-folder-\d+-files$/u
 
 const FILE_EXTENSION_PATTERN = /\.[^./\\]+$/u
 
@@ -26,4 +27,12 @@ export function resolveArchiveUploadTargetLabel(folderName: string, itemName: st
     return normalizedItemName
   }
   return `${normalizedFolderName} / ${normalizedItemName}`
+}
+
+export function isEmptyStandardFolderPlaceholder(item: ProjectArchiveTargetItem): boolean {
+  return (
+    item.name.trim() === '相关交付文件' &&
+    STANDARD_FOLDER_PLACEHOLDER_KEY.test(item.sourceStableKey?.trim() ?? '') &&
+    item.fileCount === 0
+  )
 }

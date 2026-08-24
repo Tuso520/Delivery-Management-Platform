@@ -9,6 +9,8 @@ type ArchiveActor = Pick<JwtPayload, 'sub' | 'permissions' | 'roles'>;
 
 const pendingReviewStatuses = ['PENDING', 'IN_PROGRESS'] as const;
 const completedArchiveStatuses = new Set(['APPROVED', 'PUBLISHED', 'COMPLETED', 'ARCHIVED']);
+const emptyStandardFolderPlaceholderName = '相关交付文件';
+const standardFolderPlaceholderKey = /^standard-folder-\d+-files$/u;
 
 @Injectable()
 export class ProjectArchiveTargetService {
@@ -282,7 +284,15 @@ export class ProjectArchiveTargetService {
           },
         };
       });
-      const activeItems = items.filter((item) => !item.archivedAt);
+      const activeItems = items.filter(
+        (item) =>
+          !item.archivedAt &&
+          !(
+            item.name.trim() === emptyStandardFolderPlaceholderName &&
+            standardFolderPlaceholderKey.test(item.sourceStableKey?.trim() ?? '') &&
+            item.fileCount === 0
+          ),
+      );
       const completedItems = activeItems.filter((item) =>
         completedArchiveStatuses.has(item.status.toUpperCase()),
       );

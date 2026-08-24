@@ -1171,6 +1171,7 @@
     },
     "validation": {
       "uploadFileRequired": "Select a file to upload",
+      "multipleFilesNotAllowed": "This archive item allows only one independent file; select one file",
       "fileTypeDisabled": "This file type is disabled. Select a file type enabled in Field Configuration."
     },
     "messages": {

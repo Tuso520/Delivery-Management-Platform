@@ -1171,6 +1171,7 @@
     },
     "validation": {
       "uploadFileRequired": "请选择需要上传的文件",
+      "multipleFilesNotAllowed": "所选档案项只允许一个独立文件，请仅选择一个文件",
       "fileTypeDisabled": "当前文件类型已停用，请选择字段配置中启用的文件类型"
     },
     "messages": {

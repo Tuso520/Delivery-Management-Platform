@@ -37,6 +37,22 @@ describe('project archive upload contract', () => {
     )
   })
 
+  it('marks each batch file as a new independent logical file', async () => {
+    const file = new File(['archive content'], 'drawing.pdf', {
+      type: 'application/pdf',
+    })
+
+    await archiveApi.uploadFile('project-1', 'item-1', file, {
+      uploadMode: 'REPLACE',
+      revisionLevel: 'MINOR',
+      createNewLogicalFile: true,
+    })
+
+    const [, body] = request.post.mock.calls[0]
+    expect((body as FormData).get('createNewLogicalFile')).toBe('true')
+    expect((body as FormData).get('logicalFileId')).toBeNull()
+  })
+
   it('deletes a displayed archive row through logical-file archival', async () => {
     request.post.mockResolvedValue({ id: 'logical-1', archivedAt: '2026-07-28T00:00:00.000Z' })
 
