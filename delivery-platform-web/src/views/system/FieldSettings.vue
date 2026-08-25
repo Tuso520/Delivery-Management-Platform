@@ -230,7 +230,9 @@ onMounted(async () => {
 
 <template>
   <section class="field-config-page" aria-labelledby="field-config-title">
-    <h1 id="field-config-title" class="sr-only">字段配置</h1>
+    <h1 id="field-config-title" class="sr-only">
+      字段配置
+    </h1>
 
     <a-spin :loading="loadingCategories" class="category-tabs-spin">
       <a-radio-group
@@ -302,7 +304,12 @@ onMounted(async () => {
     </BusinessTable>
 
     <footer class="field-footer">
-      <a-button v-if="canCreateOption" type="primary" size="small" @click="openCreate">
+      <a-button
+        v-if="canCreateOption"
+        type="primary"
+        size="small"
+        @click="openCreate"
+      >
         新增一行
       </a-button>
       <div class="pagination-group">

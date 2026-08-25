@@ -695,16 +695,26 @@ watch(
             {{ formatDate(record.updatedAt) }}
           </template>
         </a-table-column>
-        <a-table-column :title="t('common.action')" :width="238" fixed="right" align="center">
+        <a-table-column
+          :title="t('common.action')"
+          :width="238"
+          fixed="right"
+          align="center"
+        >
           <template #cell="{ record }">
             <span class="table-actions">
-              <a-button class="table-action" type="text" size="mini" @click="openDetail(record)">
+              <a-button
+                class="table-action"
+                type="text"
+                size="mini"
+                @click="openDetail(record)"
+              >
                 {{ t('common.view') }}
               </a-button>
               <a-button
                 v-if="
                   record.status !== 'DISABLED' &&
-                  permissionStore.hasPermission('archive_template:update_draft')
+                    permissionStore.hasPermission('archive_template:update_draft')
                 "
                 class="table-action"
                 type="text"
@@ -717,7 +727,7 @@ watch(
               <a-button
                 v-if="
                   record.status !== 'DISABLED' &&
-                  permissionStore.hasPermission('archive_template:disable')
+                    permissionStore.hasPermission('archive_template:disable')
                 "
                 class="table-action table-action--danger"
                 type="text"

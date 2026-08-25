@@ -427,7 +427,12 @@ watch(
 <template>
   <PageContainer class="archive-page" gap="normal" :scrollable="false">
     <section class="archive-metrics" :aria-label="t('archive.metricsAria')">
-      <a-card v-for="metric in metrics" :key="metric.key" class="archive-metric" :bordered="false">
+      <a-card
+        v-for="metric in metrics"
+        :key="metric.key"
+        class="archive-metric"
+        :bordered="false"
+      >
         <span class="archive-metric__icon" aria-hidden="true">
           <img :src="metric.icon" alt="" />
         </span>
