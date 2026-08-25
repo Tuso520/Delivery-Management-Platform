@@ -1144,7 +1144,7 @@ describe('running Delivery Platform API', () => {
       const forbiddenTree = await expectAuthenticatedGet(
         `/projects/${selectedProjectId}/archive-tree`,
         limited.accessToken,
-        403,
+        404,
       );
       expect(forbiddenTree.code).not.toBe(0);
 
