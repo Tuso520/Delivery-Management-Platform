@@ -207,6 +207,7 @@ export interface QueryProjectDto {
   keyword?: string
   scope?: ProjectScope
   customerType?: CustomerType
+  archiveReady?: boolean
   sort?: ProjectSort
 }
 

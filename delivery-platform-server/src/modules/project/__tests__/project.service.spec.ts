@@ -260,6 +260,25 @@ describe('ProjectService', () => {
     expect(result.items[0]).not.toHaveProperty('projectStatus');
   });
 
+  it('can restrict archive workspace options to projects with an active archive snapshot', async () => {
+    prisma.project.count.mockResolvedValue(0);
+    prisma.project.findMany.mockResolvedValue([]);
+
+    await service.findAll({ archiveReady: true, scope: 'all' }, publicActor);
+
+    expect(prisma.project.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          AND: [
+            { deletedAt: null },
+            { archivedAt: null },
+            { archiveFolders: { some: { archivedAt: null } } },
+          ],
+        },
+      }),
+    );
+  });
+
   it('returns normalized financial fields with project:view_financial', async () => {
     prisma.project.count.mockResolvedValue(1);
     prisma.project.findMany.mockResolvedValue([mockProject]);

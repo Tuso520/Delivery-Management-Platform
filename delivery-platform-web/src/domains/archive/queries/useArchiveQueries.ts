@@ -27,6 +27,7 @@ export function useArchiveProjectOptionsQuery(
         keyword: toValue(keyword).trim() || undefined,
         sort: 'updatedAt:desc',
         scope: toValue(includeAllProjects) ? 'all' : 'mine',
+        archiveReady: true,
       }),
   })
 }

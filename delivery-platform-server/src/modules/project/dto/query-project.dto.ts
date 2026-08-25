@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsString } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
 
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 import {
@@ -39,6 +40,12 @@ export class QueryProjectDto extends PaginationDto {
   @IsOptional()
   @IsString()
   projectType?: string;
+
+  @ApiPropertyOptional({ description: '仅返回已生成项目档案目录快照的项目' })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  archiveReady?: boolean;
 
   @ApiPropertyOptional({
     description: '排序规则',

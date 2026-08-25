@@ -1649,6 +1649,9 @@ export class ProjectService {
     if (query.countryCode) filters.push({ countryCode: query.countryCode });
     if (query.projectType) filters.push({ projectType: query.projectType });
     if (query.customerType) filters.push({ customerType: query.customerType });
+    if (query.archiveReady) {
+      filters.push({ archiveFolders: { some: { archivedAt: null } } });
+    }
     return filters;
   }
 

@@ -1286,6 +1286,7 @@ async function retryLoad(): Promise<void> {
 }
 .dialog-actions :deep(.dialog-close) {
   width: 54px;
+  min-width: 54px;
   height: 32px;
   display: inline-flex;
   align-items: center;
