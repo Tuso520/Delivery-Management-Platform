@@ -79,7 +79,7 @@ describe('business component adoption contract', () => {
     expect(archiveTemplate).toContain(':scroll="{ minWidth: 1208 }"')
     expect(archiveTemplate).toContain(':bordered="{ wrapper: false, cell: true }"')
     expect(archiveTemplate).toContain(':min-width="280"')
-    expect(archiveTemplate).toContain(':width="182"')
+    expect(archiveTemplate).toContain(':width="238"')
     expect(archiveTemplate).toContain('fixed="right"')
     expect(archiveTemplate).toContain('grid-template-columns: minmax(0, 1fr)')
   })

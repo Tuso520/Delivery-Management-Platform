@@ -29,10 +29,7 @@ describe('role seed permission matrix', () => {
     expect(permissions?.has('knowledge:update_draft')).toBe(true);
     expect(permissions?.has('knowledge:submit_review')).toBe(true);
     expect(permissions?.has('knowledge:archive')).toBe(true);
-    expect(permissions?.has('tools:view')).toBe(true);
-    expect(permissions?.has('tools:manage')).toBe(true);
     expect((permissions as Set<string> | undefined)?.has('attachment:view')).toBe(false);
-    expect(permissions?.has('tools:manage')).toBe(true);
     expect(permissions?.has('approval_config:view')).toBe(true);
   });
 

@@ -18,7 +18,7 @@ export class ProjectArchiveTargetService {
   ) {}
 
   async getArchiveTree(projectId: string, actor: ArchiveActor) {
-    const scope = await this.projectAccess.buildProjectWhere(actor.sub);
+    const scope = await this.projectAccess.buildProjectWhere(actor.sub, actor.roles);
     const project = await this.prisma.project.findFirst({
       where: { AND: [scope, { id: projectId }] },
       select: {

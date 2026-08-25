@@ -6,17 +6,8 @@ import { approvalTemplateApi } from '@/platform/approval/approval.api'
 import { integrationApi } from '@/api/integration'
 import { notificationApi } from '@/platform/notification/notification.api'
 import { systemSettingsApi } from '@/api/system'
-import { toolApi } from '@/api/tools'
 import { queryKeys } from '@/query/keys'
 import type { IntegrationProvider, IntegrationSyncLog } from '@/types/settings'
-
-export function useToolsQuery(includeDisabled: MaybeRefOrGetter<boolean> = false) {
-  return useQuery({
-    queryKey: computed(() => queryKeys.tools.list(toValue(includeDisabled))),
-    queryFn: () =>
-      toolApi.getList(toValue(includeDisabled) ? { includeDisabled: true } : undefined),
-  })
-}
 
 export function useSystemSettingsQuery() {
   return useQuery({ queryKey: queryKeys.settings.system(), queryFn: systemSettingsApi.get })

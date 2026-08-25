@@ -27,4 +27,21 @@ describe('ProjectAccessService', () => {
     await expect(service.assertProjectAccess('project-1', 'user-1')).resolves.toBeUndefined();
     expect(dataScope.assertProjectAccess).toHaveBeenCalledWith('project-1', 'user-1');
   });
+
+  it('gives SUPER_ADMIN an explicit all-project scope without consulting assignments', async () => {
+    const dataScope = {
+      buildProjectWhere: jest.fn(),
+      assertProjectAccess: jest.fn(),
+    } as unknown as DataScopeService;
+    const service = new ProjectAccessService(dataScope);
+
+    await expect(service.buildProjectWhere('admin-1', ['SUPER_ADMIN'])).resolves.toEqual({
+      deletedAt: null,
+    });
+    await expect(
+      service.assertProjectAccess('project-1', 'admin-1', ['SUPER_ADMIN']),
+    ).resolves.toBeUndefined();
+    expect(dataScope.buildProjectWhere).not.toHaveBeenCalled();
+    expect(dataScope.assertProjectAccess).not.toHaveBeenCalled();
+  });
 });

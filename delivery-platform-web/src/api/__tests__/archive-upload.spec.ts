@@ -36,6 +36,7 @@ describe('project archive upload contract', () => {
     expect(options.headers).toEqual(
       expect.objectContaining({ 'Idempotency-Key': expect.any(String) }),
     )
+    expect(options.headers).not.toHaveProperty('Content-Type')
   })
 
   it('marks each batch file as a new independent logical file', async () => {

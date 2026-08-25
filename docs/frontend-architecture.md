@@ -99,7 +99,6 @@ flowchart TD
 | 项目管理   | 档案模版 `/archive-template` | `ArchiveTemplate` | `src/domains/archive/pages/ArchiveTemplatePage.vue` | `archive_template:view`  |
 | 标准与知识 | 标准库 `/standards`          | `Standard`        | `src/views/standard/index.vue`   | `standard:view`          |
 | 标准与知识 | 知识库 `/knowledge`          | `Knowledge`       | `src/domains/knowledge/pages/KnowledgePage.vue` | `knowledge:view`         |
-| 标准与知识 | 工具中心 `/tools`            | `Tools`           | `src/views/tools/index.vue`      | `tools:view`             |
 
 项目概览页面由五项横向指标带、统一范围选择器、紧凑搜索工具栏和 `BusinessTable` 组成。范围选择器通过 `scope` URL query 管理“我的项目”“全部项目”；当前 Figma 不提供归档列表。页面沿用真实字段配置、后端数据范围和敏感字段裁剪结果。
 
@@ -170,7 +169,6 @@ flowchart TD
 | 档案模版 | 列表 + 80vw 版本抽屉                  | 模版创建、草稿结构、版本、提交审核、发布、停用             |
 | 标准库   | 统计 + 表格 + 详情抽屉 + 编辑弹窗     | 文件正文、不可变版本、关系、审核、归档、预览/下载           |
 | 知识库   | 统计 + 表格 + 详情抽屉 + 编辑弹窗     | 文件/Markdown/链接、附件、版本、审核、归档、预览/下载      |
-| 工具中心 | 分类统计卡 + 响应式卡片目录 + 配置弹窗 | 点击分类筛选、20 条批次滚动、内部/外部工具打开、管理、启停、JSON 配置 |
 | 设置     | 表格或分段表单                        | 5 个 Figma 可见设置入口，查看与管理权限分离                |
 
 项目、审核任务、档案模版、标准和知识的查看意图均使用 path 参数形成可分享深链；标准和知识创建使用 `?mode=create`。筛选、排序及档案模版版本选择使用 query 参数，并在打开/关闭弹窗或抽屉时保留列表状态。分页器或滚动续载按对应 Figma 页面和业务数据量选择，不在页面间强制复用一种模式。
@@ -268,7 +266,6 @@ flowchart TD
 | `standard.ts`                                | 标准、版本、关系、审核                          | `/standards`、`/standard-versions`                         |
 | `knowledge.ts`                               | 知识、版本、分类、审核                          | `/knowledge`、`/knowledge-versions`                        |
 | `file.ts`                                    | 详情、下载、预览会话、版本、处理状态、逻辑归档  | `/files`                                                   |
-| `tools.ts`                                   | 工具定义及启停                                  | `/tools`                                                   |
 | `currency.ts`                                | 币种、汇率同步与锁定                            | `/currencies`                                              |
 | `notification.ts`                            | 当前页面使用通知规则；通知列表方法保留在 API 层 | `/notification-rules`、`/notifications`                    |
 | `approval.ts`                                | 审批模板                                        | `/approval-templates`                                      |

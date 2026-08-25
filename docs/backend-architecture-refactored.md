@@ -39,7 +39,6 @@
 统一文件审核
 标准库
 知识库
-工具中心
 通知规则
 审批配置
 币种与汇率
@@ -1550,47 +1549,6 @@ POST /knowledge/:id/archive
 不再保留知识文件替换作为附件归属变更的隐式流程；每次修改都产生明确 `KnowledgeVersion`。
 
 DTO 与 Service 双层校验 FILE/MARKDOWN/LINK exactly-one-of；支持文件集合必须显式提交，禁止重复、与主文件重合或跨 KnowledgeItem 复用。已发布或审核中的版本不能直接 PATCH。
-
----
-
-# 13. 工具中心
-
-工具中心只保留工具目录和内部工具入口，不参与标准或知识审核。
-
-## 模型
-
-```ts
-ToolDefinition {
-  id
-  name
-  category
-  description
-  toolType
-  routeOrUrl
-  enabled
-  sortOrder
-  configuration
-}
-```
-
-`toolType`：
-
-```text
-INTERNAL
-EXTERNAL
-```
-
-接口：
-
-```http
-GET  /tools
-POST /tools
-PATCH /tools/:id
-POST /tools/:id/enable
-POST /tools/:id/disable
-```
-
-普通用户仅可读取启用工具；管理员可管理。
 
 ---
 

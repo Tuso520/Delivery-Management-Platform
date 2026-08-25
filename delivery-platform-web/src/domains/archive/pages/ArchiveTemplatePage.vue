@@ -282,6 +282,11 @@ const disableTemplateMutation = useMutation({
       queryClient.invalidateQueries({ queryKey: queryKeys.archiveTemplates.detail(templateId) }),
     ]),
 })
+const deleteTemplateMutation = useMutation({
+  mutationFn: archiveTemplateApi.remove,
+  retry: false,
+  onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.archiveTemplates.lists() }),
+})
 
 const creating = computed(() => createTemplateMutation.isPending.value)
 const savingStructure = computed(() => saveStructureMutation.isPending.value)
@@ -514,6 +519,24 @@ async function disableTemplate(row: ArchiveTemplate): Promise<void> {
   Message.success(t('archiveTemplate.messages.disabled'))
 }
 
+async function deleteTemplate(row: ArchiveTemplate): Promise<void> {
+  try {
+    await arcoConfirm(
+      `确定删除档案模板“${row.templateName}”吗？已被项目引用的模板将拒绝删除。`,
+      '确认删除档案模板',
+      { type: 'error', confirmButtonText: '确认删除' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await deleteTemplateMutation.mutateAsync(row.id)
+    Message.success(`档案模板“${row.templateName}”已删除`)
+  } catch {
+    // The shared request layer displays the specific server-side blocker.
+  }
+}
+
 watch(() => route.fullPath, syncRouteIntent, { immediate: true })
 
 watch(
@@ -672,26 +695,16 @@ watch(
             {{ formatDate(record.updatedAt) }}
           </template>
         </a-table-column>
-        <a-table-column
-          :title="t('common.action')"
-          :width="182"
-          fixed="right"
-          align="center"
-        >
+        <a-table-column :title="t('common.action')" :width="238" fixed="right" align="center">
           <template #cell="{ record }">
             <span class="table-actions">
-              <a-button
-                class="table-action"
-                type="text"
-                size="mini"
-                @click="openDetail(record)"
-              >
+              <a-button class="table-action" type="text" size="mini" @click="openDetail(record)">
                 {{ t('common.view') }}
               </a-button>
               <a-button
                 v-if="
                   record.status !== 'DISABLED' &&
-                    permissionStore.hasPermission('archive_template:update_draft')
+                  permissionStore.hasPermission('archive_template:update_draft')
                 "
                 class="table-action"
                 type="text"
@@ -704,7 +717,7 @@ watch(
               <a-button
                 v-if="
                   record.status !== 'DISABLED' &&
-                    permissionStore.hasPermission('archive_template:disable')
+                  permissionStore.hasPermission('archive_template:disable')
                 "
                 class="table-action table-action--danger"
                 type="text"
@@ -713,6 +726,17 @@ watch(
                 @click="disableTemplate(record)"
               >
                 {{ t('archiveTemplate.disable.action') }}
+              </a-button>
+              <a-button
+                v-if="permissionStore.hasPermission('archive_template:delete')"
+                class="table-action table-action--danger"
+                type="text"
+                size="mini"
+                status="danger"
+                :loading="deleteTemplateMutation.isPending.value"
+                @click="deleteTemplate(record)"
+              >
+                {{ t('common.delete') }}
               </a-button>
             </span>
           </template>

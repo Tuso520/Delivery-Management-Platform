@@ -14,7 +14,6 @@ import { seedSystemOperations } from '../../../prisma/seed-data/system-operation
 import { seedTargetKnowledge } from '../../../prisma/seed-data/target-knowledge';
 import { seedTargetDictionaries } from '../../../prisma/seed-data/target-platform';
 import { seedTargetStandards } from '../../../prisma/seed-data/target-standards';
-import { seedTemplatesAndTools } from '../../../prisma/seed-data/templates-tools';
 import { seedUsers } from '../../../prisma/seed-data/users';
 
 jest.mock('bcrypt', () => ({
@@ -86,7 +85,6 @@ describe('deployment seed safety', () => {
       'seed-data/target-platform.ts',
       'seed-data/target-standards.ts',
       'seed-data/target-knowledge.ts',
-      'seed-data/templates-tools.ts',
     ];
     const source = activeFiles
       .map((file) => readFileSync(join(seedDirectory, file), 'utf8'))
@@ -326,28 +324,6 @@ describe('deployment seed safety', () => {
     }
   });
 
-  it('does not overwrite or re-enable existing seeded tools', async () => {
-    const categoryCreate = jest.fn();
-    const toolCreate = jest.fn();
-    const prisma = {
-      toolCategory: {
-        findFirst: jest.fn().mockResolvedValue({ id: 'existing-category' }),
-        create: categoryCreate,
-      },
-      toolItem: {
-        findFirst: jest.fn().mockResolvedValue({ id: 'existing-tool' }),
-        create: toolCreate,
-      },
-    } as unknown as PrismaClient;
-
-    await seedTemplatesAndTools(prisma);
-
-    expect(categoryCreate).not.toHaveBeenCalled();
-    expect(toolCreate).not.toHaveBeenCalled();
-    expect(prisma.toolCategory).not.toHaveProperty('update');
-    expect(prisma.toolItem).not.toHaveProperty('update');
-  });
-
   it('does not replace edited target knowledge content or create legacy attachments', async () => {
     const itemUpsert = jest.fn().mockResolvedValue({ id: 'knowledge-item-1' });
     const versionUpsert = jest.fn().mockResolvedValue({ id: 'knowledge-version-1' });
@@ -356,20 +332,22 @@ describe('deployment seed safety', () => {
         findUnique: jest.fn().mockResolvedValue({ id: 'knowledge-category-field' }),
       },
       dictionaryItem: {
-        findMany: jest.fn().mockResolvedValue(
-          [
-            'JOB_RESPONSIBILITY_CAPABILITY',
-            'PROJECT_MANAGEMENT_STANDARD',
-            'ELECTRICAL_AUTOMATION',
-            'SOFTWARE_PLATFORM',
-            'CONSTRUCTION_SAFETY',
-            'COMMISSIONING_ACCEPTANCE',
-            'OPERATIONS_REMOTE_SUPPORT',
-            'TECHNICAL_DOCUMENT_DELIVERABLE',
-            'TECHNICAL_RESOURCE_SUPPLY_CHAIN',
-            'OVERSEAS_DELIVERY_SUPPORT',
-          ].map((itemValue) => ({ id: 'field-option-1', itemValue })),
-        ),
+        findMany: jest
+          .fn()
+          .mockResolvedValue(
+            [
+              'JOB_RESPONSIBILITY_CAPABILITY',
+              'PROJECT_MANAGEMENT_STANDARD',
+              'ELECTRICAL_AUTOMATION',
+              'SOFTWARE_PLATFORM',
+              'CONSTRUCTION_SAFETY',
+              'COMMISSIONING_ACCEPTANCE',
+              'OPERATIONS_REMOTE_SUPPORT',
+              'TECHNICAL_DOCUMENT_DELIVERABLE',
+              'TECHNICAL_RESOURCE_SUPPLY_CHAIN',
+              'OVERSEAS_DELIVERY_SUPPORT',
+            ].map((itemValue) => ({ id: 'field-option-1', itemValue })),
+          ),
       },
       user: {
         findUnique: jest.fn().mockResolvedValue({ id: 'admin-1' }),
@@ -548,7 +526,10 @@ describe('deployment seed safety', () => {
     const prisma = {
       user: { findUnique, create: jest.fn(), update: jest.fn() },
       role: { findUnique: jest.fn().mockResolvedValue({ id: 'role-admin' }) },
-      userRole: { findUnique: jest.fn().mockResolvedValue({ id: 'link-admin' }), create: jest.fn() },
+      userRole: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'link-admin' }),
+        create: jest.fn(),
+      },
     } as unknown as PrismaClient;
 
     try {
@@ -613,8 +594,7 @@ describe('deployment seed safety', () => {
       .map(([call]) => call)
       .filter(
         (call) =>
-          call.where.categoryId_itemValue.categoryId ===
-          'category-STANDARD_MANAGEMENT_DOMAIN',
+          call.where.categoryId_itemValue.categoryId === 'category-STANDARD_MANAGEMENT_DOMAIN',
       );
     expect(managementDomainCalls.map((call) => call.create.itemLabel)).toEqual([
       '进度与计划管理',
@@ -849,9 +829,7 @@ describe('deployment seed safety', () => {
     expect(permissionFindMany).toHaveBeenCalledTimes(1);
     for (const call of (prisma.role.upsert as unknown as jest.Mock).mock.calls) {
       expect(call[0].update).toEqual(
-        call[0].where.roleCode === 'SUPER_ADMIN'
-          ? { isProtected: true, status: 'Active' }
-          : {},
+        call[0].where.roleCode === 'SUPER_ADMIN' ? { isProtected: true, status: 'Active' } : {},
       );
     }
   });

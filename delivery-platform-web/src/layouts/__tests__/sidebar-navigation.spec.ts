@@ -1,14 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import router, { menuItems, settingItems } from '@/router'
-import {
-  buildSettingsMenuGroup,
-  resolveSidebarMenuIcon,
-} from '@/layouts/sidebar-navigation'
-import {
-  resolveActiveMenuGroupPath,
-  resolveActiveMenuPath,
-} from '@/store/permission'
+import { buildSettingsMenuGroup, resolveSidebarMenuIcon } from '@/layouts/sidebar-navigation'
+import { resolveActiveMenuGroupPath, resolveActiveMenuPath } from '@/store/permission'
 
 const allSidebarGroups = [...menuItems, buildSettingsMenuGroup(settingItems)]
 
@@ -38,7 +32,7 @@ describe('sidebar navigation contract', () => {
         name: 'KnowledgeGroup',
         title: 'menu.standardKnowledge',
         icon: 'knowledge',
-        children: ['menu.standard', 'menu.knowledge', 'menu.tools'],
+        children: ['menu.standard', 'menu.knowledge'],
       },
       {
         name: 'SettingsGroup',
@@ -50,9 +44,9 @@ describe('sidebar navigation contract', () => {
           'menu.systemFields',
           'menu.systemConfig',
           'menu.documentPreview',
-            'menu.userCenter',
-            'menu.rolePermissions',
-            'menu.systemIntegration',
+          'menu.userCenter',
+          'menu.rolePermissions',
+          'menu.systemIntegration',
         ],
       },
     ])
@@ -70,7 +64,6 @@ describe('sidebar navigation contract', () => {
     ['/standards/standard-1', '/standards-knowledge'],
     ['/knowledge', '/standards-knowledge'],
     ['/knowledge/knowledge-1', '/standards-knowledge'],
-    ['/tools', '/standards-knowledge'],
     ['/settings', '/settings-group'],
     ['/settings/currency', '/settings-group'],
     ['/settings/approvals', '/settings-group'],
@@ -90,8 +83,8 @@ describe('sidebar navigation contract', () => {
   })
 
   it('rejects a group without an explicit semantic icon mapping', () => {
-    expect(() =>
-      resolveSidebarMenuIcon({ name: 'UnknownGroup', icon: 'Unknown' }),
-    ).toThrow('Unsupported sidebar icon for UnknownGroup: Unknown')
+    expect(() => resolveSidebarMenuIcon({ name: 'UnknownGroup', icon: 'Unknown' })).toThrow(
+      'Unsupported sidebar icon for UnknownGroup: Unknown',
+    )
   })
 })

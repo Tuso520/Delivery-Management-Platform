@@ -1,3 +1,6 @@
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+
 interface ApiEnvelope<T> {
   code: number;
   message: string;
@@ -16,7 +19,13 @@ interface SessionData {
 }
 
 interface ProjectListData {
-  items: Array<{ id: string; projectCode: string }>;
+  items: Array<{
+    id: string;
+    projectCode: string;
+    projectName: string;
+    status: string;
+    revision: number;
+  }>;
   page: number;
   pageSize: number;
   total: number;
@@ -125,6 +134,24 @@ interface ArchiveTemplateVersionData {
   status: string;
   versionNo: string;
   publishedBy?: string | null;
+}
+
+interface ProjectArchiveTreeData {
+  folders: Array<{
+    id: string;
+    totalCount: number;
+    uploadTarget: { id: string; canUpload: boolean } | null;
+    files: Array<{
+      id: string;
+      currentVersion?: { originalName?: string; displayName?: string } | null;
+    }>;
+  }>;
+}
+
+interface UploadedArchiveFileData {
+  id: string;
+  displayName: string;
+  currentVersion?: { id: string; originalName?: string; displayName?: string } | null;
 }
 
 const AUTHENTICATED_E2E_TIMEOUT_MS = 90_000;
@@ -1062,6 +1089,219 @@ describe('running Delivery Platform API', () => {
           }),
         ]),
       );
+    },
+    AUTHENTICATED_E2E_TIMEOUT_MS,
+  );
+
+  it(
+    'lets the system administrator read every project archive and performs real single and multi-file uploads safely',
+    async () => {
+      if (!username || !password || !limitedUsername || !limitedPassword) {
+        throw new Error('Admin and limited E2E credentials are required for archive upload E2E');
+      }
+
+      const admin = await login(username, password);
+      const limited = await login(limitedUsername, limitedPassword);
+      expect(admin.user.roles).toContain('SUPER_ADMIN');
+      expect(limited.user.roles).not.toContain('SUPER_ADMIN');
+
+      const adminProjects = (
+        await expectAuthenticatedGet('/projects?page=1&pageSize=100&scope=all', admin.accessToken)
+      ).data as ProjectListData;
+      const limitedProjects = (
+        await expectAuthenticatedGet('/projects?page=1&pageSize=100&scope=all', limited.accessToken)
+      ).data as ProjectListData;
+      expect(adminProjects.total).toBeGreaterThan(limitedProjects.total);
+      const limitedIds = new Set(limitedProjects.items.map((project) => project.id));
+      const adminOnlyCandidates = adminProjects.items.filter(
+        (project) => !limitedIds.has(project.id),
+      );
+      expect(adminOnlyCandidates.length).toBeGreaterThan(0);
+
+      let selectedProject: ProjectListData['items'][number] | undefined;
+      let treeBefore: ProjectArchiveTreeData | undefined;
+      let targetFolder: ProjectArchiveTreeData['folders'][number] | undefined;
+      for (const candidate of adminOnlyCandidates) {
+        const candidateTree = (
+          await expectAuthenticatedGet(`/projects/${candidate.id}/archive-tree`, admin.accessToken)
+        ).data as ProjectArchiveTreeData;
+        const uploadableFolder = candidateTree.folders.find(
+          (folder) => folder.uploadTarget?.canUpload,
+        );
+        if (uploadableFolder) {
+          selectedProject = candidate;
+          treeBefore = candidateTree;
+          targetFolder = uploadableFolder;
+          break;
+        }
+      }
+      if (!selectedProject || !treeBefore || !targetFolder?.uploadTarget) {
+        throw new Error('No administrator-only project has an uploadable archive folder');
+      }
+      const selectedProjectId = selectedProject.id;
+      const archiveItemId = targetFolder.uploadTarget.id;
+
+      const forbiddenTree = await expectAuthenticatedGet(
+        `/projects/${selectedProjectId}/archive-tree`,
+        limited.accessToken,
+        403,
+      );
+      expect(forbiddenTree.code).not.toBe(0);
+
+      const fixtureDirectory = resolve(process.cwd(), '..', '.ai-work', 'real-api-upload');
+      const marker = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const fixtureNames = [
+        `single-${marker}.pdf`,
+        `multi-a-${marker}.pdf`,
+        `multi-b-${marker}.pdf`,
+      ];
+      const fixtureBodies = fixtureNames.map((name, index) =>
+        Buffer.from(
+          `%PDF-1.4\n% ${name}\n${index + 1} 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<<>>\n%%EOF\n`,
+        ),
+      );
+      const fixturePaths = fixtureNames.map((name) => resolve(fixtureDirectory, name));
+      const invalidName = `invalid-${marker}.pdf`;
+      const invalidPath = resolve(fixtureDirectory, invalidName);
+      const uploadedIds: string[] = [];
+
+      const upload = async (
+        filePath: string,
+        fileName: string,
+        idempotencyKey: string,
+        expectedStatus = 201,
+      ): Promise<{ response: Response; body: ApiEnvelope<UploadedArchiveFileData> }> => {
+        const fileBody = await readFile(filePath);
+        const form = new FormData();
+        form.append(
+          'file',
+          new Blob([new Uint8Array(fileBody)], { type: 'application/pdf' }),
+          fileName,
+        );
+        form.append('uploadMode', 'REPLACE');
+        form.append('revisionLevel', 'MINOR');
+        form.append('createNewLogicalFile', 'true');
+        form.append('changeDescription', 'real archive upload acceptance');
+        const response = await fetch(
+          `${baseUrl}/projects/${selectedProjectId}/archive-items/${archiveItemId}/files`,
+          {
+            method: 'POST',
+            headers: {
+              authorization: `Bearer ${admin.accessToken}`,
+              'idempotency-key': idempotencyKey,
+            },
+            body: form,
+          },
+        );
+        const body = (await response.json()) as ApiEnvelope<UploadedArchiveFileData>;
+        expect(response.status).toBe(expectedStatus);
+        expect(body.traceId).toEqual(expect.any(String));
+        return { response, body };
+      };
+
+      await mkdir(fixtureDirectory, { recursive: true });
+      await Promise.all(fixturePaths.map((path, index) => writeFile(path, fixtureBodies[index])));
+      await writeFile(invalidPath, 'not a PDF file');
+      try {
+        const singleKey = `archive-single-${marker}`;
+        const single = await upload(fixturePaths[0], fixtureNames[0], singleKey);
+        uploadedIds.push(single.body.data.id);
+
+        const repeated = await upload(fixturePaths[0], fixtureNames[0], singleKey);
+        expect(repeated.body.data.id).toBe(single.body.data.id);
+
+        const multiple = await Promise.all(
+          [1, 2].map((index) =>
+            upload(fixturePaths[index], fixtureNames[index], `archive-multi-${index}-${marker}`),
+          ),
+        );
+        uploadedIds.push(...multiple.map(({ body }) => body.data.id));
+        expect(new Set(uploadedIds).size).toBe(3);
+
+        const failed = await upload(invalidPath, invalidName, `archive-invalid-${marker}`, 400);
+        expect(failed.body.code).not.toBe(0);
+        expect(failed.body.message).toContain('文件内容与扩展名不匹配');
+
+        const treeAfter = (
+          await expectAuthenticatedGet(
+            `/projects/${selectedProjectId}/archive-tree`,
+            admin.accessToken,
+          )
+        ).data as ProjectArchiveTreeData;
+        const verifiedFolder = treeAfter.folders.find((folder) => folder.id === targetFolder.id);
+        const uploadedNames = new Set(
+          verifiedFolder?.files.map(
+            (file) => file.currentVersion?.originalName ?? file.currentVersion?.displayName,
+          ) ?? [],
+        );
+        for (const fixtureName of fixtureNames) expect(uploadedNames).toContain(fixtureName);
+        expect(uploadedNames).not.toContain(invalidName);
+        expect(verifiedFolder?.totalCount).toBe(targetFolder.totalCount + 3);
+
+        for (const [index, logicalFileId] of uploadedIds.entries()) {
+          const download = await fetch(`${baseUrl}/files/${logicalFileId}/download`, {
+            headers: { authorization: `Bearer ${admin.accessToken}` },
+          });
+          expect(download.status).toBe(200);
+          expect(Buffer.from(await download.arrayBuffer())).toEqual(fixtureBodies[index]);
+        }
+      } finally {
+        for (const logicalFileId of uploadedIds) {
+          await expectAuthenticatedRequest(`/files/${logicalFileId}/archive`, admin.accessToken, {
+            method: 'POST',
+          });
+        }
+        await rm(fixtureDirectory, { recursive: true, force: true });
+      }
+    },
+    AUTHENTICATED_E2E_TIMEOUT_MS,
+  );
+
+  it(
+    'allows only the system administrator to delete an unreferenced archive template',
+    async () => {
+      if (!username || !password || !limitedUsername || !limitedPassword) {
+        throw new Error('Admin and limited E2E credentials are required for template deletion E2E');
+      }
+      const admin = await login(username, password);
+      const limited = await login(limitedUsername, limitedPassword);
+      const marker = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const created = (
+        await expectAuthenticatedRequest<{ id: string }>(
+          '/archive-templates',
+          admin.accessToken,
+          {
+            method: 'POST',
+            headers: { 'idempotency-key': `unused-template-${marker}` },
+            body: JSON.stringify({
+              templateCode: `E2E-${marker}`.slice(0, 50),
+              templateName: `待删除档案模板 ${marker}`.slice(0, 100),
+            }),
+          },
+          201,
+        )
+      ).data;
+
+      const forbidden = await expectAuthenticatedRequest(
+        `/archive-templates/${created.id}`,
+        limited.accessToken,
+        { method: 'DELETE' },
+        403,
+      );
+      expect(forbidden.code).not.toBe(0);
+
+      const removed = await expectAuthenticatedRequest<null>(
+        `/archive-templates/${created.id}`,
+        admin.accessToken,
+        { method: 'DELETE' },
+      );
+      expect(removed.data).toBeNull();
+      const missing = await expectAuthenticatedGet(
+        `/archive-templates/${created.id}`,
+        admin.accessToken,
+        404,
+      );
+      expect(missing.code).not.toBe(0);
     },
     AUTHENTICATED_E2E_TIMEOUT_MS,
   );

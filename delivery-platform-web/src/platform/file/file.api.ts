@@ -200,11 +200,7 @@ function normalizeUnifiedPreviewSession(session: UnifiedFilePreviewSession): Fil
 }
 
 export const fileApi = {
-  uploadDraftFile<T>(
-    ownerType: 'STANDARD' | 'KNOWLEDGE',
-    file: File,
-    changeDescription?: string,
-  ) {
+  uploadDraftFile<T>(ownerType: 'STANDARD' | 'KNOWLEDGE', file: File, changeDescription?: string) {
     const data = new FormData()
     data.append('file', file)
     data.append('ownerType', ownerType)
@@ -218,7 +214,6 @@ export const fileApi = {
     return runIdempotentUpload(file, operation, (idempotencyKey) =>
       request.post<T>('/files/drafts', data, {
         headers: {
-          'Content-Type': 'multipart/form-data',
           'Idempotency-Key': idempotencyKey,
         },
         timeout: 120000,

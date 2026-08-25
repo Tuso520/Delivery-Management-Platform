@@ -36,7 +36,6 @@ import { ReviewModule } from './modules/review/review.module';
 import { RoleModule } from './modules/role/role.module';
 import { StandardModule } from './modules/standard/standard.module';
 import { SystemConfigModule } from './modules/system-config/system-config.module';
-import { ToolModule } from './modules/tool/tool.module';
 import { UserModule } from './modules/user/user.module';
 
 @Module({
@@ -78,7 +77,6 @@ import { UserModule } from './modules/user/user.module';
     SystemConfigModule,
     FieldConfigurationModule,
     KnowledgeModule,
-    ToolModule,
     PlatformModule,
   ],
   controllers: [AppController],

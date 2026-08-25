@@ -81,7 +81,7 @@ describe('archive template route state', () => {
     expect(page).toContain(':width="95"')
     expect(page).toContain(':min-width="160"')
     expect(page).toContain(':width="149"')
-    expect(page).toContain(':width="182"')
+    expect(page).toContain(':width="238"')
     expect(page).not.toContain(':title="t(\'common.status\')"')
     expect(page).not.toContain('fetchRecords')
     expect(page).not.toContain('a-pagination')

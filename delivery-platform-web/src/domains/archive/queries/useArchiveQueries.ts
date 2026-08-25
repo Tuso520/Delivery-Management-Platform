@@ -10,15 +10,23 @@ import { languageApi } from '@/api/language'
 import { projectApi } from '@/domains/project/api/project.api'
 import { queryKeys } from '@/query/keys'
 
-export function useArchiveProjectOptionsQuery(keyword: MaybeRefOrGetter<string> = '') {
+export function useArchiveProjectOptionsQuery(
+  keyword: MaybeRefOrGetter<string> = '',
+  includeAllProjects: MaybeRefOrGetter<boolean> = false,
+) {
   return useQuery({
-    queryKey: computed(() => [...queryKeys.archive.projectOptions(), toValue(keyword).trim()]),
+    queryKey: computed(() => [
+      ...queryKeys.archive.projectOptions(),
+      toValue(keyword).trim(),
+      toValue(includeAllProjects) ? 'all' : 'mine',
+    ]),
     queryFn: () =>
       projectApi.getList({
         page: 1,
         pageSize: 100,
         keyword: toValue(keyword).trim() || undefined,
         sort: 'updatedAt:desc',
+        scope: toValue(includeAllProjects) ? 'all' : 'mine',
       }),
   })
 }

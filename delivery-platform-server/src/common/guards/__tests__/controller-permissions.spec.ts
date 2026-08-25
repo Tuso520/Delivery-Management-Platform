@@ -17,7 +17,6 @@ import {
   SystemConfigController,
   SystemSettingsController,
 } from '../../../modules/system-config/system-config.controller';
-import { ToolController } from '../../../modules/tool/tool.controller';
 import { AUTHENTICATED_ONLY_KEY } from '../../decorators/authenticated-only.decorator';
 import {
   PERMISSIONS_KEY,
@@ -144,12 +143,11 @@ function usesPermissionsGuard(controller: object): boolean {
 }
 
 describe('controller backend permission boundaries', () => {
-  it('protects dashboard, knowledge and tools read endpoints', () => {
+  it('protects dashboard and knowledge read endpoints', () => {
     expect(permissions(DashboardController.prototype, 'getProjectSummary')).toEqual([
       'dashboard:view',
     ]);
     expect(permissions(KnowledgeItemController.prototype, 'findAll')).toEqual(['knowledge:view']);
-    expect(permissions(ToolController.prototype, 'findAllTools')).toEqual(['tools:view']);
   });
 
   it('uses the dedicated project archive permission and explicit auth-only field options', () => {
@@ -180,16 +178,15 @@ describe('controller backend permission boundaries', () => {
     expect(permissions(ArchiveTemplateVersionController.prototype, 'publishVersion')).toEqual([
       'archive_template:submit_review',
     ]);
-    expect(permissions(ArchiveTemplateVersionController.prototype, 'publishVersionLegacy')).toEqual([
-      'archive_template:submit_review',
-    ]);
+    expect(permissions(ArchiveTemplateVersionController.prototype, 'publishVersionLegacy')).toEqual(
+      ['archive_template:submit_review'],
+    );
     expect(permissions(FileController.prototype, 'findOne')).toEqual(
       expect.arrayContaining(['file_review:view', 'file_review:view_all', 'file_review:manage']),
     );
   });
 
   it('activates PermissionsGuard wherever permission metadata is used', () => {
-    expect(usesPermissionsGuard(ToolController)).toBe(true);
     expect(usesPermissionsGuard(ReviewTaskController)).toBe(true);
     expect(usesPermissionsGuard(DashboardController)).toBe(true);
     expect(usesPermissionsGuard(SystemConfigController)).toBe(true);

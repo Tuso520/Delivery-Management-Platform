@@ -12,8 +12,16 @@ import type { FieldCategory, FieldValue, SaveFieldValueDto } from '@/types/field
 
 const PAGE_SIZE = 10
 const FIGMA_CATEGORY_CODES = new Set([
-  'COUNTRY', 'CUSTOMER_TYPE', 'CONTRACT_TYPE', 'PRODUCT_TYPE', 'PROJECT_KEYWORD',
-  'CURRENCY', 'PROJECT_STAGE', 'PROJECT_STATUS', 'JOB_POSITION', 'PROJECT_TYPE',
+  'COUNTRY',
+  'CUSTOMER_TYPE',
+  'CONTRACT_TYPE',
+  'PRODUCT_TYPE',
+  'PROJECT_KEYWORD',
+  'CURRENCY',
+  'PROJECT_STAGE',
+  'PROJECT_STATUS',
+  'JOB_POSITION',
+  'PROJECT_TYPE',
 ])
 const categories = ref<FieldCategory[]>([])
 const selectedCategoryId = ref('')
@@ -51,8 +59,8 @@ const formActive = computed({
   },
 })
 const columns: TableColumnData[] = [
-  { title: '名称', dataIndex: 'name', slotName: 'name', minWidth: 260 },
-  { title: '编码', dataIndex: 'code', slotName: 'code', width: 180 },
+  { title: '名称', dataIndex: 'name', slotName: 'name', width: 220 },
+  { title: '编码', dataIndex: 'code', slotName: 'code', minWidth: 260 },
   { title: '排序', dataIndex: 'sortOrder', width: 120 },
   { title: '状态', dataIndex: 'status', slotName: 'status', width: 140 },
   { title: '操作', slotName: 'actions', width: 160 },
@@ -61,8 +69,9 @@ const columns: TableColumnData[] = [
 async function loadCategories(): Promise<void> {
   loadingCategories.value = true
   try {
-    categories.value = (await fieldConfigurationApi.getCategories())
-      .filter((item) => FIGMA_CATEGORY_CODES.has(item.categoryCode))
+    categories.value = (await fieldConfigurationApi.getCategories()).filter((item) =>
+      FIGMA_CATEGORY_CODES.has(item.categoryCode),
+    )
     if (!categories.value.some((item) => item.id === selectedCategoryId.value)) {
       selectedCategoryId.value = categories.value[0]?.id ?? ''
     }
@@ -221,9 +230,7 @@ onMounted(async () => {
 
 <template>
   <section class="field-config-page" aria-labelledby="field-config-title">
-    <h1 id="field-config-title" class="sr-only">
-      字段配置
-    </h1>
+    <h1 id="field-config-title" class="sr-only">字段配置</h1>
 
     <a-spin :loading="loadingCategories" class="category-tabs-spin">
       <a-radio-group
@@ -295,12 +302,7 @@ onMounted(async () => {
     </BusinessTable>
 
     <footer class="field-footer">
-      <a-button
-        v-if="canCreateOption"
-        type="primary"
-        size="small"
-        @click="openCreate"
-      >
+      <a-button v-if="canCreateOption" type="primary" size="small" @click="openCreate">
         新增一行
       </a-button>
       <div class="pagination-group">
@@ -376,7 +378,9 @@ onMounted(async () => {
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
 }
-.category-tabs-spin { flex: 0 0 auto; }
+.category-tabs-spin {
+  flex: 0 0 auto;
+}
 .category-tabs {
   height: 44px;
   display: flex;
@@ -398,7 +402,9 @@ onMounted(async () => {
   font-size: 14px;
   cursor: pointer;
 }
-.category-tabs :deep(.arco-radio-button:hover) { color: #165dff; }
+.category-tabs :deep(.arco-radio-button:hover) {
+  color: #165dff;
+}
 .category-tabs :deep(.arco-radio-button.arco-radio-checked) {
   border-bottom-color: #165dff;
   color: #165dff;
@@ -410,7 +416,9 @@ onMounted(async () => {
   margin-top: 12px;
   border: 1px solid #e5e6eb;
 }
-.field-value-table :deep(.business-table__viewport) { max-height: none; }
+.field-value-table :deep(.business-table__viewport) {
+  max-height: none;
+}
 .field-value-table :deep(.arco-table-th),
 .field-value-table :deep(.arco-table-td) {
   height: 44px;
@@ -452,13 +460,28 @@ onMounted(async () => {
   color: #4e5969;
   font-size: 12px;
 }
-.field-value-form :deep(.arco-form-item) { margin-bottom: 20px; }
+.field-value-form :deep(.arco-form-item) {
+  margin-bottom: 20px;
+}
 .field-value-form :deep(.arco-input-wrapper),
-.field-value-form :deep(.arco-input-number) { border-radius: 2px; }
+.field-value-form :deep(.arco-input-number) {
+  border-radius: 2px;
+}
 @media (max-width: 760px) {
-  .field-config-page { padding: 8px; }
-  .category-tabs { padding: 0 8px; }
-  .field-footer { align-items: flex-start; flex-direction: column; }
-  .pagination-group { width: 100%; justify-content: flex-end; overflow-x: auto; }
+  .field-config-page {
+    padding: 8px;
+  }
+  .category-tabs {
+    padding: 0 8px;
+  }
+  .field-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .pagination-group {
+    width: 100%;
+    justify-content: flex-end;
+    overflow-x: auto;
+  }
 }
 </style>

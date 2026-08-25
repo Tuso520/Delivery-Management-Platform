@@ -160,7 +160,10 @@ export class ProjectService {
     const pageSize = requestedPageSize ?? (await this.systemConfig.getDefaultProjectPageSize());
 
     const allowedScope: Prisma.ProjectWhereInput = userId
-      ? await this.projectAccess.buildProjectWhere(userId)
+      ? await this.projectAccess.buildProjectWhere(
+          userId,
+          typeof actor === 'string' ? [] : actor?.roles,
+        )
       : { deletedAt: null };
     const scope = this.buildRequestedScope(allowedScope, requestedScope, userId);
     const filters = this.buildProjectFilters(query);

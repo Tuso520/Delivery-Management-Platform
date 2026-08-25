@@ -154,9 +154,10 @@ async function seedProjects(
     const rate = exchangeRates[currency] ?? 1;
     const baseCurrency = fields.currencies.includes('CNY') ? 'CNY' : fields.currencies[0];
     if (!baseCurrency) throw new Error('base currency field configuration is required');
-    const amount = currency === 'VND'
-      ? 8_000_000_000 + Math.floor(random() * 90_000_000_000)
-      : 100_000 + Math.floor(random() * 5_000_000);
+    const amount =
+      currency === 'VND'
+        ? 8_000_000_000 + Math.floor(random() * 90_000_000_000)
+        : 100_000 + Math.floor(random() * 5_000_000);
     return {
       projectCode: `TEST-${suffix(index)}`.slice(0, 30),
       projectName: `随机测试项目 ${suffix(index)}`,
@@ -265,7 +266,7 @@ async function seedContentLibraries(minimum: number, adminId: string): Promise<v
   });
 }
 
-async function seedChecklistAndTools(minimum: number, fields: TestFieldValues): Promise<void> {
+async function seedChecklistTemplates(minimum: number, fields: TestFieldValues): Promise<void> {
   const checklistMissing = topUpCount(await prisma.checklistTemplate.count(), minimum);
   for (let index = 0; index < checklistMissing; index += 1) {
     await prisma.checklistTemplate.create({
@@ -286,24 +287,6 @@ async function seedChecklistAndTools(minimum: number, fields: TestFieldValues): 
       },
     });
   }
-
-  let toolCategory = await prisma.toolCategory.findFirst({ select: { id: true } });
-  toolCategory ??= await prisma.toolCategory.create({
-    data: { name: '测试工具分类', description: '测试服务器自动生成' },
-    select: { id: true },
-  });
-  const toolMissing = topUpCount(await prisma.toolItem.count(), minimum);
-  await prisma.toolItem.createMany({
-    data: Array.from({ length: toolMissing }, (_, index) => ({
-      categoryId: toolCategory.id,
-      name: `随机测试工具 ${suffix(index)}`,
-      description: `测试工具说明 ${index + 1}`,
-      toolType: pick(['internal', 'external']),
-      url: `https://example.invalid/tools/${suffix(index)}`,
-      configuration: { testData: true, seed },
-      sortOrder: index,
-    })),
-  });
 }
 
 async function seedAdministration(minimum: number, adminId: string): Promise<void> {
@@ -459,9 +442,13 @@ async function seedPeopleOperations(
     take: minimum,
     select: { id: true },
   });
-  if (projects.length === 0 || users.length === 0) throw new Error('projects and users are required');
+  if (projects.length === 0 || users.length === 0)
+    throw new Error('projects and users are required');
 
-  const reportMissing = topUpCount(await prisma.dailyReport.count({ where: { deletedAt: null } }), minimum);
+  const reportMissing = topUpCount(
+    await prisma.dailyReport.count({ where: { deletedAt: null } }),
+    minimum,
+  );
   await prisma.dailyReport.createMany({
     data: Array.from({ length: reportMissing }, (_, index) => ({
       projectId: pick(projects).id,
@@ -566,7 +553,10 @@ async function seedApprovals(
       data: {
         templateId: template.id,
         businessType: template.businessType,
-        businessId: createHash('md5').update(`approval-${suffix(index)}`).digest('hex').slice(0, 32),
+        businessId: createHash('md5')
+          .update(`approval-${suffix(index)}`)
+          .digest('hex')
+          .slice(0, 32),
         businessTitle: `随机审批事项 ${index + 1}`,
         applicantId: pick(users).id,
         approverId: adminId,
@@ -718,7 +708,7 @@ async function main(): Promise<void> {
   await seedProjects(minimum, admin.id, fields);
   await seedProjectDetails(minimum, admin.id, fields);
   await seedContentLibraries(minimum, admin.id);
-  await seedChecklistAndTools(minimum, fields);
+  await seedChecklistTemplates(minimum, fields);
   await seedAdministration(minimum, admin.id);
   await seedIntegrationsAndRates(minimum, admin.id);
   await seedPeopleOperations(minimum, admin.id, fields);

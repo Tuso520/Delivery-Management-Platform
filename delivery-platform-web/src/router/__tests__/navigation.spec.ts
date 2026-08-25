@@ -31,7 +31,7 @@ describe('application navigation', () => {
     expect(menuItems.map((group) => group.children?.map((item) => item.title))).toEqual([
       ['menu.dashboard', 'menu.review'],
       ['routes.projectOverview', 'menu.archive', 'menu.archiveTemplate'],
-      ['menu.standard', 'menu.knowledge', 'menu.tools'],
+      ['menu.standard', 'menu.knowledge'],
     ])
   })
 
@@ -103,7 +103,9 @@ describe('application navigation', () => {
     expect(router.resolve('/projects/create').meta.activeMenu).toBe('/projects')
     expect(router.resolve('/projects/project-1/edit').meta.activeMenu).toBe('/projects')
     expect(router.resolve('/projects/project-1').meta.activeMenu).toBe('/projects')
-    expect(router.resolve('/archive-templates/template-1').meta.activeMenu).toBe('/archive-template')
+    expect(router.resolve('/archive-templates/template-1').meta.activeMenu).toBe(
+      '/archive-template',
+    )
     expect(router.resolve('/standards/standard-1').meta.activeMenu).toBe('/standards')
   })
 

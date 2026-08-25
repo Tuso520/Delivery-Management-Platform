@@ -31,7 +31,6 @@ const targetVueSources = [
   'src/domains/archive/pages/ArchiveTemplatePage.vue',
   'src/views/standard/index.vue',
   'src/domains/knowledge/pages/KnowledgePage.vue',
-  'src/views/tools/index.vue',
   'src/views/currency/index.vue',
   'src/views/system/notification.vue',
   'src/views/system/approvals.vue',
@@ -87,7 +86,6 @@ function referencedLocaleKeys(source: string): string[] {
     'approvals',
     'integrations',
     'currency',
-    'tools',
     'projects',
     'notFound',
     'login',
@@ -102,14 +100,9 @@ function referencedLocaleKeys(source: string): string[] {
   ].join('|')
   const patterns = [
     new RegExp(`\\bt\\(\\s*['"]((?:${prefixes})\\.[^'"]+)['"]`, 'gu'),
-    new RegExp(
-      `\\b(?:title|label|labelKey):\\s*['"]((?:${prefixes})\\.[^'"]+)['"]`,
-      'gu',
-    ),
+    new RegExp(`\\b(?:title|label|labelKey):\\s*['"]((?:${prefixes})\\.[^'"]+)['"]`, 'gu'),
   ]
-  return patterns.flatMap((pattern) =>
-    Array.from(source.matchAll(pattern), (match) => match[1]),
-  )
+  return patterns.flatMap((pattern) => Array.from(source.matchAll(pattern), (match) => match[1]))
 }
 
 describe('fixed UI text internationalization contract', () => {

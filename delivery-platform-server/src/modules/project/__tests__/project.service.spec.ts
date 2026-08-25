@@ -238,7 +238,7 @@ describe('ProjectService', () => {
 
     const result = await service.findAll({ page: 1, pageSize: 20 }, publicActor);
 
-    expect(projectAccess.buildProjectWhere).toHaveBeenCalledWith('user-1');
+    expect(projectAccess.buildProjectWhere).toHaveBeenCalledWith('user-1', ['PROJECT_MANAGER']);
     expect(result).toEqual(expect.objectContaining({ page: 1, pageSize: 20, total: 1 }));
     expect(result).not.toHaveProperty('list');
     expect(result).not.toHaveProperty('pagination');
@@ -332,10 +332,7 @@ describe('ProjectService', () => {
     prisma.project.count.mockResolvedValue(0);
     prisma.project.findMany.mockResolvedValue([]);
 
-    await service.findAll(
-      { scope: 'archived', sort: 'projectManager:asc' },
-      publicActor,
-    );
+    await service.findAll({ scope: 'archived', sort: 'projectManager:asc' }, publicActor);
 
     expect(prisma.project.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1157,11 +1154,7 @@ describe('ProjectService', () => {
       .mockResolvedValueOnce(updatedProject);
     prisma.project.findUniqueOrThrow.mockResolvedValue(updatedProject);
 
-    await service.update(
-      'project-1',
-      { revision: 1, projectManagerId: null },
-      sensitiveActor,
-    );
+    await service.update('project-1', { revision: 1, projectManagerId: null }, sensitiveActor);
 
     expect(prisma.project.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1294,10 +1287,7 @@ describe('ProjectService', () => {
   });
 
   it('returns project summary counts inside the same data scope', async () => {
-    prisma.project.count
-      .mockResolvedValueOnce(8)
-      .mockResolvedValueOnce(4)
-      .mockResolvedValueOnce(2);
+    prisma.project.count.mockResolvedValueOnce(8).mockResolvedValueOnce(4).mockResolvedValueOnce(2);
 
     await expect(service.getSummary(publicActor, { scope: 'all' })).resolves.toEqual({
       total: 8,
@@ -1318,10 +1308,7 @@ describe('ProjectService', () => {
   });
 
   it('returns scoped CNY summary amounts only with financial permission', async () => {
-    prisma.project.count
-      .mockResolvedValueOnce(8)
-      .mockResolvedValueOnce(4)
-      .mockResolvedValueOnce(2);
+    prisma.project.count.mockResolvedValueOnce(8).mockResolvedValueOnce(4).mockResolvedValueOnce(2);
     prisma.project.aggregate
       .mockResolvedValueOnce({
         _sum: { convertedAmount: new Prisma.Decimal('28565000') },

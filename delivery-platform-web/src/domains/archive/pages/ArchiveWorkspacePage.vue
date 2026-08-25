@@ -34,6 +34,7 @@ import { useFilePreview } from '@/platform/file-preview/useFilePreview'
 import { fileApi } from '@/platform/file/file.api'
 import { Can } from '@/platform/permission'
 import { queryKeys } from '@/query/keys'
+import { useUserStore } from '@/store/user'
 import { arcoConfirm } from '@/utils/arco-dialog'
 import { downloadBlob } from '@/utils/blob'
 
@@ -43,7 +44,9 @@ const { t } = useI18n()
 const filePreview = useFilePreview()
 const { hasPermission } = usePermission()
 const queryClient = useQueryClient()
+const userStore = useUserStore()
 const fieldConfig = useFieldConfig('project-archive')
+const isSuperAdmin = computed(() => userStore.userInfo?.roles.includes('SUPER_ADMIN') ?? false)
 
 const selectedProjectId = ref(normalizeProjectId(route.query.projectId))
 const projectKeyword = ref('')
@@ -58,7 +61,7 @@ const uploadFiles = computed(() =>
 const uploadProgress = ref(0)
 const uploadForm = reactive({ changeDescription: '' })
 
-const archiveProjectsQuery = useArchiveProjectOptionsQuery(projectKeyword)
+const archiveProjectsQuery = useArchiveProjectOptionsQuery(projectKeyword, isSuperAdmin)
 const archiveTreeQuery = useArchiveTreeQuery(selectedProjectId)
 const projects = computed(() => archiveProjectsQuery.data.value?.items ?? [])
 const tree = computed(() => archiveTreeQuery.data.value ?? null)
@@ -349,6 +352,7 @@ function changeUploadTarget(value: unknown): void {
 }
 
 async function submitUpload(): Promise<boolean> {
+  if (uploading.value) return false
   if (!uploadItem.value || !selectedProjectId.value || uploadFiles.value.length === 0) {
     Message.warning(t('archive.validation.uploadFileRequired'))
     return false
@@ -378,9 +382,11 @@ async function submitUpload(): Promise<boolean> {
     )
     uploadVisible.value = false
     return true
-  } catch {
+  } catch (error) {
     await invalidateArchiveTree()
-    Message.error(t('archive.messages.uploadFailed'))
+    Message.error(
+      error instanceof Error && error.message ? error.message : t('archive.messages.uploadFailed'),
+    )
     return false
   }
 }
@@ -421,12 +427,7 @@ watch(
 <template>
   <PageContainer class="archive-page" gap="normal" :scrollable="false">
     <section class="archive-metrics" :aria-label="t('archive.metricsAria')">
-      <a-card
-        v-for="metric in metrics"
-        :key="metric.key"
-        class="archive-metric"
-        :bordered="false"
-      >
+      <a-card v-for="metric in metrics" :key="metric.key" class="archive-metric" :bordered="false">
         <span class="archive-metric__icon" aria-hidden="true">
           <img :src="metric.icon" alt="" />
         </span>

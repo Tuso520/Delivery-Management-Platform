@@ -1,7 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 
 import { seedSystemOperations } from './system-operations';
-import { seedTemplatesAndTools } from './templates-tools';
 
 interface DictionarySeed {
   code: string;
@@ -17,34 +16,118 @@ interface FieldConfigurationSeed {
 }
 
 const fieldConfigurationCodes = new Set([
-  'COUNTRY', 'CUSTOMER_TYPE', 'CONTRACT_TYPE', 'PRODUCT_TYPE', 'PROJECT_KEYWORD',
-  'CURRENCY', 'PROJECT_STAGE', 'PROJECT_STATUS',
-  'KNOWLEDGE_CATEGORY', 'JOB_POSITION', 'PROJECT_TYPE', 'FILE_TYPE',
-  'STANDARD_TYPE', 'STANDARD_DELIVERY_STAGE', 'STANDARD_MANAGEMENT_DOMAIN',
-  'STANDARD_BUSINESS_TYPE', 'STANDARD_STATUS', 'STANDARD_ENABLED_STATUS',
-  'STANDARD_CURRENT_VERSION', 'STANDARD_EFFECTIVE_DATE',
+  'COUNTRY',
+  'CUSTOMER_TYPE',
+  'CONTRACT_TYPE',
+  'PRODUCT_TYPE',
+  'PROJECT_KEYWORD',
+  'CURRENCY',
+  'PROJECT_STAGE',
+  'PROJECT_STATUS',
+  'KNOWLEDGE_CATEGORY',
+  'JOB_POSITION',
+  'PROJECT_TYPE',
+  'FILE_TYPE',
+  'STANDARD_TYPE',
+  'STANDARD_DELIVERY_STAGE',
+  'STANDARD_MANAGEMENT_DOMAIN',
+  'STANDARD_BUSINESS_TYPE',
+  'STANDARD_STATUS',
+  'STANDARD_ENABLED_STATUS',
+  'STANDARD_CURRENT_VERSION',
+  'STANDARD_EFFECTIVE_DATE',
 ]);
 
 const fieldConfigurationMeta: Readonly<Record<string, FieldConfigurationSeed>> = {
-  COUNTRY: { fieldType: 'SINGLE_SELECT', required: true, defaultValue: 'CN', visibleScopes: ['project', 'archive-template', 'approval', 'standard'] },
-  CUSTOMER_TYPE: { fieldType: 'SINGLE_SELECT', required: true, visibleScopes: ['project', 'archive-template', 'checklist-template', 'document-template'] },
+  COUNTRY: {
+    fieldType: 'SINGLE_SELECT',
+    required: true,
+    defaultValue: 'CN',
+    visibleScopes: ['project', 'archive-template', 'approval', 'standard'],
+  },
+  CUSTOMER_TYPE: {
+    fieldType: 'SINGLE_SELECT',
+    required: true,
+    visibleScopes: ['project', 'archive-template', 'checklist-template', 'document-template'],
+  },
   CONTRACT_TYPE: { fieldType: 'SINGLE_SELECT', required: true, visibleScopes: ['project'] },
   PRODUCT_TYPE: { fieldType: 'SINGLE_SELECT', required: false, visibleScopes: ['project'] },
   PROJECT_KEYWORD: { fieldType: 'MULTI_SELECT', required: false, visibleScopes: ['project'] },
-  CURRENCY: { fieldType: 'SINGLE_SELECT', required: false, defaultValue: 'CNY', visibleScopes: ['project', 'currency', 'payment'] },
-  PROJECT_STAGE: { fieldType: 'SINGLE_SELECT', required: false, defaultValue: 'STARTUP', visibleScopes: ['project', 'dashboard', 'checklist-template', 'document-template'] },
-  PROJECT_STATUS: { fieldType: 'SINGLE_SELECT', required: false, defaultValue: 'ACTIVE', visibleScopes: ['project', 'dashboard'] },
+  CURRENCY: {
+    fieldType: 'SINGLE_SELECT',
+    required: false,
+    defaultValue: 'CNY',
+    visibleScopes: ['project', 'currency', 'payment'],
+  },
+  PROJECT_STAGE: {
+    fieldType: 'SINGLE_SELECT',
+    required: false,
+    defaultValue: 'STARTUP',
+    visibleScopes: ['project', 'dashboard', 'checklist-template', 'document-template'],
+  },
+  PROJECT_STATUS: {
+    fieldType: 'SINGLE_SELECT',
+    required: false,
+    defaultValue: 'ACTIVE',
+    visibleScopes: ['project', 'dashboard'],
+  },
   KNOWLEDGE_CATEGORY: { fieldType: 'SINGLE_SELECT', required: true, visibleScopes: ['knowledge'] },
-  JOB_POSITION: { fieldType: 'SINGLE_SELECT', required: false, visibleScopes: ['identity', 'project'] },
-  PROJECT_TYPE: { fieldType: 'SINGLE_SELECT', required: false, visibleScopes: ['project', 'archive-template'] },
-  FILE_TYPE: { fieldType: 'MULTI_SELECT', required: true, visibleScopes: ['project-archive', 'archive-template'] },
-  STANDARD_TYPE: { fieldType: 'SINGLE_SELECT', required: true, defaultValue: 'DOCUMENT_TEMPLATE', visibleScopes: ['standard'] },
-  STANDARD_DELIVERY_STAGE: { fieldType: 'SINGLE_SELECT', required: true, defaultValue: 'PROJECT_STARTUP', visibleScopes: ['standard'] },
-  STANDARD_MANAGEMENT_DOMAIN: { fieldType: 'SINGLE_SELECT', required: false, visibleScopes: ['standard'] },
-  STANDARD_BUSINESS_TYPE: { fieldType: 'SINGLE_SELECT', required: false, defaultValue: 'GENERAL', visibleScopes: ['standard'] },
-  STANDARD_STATUS: { fieldType: 'SINGLE_SELECT', required: true, defaultValue: 'DRAFT', visibleScopes: ['standard'] },
-  STANDARD_ENABLED_STATUS: { fieldType: 'SINGLE_SELECT', required: true, defaultValue: 'ENABLED', visibleScopes: ['standard'] },
-  STANDARD_CURRENT_VERSION: { fieldType: 'TEXT', required: false, defaultValue: 'V1.0', visibleScopes: ['standard'] },
+  JOB_POSITION: {
+    fieldType: 'SINGLE_SELECT',
+    required: false,
+    visibleScopes: ['identity', 'project'],
+  },
+  PROJECT_TYPE: {
+    fieldType: 'SINGLE_SELECT',
+    required: false,
+    visibleScopes: ['project', 'archive-template'],
+  },
+  FILE_TYPE: {
+    fieldType: 'MULTI_SELECT',
+    required: true,
+    visibleScopes: ['project-archive', 'archive-template'],
+  },
+  STANDARD_TYPE: {
+    fieldType: 'SINGLE_SELECT',
+    required: true,
+    defaultValue: 'DOCUMENT_TEMPLATE',
+    visibleScopes: ['standard'],
+  },
+  STANDARD_DELIVERY_STAGE: {
+    fieldType: 'SINGLE_SELECT',
+    required: true,
+    defaultValue: 'PROJECT_STARTUP',
+    visibleScopes: ['standard'],
+  },
+  STANDARD_MANAGEMENT_DOMAIN: {
+    fieldType: 'SINGLE_SELECT',
+    required: false,
+    visibleScopes: ['standard'],
+  },
+  STANDARD_BUSINESS_TYPE: {
+    fieldType: 'SINGLE_SELECT',
+    required: false,
+    defaultValue: 'GENERAL',
+    visibleScopes: ['standard'],
+  },
+  STANDARD_STATUS: {
+    fieldType: 'SINGLE_SELECT',
+    required: true,
+    defaultValue: 'DRAFT',
+    visibleScopes: ['standard'],
+  },
+  STANDARD_ENABLED_STATUS: {
+    fieldType: 'SINGLE_SELECT',
+    required: true,
+    defaultValue: 'ENABLED',
+    visibleScopes: ['standard'],
+  },
+  STANDARD_CURRENT_VERSION: {
+    fieldType: 'TEXT',
+    required: false,
+    defaultValue: 'V1.0',
+    visibleScopes: ['standard'],
+  },
   STANDARD_EFFECTIVE_DATE: { fieldType: 'DATE', required: false, visibleScopes: ['standard'] },
 };
 
@@ -78,14 +161,22 @@ const legacyTargetDictionaries: readonly DictionarySeed[] = [
     code: 'project_keyword',
     name: '项目关键词',
     items: [
-      ['NEW_BUILD', '新建项目'], ['RENOVATION', '改造项目'],
-      ['MAIN_MATERIAL', '主材'], ['CONSTRUCTION', '施工'],
-      ['SOFTWARE_COMMISSIONING', '软件调试'], ['HARDWARE_COMMISSIONING', '硬件调试'],
-      ['CHILLER_ENERGY_SAVING', '冷站节能'], ['HVAC_ENERGY_SAVING', '空调节能'],
-      ['AIR_COMPRESSOR_ENERGY_SAVING', '空压节能'], ['EMCS_SYSTEM', 'EMCS系统'],
-      ['ENERGY_MANAGEMENT_SYSTEM', '能管系统'], ['SOFTWARE_SYSTEM', '软件系统'],
-      ['CHILLER_PLANT_CONTROL', '冷站群控'], ['HIGH_EFFICIENCY_PLANT_ROOM', '高效机房'],
-      ['PLATFORM_CUSTOMIZATION', '平台定开'], ['RESEARCH', '课题研究'],
+      ['NEW_BUILD', '新建项目'],
+      ['RENOVATION', '改造项目'],
+      ['MAIN_MATERIAL', '主材'],
+      ['CONSTRUCTION', '施工'],
+      ['SOFTWARE_COMMISSIONING', '软件调试'],
+      ['HARDWARE_COMMISSIONING', '硬件调试'],
+      ['CHILLER_ENERGY_SAVING', '冷站节能'],
+      ['HVAC_ENERGY_SAVING', '空调节能'],
+      ['AIR_COMPRESSOR_ENERGY_SAVING', '空压节能'],
+      ['EMCS_SYSTEM', 'EMCS系统'],
+      ['ENERGY_MANAGEMENT_SYSTEM', '能管系统'],
+      ['SOFTWARE_SYSTEM', '软件系统'],
+      ['CHILLER_PLANT_CONTROL', '冷站群控'],
+      ['HIGH_EFFICIENCY_PLANT_ROOM', '高效机房'],
+      ['PLATFORM_CUSTOMIZATION', '平台定开'],
+      ['RESEARCH', '课题研究'],
     ].map(([value, label]) => ({ value, label })),
   },
   {
@@ -188,14 +279,108 @@ const legacyStandardManagementDomainValues = [
 ] as const;
 
 const fieldConfigurationDictionaries: readonly DictionarySeed[] = [
-  { code: 'COUNTRY', name: '国家', items: [['CN', '中国'], ['VN', '越南'], ['TH', '泰国'], ['ID', '印尼'], ['MY', '马来西亚'], ['OM', '阿曼'], ['SG', '新加坡'], ['AE', '阿联酋']].map(([value, label]) => ({ value, label })) },
-  { code: 'CUSTOMER_TYPE', name: '客户类型', items: [['FACTORY', '工厂'], ['IDC', 'IDC'], ['AIDC', 'AIDC'], ['COMMERCIAL', '商业'], ['MEDICAL', '医疗'], ['RAIL_TRANSIT', '轨道交通'], ['STANDARD_PRODUCT', '标品']].map(([value, label]) => ({ value, label })) },
-  { code: 'CONTRACT_TYPE', name: '合同类型', items: ['EPC', 'EMC', 'POC'].map((value) => ({ value, label: value })) },
-  { code: 'PRODUCT_TYPE', name: '产品类型', items: [{ value: 'DEEPSIGHT', label: 'DeepSight' }, { value: 'DEEPBOT', label: 'DeepBot' }] },
-  { code: 'PROJECT_KEYWORD', name: '项目关键词', items: [['NEW_BUILD', '新建项目'], ['RENOVATION', '改造项目'], ['MAIN_MATERIAL', '主材'], ['CONSTRUCTION', '施工'], ['SOFTWARE_COMMISSIONING', '软件调试'], ['HARDWARE_COMMISSIONING', '硬件调试'], ['CHILLER_ENERGY_SAVING', '冷站节能'], ['HVAC_ENERGY_SAVING', '空调节能'], ['AIR_COMPRESSOR_ENERGY_SAVING', '空压节能'], ['FMCS', 'FMCS'], ['ENERGY_MANAGEMENT', '能管'], ['SOFTWARE', '软件'], ['CHILLER_GROUP_CONTROL', '冷站群控'], ['HIGH_EFFICIENCY_PLANT_ROOM', '高效机房'], ['PLATFORM_CUSTOMIZATION', '平台定开'], ['RESEARCH', '课题研究']].map(([value, label]) => ({ value, label })) },
-  { code: 'CURRENCY', name: '合同币种', items: [['CNY', '人民币'], ['USD', '美元'], ['VND', '越南盾'], ['THB', '泰铢'], ['IDR', '印尼盾'], ['MYR', '马来西亚林吉特'], ['OMR', '阿曼里亚尔'], ['SGD', '新加坡元']].map(([value, label]) => ({ value, label })) },
-  { code: 'PROJECT_STAGE', name: '项目阶段', items: [['STARTUP', '启动'], ['DEEPENING', '深化'], ['PROCUREMENT', '采购'], ['CONSTRUCTION', '施工'], ['COMMISSIONING', '调试'], ['TESTING', '测试'], ['INTERNAL_ACCEPTANCE', '内验'], ['EXTERNAL_ACCEPTANCE', '外验'], ['WARRANTY', '维保']].map(([value, label]) => ({ value, label })) },
-  { code: 'PROJECT_STATUS', name: '项目状态', items: [['DRAFT', '草稿'], ['ACTIVE', '进行中'], ['PAUSED', '已暂停'], ['COMPLETED', '已验收'], ['CANCELLED', '已取消']].map(([value, label]) => ({ value, label })) },
+  {
+    code: 'COUNTRY',
+    name: '国家',
+    items: [
+      ['CN', '中国'],
+      ['VN', '越南'],
+      ['TH', '泰国'],
+      ['ID', '印尼'],
+      ['MY', '马来西亚'],
+      ['OM', '阿曼'],
+      ['SG', '新加坡'],
+      ['AE', '阿联酋'],
+    ].map(([value, label]) => ({ value, label })),
+  },
+  {
+    code: 'CUSTOMER_TYPE',
+    name: '客户类型',
+    items: [
+      ['FACTORY', '工厂'],
+      ['IDC', 'IDC'],
+      ['AIDC', 'AIDC'],
+      ['COMMERCIAL', '商业'],
+      ['MEDICAL', '医疗'],
+      ['RAIL_TRANSIT', '轨道交通'],
+      ['STANDARD_PRODUCT', '标品'],
+    ].map(([value, label]) => ({ value, label })),
+  },
+  {
+    code: 'CONTRACT_TYPE',
+    name: '合同类型',
+    items: ['EPC', 'EMC', 'POC'].map((value) => ({ value, label: value })),
+  },
+  {
+    code: 'PRODUCT_TYPE',
+    name: '产品类型',
+    items: [
+      { value: 'DEEPSIGHT', label: 'DeepSight' },
+      { value: 'DEEPBOT', label: 'DeepBot' },
+    ],
+  },
+  {
+    code: 'PROJECT_KEYWORD',
+    name: '项目关键词',
+    items: [
+      ['NEW_BUILD', '新建项目'],
+      ['RENOVATION', '改造项目'],
+      ['MAIN_MATERIAL', '主材'],
+      ['CONSTRUCTION', '施工'],
+      ['SOFTWARE_COMMISSIONING', '软件调试'],
+      ['HARDWARE_COMMISSIONING', '硬件调试'],
+      ['CHILLER_ENERGY_SAVING', '冷站节能'],
+      ['HVAC_ENERGY_SAVING', '空调节能'],
+      ['AIR_COMPRESSOR_ENERGY_SAVING', '空压节能'],
+      ['FMCS', 'FMCS'],
+      ['ENERGY_MANAGEMENT', '能管'],
+      ['SOFTWARE', '软件'],
+      ['CHILLER_GROUP_CONTROL', '冷站群控'],
+      ['HIGH_EFFICIENCY_PLANT_ROOM', '高效机房'],
+      ['PLATFORM_CUSTOMIZATION', '平台定开'],
+      ['RESEARCH', '课题研究'],
+    ].map(([value, label]) => ({ value, label })),
+  },
+  {
+    code: 'CURRENCY',
+    name: '合同币种',
+    items: [
+      ['CNY', '人民币'],
+      ['USD', '美元'],
+      ['VND', '越南盾'],
+      ['THB', '泰铢'],
+      ['IDR', '印尼盾'],
+      ['MYR', '马来西亚林吉特'],
+      ['OMR', '阿曼里亚尔'],
+      ['SGD', '新加坡元'],
+    ].map(([value, label]) => ({ value, label })),
+  },
+  {
+    code: 'PROJECT_STAGE',
+    name: '项目阶段',
+    items: [
+      ['STARTUP', '启动'],
+      ['DEEPENING', '深化'],
+      ['PROCUREMENT', '采购'],
+      ['CONSTRUCTION', '施工'],
+      ['COMMISSIONING', '调试'],
+      ['TESTING', '测试'],
+      ['INTERNAL_ACCEPTANCE', '内验'],
+      ['EXTERNAL_ACCEPTANCE', '外验'],
+      ['WARRANTY', '维保'],
+    ].map(([value, label]) => ({ value, label })),
+  },
+  {
+    code: 'PROJECT_STATUS',
+    name: '项目状态',
+    items: [
+      ['DRAFT', '草稿'],
+      ['ACTIVE', '进行中'],
+      ['PAUSED', '已暂停'],
+      ['COMPLETED', '已验收'],
+      ['CANCELLED', '已取消'],
+    ].map(([value, label]) => ({ value, label })),
+  },
   {
     code: 'KNOWLEDGE_CATEGORY',
     name: '知识分类',
@@ -216,27 +401,117 @@ const fieldConfigurationDictionaries: readonly DictionarySeed[] = [
       { value: 'OVERSEAS_DELIVERY_SUPPORT', label: '海外交付支持' },
     ],
   },
-  { code: 'JOB_POSITION', name: '岗位', items: [['PROJECT_MANAGER', '项目经理'], ['ELECTRICAL_ENGINEER', '电气工程师'], ['SOFTWARE_ENGINEER', '软件工程师'], ['OPERATIONS_ENGINEER', '运维工程师'], ['SALES', '销售'], ['PRESALES', '售前']].map(([value, label]) => ({ value, label })) },
-  { code: 'PROJECT_TYPE', name: '项目类型', items: [['EPC_INTEGRATED', 'EPC综合'], ['SYSTEM_INTEGRATION', '系统集成'], ['EQUIPMENT_SUPPLY', '设备供货'], ['CONSTRUCTION_IMPLEMENTATION', '施工实施'], ['SOFTWARE_ONLY', '纯软件'], ['TECHNICAL_SERVICE', '技术服务'], ['GENERAL', '通用']].map(([value, label]) => ({ value, label })) },
-  { code: 'STANDARD_TYPE', name: '标准类型', items: [['SOP', 'SOP'], ['MANAGEMENT_POLICY', '管理制度'], ['DELIVERY_WORKFLOW', '交付流程'], ['CHECK_STANDARD', '检查标准'], ['DOCUMENT_TEMPLATE', '文档模板'], ['FORM_TEMPLATE', '表单模板'], ['TECHNICAL_STANDARD', '技术标准'], ['WORK_INSTRUCTION', '作业指导书']].map(([value, label]) => ({ value, label })) },
-  { code: 'STANDARD_DELIVERY_STAGE', name: '交付阶段', items: [['PROJECT_STARTUP', '项目启动'], ['DETAILED_DESIGN', '深化设计'], ['PROCUREMENT_PRODUCTION', '采购与生产'], ['CONSTRUCTION_INSTALLATION', '施工与安装'], ['HARDWARE_COMMISSIONING', '硬件调试'], ['SOFTWARE_TESTING', '软件测试'], ['INTERNAL_ACCEPTANCE', '内部验收'], ['CUSTOMER_ACCEPTANCE', '客户验收'], ['CLOSEOUT_HANDOVER', '收尾与移交'], ['WARRANTY_REVIEW', '维保与复盘']].map(([value, label]) => ({ value, label })) },
+  {
+    code: 'JOB_POSITION',
+    name: '岗位',
+    items: [
+      ['PROJECT_MANAGER', '项目经理'],
+      ['ELECTRICAL_ENGINEER', '电气工程师'],
+      ['SOFTWARE_ENGINEER', '软件工程师'],
+      ['OPERATIONS_ENGINEER', '运维工程师'],
+      ['SALES', '销售'],
+      ['PRESALES', '售前'],
+    ].map(([value, label]) => ({ value, label })),
+  },
+  {
+    code: 'PROJECT_TYPE',
+    name: '项目类型',
+    items: [
+      ['EPC_INTEGRATED', 'EPC综合'],
+      ['SYSTEM_INTEGRATION', '系统集成'],
+      ['EQUIPMENT_SUPPLY', '设备供货'],
+      ['CONSTRUCTION_IMPLEMENTATION', '施工实施'],
+      ['SOFTWARE_ONLY', '纯软件'],
+      ['TECHNICAL_SERVICE', '技术服务'],
+      ['GENERAL', '通用'],
+    ].map(([value, label]) => ({ value, label })),
+  },
+  {
+    code: 'STANDARD_TYPE',
+    name: '标准类型',
+    items: [
+      ['SOP', 'SOP'],
+      ['MANAGEMENT_POLICY', '管理制度'],
+      ['DELIVERY_WORKFLOW', '交付流程'],
+      ['CHECK_STANDARD', '检查标准'],
+      ['DOCUMENT_TEMPLATE', '文档模板'],
+      ['FORM_TEMPLATE', '表单模板'],
+      ['TECHNICAL_STANDARD', '技术标准'],
+      ['WORK_INSTRUCTION', '作业指导书'],
+    ].map(([value, label]) => ({ value, label })),
+  },
+  {
+    code: 'STANDARD_DELIVERY_STAGE',
+    name: '交付阶段',
+    items: [
+      ['PROJECT_STARTUP', '项目启动'],
+      ['DETAILED_DESIGN', '深化设计'],
+      ['PROCUREMENT_PRODUCTION', '采购与生产'],
+      ['CONSTRUCTION_INSTALLATION', '施工与安装'],
+      ['HARDWARE_COMMISSIONING', '硬件调试'],
+      ['SOFTWARE_TESTING', '软件测试'],
+      ['INTERNAL_ACCEPTANCE', '内部验收'],
+      ['CUSTOMER_ACCEPTANCE', '客户验收'],
+      ['CLOSEOUT_HANDOVER', '收尾与移交'],
+      ['WARRANTY_REVIEW', '维保与复盘'],
+    ].map(([value, label]) => ({ value, label })),
+  },
   { code: 'STANDARD_MANAGEMENT_DOMAIN', name: '管理领域', items: standardManagementDomainItems },
-  { code: 'STANDARD_BUSINESS_TYPE', name: '业务类型', items: [{ value: 'GENERAL', label: '通用' }] },
-  { code: 'STANDARD_STATUS', name: '状态', items: [['DRAFT', '草稿'], ['IN_REVIEW', '审核中'], ['REJECTED', '已驳回'], ['PUBLISHED', '已发布'], ['ARCHIVED', '已归档']].map(([value, label]) => ({ value, label })) },
-  { code: 'STANDARD_ENABLED_STATUS', name: '启用状态', items: [['ENABLED', '启用'], ['DISABLED', '停用']].map(([value, label]) => ({ value, label })) },
+  {
+    code: 'STANDARD_BUSINESS_TYPE',
+    name: '业务类型',
+    items: [{ value: 'GENERAL', label: '通用' }],
+  },
+  {
+    code: 'STANDARD_STATUS',
+    name: '状态',
+    items: [
+      ['DRAFT', '草稿'],
+      ['IN_REVIEW', '审核中'],
+      ['REJECTED', '已驳回'],
+      ['PUBLISHED', '已发布'],
+      ['ARCHIVED', '已归档'],
+    ].map(([value, label]) => ({ value, label })),
+  },
+  {
+    code: 'STANDARD_ENABLED_STATUS',
+    name: '启用状态',
+    items: [
+      ['ENABLED', '启用'],
+      ['DISABLED', '停用'],
+    ].map(([value, label]) => ({ value, label })),
+  },
   { code: 'STANDARD_CURRENT_VERSION', name: '当前版本', items: [] },
   { code: 'STANDARD_EFFECTIVE_DATE', name: '生效日期', items: [] },
-  { code: 'FILE_TYPE', name: '文件类型', items: [
-    ['pdf', 'PDF'], ['doc', 'Word 97-2003'], ['docx', 'Word'], ['xls', 'Excel 97-2003'],
-    ['xlsx', 'Excel'], ['ppt', 'PowerPoint 97-2003'], ['pptx', 'PowerPoint'],
-    ['jpg', 'JPG 图片'], ['jpeg', 'JPEG 图片'], ['png', 'PNG 图片'],
-    ['dwg', 'DWG 图纸'], ['cad', 'CAD 图纸'], ['zip', 'ZIP 压缩包'], ['rar', 'RAR 压缩包'],
-  ].map(([value, label]) => ({ value, label })) },
+  {
+    code: 'FILE_TYPE',
+    name: '文件类型',
+    items: [
+      ['pdf', 'PDF'],
+      ['doc', 'Word 97-2003'],
+      ['docx', 'Word'],
+      ['xls', 'Excel 97-2003'],
+      ['xlsx', 'Excel'],
+      ['ppt', 'PowerPoint 97-2003'],
+      ['pptx', 'PowerPoint'],
+      ['jpg', 'JPG 图片'],
+      ['jpeg', 'JPEG 图片'],
+      ['png', 'PNG 图片'],
+      ['dwg', 'DWG 图纸'],
+      ['cad', 'CAD 图纸'],
+      ['zip', 'ZIP 压缩包'],
+      ['rar', 'RAR 压缩包'],
+    ].map(([value, label]) => ({ value, label })),
+  },
 ] as const;
 
 const replacedLegacyCodes = new Set([
-  'project_type', 'contract_type', 'product_type', 'project_keyword',
-  'project_lifecycle_status', 'project_delivery_stage',
+  'project_type',
+  'contract_type',
+  'product_type',
+  'project_keyword',
+  'project_lifecycle_status',
+  'project_delivery_stage',
 ]);
 const targetDictionaries: readonly DictionarySeed[] = [
   ...fieldConfigurationDictionaries,
@@ -279,10 +554,12 @@ export async function seedTargetPlatform(prisma: PrismaClient): Promise<void> {
   }
   await seedTargetApprovalTemplates(prisma);
   await seedSystemOperations(prisma);
-  await seedTemplatesAndTools(prisma);
 }
 
-export async function seedTargetDictionaries(prisma: PrismaClient, actorId?: string): Promise<void> {
+export async function seedTargetDictionaries(
+  prisma: PrismaClient,
+  actorId?: string,
+): Promise<void> {
   for (const [categoryIndex, definition] of targetDictionaries.entries()) {
     const fieldMeta = fieldConfigurationMeta[definition.code];
     const category = await prisma.dictionaryCategory.upsert({

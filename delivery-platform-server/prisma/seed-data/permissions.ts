@@ -162,19 +162,6 @@ export const permissionDefs = [
     resource: 'knowledge',
     action: 'publish',
   },
-  // tools
-  {
-    permissionCode: 'tools:view',
-    permissionName: '查看工具中心',
-    resource: 'tools',
-    action: 'view',
-  },
-  {
-    permissionCode: 'tools:manage',
-    permissionName: '管理工具中心',
-    resource: 'tools',
-    action: 'manage',
-  },
   // currency
   {
     permissionCode: 'currency:view',
@@ -355,6 +342,12 @@ export const permissionDefs = [
     permissionName: '停用档案模板',
     resource: 'archive_template',
     action: 'disable',
+  },
+  {
+    permissionCode: 'archive_template:delete',
+    permissionName: '删除档案模板',
+    resource: 'archive_template',
+    action: 'delete',
   },
   // unified standard library
   {

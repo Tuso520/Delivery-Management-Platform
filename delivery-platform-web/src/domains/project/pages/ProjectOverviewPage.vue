@@ -61,15 +61,12 @@ const projectLayoutStyle = {
 } as CSSProperties
 const requestedScope = String(route.query.scope ?? '')
 const scope = ref<ProjectScope>(
-  ['mine', 'all', 'archived'].includes(requestedScope)
-    ? (requestedScope as ProjectScope)
-    : 'mine',
+  ['mine', 'all', 'archived'].includes(requestedScope) ? (requestedScope as ProjectScope) : 'mine',
 )
 const requestedSort = String(route.query.sort ?? '')
-const initialSort: ProjectSort | undefined = [
-  'projectManager:asc',
-  'projectManager:desc',
-].includes(requestedSort)
+const initialSort: ProjectSort | undefined = ['projectManager:asc', 'projectManager:desc'].includes(
+  requestedSort,
+)
   ? (requestedSort as ProjectSort)
   : undefined
 const keywordInput = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
@@ -360,18 +357,9 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
 </script>
 
 <template>
-  <PageContainer
-    class="project-page"
-    gap="normal"
-    :scrollable="false"
-    :style="projectLayoutStyle"
-  >
+  <PageContainer class="project-page" gap="normal" :scrollable="false" :style="projectLayoutStyle">
     <section class="summary-band" :aria-label="t('projects.summaryAria')">
-      <article
-        v-for="metric in summaryMetrics"
-        :key="metric.id"
-        class="summary-metric"
-      >
+      <article v-for="metric in summaryMetrics" :key="metric.id" class="summary-metric">
         <span class="metric-icon" aria-hidden="true">
           <component :is="metric.icon" />
         </span>
@@ -414,8 +402,8 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
             />
             <a-button type="primary" class="search-button" @click="search">
               <template #icon>
-                <IconSearch />
-              </template>{{ t('projects.query') }}
+                <IconSearch /> </template
+              >{{ t('projects.query') }}
             </a-button>
           </div>
         </template>
@@ -524,7 +512,11 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
               {{ acceptance(row) }}
             </template>
           </a-table-column>
-          <a-table-column :title="t('projects.columns.contractCurrency')" :width="80" align="center">
+          <a-table-column
+            :title="t('projects.columns.contractCurrency')"
+            :width="80"
+            align="center"
+          >
             <template #cell="{ record: row }">
               <a-tag
                 v-if="row.contractCurrency"
@@ -559,9 +551,7 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
                 bordered
                 :style="dictionaryStyle('customerType', row.customerType)"
               >
-                {{
-                  configuredOption('CUSTOMER_TYPE', row.customerType)?.label || row.customerType
-                }}
+                {{ configuredOption('CUSTOMER_TYPE', row.customerType)?.label || row.customerType }}
               </a-tag>
               <span v-else>-</span>
             </template>
@@ -578,9 +568,7 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
                 bordered
                 :style="dictionaryStyle('contractType', row.contractType)"
               >
-                {{
-                  configuredOption('CONTRACT_TYPE', row.contractType)?.label || row.contractType
-                }}
+                {{ configuredOption('CONTRACT_TYPE', row.contractType)?.label || row.contractType }}
               </a-tag>
               <span v-else>-</span>
             </template>
@@ -617,6 +605,7 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
       :project-id="drawerProjectId"
       @edit="editProject"
       @saved="saved"
+      @deleted="saved"
     />
   </PageContainer>
 </template>

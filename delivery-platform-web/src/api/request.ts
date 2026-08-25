@@ -1,9 +1,5 @@
 import axios from 'axios'
-import type {
-  AxiosInstance,
-  AxiosRequestConfig,
-  InternalAxiosRequestConfig,
-} from 'axios'
+import type { AxiosInstance, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios'
 import Message from '@arco-design/web-vue/es/message'
 
 import { ApiRequestError } from '@/api/errors'
@@ -111,6 +107,11 @@ function refreshAccessToken(): Promise<string> {
 
 axiosInstance.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
+    if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+      // Let the browser provide the multipart boundary. A fixed content type
+      // makes Multer reject otherwise valid archive uploads before parsing.
+      config.headers.delete('Content-Type')
+    }
     const token = getToken()
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`
@@ -134,13 +135,7 @@ axiosInstance.interceptors.response.use(
         Message.error(message || '请求失败')
       }
       return Promise.reject(
-        new ApiRequestError(
-          message || '请求失败',
-          undefined,
-          String(code),
-          false,
-          responseTraceId,
-        ),
+        new ApiRequestError(message || '请求失败', undefined, String(code), false, responseTraceId),
       )
     }
 

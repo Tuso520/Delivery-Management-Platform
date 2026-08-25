@@ -70,19 +70,13 @@ export const queryKeys = {
     list: <T extends QueryParams>(params: T) => ['knowledge', 'list', snapshot(params)] as const,
     summary: () => ['knowledge', 'summary'] as const,
     categoryCounts: () => ['knowledge', 'category-counts'] as const,
-    categoryCount: (keyword: string) =>
-      ['knowledge', 'category-counts', keyword] as const,
+    categoryCount: (keyword: string) => ['knowledge', 'category-counts', keyword] as const,
     detail: (itemId: string) => ['knowledge', 'detail', itemId] as const,
   },
   files: {
     all: ['files'] as const,
     previewSessions: () => ['files', 'preview-session'] as const,
     previewSession: (fileId: string) => ['files', 'preview-session', fileId] as const,
-  },
-  tools: {
-    all: ['tools'] as const,
-    lists: () => ['tools', 'list'] as const,
-    list: (includeDisabled: boolean) => ['tools', 'list', { includeDisabled }] as const,
   },
   currencies: {
     all: ['currencies'] as const,

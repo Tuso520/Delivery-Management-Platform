@@ -1,8 +1,16 @@
-import { ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
+import type { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { FieldConfigurationService } from '../field-configuration/field-configuration.service';
+import { writeOperationLog } from '../operation-log/operation-log.service';
 
 import { CreateArchiveTemplateDto, QueryArchiveTemplateDto } from './dto/archive-template.dto';
 
@@ -121,6 +129,44 @@ export class ArchiveTemplateService {
         select: { id: true, versionNo: true, status: true, revision: true },
       });
       return { ...template, draftVersion };
+    });
+  }
+
+  async remove(id: string, actor: Pick<JwtPayload, 'sub' | 'roles'>): Promise<void> {
+    if (!actor.roles.includes('SUPER_ADMIN')) {
+      throw new ForbiddenException('仅超级管理员可删除档案模板');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const template = await tx.archiveTemplate.findUnique({
+        where: { id },
+        select: { id: true, templateCode: true, templateName: true },
+      });
+      if (!template) throw new NotFoundException('档案模板不存在');
+
+      const referenceCount = await tx.project.count({
+        where: {
+          OR: [
+            { archiveTemplateId: id },
+            { archiveTemplateVersion: { templateId: id } },
+            { archiveEntries: { some: { templateVersion: { templateId: id } } } },
+          ],
+        },
+      });
+      if (referenceCount > 0) {
+        throw new ConflictException(`档案模板已被 ${referenceCount} 个项目引用，不能删除`);
+      }
+
+      await tx.archiveTemplate.delete({ where: { id } });
+      await writeOperationLog(tx, {
+        userId: actor.sub,
+        module: 'archive_template',
+        action: 'delete',
+        targetType: 'archive_template',
+        targetId: id,
+        beforeData: template,
+        result: 'success',
+      });
     });
   }
 

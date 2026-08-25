@@ -204,7 +204,6 @@ flowchart LR
 | 项目档案 | `views/archive`、`api/archive*`、`types/archive`、`useArchiveQueries` | `project-archive`、`archive-template`、`file` | 上传路由位于 FileModule；档案又依赖 ProjectAccess facade，形成 Project 双向循环 |
 | 标准库 | `views/standard`、`api/standard`、`types/standard` | `standard`、`review`、`file` | 页面和 Service 都同时承担版本、文件、关系、审核、归档；与知识库实现高度相似 |
 | 知识库 | `views/knowledge`、`api/knowledge`、`types/knowledge` | `knowledge`、`review`、`file`、`system-config` | 同时处理 FILE/MARKDOWN/LINK、支持文件集合、版本和审核，单文件职责过重 |
-| 工具中心 | `views/tools`、`api/tools`、`types/tools` | `tool` | 领域规模较小，但查询被放入跨设置领域的 `useOperationsQueries` |
 | 设置中心 | `views/system`、`views/currency`、`views/organization` 及多个 API | `currency`、`field-configuration`、`system-config`、`notification`、`platform`、`country`、`language` | 专表、字段中心、字典和 reference 多套事实源并存；`platform` 成为聚合桶 |
 | 用户中心 | 用户、角色、部门三处页面和 API | `auth`、`user`、`role`、`permission`、`identity`、`platform/reference` | 用户、角色、部门和数据范围边界分散；reference 用户/角色选项授权需确认 |
 
@@ -321,7 +320,6 @@ flowchart LR
 | `components/FilePreviewRouter/index.vue` | 926 | 按格式拆 Viewer adapter 和统一会话 Shell |
 | `views/review/pending.vue` | 849 | 列表/统计、详情、路由同步和决定操作 |
 | `views/project/ProjectDetailDialog.vue` | 802 | 基础信息、商务金额、成员、付款、脏表单保护、payload builder |
-| `views/tools/index.vue` | 650 | 分类筛选、工具列表、编辑弹窗、启停动作 |
 | `views/system/approvals.vue` | 635 | 列表、模板编辑器、审批步骤编辑器 |
 | `views/system/integrations.vue` | 617 | 配置列表、编辑器、执行器、日志抽屉 |
 | `views/system/user/index.vue` | 569 | 用户表、角色分配、密码重置、状态命令 |

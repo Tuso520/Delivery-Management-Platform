@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import type { JwtPayload } from '../auth/strategies/jwt.strategy';
 
 import { ArchiveTemplateService } from './archive-template.service';
 import { CreateArchiveTemplateDto, QueryArchiveTemplateDto } from './dto/archive-template.dto';
@@ -48,5 +49,16 @@ export class ArchiveTemplateController {
   @ApiResponse({ status: 404, description: '模板不存在' })
   findOne(@Param('id') id: string) {
     return this.archiveTemplateService.findById(id);
+  }
+
+  @Delete(':id')
+  @RequirePermissions({ all: ['archive_template:delete'] })
+  @ApiOperation({ summary: '删除未被项目引用的档案模板（仅超级管理员）' })
+  @ApiResponse({ status: 200, description: '删除成功' })
+  @ApiResponse({ status: 403, description: '仅超级管理员可删除' })
+  @ApiResponse({ status: 409, description: '模板已被项目或项目档案引用' })
+  async remove(@Param('id') id: string, @CurrentUser() actor: JwtPayload) {
+    await this.archiveTemplateService.remove(id, actor);
+    return null;
   }
 }

@@ -60,7 +60,6 @@ export const archiveApi = {
           formData,
           {
             headers: {
-              'Content-Type': 'multipart/form-data',
               'Idempotency-Key': idempotencyKey,
             },
             silent: true,

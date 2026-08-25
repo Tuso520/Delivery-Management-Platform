@@ -10,7 +10,7 @@
 |---|---|---|
 | 工作台 | 数据看板、审核中心 | `/dashboard`、`/reviews` |
 | 项目 | 项目概览、项目档案、档案模板 | `/projects`、`/archive`、`/archive-template` |
-| 标准与知识 | 标准库、知识库、工具中心 | `/standards`、`/knowledge`、`/tools` |
+| 标准与知识 | 标准库、知识库 | `/standards`、`/knowledge` |
 | 系统设置 | 币种与汇率、审批规则、字段配置、参数配置、用户中心 | `/settings/currency`、`/settings/approvals`、`/settings/fields`、`/settings/config`、`/settings` |
 
 `BasicLayout` 组合 `AppHeader`、`AppSidebar`、`AppBreadcrumb` 和路由内容区。业务列表优先使用 `PageContainer`、`PageToolbar`、`StatCard`、`BusinessTable` 等设计系统组件。

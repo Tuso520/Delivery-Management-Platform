@@ -277,18 +277,6 @@ export const shellRoutes: RouteRecordRaw[] = [
           order: 20,
         },
       },
-      {
-        path: '/tools',
-        name: 'Tools',
-        component: () => import('@/views/tools/index.vue'),
-        meta: {
-          title: 'menu.tools',
-          icon: 'Tools',
-          permissions: ['tools:view'],
-          menu: true,
-          order: 30,
-        },
-      },
     ],
   },
   {

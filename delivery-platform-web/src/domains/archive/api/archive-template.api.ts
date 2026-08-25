@@ -91,4 +91,8 @@ export const archiveTemplateApi = {
   disable(templateId: string) {
     return request.post<ArchiveTemplate>(`/archive-templates/${templateId}/disable`)
   },
+
+  remove(templateId: string) {
+    return request.delete<void>(`/archive-templates/${templateId}`, { silent: true })
+  },
 }

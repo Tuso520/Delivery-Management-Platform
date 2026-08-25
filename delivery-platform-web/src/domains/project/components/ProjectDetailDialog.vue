@@ -3,7 +3,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import type { FormInstance } from '@arco-design/web-vue'
 import Message from '@arco-design/web-vue/es/message'
 import Modal from '@arco-design/web-vue/es/modal'
-import { IconClose, IconEdit, IconSave } from '@arco-design/web-vue/es/icon'
+import { IconClose, IconDelete, IconEdit, IconSave } from '@arco-design/web-vue/es/icon'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 
 import { projectApi } from '@/domains/project/api/project.api'
@@ -57,6 +57,7 @@ const emit = defineEmits<{
   'update:visible': [value: boolean]
   edit: []
   saved: []
+  deleted: []
 }>()
 
 const queryClient = useQueryClient()
@@ -70,41 +71,47 @@ const isView = computed(() => props.mode === 'view')
 const projectId = computed(() => props.projectId || '')
 const canViewPayments = computed(() => hasPermission('payment:view'))
 const projectQuery = useProjectDetailQuery(projectId)
-const paymentQuery = useProjectPaymentsQuery(projectId, computed(() =>
-  props.visible && !isCreate.value && canViewPayments.value,
-))
+const paymentQuery = useProjectPaymentsQuery(
+  projectId,
+  computed(() => props.visible && !isCreate.value && canViewPayments.value),
+)
 const optionQueries = useProjectFormOptionsQueries(true)
 const fieldConfig = useFieldConfig('project')
 const project = computed(() => projectQuery.data.value)
-const readonly = computed(() => isView.value || (props.mode === 'edit' && project.value?.canEdit === false))
+const readonly = computed(
+  () => isView.value || (props.mode === 'edit' && project.value?.canEdit === false),
+)
 const renderView = computed(() => isView.value || readonly.value)
-const canEditProject = computed(() =>
-  isView.value &&
-  project.value?.canEdit === true &&
-  hasPermission('project:update'),
+const canEditProject = computed(
+  () => isView.value && project.value?.canEdit === true && hasPermission('project:update'),
 )
-const canEditFinancial = computed(() => !readonly.value && hasAnyPermission(['project:view_financial']))
-const canEditContract = computed(() => !readonly.value && hasAnyPermission(['project:view_contract']))
-const canUpdateProgress = computed(() =>
-  !readonly.value &&
-  hasPermission('project:progress:update') &&
-  (isCreate.value || project.value?.canUpdateProgress === true),
+const canEditFinancial = computed(
+  () => !readonly.value && hasAnyPermission(['project:view_financial']),
 )
-const canEditAcceptance = computed(() =>
-  !readonly.value &&
-  canUpdateProgress.value &&
-  hasAnyPermission(['project:view_acceptance']),
+const canEditContract = computed(
+  () => !readonly.value && hasAnyPermission(['project:view_contract']),
 )
-const canEditAcceptanceDate = computed(() =>
-  canUpdateProgress.value &&
-  hasAnyPermission(['project:view_acceptance']) &&
-  (isCreate.value || !project.value?.actualAcceptanceAt),
+const canUpdateProgress = computed(
+  () =>
+    !readonly.value &&
+    hasPermission('project:progress:update') &&
+    (isCreate.value || project.value?.canUpdateProgress === true),
 )
-const canOperatePayments = computed(() =>
-  !readonly.value &&
-  canViewPayments.value &&
-  canEditFinancial.value &&
-  hasPermission('payment:operate'),
+const canEditAcceptance = computed(
+  () => !readonly.value && canUpdateProgress.value && hasAnyPermission(['project:view_acceptance']),
+)
+const canEditAcceptanceDate = computed(
+  () =>
+    canUpdateProgress.value &&
+    hasAnyPermission(['project:view_acceptance']) &&
+    (isCreate.value || !project.value?.actualAcceptanceAt),
+)
+const canOperatePayments = computed(
+  () =>
+    !readonly.value &&
+    canViewPayments.value &&
+    canEditFinancial.value &&
+    hasPermission('payment:operate'),
 )
 
 const formData = reactive({
@@ -138,20 +145,32 @@ const formData = reactive({
 const rules = computed(() => ({
   projectName: [{ required: true, message: '请输入合同名称' }],
   countryCode: [{ required: fieldConfig.isFieldRequired('COUNTRY'), message: '请选择国家' }],
-  customerType: [{ required: fieldConfig.isFieldRequired('CUSTOMER_TYPE'), message: '请选择客户类型' }],
-  contractType: [{ required: fieldConfig.isFieldRequired('CONTRACT_TYPE'), message: '请选择合同类型' }],
+  customerType: [
+    { required: fieldConfig.isFieldRequired('CUSTOMER_TYPE'), message: '请选择客户类型' },
+  ],
+  contractType: [
+    { required: fieldConfig.isFieldRequired('CONTRACT_TYPE'), message: '请选择合同类型' },
+  ],
   product: [{ required: fieldConfig.isFieldRequired('PRODUCT_TYPE'), message: '请选择产品类型' }],
-  keywords: [{ required: fieldConfig.isFieldRequired('PROJECT_KEYWORD'), message: '请选择项目关键词' }],
-  contractCurrency: [{ required: fieldConfig.isFieldRequired('CURRENCY'), message: '请选择合同币种' }],
+  keywords: [
+    { required: fieldConfig.isFieldRequired('PROJECT_KEYWORD'), message: '请选择项目关键词' },
+  ],
+  contractCurrency: [
+    { required: fieldConfig.isFieldRequired('CURRENCY'), message: '请选择合同币种' },
+  ],
   archiveTemplateId: [{ required: true, message: '请选择档案模版' }],
-  deliveryStages: [{
-    required: fieldConfig.isFieldRequired('PROJECT_STAGE'),
-    message: '请至少选择一个当前阶段',
-  }],
-  expectedAcceptanceAt: [{
-    required: formData.acceptanceCompleted,
-    message: '完成验收时请选择验收时间',
-  }],
+  deliveryStages: [
+    {
+      required: fieldConfig.isFieldRequired('PROJECT_STAGE'),
+      message: '请至少选择一个当前阶段',
+    },
+  ],
+  expectedAcceptanceAt: [
+    {
+      required: formData.acceptanceCompleted,
+      message: '完成验收时请选择验收时间',
+    },
+  ],
 }))
 const idempotencyKey = ref('')
 
@@ -161,7 +180,8 @@ function configuredOptions<T extends string>(
   currentValues: Array<string | undefined>,
 ) {
   const historicalValues = new Set(currentValues.filter((value): value is string => Boolean(value)))
-  return fieldConfig.getFieldOptions(fieldCode, true)
+  return fieldConfig
+    .getFieldOptions(fieldCode, true)
     .filter((item) => item.enabled || historicalValues.has(item.value))
     .map((item) => ({
       label: item.label,
@@ -175,7 +195,8 @@ function configuredSelectOptions(
   currentValue: string | undefined,
   formatLabel: (label: string, value: string) => string,
 ) {
-  return fieldConfig.getFieldOptions(fieldCode, true)
+  return fieldConfig
+    .getFieldOptions(fieldCode, true)
     .filter((item) => item.enabled || item.value === currentValue)
     .map((item) => ({
       value: item.value,
@@ -185,18 +206,12 @@ function configuredSelectOptions(
 }
 function configuredDefault(fieldCode: string): string {
   const defaultValue = String(fieldConfig.getField(fieldCode)?.defaultValue ?? '')
-  return fieldConfig
-    .getFieldOptions(fieldCode)
-    .some((option) => option.value === defaultValue)
+  return fieldConfig.getFieldOptions(fieldCode).some((option) => option.value === defaultValue)
     ? defaultValue
     : ''
 }
 const countryOptions = computed(() =>
-  configuredSelectOptions(
-    'COUNTRY',
-    formData.countryCode,
-    (label, value) => `${label} (${value})`,
-  ),
+  configuredSelectOptions('COUNTRY', formData.countryCode, (label, value) => `${label} (${value})`),
 )
 const currencies = computed<Currency[]>(() => optionQueries.value[0].data ?? [])
 const currencyOptions = computed(() =>
@@ -219,25 +234,26 @@ const keywordOptions = computed(() =>
   configuredOptions<ProjectKeyword>('PROJECT_KEYWORD', 'projectKeyword', formData.keywords),
 )
 const stageOptions = computed(() =>
-  configuredOptions<ProjectDeliveryStage>(
-    'PROJECT_STAGE',
-    'projectType',
-    formData.deliveryStages,
-  ),
+  configuredOptions<ProjectDeliveryStage>('PROJECT_STAGE', 'projectType', formData.deliveryStages),
 )
 const salesOptions = computed<ProjectUserReferenceOption[]>(() => optionQueries.value[2].data ?? [])
-const managerOptions = computed<ProjectUserReferenceOption[]>(() => optionQueries.value[3].data ?? [])
-const memberOptions = computed<ProjectUserReferenceOption[]>(() => optionQueries.value[4].data ?? [])
+const managerOptions = computed<ProjectUserReferenceOption[]>(
+  () => optionQueries.value[3].data ?? [],
+)
+const memberOptions = computed<ProjectUserReferenceOption[]>(
+  () => optionQueries.value[4].data ?? [],
+)
 const archiveOptions = computed(() =>
   ((optionQueries.value[5].data ?? []) as ArchiveTemplate[])
     .filter((item) => item.status === 'PUBLISHED' || item.id === formData.archiveTemplateId)
     .map((item) => ({ value: item.id, label: `${item.templateName} (${item.templateCode})` })),
 )
-const loading = computed(() =>
-  fieldConfig.loading.value ||
-  optionQueries.value.some((query) => query.isFetching) ||
-  (!isCreate.value && projectQuery.isFetching.value) ||
-  (!isCreate.value && canViewPayments.value && paymentQuery.isFetching.value),
+const loading = computed(
+  () =>
+    fieldConfig.loading.value ||
+    optionQueries.value.some((query) => query.isFetching) ||
+    (!isCreate.value && projectQuery.isFetching.value) ||
+    (!isCreate.value && canViewPayments.value && paymentQuery.isFetching.value),
 )
 const loadError = computed(() => {
   if (!isCreate.value && projectQuery.isError.value) return '项目详情加载失败'
@@ -249,9 +265,7 @@ const loadError = computed(() => {
   }
   return ''
 })
-const baseCurrencyCode = computed(() =>
-  configuredDefault('CURRENCY'),
-)
+const baseCurrencyCode = computed(() => configuredDefault('CURRENCY'))
 const baseCurrencyLabel = computed(
   () => fieldConfig.getFieldLabel('CURRENCY', baseCurrencyCode.value) || '折算币种',
 )
@@ -265,14 +279,14 @@ const convertedAmount = computed(() => {
   return multiplyMoneyByRate(formData.contractAmount, currency?.cnyRate)
 })
 const snapshot = computed(() => JSON.stringify({ formData, payments: payments.value }))
-const dirty = computed(() => !readonly.value && Boolean(initialSnapshot.value) && snapshot.value !== initialSnapshot.value)
+const dirty = computed(
+  () =>
+    !readonly.value && Boolean(initialSnapshot.value) && snapshot.value !== initialSnapshot.value,
+)
 const paymentRatioValid = computed(() => {
   if (!canOperatePayments.value) return true
   if (!formData.contractAmount || payments.value.length === 0) return true
-  const total = payments.value.reduce(
-    (sum, item) => sum + moneyToMinor(item.originalAmount),
-    0n,
-  )
+  const total = payments.value.reduce((sum, item) => sum + moneyToMinor(item.originalAmount), 0n)
   return total === moneyToMinor(formData.contractAmount)
 })
 
@@ -360,9 +374,7 @@ function assignProject(): void {
     contractType: value.contractType || undefined,
     product: value.product || undefined,
     keywords: value.keywords || [],
-    contractCurrency:
-      value.contractCurrency ||
-      baseCurrencyCode.value,
+    contractCurrency: value.contractCurrency || baseCurrencyCode.value,
     contractAmount: value.contractAmount ?? '',
     convertedAmount: value.convertedAmount ?? '',
     acceptedConvertedAmount: value.acceptedConvertedAmount ?? value.convertedAmount ?? '',
@@ -371,9 +383,7 @@ function assignProject(): void {
     contractSignedAt: value.contractSignedAt?.slice(0, 10) || '',
     startDate: value.startDate?.slice(0, 10) || '',
     expectedAcceptanceAt:
-      value.actualAcceptanceAt?.slice(0, 10) ||
-      value.expectedAcceptanceAt?.slice(0, 10) ||
-      '',
+      value.actualAcceptanceAt?.slice(0, 10) || value.expectedAcceptanceAt?.slice(0, 10) || '',
     salesOwnerId: value.salesOwnerId || '',
     projectManagerId: value.projectManagerId || '',
     electricalOwnerId: value.electricalOwnerId || '',
@@ -430,15 +440,22 @@ watch(project, () => {
     queueMicrotask(captureSnapshot)
   }
 })
-watch(() => paymentQuery.data.value, (value) => {
-  if (!props.visible || isCreate.value || !value) return
-  assignPayments(value.items)
-  queueMicrotask(captureSnapshot)
-}, { immediate: true })
-watch(() => paymentQuery.isError.value, (isError) => {
-  if (!props.visible || isCreate.value || !isError || !project.value) return
-  queueMicrotask(captureSnapshot)
-})
+watch(
+  () => paymentQuery.data.value,
+  (value) => {
+    if (!props.visible || isCreate.value || !value) return
+    assignPayments(value.items)
+    queueMicrotask(captureSnapshot)
+  },
+  { immediate: true },
+)
+watch(
+  () => paymentQuery.isError.value,
+  (isError) => {
+    if (!props.visible || isCreate.value || !isError || !project.value) return
+    queueMicrotask(captureSnapshot)
+  },
+)
 watch(convertedAmount, (value) => {
   if (!props.visible || !isCreate.value || acceptedAmountManuallyEdited.value) return
   formData.acceptedConvertedAmount = value ?? ''
@@ -458,10 +475,7 @@ function configuredCodeLabel(fieldCode: string, value?: string | null): string {
   if (!value) return '—'
   return `${fieldConfig.getFieldLabel(fieldCode, value)} (${value})`
 }
-function userReferenceLabel(
-  value: string,
-  options: ProjectUserReferenceOption[],
-): string {
+function userReferenceLabel(value: string, options: ProjectUserReferenceOption[]): string {
   if (!value) return '—'
   const option = options.find((item) => item.id === value)
   return option ? personLabel(option) : '—'
@@ -556,6 +570,44 @@ const mutation = useMutation({
       : projectApi.update(variables.id, variables.data),
   retry: false,
 })
+const deleteMutation = useMutation({
+  mutationFn: (id: string) => projectApi.permanentDelete(id),
+  retry: false,
+})
+
+function deleteProject(): void {
+  const current = project.value
+  if (!current?.canPermanentDelete || deleteMutation.isPending.value) return
+  Modal.confirm({
+    simple: false,
+    alignCenter: true,
+    titleAlign: 'start',
+    modalClass: 'business-confirm-dialog',
+    title: '确认删除项目',
+    content: `确定永久删除项目“${current.projectName}”吗？此操作不可撤销。`,
+    okText: '确认删除',
+    cancelText: '取消',
+    okButtonProps: { status: 'danger' },
+    closable: false,
+    maskClosable: false,
+    escToClose: false,
+    onBeforeOk: async (done) => {
+      try {
+        await deleteMutation.mutateAsync(current.id)
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: queryKeys.projects.lists() }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.projects.summary() }),
+        ])
+        Message.success(`项目“${current.projectName}”已删除`)
+        emit('deleted')
+        emit('update:visible', false)
+        done(true)
+      } catch {
+        done(false)
+      }
+    },
+  })
+}
 async function save(): Promise<boolean> {
   if (readonly.value || mutation.isPending.value || !formRef.value) return false
   const validation = await formRef.value.validate().catch((error: unknown) => error)
@@ -589,9 +641,10 @@ async function save(): Promise<boolean> {
           expectedAcceptanceAt: canEditAcceptanceDate.value
             ? formData.expectedAcceptanceAt || undefined
             : undefined,
-          actualAcceptanceAt: canEditAcceptance.value && formData.acceptanceCompleted
-            ? formData.expectedAcceptanceAt
-            : undefined,
+          actualAcceptanceAt:
+            canEditAcceptance.value && formData.acceptanceCompleted
+              ? formData.expectedAcceptanceAt
+              : undefined,
         },
       })
       savedProjectId = savedProject.id
@@ -704,12 +757,25 @@ async function retryLoad(): Promise<void> {
           <a-button
             v-if="canEditProject"
             type="primary"
+            class="dialog-primary-action"
             @click="emit('edit')"
           >
             <template #icon>
               <IconEdit />
             </template>
             编辑项目
+          </a-button>
+          <a-button
+            v-if="project?.canPermanentDelete"
+            status="danger"
+            class="dialog-primary-action"
+            :loading="deleteMutation.isPending.value"
+            @click="deleteProject"
+          >
+            <template #icon>
+              <IconDelete />
+            </template>
+            删除项目
           </a-button>
           <a-button
             v-if="!readonly"
@@ -722,11 +788,7 @@ async function retryLoad(): Promise<void> {
             </template>
             保存
           </a-button>
-          <a-button
-            type="text"
-            class="dialog-close"
-            @click="close"
-          >
+          <a-button type="text" class="dialog-close" @click="close">
             <IconClose />
             <span class="sr-only">关闭</span>
           </a-button>
@@ -735,22 +797,13 @@ async function retryLoad(): Promise<void> {
 
       <div class="dialog-body">
         <a-spin :loading="loading">
-          <a-result
-            v-if="loadError"
-            status="error"
-            :title="loadError"
-          >
+          <a-result v-if="loadError" status="error" :title="loadError">
             <template #extra>
-              <a-button @click="retryLoad">
-                重新加载
-              </a-button>
+              <a-button @click="retryLoad"> 重新加载 </a-button>
             </template>
           </a-result>
 
-          <div
-            v-else-if="renderView"
-            class="project-detail-view"
-          >
+          <div v-else-if="renderView" class="project-detail-view">
             <section class="basic-section">
               <div class="section-heading">
                 <h3>基础信息</h3>
@@ -820,16 +873,10 @@ async function retryLoad(): Promise<void> {
                 <div class="view-field">
                   <span>项目关键词</span>
                   <div class="view-tags">
-                    <a-tag
-                      v-for="keyword in formData.keywords"
-                      :key="keyword"
-                      size="small"
-                    >
+                    <a-tag v-for="keyword in formData.keywords" :key="keyword" size="small">
                       {{ configuredLabel('PROJECT_KEYWORD', keyword) }}
                     </a-tag>
-                    <template v-if="formData.keywords.length === 0">
-                      —
-                    </template>
+                    <template v-if="formData.keywords.length === 0"> — </template>
                   </div>
                 </div>
               </div>
@@ -913,16 +960,10 @@ async function retryLoad(): Promise<void> {
                 <div class="view-field">
                   <span>当前阶段</span>
                   <div class="view-tags">
-                    <a-tag
-                      v-for="stage in formData.deliveryStages"
-                      :key="stage"
-                      size="small"
-                    >
+                    <a-tag v-for="stage in formData.deliveryStages" :key="stage" size="small">
                       {{ configuredLabel('PROJECT_STAGE', stage) }}
                     </a-tag>
-                    <template v-if="formData.deliveryStages.length === 0">
-                      —
-                    </template>
+                    <template v-if="formData.deliveryStages.length === 0"> — </template>
                   </div>
                 </div>
                 <div class="view-field">
@@ -968,19 +1009,35 @@ async function retryLoad(): Promise<void> {
 
               <div class="form-row form-row-wide">
                 <a-form-item label="合同名称" field="projectName">
-                  <a-input v-model="formData.projectName" placeholder="请录入项目完整合同名称" :max-length="200" />
+                  <a-input
+                    v-model="formData.projectName"
+                    placeholder="请录入项目完整合同名称"
+                    :max-length="200"
+                  />
                 </a-form-item>
                 <a-form-item label="项目简称">
-                  <a-input v-model="formData.shortName" placeholder="建议：地名+客户简称+合同关键词" :max-length="100" />
+                  <a-input
+                    v-model="formData.shortName"
+                    placeholder="建议：地名+客户简称+合同关键词"
+                    :max-length="100"
+                  />
                 </a-form-item>
                 <a-form-item label="项目编号">
-                  <a-input :model-value="formData.projectCode" placeholder="保存后自动生成" disabled />
+                  <a-input
+                    :model-value="formData.projectCode"
+                    placeholder="保存后自动生成"
+                    disabled
+                  />
                 </a-form-item>
               </div>
 
               <div class="form-row form-row-wide">
                 <a-form-item label="客户名称">
-                  <a-input v-model="formData.customerName" placeholder="请输入客户完整名称" :max-length="200" />
+                  <a-input
+                    v-model="formData.customerName"
+                    placeholder="请输入客户完整名称"
+                    :max-length="200"
+                  />
                 </a-form-item>
                 <a-form-item label="国家" field="countryCode">
                   <a-select v-model="formData.countryCode" placeholder="请选择" allow-search>
@@ -1009,12 +1066,7 @@ async function retryLoad(): Promise<void> {
                   </a-select>
                 </a-form-item>
                 <a-form-item label="项目关键词" field="keywords">
-                  <a-select
-                    v-model="formData.keywords"
-                    multiple
-                    allow-search
-                    allow-clear
-                  >
+                  <a-select v-model="formData.keywords" multiple allow-search allow-clear>
                     <a-option v-for="item in keywordOptions" :key="item.value" v-bind="item" />
                   </a-select>
                 </a-form-item>
@@ -1022,7 +1074,11 @@ async function retryLoad(): Promise<void> {
 
               <div class="form-row">
                 <a-form-item label="合同币种" field="contractCurrency">
-                  <a-select v-model="formData.contractCurrency" allow-search :disabled="!canEditFinancial">
+                  <a-select
+                    v-model="formData.contractCurrency"
+                    allow-search
+                    :disabled="!canEditFinancial"
+                  >
                     <a-option v-for="item in currencyOptions" :key="item.value" v-bind="item" />
                   </a-select>
                 </a-form-item>
@@ -1051,16 +1107,28 @@ async function retryLoad(): Promise<void> {
 
               <div class="form-row">
                 <a-form-item label="合同编号">
-                  <a-input v-model="formData.contractNo" placeholder="请输入合同编号" :disabled="!canEditContract" />
+                  <a-input
+                    v-model="formData.contractNo"
+                    placeholder="请输入合同编号"
+                    :disabled="!canEditContract"
+                  />
                 </a-form-item>
                 <a-form-item label="签约时间">
-                  <a-date-picker v-model="formData.contractSignedAt" format="YYYY-MM-DD" :disabled="!canEditContract" />
+                  <a-date-picker
+                    v-model="formData.contractSignedAt"
+                    format="YYYY-MM-DD"
+                    :disabled="!canEditContract"
+                  />
                 </a-form-item>
                 <a-form-item label="开始时间">
                   <a-date-picker v-model="formData.startDate" format="YYYY-MM-DD" />
                 </a-form-item>
                 <a-form-item label="验收时间">
-                  <a-date-picker v-model="formData.expectedAcceptanceAt" format="YYYY-MM-DD" :disabled="!canEditAcceptanceDate" />
+                  <a-date-picker
+                    v-model="formData.expectedAcceptanceAt"
+                    format="YYYY-MM-DD"
+                    :disabled="!canEditAcceptanceDate"
+                  />
                 </a-form-item>
               </div>
 
@@ -1115,11 +1183,7 @@ async function retryLoad(): Promise<void> {
                     allow-clear
                     :disabled="!canUpdateProgress"
                   >
-                    <a-option
-                      v-for="item in stageOptions"
-                      :key="item.value"
-                      v-bind="item"
-                    />
+                    <a-option v-for="item in stageOptions" :key="item.value" v-bind="item" />
                   </a-select>
                 </a-form-item>
                 <a-form-item label="项目进度（%）">
@@ -1129,9 +1193,7 @@ async function retryLoad(): Promise<void> {
                     :max="100"
                     :disabled="!canUpdateProgress"
                   >
-                    <template #suffix>
-                      %
-                    </template>
+                    <template #suffix> % </template>
                   </a-input-number>
                 </a-form-item>
                 <a-form-item :label="`确收金额（${baseCurrencyLabel}）`">
@@ -1143,10 +1205,7 @@ async function retryLoad(): Promise<void> {
                   />
                 </a-form-item>
                 <a-form-item class="acceptance-field" label="是否完成验收">
-                  <a-select
-                    v-model="formData.acceptanceCompleted"
-                    :disabled="!canEditAcceptance"
-                  >
+                  <a-select v-model="formData.acceptanceCompleted" :disabled="!canEditAcceptance">
                     <a-option :value="false" label="否" />
                     <a-option :value="true" label="是" />
                   </a-select>
@@ -1173,69 +1232,262 @@ async function retryLoad(): Promise<void> {
 </template>
 
 <style scoped>
-.dialog-shell { height: min(760px, calc(100vh - 32px)); display: flex; flex-direction: column; overflow: hidden; background: #fff; color: #1d2129; }
-.dialog-header { height: 48px; display: flex; flex: 0 0 48px; align-items: center; justify-content: space-between; padding: 0 16px 0 24px; border-bottom: 1px solid #e5e6eb; background: #fff; }
-.dialog-header h2 { margin: 0; font-size: 16px; font-weight: 700; line-height: 24px; }
-.dialog-actions { display: flex; align-items: center; gap: 12px; }
-.dialog-actions :deep(.arco-btn) { width: 82px; height: 32px; padding: 0; border-radius: 0; }
-.dialog-actions :deep(.dialog-close) { width: 54px; height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0 16px; border: 0; border-radius: 0; background: transparent; color: #165dff; cursor: pointer; }
-.dialog-close:hover { background: #f2f3f5; }
-.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
-.dialog-body { min-height: 0; flex: 1; overflow-x: hidden; overflow-y: scroll; scrollbar-color: #c9cdd4 #f2f3f5; scrollbar-width: thin; scrollbar-gutter: stable; }
-.dialog-body::-webkit-scrollbar { width: 4px; height: 4px; }
-.dialog-body::-webkit-scrollbar-track { background: #f2f3f5; }
-.dialog-body::-webkit-scrollbar-thumb { border-radius: 2px; background: #c9cdd4; }
-.dialog-body :deep(.arco-spin) { width: 100%; min-height: 100%; }
-.dialog-body :deep(.arco-spin-mask) { width: 100%; }
+.dialog-shell {
+  height: min(760px, calc(100vh - 32px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #fff;
+  color: #1d2129;
+}
+.dialog-header {
+  height: 48px;
+  display: flex;
+  flex: 0 0 48px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px 0 24px;
+  border-bottom: 1px solid #e5e6eb;
+  background: #fff;
+}
+.dialog-header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 24px;
+}
+.dialog-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.dialog-actions :deep(.arco-btn) {
+  min-width: 82px;
+  height: 32px;
+  padding: 0 16px;
+  border-radius: var(--border-radius-small);
+  white-space: nowrap;
+}
+.dialog-actions :deep(.dialog-primary-action) {
+  min-width: 112px;
+}
+.dialog-actions :deep(.dialog-close) {
+  width: 54px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #165dff;
+  cursor: pointer;
+}
+.dialog-close:hover {
+  background: #f2f3f5;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+.dialog-body {
+  min-height: 0;
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  scrollbar-color: #c9cdd4 #f2f3f5;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+}
+.dialog-body::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.dialog-body::-webkit-scrollbar-track {
+  background: #f2f3f5;
+}
+.dialog-body::-webkit-scrollbar-thumb {
+  border-radius: 2px;
+  background: #c9cdd4;
+}
+.dialog-body :deep(.arco-spin) {
+  width: 100%;
+  min-height: 100%;
+}
+.dialog-body :deep(.arco-spin-mask) {
+  width: 100%;
+}
 .project-detail-form,
-.project-detail-view { width: min(1021px, calc(100% - 10px)); margin-left: 9px; }
-.basic-section { padding: 20px 24px 0; }
-.section-heading { height: 32px; border-bottom: 1px solid #e5e6eb; }
-.section-heading h3 { margin: 0; color: #1d2129; font-size: 14px; font-weight: 700; line-height: 22px; }
-.form-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; padding-top: 16px; }
-.form-row-wide { grid-template-columns: minmax(0, 427fr) minmax(0, 249fr) minmax(0, 249fr); }
-.project-detail-form :deep(.arco-form-item) { margin-bottom: 0; }
-.project-detail-form :deep(.arco-form-item-label-col) { height: 20px; margin-bottom: 4px; color: #86909c; font-size: 12px; line-height: 20px; }
-.project-detail-form .form-row-compact :deep(.arco-form-item-label-col) { height: 14px; margin-bottom: 4px; line-height: 14px; }
-.project-detail-form :deep(.arco-form-item-label-required-symbol) { display: none; }
+.project-detail-view {
+  width: min(1021px, calc(100% - 10px));
+  margin-left: 9px;
+}
+.basic-section {
+  padding: 20px 24px 0;
+}
+.section-heading {
+  height: 32px;
+  border-bottom: 1px solid #e5e6eb;
+}
+.section-heading h3 {
+  margin: 0;
+  color: #1d2129;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 22px;
+}
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+  padding-top: 16px;
+}
+.form-row-wide {
+  grid-template-columns: minmax(0, 427fr) minmax(0, 249fr) minmax(0, 249fr);
+}
+.project-detail-form :deep(.arco-form-item) {
+  margin-bottom: 0;
+}
+.project-detail-form :deep(.arco-form-item-label-col) {
+  height: 20px;
+  margin-bottom: 4px;
+  color: #86909c;
+  font-size: 12px;
+  line-height: 20px;
+}
+.project-detail-form .form-row-compact :deep(.arco-form-item-label-col) {
+  height: 14px;
+  margin-bottom: 4px;
+  line-height: 14px;
+}
+.project-detail-form :deep(.arco-form-item-label-required-symbol) {
+  display: none;
+}
 .project-detail-form :deep(.arco-input-wrapper),
 .project-detail-form :deep(.arco-select-view),
 .project-detail-form :deep(.arco-picker),
-.project-detail-form :deep(.arco-input-number) { width: 100%; min-height: 32px; border: 0; border-radius: 0; background: #e5e6eb; box-shadow: none; color: #1d2129; }
+.project-detail-form :deep(.arco-input-number) {
+  width: 100%;
+  min-height: 32px;
+  border: 0;
+  border-radius: 0;
+  background: #e5e6eb;
+  box-shadow: none;
+  color: #1d2129;
+}
 .project-detail-form :deep(.arco-input-wrapper:not(.arco-input-disabled):hover),
 .project-detail-form :deep(.arco-select-view:not(.arco-select-view-disabled):hover),
 .project-detail-form :deep(.arco-picker:not(.arco-picker-disabled):hover),
-.project-detail-form :deep(.arco-input-number:not(.arco-input-number-disabled):hover) { background: #c9cdd4; }
+.project-detail-form :deep(.arco-input-number:not(.arco-input-number-disabled):hover) {
+  background: #c9cdd4;
+}
 .project-detail-form :deep(.arco-input-disabled),
 .project-detail-form :deep(.arco-select-view-disabled),
 .project-detail-form :deep(.arco-picker-disabled),
-.project-detail-form :deep(.arco-input-number-disabled) { background: #e5e6eb; color: #1d2129; opacity: 1; }
+.project-detail-form :deep(.arco-input-number-disabled) {
+  background: #e5e6eb;
+  color: #1d2129;
+  opacity: 1;
+}
 .project-detail-form :deep(.arco-input),
 .project-detail-form :deep(.arco-select-view-value),
 .project-detail-form :deep(.arco-picker input),
-.project-detail-form :deep(.arco-input-number input) { font-size: 14px; line-height: 22px; }
+.project-detail-form :deep(.arco-input-number input) {
+  font-size: 14px;
+  line-height: 22px;
+}
 .project-detail-form :deep(.arco-input::placeholder),
 .project-detail-form :deep(.arco-select-view-placeholder),
-.project-detail-form :deep(.arco-picker input::placeholder) { color: #86909c; opacity: 1; }
-.project-detail-form :deep(.arco-select-view-multiple) { max-height: 32px; overflow: hidden; padding-block: 3px; }
-.project-detail-form :deep(.arco-tag) { border-radius: 0; }
-.acceptance-field :deep(.arco-select-view:not(.arco-select-view-disabled)) { border: 1px solid #e5e6eb; background: #fff; }
-.view-field { min-width: 0; }
-.view-field > span { display: block; height: 20px; margin-bottom: 4px; overflow: hidden; color: #86909c; font-size: 12px; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
-.form-row-compact .view-field > span { height: 14px; line-height: 14px; }
-.view-field > div { width: 100%; height: 32px; padding: 5px 12px; overflow: hidden; background: #e5e6eb; color: #1d2129; font-size: 14px; line-height: 22px; text-overflow: ellipsis; white-space: nowrap; }
-.view-field > .view-tags { display: flex; align-items: center; gap: 4px; }
-.view-tags :deep(.arco-tag) { flex: 0 0 auto; max-width: 100%; overflow: hidden; border-radius: 0; text-overflow: ellipsis; white-space: nowrap; }
+.project-detail-form :deep(.arco-picker input::placeholder) {
+  color: #86909c;
+  opacity: 1;
+}
+.project-detail-form :deep(.arco-select-view-multiple) {
+  max-height: 32px;
+  overflow: hidden;
+  padding-block: 3px;
+}
+.project-detail-form :deep(.arco-tag) {
+  border-radius: 0;
+}
+.acceptance-field :deep(.arco-select-view:not(.arco-select-view-disabled)) {
+  border: 1px solid #e5e6eb;
+  background: #fff;
+}
+.view-field {
+  min-width: 0;
+}
+.view-field > span {
+  display: block;
+  height: 20px;
+  margin-bottom: 4px;
+  overflow: hidden;
+  color: #86909c;
+  font-size: 12px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.form-row-compact .view-field > span {
+  height: 14px;
+  line-height: 14px;
+}
+.view-field > div {
+  width: 100%;
+  height: 32px;
+  padding: 5px 12px;
+  overflow: hidden;
+  background: #e5e6eb;
+  color: #1d2129;
+  font-size: 14px;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.view-field > .view-tags {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.view-tags :deep(.arco-tag) {
+  flex: 0 0 auto;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 @media (max-width: 800px) {
-  .dialog-shell { height: calc(100vh - 24px); }
-  .form-row, .form-row-wide { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dialog-shell {
+    height: calc(100vh - 24px);
+  }
+  .form-row,
+  .form-row-wide {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 @media (max-width: 560px) {
-  .dialog-header { padding-left: 16px; }
+  .dialog-header {
+    padding-left: 16px;
+  }
   .project-detail-form,
-  .project-detail-view { width: 100%; margin-left: 0; }
-  .basic-section { padding-inline: 16px; }
-  .form-row, .form-row-wide { grid-template-columns: 1fr; gap: 12px; }
+  .project-detail-view {
+    width: 100%;
+    margin-left: 0;
+  }
+  .basic-section {
+    padding-inline: 16px;
+  }
+  .form-row,
+  .form-row-wide {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
 }
 </style>
 
@@ -1247,8 +1499,14 @@ async function retryLoad(): Promise<void> {
   max-width: calc(100vw - 32px);
   overflow: hidden;
   border-radius: 0;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 4%), 0 4px 24px rgb(0 0 0 / 8%);
+  box-shadow:
+    0 1px 4px rgb(0 0 0 / 4%),
+    0 4px 24px rgb(0 0 0 / 8%);
 }
-.project-detail-dialog .arco-modal-header { display: none; }
-.project-detail-dialog .arco-modal-body { padding: 0; }
+.project-detail-dialog .arco-modal-header {
+  display: none;
+}
+.project-detail-dialog .arco-modal-body {
+  padding: 0;
+}
 </style>
