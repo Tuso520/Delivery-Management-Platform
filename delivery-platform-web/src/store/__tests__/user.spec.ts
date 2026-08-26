@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
 import { authApi } from '@/api/auth'
+import { ApiRequestError } from '@/api/errors'
 import { useFilePreview } from '@/platform/file-preview/useFilePreview'
 import router from '@/router'
 import { useUserStore } from '@/store/user'
@@ -120,7 +121,9 @@ describe('useUserStore', () => {
   })
 
   it('marks the browser anonymous when refresh-cookie restoration fails', async () => {
-    vi.mocked(authApi.refreshToken).mockRejectedValue({ response: { status: 401 } })
+    vi.mocked(authApi.refreshToken).mockRejectedValue(
+      new ApiRequestError('登录状态已失效', 401, undefined, false, 'trace-refresh-401'),
+    )
 
     const store = useUserStore()
 

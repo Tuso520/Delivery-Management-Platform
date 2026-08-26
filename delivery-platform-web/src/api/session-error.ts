@@ -1,4 +1,5 @@
 interface HttpErrorLike {
+  status?: unknown
   response?: {
     status?: unknown
   }
@@ -7,7 +8,8 @@ interface HttpErrorLike {
 export function getHttpErrorStatus(error: unknown): number | undefined {
   if (!error || typeof error !== 'object') return undefined
 
-  const status = (error as HttpErrorLike).response?.status
+  const httpError = error as HttpErrorLike
+  const status = httpError.status ?? httpError.response?.status
   return typeof status === 'number' ? status : undefined
 }
 
