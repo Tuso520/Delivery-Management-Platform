@@ -663,7 +663,10 @@ try {
   }
 } finally {
   await prisma.refreshSession.deleteMany({ where: { userId: limitedUser.id } });
-  await prisma.user.delete({ where: { id: limitedUser.id } });
+  await prisma.user.update({
+    where: { id: limitedUser.id },
+    data: { status: 'Inactive', deletedAt: new Date() },
+  });
   await prisma.project.deleteMany({ where: { id: purgeFixture.id } });
 }
 
