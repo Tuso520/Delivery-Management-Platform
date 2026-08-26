@@ -96,7 +96,7 @@ test('runtime acceptance provisions one reusable project and cleans up uploaded 
     "template.status === 'PUBLISHED'",
     "'idempotency-key': `runtime-project-${standardMarker}`",
     'saveAsDraft: true',
-    "['%PDF-1.4",
+    "const archiveFileBody = '%PDF-1.4",
     "{ type: 'application/pdf' }",
     '/files/${logicalFileId}/archive',
   ]) {
@@ -105,6 +105,6 @@ test('runtime acceptance provisions one reusable project and cleans up uploaded 
   assert.doesNotMatch(verifier, /\/projects\/\$\{cleanupProject\.id\}\/(cancel|archive)/u)
   assert.match(verifier, /archiveFileNames[\s\S]*runtime-project-archive-a-/u)
   assert.match(verifier, /archiveFileNames[\s\S]*runtime-project-archive-b-/u)
-  assert.match(verifier, /verifiedFolder\.totalCount < archiveFolder\.totalCount \+ 2/u)
+  assert.match(verifier, /verifiedFolder\.totalCount < archiveFolder\.totalCount \+ 3/u)
   assert.doesNotMatch(verifier, /uploadTarget\.allowedExtensions/u)
 })
