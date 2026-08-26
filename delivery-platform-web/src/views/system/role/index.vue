@@ -362,9 +362,24 @@ watch(
       >
         <a-table-column data-index="roleCode" title="角色编码" :width="160" />
         <a-table-column data-index="roleName" title="角色名称" :min-width="160" />
-        <a-table-column data-index="description" title="描述" :min-width="240" tooltip />
-        <a-table-column data-index="userCount" title="用户数" :width="80" align="center" />
-        <a-table-column data-index="permissionCount" title="权限数" :width="80" align="center" />
+        <a-table-column
+          data-index="description"
+          title="描述"
+          :min-width="240"
+          tooltip
+        />
+        <a-table-column
+          data-index="userCount"
+          title="用户数"
+          :width="80"
+          align="center"
+        />
+        <a-table-column
+          data-index="permissionCount"
+          title="权限数"
+          :width="80"
+          align="center"
+        />
         <a-table-column data-index="status" title="状态" :width="90">
           <template #cell="{ record: row }">
             <StatusBadge
@@ -378,7 +393,9 @@ watch(
           <template #cell="{ record: row }">
             <a-space size="mini" :wrap="false">
               <Can permission="role:update">
-                <a-button type="text" size="small" @click="openEdit(row)"> 编辑 </a-button>
+                <a-button type="text" size="small" @click="openEdit(row)">
+                  编辑
+                </a-button>
               </Can>
               <Can permission="role:assign_permission">
                 <a-button type="text" size="small" @click="openAssignPermissions(row)">
@@ -408,7 +425,12 @@ watch(
       :width="520"
       :mask-closable="false"
     >
-      <a-form ref="formRef" :model="formData" :rules="formRules" auto-label-width>
+      <a-form
+        ref="formRef"
+        :model="formData"
+        :rules="formRules"
+        auto-label-width
+      >
         <a-form-item label="角色编码" field="roleCode">
           <a-input
             v-model="formData.roleCode"
@@ -430,13 +452,19 @@ watch(
         </a-form-item>
         <a-form-item v-if="isEdit" label="状态" field="status">
           <a-radio-group v-model="formData.status" :disabled="isEditingProtectedRole">
-            <a-radio value="Active"> 活跃 </a-radio>
-            <a-radio value="Inactive"> 禁用 </a-radio>
+            <a-radio value="Active">
+              活跃
+            </a-radio>
+            <a-radio value="Inactive">
+              禁用
+            </a-radio>
           </a-radio-group>
         </a-form-item>
       </a-form>
       <template #footer>
-        <a-button @click="dialogVisible = false"> 取消 </a-button>
+        <a-button @click="dialogVisible = false">
+          取消
+        </a-button>
         <a-button type="primary" :loading="roleMutation.isPending.value" @click="handleSubmit">
           保存
         </a-button>
@@ -485,7 +513,9 @@ watch(
           subtitle="请重试后再保存"
         >
           <template #extra>
-            <a-button @click="retryPermissionData"> 重试 </a-button>
+            <a-button @click="retryPermissionData">
+              重试
+            </a-button>
           </template>
         </a-result>
         <div v-else-if="permissionModules.length === 0 && !permTreeLoading" class="perm-empty">
@@ -548,7 +578,9 @@ watch(
       </a-spin>
 
       <template #footer>
-        <a-button @click="permDialogVisible = false"> 取消 </a-button>
+        <a-button @click="permDialogVisible = false">
+          取消
+        </a-button>
         <a-button
           type="primary"
           :loading="roleMutation.isPending.value"

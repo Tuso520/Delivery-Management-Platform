@@ -397,7 +397,12 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
 </script>
 
 <template>
-  <PageContainer class="project-page" gap="normal" :scrollable="false" :style="projectLayoutStyle">
+  <PageContainer
+    class="project-page"
+    gap="normal"
+    :scrollable="false"
+    :style="projectLayoutStyle"
+  >
     <section class="summary-band" :aria-label="t('projects.summaryAria')">
       <article v-for="metric in summaryMetrics" :key="metric.id" class="summary-metric">
         <span class="metric-icon" aria-hidden="true">
@@ -442,8 +447,8 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
             />
             <a-button type="primary" class="search-button" @click="search">
               <template #icon>
-                <IconSearch /> </template
-              >{{ t('projects.query') }}
+                <IconSearch />
+              </template>{{ t('projects.query') }}
             </a-button>
           </div>
         </template>
@@ -634,7 +639,12 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
               <span v-else>-</span>
             </template>
           </a-table-column>
-          <a-table-column :title="t('common.action')" :width="110" fixed="right" align="center">
+          <a-table-column
+            :title="t('common.action')"
+            :width="110"
+            fixed="right"
+            align="center"
+          >
             <template #cell="{ record: row }">
               <a-button
                 v-if="row.canPermanentDelete"

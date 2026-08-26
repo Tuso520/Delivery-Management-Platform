@@ -748,7 +748,9 @@ async function retryLoad(): Promise<void> {
         <a-spin :loading="loading">
           <a-result v-if="loadError" status="error" :title="loadError">
             <template #extra>
-              <a-button @click="retryLoad"> 重新加载 </a-button>
+              <a-button @click="retryLoad">
+                重新加载
+              </a-button>
             </template>
           </a-result>
 
@@ -825,7 +827,9 @@ async function retryLoad(): Promise<void> {
                     <a-tag v-for="keyword in formData.keywords" :key="keyword" size="small">
                       {{ configuredLabel('PROJECT_KEYWORD', keyword) }}
                     </a-tag>
-                    <template v-if="formData.keywords.length === 0"> — </template>
+                    <template v-if="formData.keywords.length === 0">
+                      —
+                    </template>
                   </div>
                 </div>
               </div>
@@ -912,7 +916,9 @@ async function retryLoad(): Promise<void> {
                     <a-tag v-for="stage in formData.deliveryStages" :key="stage" size="small">
                       {{ configuredLabel('PROJECT_STAGE', stage) }}
                     </a-tag>
-                    <template v-if="formData.deliveryStages.length === 0"> — </template>
+                    <template v-if="formData.deliveryStages.length === 0">
+                      —
+                    </template>
                   </div>
                 </div>
                 <div class="view-field">
@@ -1015,7 +1021,12 @@ async function retryLoad(): Promise<void> {
                   </a-select>
                 </a-form-item>
                 <a-form-item label="项目关键词" field="keywords">
-                  <a-select v-model="formData.keywords" multiple allow-search allow-clear>
+                  <a-select
+                    v-model="formData.keywords"
+                    multiple
+                    allow-search
+                    allow-clear
+                  >
                     <a-option v-for="item in keywordOptions" :key="item.value" v-bind="item" />
                   </a-select>
                 </a-form-item>
@@ -1142,7 +1153,9 @@ async function retryLoad(): Promise<void> {
                     :max="100"
                     :disabled="!canUpdateProgress"
                   >
-                    <template #suffix> % </template>
+                    <template #suffix>
+                      %
+                    </template>
                   </a-input-number>
                 </a-form-item>
                 <a-form-item :label="`确收金额（${baseCurrencyLabel}）`">
