@@ -92,8 +92,11 @@ describe('ProjectService', () => {
     projectMember: Record<string, jest.Mock>;
     projectArchiveFile: Record<string, jest.Mock>;
     file: Record<string, jest.Mock>;
+    attachment: Record<string, jest.Mock>;
     reviewTask: Record<string, jest.Mock>;
     projectPayment: Record<string, jest.Mock>;
+    dailyReport: Record<string, jest.Mock>;
+    projectRetrospective: Record<string, jest.Mock>;
     exchangeRate: Record<string, jest.Mock>;
     country: Record<string, jest.Mock>;
     dictionaryCategory: Record<string, jest.Mock>;
@@ -144,6 +147,7 @@ describe('ProjectService', () => {
       projectMember: { upsert: jest.fn(), updateMany: jest.fn() },
       projectArchiveFile: { count: jest.fn().mockResolvedValue(0) },
       file: { count: jest.fn().mockResolvedValue(0) },
+      attachment: { count: jest.fn().mockResolvedValue(0) },
       reviewTask: { count: jest.fn().mockResolvedValue(0) },
       projectPayment: {
         count: jest.fn().mockResolvedValue(0),
@@ -153,6 +157,8 @@ describe('ProjectService', () => {
         update: jest.fn(),
         updateMany: jest.fn(),
       },
+      dailyReport: { count: jest.fn().mockResolvedValue(0) },
+      projectRetrospective: { count: jest.fn().mockResolvedValue(0) },
       exchangeRate: { findFirst: jest.fn() },
       country: {
         findMany: jest.fn().mockResolvedValue([{ countryCode: 'VN', nameZh: '越南' }]),
@@ -1254,6 +1260,7 @@ describe('ProjectService', () => {
     prisma.project.findUnique.mockResolvedValue({ ...mockProject, archivedAt: new Date() });
     prisma.projectArchiveFile.count.mockResolvedValue(2);
     prisma.reviewTask.count.mockResolvedValue(1);
+    prisma.dailyReport.count.mockResolvedValue(1);
 
     await expect(service.purge('project-1', adminActor)).rejects.toThrow(ConflictException);
 
@@ -1263,6 +1270,11 @@ describe('ProjectService', () => {
         action: 'purge',
         result: 'failure',
         errorReason: expect.stringContaining('文件 2 条'),
+      }),
+    });
+    expect(prisma.operationLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        errorReason: expect.stringContaining('其他业务记录 1 条'),
       }),
     });
   });

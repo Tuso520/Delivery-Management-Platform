@@ -9,6 +9,7 @@ import { TARGET_APPROVAL_BUSINESS_TYPES } from '../src/modules/platform/dto/appr
 import { testDatasetManifest } from './test-data-manifest';
 
 const prisma = new PrismaClient();
+const PROJECT_PURGE_FIXTURE_CODE = 'ID-JK-2026-002';
 
 interface TestFieldValues {
   contractTypes: string[];
@@ -199,7 +200,7 @@ async function seedProjectDetails(
   fields: TestFieldValues,
 ): Promise<void> {
   const projects = await prisma.project.findMany({
-    where: { deletedAt: null },
+    where: { deletedAt: null, projectCode: { not: PROJECT_PURGE_FIXTURE_CODE } },
     orderBy: { projectCode: 'asc' },
     take: minimum,
     select: { id: true },
@@ -431,7 +432,7 @@ async function seedPeopleOperations(
   fields: TestFieldValues,
 ): Promise<void> {
   const projects = await prisma.project.findMany({
-    where: { deletedAt: null },
+    where: { deletedAt: null, projectCode: { not: PROJECT_PURGE_FIXTURE_CODE } },
     orderBy: { projectCode: 'asc' },
     take: minimum,
     select: { id: true },

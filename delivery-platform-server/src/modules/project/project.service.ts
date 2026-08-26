@@ -1430,21 +1430,34 @@ export class ProjectService {
           throw new BadRequestException('仅已归档项目可永久删除');
         }
 
-        const [archiveFileCount, legacyFileCount, reviewCount, paymentCount, auditCount] =
+        const [
+          archiveFileCount,
+          legacyFileCount,
+          attachmentCount,
+          reviewCount,
+          paymentCount,
+          auditCount,
+          dailyReportCount,
+          retrospectiveCount,
+        ] =
           await Promise.all([
             transaction.projectArchiveFile.count({ where: { projectId: id } }),
             transaction.file.count({ where: { projectId: id } }),
+            transaction.attachment.count({ where: { projectId: id } }),
             transaction.reviewTask.count({ where: { projectId: id } }),
             transaction.projectPayment.count({ where: { projectId: id } }),
             transaction.operationLog.count({
               where: { targetType: 'project', targetId: id },
             }),
+            transaction.dailyReport.count({ where: { projectId: id } }),
+            transaction.projectRetrospective.count({ where: { projectId: id } }),
           ]);
         const blockers = {
-          files: archiveFileCount + legacyFileCount,
+          files: archiveFileCount + legacyFileCount + attachmentCount,
           reviews: reviewCount,
           financialRecords: paymentCount,
           audits: auditCount,
+          businessRecords: dailyReportCount + retrospectiveCount,
         };
 
         if (Object.values(blockers).some((count) => count > 0)) {
@@ -1472,6 +1485,7 @@ export class ProjectService {
         `审核 ${result.blockers.reviews} 条`,
         `财务 ${result.blockers.financialRecords} 条`,
         `审计 ${result.blockers.audits} 条`,
+        `其他业务记录 ${result.blockers.businessRecords} 条`,
       ].join('、');
       await writeOperationLog(this.prisma, {
           userId: actor.sub,

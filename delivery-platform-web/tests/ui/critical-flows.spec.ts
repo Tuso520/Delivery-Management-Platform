@@ -373,7 +373,7 @@ test('role permissions lifecycle is super-admin-only and new roles start empty',
       .first(),
   ).toBeChecked()
   await switchedBackDialog.getByRole('button', { name: '取消', exact: true }).click()
-  expect(roleDetailRequests).toBe(3)
+  expect(roleDetailRequests).toBe(2)
 
   const assignedDetailResponse = await page.request.get(`/api/v1/roles/${created.data.id}`, {
     headers: authorization,

@@ -522,7 +522,7 @@ test('project overview keeps loading, empty and error states inside the Figma ta
   await page.getByRole('button', { name: '查询', exact: true }).click()
   await expect(page.locator('.project-table-frame .arco-result')).toBeVisible()
   await expect(page.locator('.project-table-frame')).toContainText(
-    'Request failed with status code 500',
+    '项目列表验收错误',
   )
   await expect(page.getByRole('button', { name: '重新加载', exact: true })).toBeVisible()
   await expect(page.locator('.project-table-frame')).toHaveCSS('height', '602px')
