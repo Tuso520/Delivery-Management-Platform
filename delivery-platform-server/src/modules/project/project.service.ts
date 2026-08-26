@@ -1437,8 +1437,6 @@ export class ProjectService {
           reviewCount,
           paymentCount,
           auditCount,
-          dailyReportCount,
-          retrospectiveCount,
         ] =
           await Promise.all([
             transaction.projectArchiveFile.count({ where: { projectId: id } }),
@@ -1449,15 +1447,12 @@ export class ProjectService {
             transaction.operationLog.count({
               where: { targetType: 'project', targetId: id },
             }),
-            transaction.dailyReport.count({ where: { projectId: id } }),
-            transaction.projectRetrospective.count({ where: { projectId: id } }),
           ]);
         const blockers = {
           files: archiveFileCount + legacyFileCount + attachmentCount,
           reviews: reviewCount,
           financialRecords: paymentCount,
           audits: auditCount,
-          businessRecords: dailyReportCount + retrospectiveCount,
         };
 
         if (Object.values(blockers).some((count) => count > 0)) {
@@ -1477,7 +1472,22 @@ export class ProjectService {
         return { project, blockers: null };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-    );
+    ).catch(async (error: unknown) => {
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2003') {
+        throw error;
+      }
+      const errorReason = '物理删除被未迁移的历史关联记录阻止';
+      await writeOperationLog(this.prisma, {
+        userId: actor.sub,
+        module: 'project',
+        action: 'purge',
+        targetType: 'project',
+        targetId: id,
+        result: 'failure',
+        errorReason,
+      });
+      throw new ConflictException('项目存在历史关联记录，禁止物理删除');
+    });
 
     if (result.blockers) {
       const reason = [
@@ -1485,7 +1495,6 @@ export class ProjectService {
         `审核 ${result.blockers.reviews} 条`,
         `财务 ${result.blockers.financialRecords} 条`,
         `审计 ${result.blockers.audits} 条`,
-        `其他业务记录 ${result.blockers.businessRecords} 条`,
       ].join('、');
       await writeOperationLog(this.prisma, {
           userId: actor.sub,

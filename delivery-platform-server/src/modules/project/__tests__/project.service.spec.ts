@@ -95,8 +95,6 @@ describe('ProjectService', () => {
     attachment: Record<string, jest.Mock>;
     reviewTask: Record<string, jest.Mock>;
     projectPayment: Record<string, jest.Mock>;
-    dailyReport: Record<string, jest.Mock>;
-    projectRetrospective: Record<string, jest.Mock>;
     exchangeRate: Record<string, jest.Mock>;
     country: Record<string, jest.Mock>;
     dictionaryCategory: Record<string, jest.Mock>;
@@ -157,8 +155,6 @@ describe('ProjectService', () => {
         update: jest.fn(),
         updateMany: jest.fn(),
       },
-      dailyReport: { count: jest.fn().mockResolvedValue(0) },
-      projectRetrospective: { count: jest.fn().mockResolvedValue(0) },
       exchangeRate: { findFirst: jest.fn() },
       country: {
         findMany: jest.fn().mockResolvedValue([{ countryCode: 'VN', nameZh: '越南' }]),
@@ -1260,7 +1256,6 @@ describe('ProjectService', () => {
     prisma.project.findUnique.mockResolvedValue({ ...mockProject, archivedAt: new Date() });
     prisma.projectArchiveFile.count.mockResolvedValue(2);
     prisma.reviewTask.count.mockResolvedValue(1);
-    prisma.dailyReport.count.mockResolvedValue(1);
 
     await expect(service.purge('project-1', adminActor)).rejects.toThrow(ConflictException);
 
@@ -1272,9 +1267,27 @@ describe('ProjectService', () => {
         errorReason: expect.stringContaining('文件 2 条'),
       }),
     });
+  });
+
+  it('returns a specific conflict and audits a retired historical foreign-key blocker', async () => {
+    const adminActor = { ...publicActor, roles: ['SUPER_ADMIN'], permissions: ['project:delete'] };
+    prisma.project.findUnique.mockResolvedValue({ ...mockProject, archivedAt: new Date() });
+    prisma.project.delete.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Foreign key constraint violated: project_id', {
+        code: 'P2003',
+        clientVersion: '5.22.0',
+        meta: { field_name: 'project_id' },
+      }),
+    );
+
+    await expect(service.purge('project-1', adminActor)).rejects.toThrow(
+      '项目存在历史关联记录，禁止物理删除',
+    );
     expect(prisma.operationLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        errorReason: expect.stringContaining('其他业务记录 1 条'),
+        action: 'purge',
+        result: 'failure',
+        errorReason: '物理删除被未迁移的历史关联记录阻止',
       }),
     });
   });
