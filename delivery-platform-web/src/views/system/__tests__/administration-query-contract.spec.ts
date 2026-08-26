@@ -52,5 +52,12 @@ describe('administration server-state contract', () => {
     expect(source).toContain("const hydratedPermissionRoleId = ref('')")
     expect(source).toContain('hydratedPermissionRoleId.value !== currentRoleId.value')
     expect(source).toContain('hydratedPermissionRoleId.value = currentRoleId.value')
+    expect(source).toContain(':columns="permissionMatrixColumns"')
+    expect(source).toContain('row-key="id"')
+    expect(source).toContain('restrictedToSystemAdministrator')
+    expect(source).not.toContain('<a-table-column title="页面 / 功能"')
+
+    const queries = readSource('src/composables/queries/useAdministrationQueries.ts')
+    expect(queries).toContain('queryFn: ({ signal }) => roleApi.getById(toValue(roleId), signal)')
   })
 })

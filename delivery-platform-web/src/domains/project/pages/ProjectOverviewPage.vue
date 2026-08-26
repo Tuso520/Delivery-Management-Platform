@@ -2,9 +2,13 @@
 import { computed, ref, type CSSProperties } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import Message from '@arco-design/web-vue/es/message'
+import Modal from '@arco-design/web-vue/es/modal'
+import { useMutation } from '@tanstack/vue-query'
 import {
   IconCalendarClock,
   IconCheckCircle,
+  IconDelete,
   IconLayers,
   IconPlayCircle,
   IconPlus,
@@ -16,6 +20,7 @@ import {
 } from '@arco-design/web-vue/es/icon'
 
 import { BusinessTable, PageContainer, PageToolbar } from '@/design-system'
+import { projectApi } from '@/domains/project/api/project.api'
 import {
   useProjectListQuery,
   useProjectSummaryQuery,
@@ -42,7 +47,7 @@ const permissionStore = usePermissionStore()
 const projectLayout = Object.freeze({
   nameColumnWidth: 240,
   managerColumnWidth: 110,
-  tableWidth: 2060,
+  tableWidth: 2170,
   scopeWidth: 100,
   toolbarGap: 8,
 })
@@ -85,6 +90,10 @@ const summaryParams = computed<QueryProjectDto>(() => ({
   scope: filters.value.scope,
 }))
 const summaryQuery = useProjectSummaryQuery(summaryParams)
+const permanentDeleteMutation = useMutation({
+  mutationFn: (projectId: string) => projectApi.permanentDelete(projectId),
+  retry: false,
+})
 const fieldConfig = useFieldConfig('project')
 const configuredBaseCurrency = computed(() =>
   String(fieldConfig.getField('CURRENCY')?.defaultValue ?? ''),
@@ -113,6 +122,37 @@ const pagination = computed(() => ({
   pageSize: listQuery.data.value?.pageSize ?? 20,
   total: listQuery.data.value?.total ?? 0,
 }))
+
+function permanentlyDeleteProject(project: Project): void {
+  if (!project.canPermanentDelete || permanentDeleteMutation.isPending.value) return
+  Modal.confirm({
+    simple: false,
+    alignCenter: true,
+    titleAlign: 'start',
+    modalClass: 'business-confirm-dialog',
+    title: t('projects.deleteTitle'),
+    content: t('projects.deleteConfirm', { name: project.projectName }),
+    okText: t('projects.deleteAction'),
+    cancelText: t('common.cancel'),
+    okButtonProps: { status: 'danger' },
+    closable: false,
+    maskClosable: false,
+    escToClose: false,
+    onBeforeOk: async (done) => {
+      try {
+        await permanentDeleteMutation.mutateAsync(project.id)
+        await Promise.all([listQuery.refetch(), summaryQuery.refetch()])
+        Message.success(t('projects.deletedSuccess'))
+        done(true)
+      } catch (error: unknown) {
+        Message.error(
+          error instanceof Error && error.message ? error.message : t('projects.deleteFailed'),
+        )
+        done(false)
+      }
+    },
+  })
+}
 const summary = computed(() => ({
   total: 0,
   active: 0,
@@ -357,12 +397,7 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
 </script>
 
 <template>
-  <PageContainer
-    class="project-page"
-    gap="normal"
-    :scrollable="false"
-    :style="projectLayoutStyle"
-  >
+  <PageContainer class="project-page" gap="normal" :scrollable="false" :style="projectLayoutStyle">
     <section class="summary-band" :aria-label="t('projects.summaryAria')">
       <article v-for="metric in summaryMetrics" :key="metric.id" class="summary-metric">
         <span class="metric-icon" aria-hidden="true">
@@ -407,8 +442,8 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
             />
             <a-button type="primary" class="search-button" @click="search">
               <template #icon>
-                <IconSearch />
-              </template>{{ t('projects.query') }}
+                <IconSearch /> </template
+              >{{ t('projects.query') }}
             </a-button>
           </div>
         </template>
@@ -599,6 +634,23 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
               <span v-else>-</span>
             </template>
           </a-table-column>
+          <a-table-column :title="t('common.action')" :width="110" fixed="right" align="center">
+            <template #cell="{ record: row }">
+              <a-button
+                v-if="row.canPermanentDelete"
+                type="text"
+                status="danger"
+                :loading="permanentDeleteMutation.isPending.value"
+                @click="permanentlyDeleteProject(row)"
+              >
+                <template #icon>
+                  <IconDelete />
+                </template>
+                {{ t('projects.deleteAction') }}
+              </a-button>
+              <span v-else>-</span>
+            </template>
+          </a-table-column>
         </BusinessTable>
       </div>
     </section>
@@ -610,7 +662,6 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
       :project-id="drawerProjectId"
       @edit="editProject"
       @saved="saved"
-      @deleted="saved"
     />
   </PageContainer>
 </template>

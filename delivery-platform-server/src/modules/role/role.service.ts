@@ -7,6 +7,7 @@ import {
 
 import { PrismaService } from '../../database/prisma.service';
 import { OperationLogService } from '../operation-log/operation-log.service';
+import { isSystemAdministratorPermission } from '../permission/permission-catalog';
 
 import { AssignPermissionsDto } from './dto/assign-permissions.dto';
 import { CreateRoleDto } from './dto/create-role.dto';
@@ -24,25 +25,25 @@ export class RoleService {
   async findAll() {
     const [roles, activePermissionCount] = await Promise.all([
       this.prisma.role.findMany({
-      select: {
-        id: true,
-        roleCode: true,
-        roleName: true,
-        description: true,
-        status: true,
-        isProtected: true,
-        createdAt: true,
-        updatedAt: true,
-        _count: {
-          select: {
-            userRoles: true,
-            rolePermissions: {
-              where: { permission: { deprecatedAt: null } },
+        select: {
+          id: true,
+          roleCode: true,
+          roleName: true,
+          description: true,
+          status: true,
+          isProtected: true,
+          createdAt: true,
+          updatedAt: true,
+          _count: {
+            select: {
+              userRoles: true,
+              rolePermissions: {
+                where: { permission: { deprecatedAt: null } },
+              },
             },
           },
         },
-      },
-      orderBy: { createdAt: 'asc' },
+        orderBy: { createdAt: 'asc' },
       }),
       this.prisma.permission.count({ where: { deprecatedAt: null } }),
     ]);
@@ -245,6 +246,7 @@ export class RoleService {
         where: { id: roleId },
         select: {
           id: true,
+          roleCode: true,
           isProtected: true,
           rolePermissions: {
             where: { permission: { deprecatedAt: null } },
@@ -261,10 +263,16 @@ export class RoleService {
 
       const permissions = await tx.permission.findMany({
         where: { id: { in: permissionIds }, deprecatedAt: null },
-        select: { id: true },
+        select: { id: true, permissionCode: true },
       });
       if (permissions.length !== permissionIds.length) {
         throw new BadRequestException('权限不存在');
+      }
+      if (
+        role.roleCode !== 'SYSTEM_ADMIN' &&
+        permissions.some(({ permissionCode }) => isSystemAdministratorPermission(permissionCode))
+      ) {
+        throw new BadRequestException('普通角色不能分配系统管理员专属权限');
       }
 
       const existingIds = role.rolePermissions.map(({ permissionId }) => permissionId);

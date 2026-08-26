@@ -3,7 +3,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import type { FormInstance } from '@arco-design/web-vue'
 import Message from '@arco-design/web-vue/es/message'
 import Modal from '@arco-design/web-vue/es/modal'
-import { IconClose, IconDelete, IconEdit, IconSave } from '@arco-design/web-vue/es/icon'
+import { IconClose, IconEdit, IconSave } from '@arco-design/web-vue/es/icon'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 
 import { projectApi } from '@/domains/project/api/project.api'
@@ -57,7 +57,6 @@ const emit = defineEmits<{
   'update:visible': [value: boolean]
   edit: []
   saved: []
-  deleted: []
 }>()
 
 const queryClient = useQueryClient()
@@ -570,44 +569,6 @@ const mutation = useMutation({
       : projectApi.update(variables.id, variables.data),
   retry: false,
 })
-const deleteMutation = useMutation({
-  mutationFn: (id: string) => projectApi.permanentDelete(id),
-  retry: false,
-})
-
-function deleteProject(): void {
-  const current = project.value
-  if (!current?.canPermanentDelete || deleteMutation.isPending.value) return
-  Modal.confirm({
-    simple: false,
-    alignCenter: true,
-    titleAlign: 'start',
-    modalClass: 'business-confirm-dialog',
-    title: '确认删除项目',
-    content: `确定永久删除项目“${current.projectName}”吗？此操作不可撤销。`,
-    okText: '确认删除',
-    cancelText: '取消',
-    okButtonProps: { status: 'danger' },
-    closable: false,
-    maskClosable: false,
-    escToClose: false,
-    onBeforeOk: async (done) => {
-      try {
-        await deleteMutation.mutateAsync(current.id)
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: queryKeys.projects.lists() }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.projects.summary() }),
-        ])
-        Message.success(`项目“${current.projectName}”已删除`)
-        emit('deleted')
-        emit('update:visible', false)
-        done(true)
-      } catch {
-        done(false)
-      }
-    },
-  })
-}
 async function save(): Promise<boolean> {
   if (readonly.value || mutation.isPending.value || !formRef.value) return false
   const validation = await formRef.value.validate().catch((error: unknown) => error)
@@ -766,18 +727,6 @@ async function retryLoad(): Promise<void> {
             编辑项目
           </a-button>
           <a-button
-            v-if="project?.canPermanentDelete"
-            status="danger"
-            class="dialog-primary-action"
-            :loading="deleteMutation.isPending.value"
-            @click="deleteProject"
-          >
-            <template #icon>
-              <IconDelete />
-            </template>
-            删除项目
-          </a-button>
-          <a-button
             v-if="!readonly"
             type="primary"
             :loading="mutation.isPending.value"
@@ -799,9 +748,7 @@ async function retryLoad(): Promise<void> {
         <a-spin :loading="loading">
           <a-result v-if="loadError" status="error" :title="loadError">
             <template #extra>
-              <a-button @click="retryLoad">
-                重新加载
-              </a-button>
+              <a-button @click="retryLoad"> 重新加载 </a-button>
             </template>
           </a-result>
 
@@ -878,9 +825,7 @@ async function retryLoad(): Promise<void> {
                     <a-tag v-for="keyword in formData.keywords" :key="keyword" size="small">
                       {{ configuredLabel('PROJECT_KEYWORD', keyword) }}
                     </a-tag>
-                    <template v-if="formData.keywords.length === 0">
-                      —
-                    </template>
+                    <template v-if="formData.keywords.length === 0"> — </template>
                   </div>
                 </div>
               </div>
@@ -967,9 +912,7 @@ async function retryLoad(): Promise<void> {
                     <a-tag v-for="stage in formData.deliveryStages" :key="stage" size="small">
                       {{ configuredLabel('PROJECT_STAGE', stage) }}
                     </a-tag>
-                    <template v-if="formData.deliveryStages.length === 0">
-                      —
-                    </template>
+                    <template v-if="formData.deliveryStages.length === 0"> — </template>
                   </div>
                 </div>
                 <div class="view-field">
@@ -1072,12 +1015,7 @@ async function retryLoad(): Promise<void> {
                   </a-select>
                 </a-form-item>
                 <a-form-item label="项目关键词" field="keywords">
-                  <a-select
-                    v-model="formData.keywords"
-                    multiple
-                    allow-search
-                    allow-clear
-                  >
+                  <a-select v-model="formData.keywords" multiple allow-search allow-clear>
                     <a-option v-for="item in keywordOptions" :key="item.value" v-bind="item" />
                   </a-select>
                 </a-form-item>
@@ -1204,9 +1142,7 @@ async function retryLoad(): Promise<void> {
                     :max="100"
                     :disabled="!canUpdateProgress"
                   >
-                    <template #suffix>
-                      %
-                    </template>
+                    <template #suffix> % </template>
                   </a-input-number>
                 </a-form-item>
                 <a-form-item :label="`确收金额（${baseCurrencyLabel}）`">

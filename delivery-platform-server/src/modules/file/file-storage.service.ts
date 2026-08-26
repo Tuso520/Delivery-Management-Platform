@@ -171,10 +171,11 @@ export class FileStorageService {
     }
   }
 
-  async cleanupUnclaimedUpload(file: Express.Multer.File): Promise<void> {
+  async cleanupUnclaimedUpload(file?: Express.Multer.File): Promise<void> {
     if (!isStreamedMulterFile(file) || file.streamedUploadClaimed) return;
     try {
       await this.deleteFrom(file.storageBucket, file.storageKey);
+      file.streamedUploadClaimed = true;
     } catch (error) {
       this.logger.error(
         `Failed to clean up unclaimed upload ${file.storageBucket}/${file.storageKey}`,

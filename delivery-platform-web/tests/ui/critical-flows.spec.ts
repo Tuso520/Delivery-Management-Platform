@@ -256,6 +256,7 @@ test('role permissions lifecycle is super-admin-only and new roles start empty',
           id: string
           permissionCode: string
           permissionName: string
+          restrictedToSystemAdministrator?: boolean
         }>
       }>
     }>
@@ -274,13 +275,118 @@ test('role permissions lifecycle is super-admin-only and new roles start empty',
   const permissionIds = [projectUpdatePermission?.id, paymentOperatePermission?.id]
   expect(permissionIds).toEqual([expect.any(String), expect.any(String)])
 
-  const assignResponse = await page.request.post(`/api/v1/roles/${created.data.id}/permissions`, {
-    headers: authorization,
-    data: { permissionIds },
+  const administratorOnlyPermission = catalogPages
+    .flatMap(({ permissions }) => permissions)
+    .find(({ permissionCode }) => permissionCode === 'role:assign_permission')
+  expect(administratorOnlyPermission).toMatchObject({
+    restrictedToSystemAdministrator: true,
   })
-  expect(assignResponse.status()).toBe(200)
-  const assigned = (await assignResponse.json()) as { data: { permissions: Array<{ id: string }> } }
-  expect(assigned.data.permissions.map(({ id }) => id).sort()).toEqual([...permissionIds].sort())
+  const rejectedAdministratorPermission = await page.request.post(
+    `/api/v1/roles/${created.data.id}/permissions`,
+    {
+      headers: authorization,
+      data: { permissionIds: [administratorOnlyPermission?.id] },
+    },
+  )
+  expect(rejectedAdministratorPermission.status()).toBe(400)
+  expect(await rejectedAdministratorPermission.json()).toMatchObject({
+    message: '普通角色不能分配系统管理员专属权限',
+  })
+
+  let permissionCatalogRequests = 0
+  let roleDetailRequests = 0
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname
+    if (request.method() === 'GET' && path === '/api/v1/permissions') {
+      permissionCatalogRequests += 1
+    }
+    if (request.method() === 'GET' && path === `/api/v1/roles/${created.data.id}`) {
+      roleDetailRequests += 1
+    }
+  })
+  await page.goto('/#/settings/role-permissions')
+  const createdRoleRow = page.locator('.arco-table-tr').filter({ hasText: roleCode })
+  await expect(createdRoleRow).toBeVisible({ timeout: 60_000 })
+  await createdRoleRow.getByRole('button', { name: '配置权限' }).click()
+  const permissionDialog = page.locator('.arco-modal').filter({ hasText: roleCode })
+  await expect(permissionDialog).toBeVisible()
+  await expect.poll(() => permissionCatalogRequests).toBe(1)
+  await expect.poll(() => roleDetailRequests).toBe(1)
+
+  for (const permissionName of ['查看项目列表', '编辑项目', '上传档案文件', '下载文件']) {
+    const permissionRow = permissionDialog.locator('.arco-table-tr').filter({
+      hasText: permissionName,
+    })
+    await expect(permissionRow).toBeVisible()
+    await permissionRow.getByRole('checkbox').first().click({ delay: 10 })
+  }
+  const downloadPermissionCheckbox = permissionDialog
+    .locator('.arco-table-tr')
+    .filter({ hasText: '下载文件' })
+    .getByRole('checkbox')
+    .first()
+  await downloadPermissionCheckbox.click({ delay: 10 })
+  await expect(downloadPermissionCheckbox).not.toBeChecked()
+  await downloadPermissionCheckbox.click({ delay: 10 })
+  await expect(downloadPermissionCheckbox).toBeChecked()
+  const savePermissionsResponse = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === `/api/v1/roles/${created.data.id}/permissions` &&
+      response.request().method() === 'POST',
+  )
+  await permissionDialog.getByRole('button', { name: '保存', exact: true }).click()
+  expect((await savePermissionsResponse).status()).toBe(200)
+  await expect(permissionDialog).toBeHidden()
+  expect(permissionCatalogRequests).toBe(1)
+  expect(roleDetailRequests).toBe(1)
+
+  await page.reload()
+  const reloadedRoleRow = page.locator('.arco-table-tr').filter({ hasText: roleCode })
+  await expect(reloadedRoleRow).toBeVisible({ timeout: 60_000 })
+  await reloadedRoleRow.getByRole('button', { name: '配置权限' }).click()
+  const reloadedDialog = page.locator('.arco-modal').filter({ hasText: roleCode })
+  await expect(reloadedDialog).toBeVisible()
+  for (const permissionName of ['查看项目列表', '编辑项目', '上传档案文件', '下载文件']) {
+    const permissionRow = reloadedDialog.locator('.arco-table-tr').filter({
+      hasText: permissionName,
+    })
+    await expect(permissionRow.getByRole('checkbox').first()).toBeChecked()
+  }
+  await reloadedDialog.getByRole('button', { name: '取消', exact: true }).click()
+  expect(permissionCatalogRequests).toBeLessThanOrEqual(2)
+  expect(roleDetailRequests).toBe(2)
+
+  const protectedRoleRow = page.locator('.arco-table-tr').filter({ hasText: 'SUPER_ADMIN' })
+  await protectedRoleRow.getByRole('button', { name: '查看权限' }).click()
+  const protectedDialog = page.locator('.arco-modal').filter({ hasText: 'SUPER_ADMIN' })
+  await expect(protectedDialog.getByRole('checkbox').first()).toBeDisabled()
+  await protectedDialog.getByRole('button', { name: '取消', exact: true }).click()
+
+  await reloadedRoleRow.getByRole('button', { name: '配置权限' }).click()
+  const switchedBackDialog = page.locator('.arco-modal').filter({ hasText: roleCode })
+  await expect(
+    switchedBackDialog
+      .locator('.arco-table-tr')
+      .filter({ hasText: '上传档案文件' })
+      .getByRole('checkbox')
+      .first(),
+  ).toBeChecked()
+  await switchedBackDialog.getByRole('button', { name: '取消', exact: true }).click()
+  expect(roleDetailRequests).toBe(3)
+
+  const assignedDetailResponse = await page.request.get(`/api/v1/roles/${created.data.id}`, {
+    headers: authorization,
+  })
+  expect(assignedDetailResponse.status()).toBe(200)
+  const assigned = (await assignedDetailResponse.json()) as {
+    data: { permissions: Array<{ permissionCode: string }> }
+  }
+  expect(assigned.data.permissions.map(({ permissionCode }) => permissionCode).sort()).toEqual([
+    'archive:upload',
+    'file:download',
+    'project:update',
+    'project:view',
+  ])
 
   const updateResponse = await page.request.put(`/api/v1/roles/${created.data.id}`, {
     headers: authorization,
@@ -623,4 +729,69 @@ test('project manager is restricted by data scope, field permissions and setting
   await page.goto('/#/settings/role-permissions')
   await page.waitForURL((url) => url.hash === '#/dashboard')
   expect(browserErrors).toEqual([])
+})
+
+test('only the administrator can permanently delete the dedicated archived test project', async ({
+  page,
+}) => {
+  const adminToken = await login(page, adminUsername, adminPassword)
+  const archivedProjects = await fetchProjectList(
+    page,
+    adminToken,
+    `/api/v1/projects/archived?keyword=${encodeURIComponent('示例项目 10')}&page=1&pageSize=20`,
+  )
+  const project = archivedProjects.data.items.find(({ shortName }) => shortName === '示例项目 10')
+  expect(project).toMatchObject({
+    archivedAt: expect.any(String),
+    canPermanentDelete: true,
+  })
+  if (!project) throw new Error('Dedicated archived deletion fixture is missing')
+
+  const [resolvedLimitedUsername, resolvedLimitedPassword] = requireCredentials(
+    limitedUsername,
+    limitedPassword,
+  )
+  const limitedLoginResponse = await page.request.post('/api/v1/auth/login', {
+    data: { username: resolvedLimitedUsername, password: resolvedLimitedPassword },
+  })
+  expect(limitedLoginResponse.status()).toBe(200)
+  const limitedSession = (await limitedLoginResponse.json()) as SessionEnvelope
+  const forbiddenDelete = await page.request.delete(`/api/v1/projects/${project.id}/permanent`, {
+    headers: { authorization: `Bearer ${limitedSession.data.accessToken}` },
+  })
+  expect(forbiddenDelete.status()).toBe(403)
+  expect(await forbiddenDelete.json()).toMatchObject({
+    code: 403,
+    message: expect.any(String),
+  })
+
+  await page.goto(`/#/projects?scope=archived&keyword=${encodeURIComponent('示例项目 10')}`)
+  const archivedProjectRow = page.locator('.arco-table-tr').filter({
+    hasText: '示例项目 10',
+  })
+  await expect(archivedProjectRow).toBeVisible({ timeout: 60_000 })
+  await archivedProjectRow.getByRole('button', { name: '永久删除' }).click()
+  const confirmation = page.locator('.business-confirm-dialog')
+  await expect(confirmation).toContainText('永久删除项目“示例项目 10”？')
+
+  const deleteResponse = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === `/api/v1/projects/${project.id}/permanent` &&
+      response.request().method() === 'DELETE',
+  )
+  const refreshedList = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/v1/projects/archived' &&
+      response.request().method() === 'GET',
+  )
+  const refreshedSummary = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/v1/projects/summary' &&
+      response.request().method() === 'GET',
+  )
+  await confirmation.getByRole('button', { name: '永久删除' }).click()
+  expect((await deleteResponse).status()).toBe(200)
+  expect((await refreshedList).status()).toBe(200)
+  expect((await refreshedSummary).status()).toBe(200)
+  await expect(page.getByText('示例项目 10', { exact: true })).toHaveCount(0)
 })

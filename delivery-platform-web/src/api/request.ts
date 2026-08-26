@@ -21,6 +21,12 @@ interface RetryableRequestConfig extends InternalAxiosRequestConfig {
   _retry?: boolean
 }
 
+interface HttpErrorPayload {
+  code?: string | number
+  message?: string | string[]
+  traceId?: string
+}
+
 interface RequestClient {
   get<T>(url: string, config?: RequestOptions): Promise<T>
   post<T>(url: string, data?: unknown, config?: RequestOptions): Promise<T>
@@ -51,6 +57,44 @@ function isSilent(config?: AxiosRequestConfig): boolean {
 
 function skipsAuthRefresh(config?: AxiosRequestConfig): boolean {
   return Boolean(requestOptions(config)?.skipAuthRefresh)
+}
+
+function normalizeHttpError(error: unknown): Error {
+  if (error instanceof ApiRequestError) return error
+  if (!error || typeof error !== 'object') return new ApiRequestError('请求失败')
+
+  const candidate = error as {
+    code?: string
+    message?: string
+    response?: {
+      status?: number
+      data?: HttpErrorPayload
+      headers?: Record<string, string | undefined>
+    }
+  }
+  const status = candidate.response?.status
+  const payload = candidate.response?.data
+  const payloadMessage = Array.isArray(payload?.message) ? payload.message[0] : payload?.message
+  const message = payloadMessage || candidate.message || '请求失败'
+  const traceId =
+    payload?.traceId ??
+    candidate.response?.headers?.['x-request-id'] ??
+    candidate.response?.headers?.['x-trace-id']
+  const retryable =
+    candidate.code === 'ECONNABORTED' ||
+    status === 408 ||
+    status === 429 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504
+
+  return new ApiRequestError(
+    message,
+    status,
+    payload?.code === undefined ? undefined : String(payload.code),
+    retryable,
+    traceId,
+  )
 }
 
 async function resetUnauthorizedSession(): Promise<void> {
@@ -163,7 +207,7 @@ axiosInstance.interceptors.response.use(
     }
 
     if (isSilent(originalConfig)) {
-      return Promise.reject(error)
+      return Promise.reject(normalizeHttpError(error))
     }
 
     switch (status) {
@@ -198,7 +242,7 @@ axiosInstance.interceptors.response.use(
         }
     }
 
-    return Promise.reject(error)
+    return Promise.reject(normalizeHttpError(error))
   },
 )
 

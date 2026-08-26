@@ -69,9 +69,12 @@ describe('RoleService authorization invalidation', () => {
     it('replaces permissions and increments affected users in one transaction', async () => {
       transaction.role.findUnique.mockResolvedValue({
         id: 'role-1',
+        roleCode: 'PROJECT_MANAGER',
         rolePermissions: [{ permissionId: 'permission-old' }],
       });
-      transaction.permission.findMany.mockResolvedValue([{ id: 'permission-1' }]);
+      transaction.permission.findMany.mockResolvedValue([
+        { id: 'permission-1', permissionCode: 'project:view' },
+      ]);
       prisma.role.findUnique.mockResolvedValue(roleDetail);
 
       await service.assignPermissions('role-1', { permissionIds: ['permission-1'] }, 'admin-1');
@@ -87,7 +90,7 @@ describe('RoleService authorization invalidation', () => {
           id: { in: ['permission-1'] },
           deprecatedAt: null,
         },
-        select: { id: true },
+        select: { id: true, permissionCode: true },
       });
       expect(transaction.rolePermission.createMany).toHaveBeenCalledWith({
         data: [{ roleId: 'role-1', permissionId: 'permission-1' }],
@@ -116,11 +119,12 @@ describe('RoleService authorization invalidation', () => {
     it('does not invalidate sessions when the permission set is unchanged', async () => {
       transaction.role.findUnique.mockResolvedValue({
         id: 'role-1',
+        roleCode: 'PROJECT_MANAGER',
         rolePermissions: [{ permissionId: 'permission-1' }, { permissionId: 'permission-2' }],
       });
       transaction.permission.findMany.mockResolvedValue([
-        { id: 'permission-1' },
-        { id: 'permission-2' },
+        { id: 'permission-1', permissionCode: 'project:view' },
+        { id: 'permission-2', permissionCode: 'archive:view' },
       ]);
       prisma.role.findUnique.mockResolvedValue(roleDetail);
 
@@ -138,6 +142,7 @@ describe('RoleService authorization invalidation', () => {
     it('rejects unknown or deprecated permissions before replacing the existing set', async () => {
       transaction.role.findUnique.mockResolvedValue({
         id: 'role-1',
+        roleCode: 'PROJECT_MANAGER',
         rolePermissions: [],
       });
       transaction.permission.findMany.mockResolvedValue([]);
@@ -160,6 +165,48 @@ describe('RoleService authorization invalidation', () => {
       ).rejects.toThrow(BadRequestException);
 
       expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('rejects system-administrator permissions for an ordinary role', async () => {
+      transaction.role.findUnique.mockResolvedValue({
+        id: 'role-1',
+        roleCode: 'PROJECT_MANAGER',
+        isProtected: false,
+        rolePermissions: [],
+      });
+      transaction.permission.findMany.mockResolvedValue([
+        { id: 'permission-admin', permissionCode: 'role:assign_permission' },
+      ]);
+
+      await expect(
+        service.assignPermissions('role-1', { permissionIds: ['permission-admin'] }, 'admin-1'),
+      ).rejects.toThrow('普通角色不能分配系统管理员专属权限');
+
+      expect(transaction.rolePermission.createMany).not.toHaveBeenCalled();
+      expect(operationLog.log).not.toHaveBeenCalled();
+    });
+
+    it('allows the system administrator role to retain its dedicated permissions', async () => {
+      transaction.role.findUnique.mockResolvedValue({
+        id: 'role-system-admin',
+        roleCode: 'SYSTEM_ADMIN',
+        isProtected: false,
+        rolePermissions: [],
+      });
+      transaction.permission.findMany.mockResolvedValue([
+        { id: 'permission-admin', permissionCode: 'role:assign_permission' },
+      ]);
+      prisma.role.findUnique.mockResolvedValue(roleDetail);
+
+      await service.assignPermissions(
+        'role-system-admin',
+        { permissionIds: ['permission-admin'] },
+        'admin-1',
+      );
+
+      expect(transaction.rolePermission.createMany).toHaveBeenCalledWith({
+        data: [{ roleId: 'role-system-admin', permissionId: 'permission-admin' }],
+      });
     });
 
     it('throws when the role does not exist', async () => {

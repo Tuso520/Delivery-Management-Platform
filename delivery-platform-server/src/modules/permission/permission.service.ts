@@ -5,6 +5,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { OperationLogService } from '../operation-log/operation-log.service';
 
 import { ReplacePermissionAssignmentsDto } from './dto/permission-assignment.dto';
+import { isSystemAdministratorPermission } from './permission-catalog';
 
 @Injectable()
 export class PermissionService {
@@ -34,15 +35,23 @@ export class PermissionService {
       orderBy: [{ sortOrder: 'asc' }, { permissionCode: 'asc' }],
     });
 
-    const modules = new Map<string, {
-      moduleCode: string;
-      moduleName: string;
-      pages: Map<string, {
-        pageCode: string;
-        pageName: string;
-        permissions: typeof permissions;
-      }>;
-    }>();
+    const modules = new Map<
+      string,
+      {
+        moduleCode: string;
+        moduleName: string;
+        pages: Map<
+          string,
+          {
+            pageCode: string;
+            pageName: string;
+            permissions: Array<
+              (typeof permissions)[number] & { restrictedToSystemAdministrator: boolean }
+            >;
+          }
+        >;
+      }
+    >();
 
     for (const permission of permissions) {
       let module = modules.get(permission.moduleCode);
@@ -63,7 +72,10 @@ export class PermissionService {
         };
         module.pages.set(permission.pageCode, page);
       }
-      page.permissions.push(permission);
+      page.permissions.push({
+        ...permission,
+        restrictedToSystemAdministrator: isSystemAdministratorPermission(permission.permissionCode),
+      });
     }
 
     return [...modules.values()].map((module) => ({
@@ -164,7 +176,12 @@ export class PermissionService {
         },
         tx,
       );
-      return { departmentId, allow: dto.allow, deny: dto.deny, affectedUsers: affectedUsers.length };
+      return {
+        departmentId,
+        allow: dto.allow,
+        deny: dto.deny,
+        affectedUsers: affectedUsers.length,
+      };
     });
   }
 
@@ -187,10 +204,18 @@ export class PermissionService {
     if (permissions.length !== requested.length) {
       throw new BadRequestException('包含不存在或已废弃的权限码');
     }
-    const byCode = new Map(permissions.map((permission) => [permission.permissionCode, permission.id]));
+    const byCode = new Map(
+      permissions.map((permission) => [permission.permissionCode, permission.id]),
+    );
     return [
-      ...dto.allow.map((code) => ({ permissionId: byCode.get(code)!, effect: PermissionEffect.ALLOW })),
-      ...dto.deny.map((code) => ({ permissionId: byCode.get(code)!, effect: PermissionEffect.DENY })),
+      ...dto.allow.map((code) => ({
+        permissionId: byCode.get(code)!,
+        effect: PermissionEffect.ALLOW,
+      })),
+      ...dto.deny.map((code) => ({
+        permissionId: byCode.get(code)!,
+        effect: PermissionEffect.DENY,
+      })),
     ];
   }
 
@@ -211,5 +236,4 @@ export class PermissionService {
     }
     return [...result];
   }
-
 }

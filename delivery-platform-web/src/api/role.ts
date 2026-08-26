@@ -1,5 +1,11 @@
 import request from './request'
-import type { Role, RoleDetail, CreateRoleDto, UpdateRoleDto, AssignPermissionsDto } from '@/types/role'
+import type {
+  Role,
+  RoleDetail,
+  CreateRoleDto,
+  UpdateRoleDto,
+  AssignPermissionsDto,
+} from '@/types/role'
 
 export const roleApi = {
   getList() {
@@ -10,8 +16,8 @@ export const roleApi = {
     return request.get<Role[]>('/roles/assignable')
   },
 
-  getById(id: string) {
-    return request.get<RoleDetail>(`/roles/${id}`)
+  getById(id: string, signal?: AbortSignal) {
+    return request.get<RoleDetail>(`/roles/${id}`, { signal })
   },
 
   create(data: CreateRoleDto) {

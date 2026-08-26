@@ -9,6 +9,21 @@ export interface PermissionPageMetadata {
   pageOrder: number;
 }
 
+export const SYSTEM_ADMINISTRATOR_PERMISSION_PREFIXES = [
+  'user:',
+  'role:',
+  'permission:',
+  'system_setting:manage',
+  'field_setting:',
+  'integration:',
+] as const;
+
+export function isSystemAdministratorPermission(permissionCode: string): boolean {
+  return SYSTEM_ADMINISTRATOR_PERMISSION_PREFIXES.some((prefix) =>
+    permissionCode.startsWith(prefix),
+  );
+}
+
 const PAGE_CATALOG: Record<string, Omit<PermissionPageMetadata, 'pageCode'>> = {
   auth: {
     moduleCode: 'workspace',

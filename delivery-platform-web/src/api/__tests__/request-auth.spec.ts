@@ -71,9 +71,9 @@ setSessionExpirationHandler(async () => {
 })
 setSessionRefreshHandler(mocks.refreshHandler)
 
-type RequestHandler = (config: {
+type RequestHandler = (config: { headers: Record<string, string> }) => {
   headers: Record<string, string>
-}) => { headers: Record<string, string> }
+}
 
 interface RejectionConfig {
   url: string
@@ -141,10 +141,12 @@ describe('request authentication', () => {
   })
 
   it('enables cookies for every API request', () => {
-    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
-      baseURL: '/api/v1',
-      withCredentials: true,
-    }))
+    expect(mocks.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        baseURL: '/api/v1',
+        withCredentials: true,
+      }),
+    )
   })
 
   it('attaches the in-memory access token', () => {
@@ -179,17 +181,46 @@ describe('request authentication', () => {
       message: 'Request failed with status code 400',
     }
 
-    await expect(rejectionHandler(error)).rejects.toBe(error)
+    await expect(rejectionHandler(error)).rejects.toMatchObject({
+      name: 'ApiRequestError',
+      message: '档案模板版本至少需要一个文件夹',
+      status: 400,
+    })
     expect(mocks.messageError).toHaveBeenCalledWith('档案模板版本至少需要一个文件夹')
     expect(mocks.messageError).not.toHaveBeenCalledWith('Request failed with status code 400')
+  })
+
+  it('preserves backend details for silent archive upload failures', async () => {
+    const error: RequestError = {
+      response: {
+        status: 400,
+        data: {
+          code: 400,
+          message: '文件内容与扩展名不匹配',
+          traceId: 'trace-upload-400',
+        },
+      },
+      config: { url: '/projects/project-1/archive-items/item-1/files', headers: {}, silent: true },
+      message: 'Request failed with status code 400',
+    }
+
+    await expect(rejectionHandler(error)).rejects.toMatchObject({
+      name: 'ApiRequestError',
+      message: '文件内容与扩展名不匹配',
+      status: 400,
+      businessCode: '400',
+      traceId: 'trace-upload-400',
+    })
+    expect(mocks.messageError).not.toHaveBeenCalled()
   })
 
   it('uses one refresh request for concurrent 401 responses and retries both calls', async () => {
     let resolveRefresh!: (value: typeof refreshedSession) => void
     mocks.post.mockImplementation(
-      () => new Promise((resolve) => {
-        resolveRefresh = resolve
-      }),
+      () =>
+        new Promise((resolve) => {
+          resolveRefresh = resolve
+        }),
     )
     mocks.request.mockImplementation((config: RejectionConfig) => Promise.resolve(config.url))
 
@@ -258,7 +289,10 @@ describe('request authentication', () => {
     error.config.silent = true
     error.config.skipAuthRefresh = true
 
-    await expect(rejectionHandler(error)).rejects.toBe(error)
+    await expect(rejectionHandler(error)).rejects.toMatchObject({
+      name: 'ApiRequestError',
+      status: 401,
+    })
 
     expect(mocks.post).not.toHaveBeenCalled()
     expect(mocks.removeToken).not.toHaveBeenCalled()

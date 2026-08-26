@@ -1163,6 +1163,8 @@ describe('running Delivery Platform API', () => {
       const fixturePaths = fixtureNames.map((name) => resolve(fixtureDirectory, name));
       const invalidName = `invalid-${marker}.pdf`;
       const invalidPath = resolve(fixtureDirectory, invalidName);
+      const missingParameterName = `missing-revision-${marker}.pdf`;
+      const missingParameterPath = resolve(fixtureDirectory, missingParameterName);
       const uploadedIds: string[] = [];
 
       const upload = async (
@@ -1202,7 +1204,49 @@ describe('running Delivery Platform API', () => {
       await mkdir(fixtureDirectory, { recursive: true });
       await Promise.all(fixturePaths.map((path, index) => writeFile(path, fixtureBodies[index])));
       await writeFile(invalidPath, 'not a PDF file');
+      await writeFile(missingParameterPath, fixtureBodies[0]);
       try {
+        const boundaryResponse = await fetch(
+          `${baseUrl}/projects/${selectedProjectId}/archive-items/${archiveItemId}/files`,
+          {
+            method: 'POST',
+            headers: {
+              authorization: `Bearer ${admin.accessToken}`,
+              'content-type': 'multipart/form-data',
+            },
+          },
+        );
+        const boundaryBody = (await boundaryResponse.json()) as ApiEnvelope<null>;
+        expect(boundaryResponse.status).toBe(400);
+        expect(boundaryBody).toMatchObject({
+          code: 400,
+          message: 'Multipart: Boundary not found',
+          data: null,
+        });
+        expect(boundaryBody.traceId).toEqual(expect.any(String));
+        process.stdout.write(
+          `ARCHIVE_UPLOAD_PRE_FIX_400 ${JSON.stringify(boundaryBody)}\n`,
+        );
+
+        const missingParameterForm = new FormData();
+        missingParameterForm.append(
+          'file',
+          new Blob([new Uint8Array(fixtureBodies[0])], { type: 'application/pdf' }),
+          missingParameterName,
+        );
+        missingParameterForm.append('uploadMode', 'REPLACE');
+        const missingParameterResponse = await fetch(
+          `${baseUrl}/projects/${selectedProjectId}/archive-items/${archiveItemId}/files`,
+          {
+            method: 'POST',
+            headers: { authorization: `Bearer ${admin.accessToken}` },
+            body: missingParameterForm,
+          },
+        );
+        const missingParameterBody = (await missingParameterResponse.json()) as ApiEnvelope<null>;
+        expect(missingParameterResponse.status).toBe(400);
+        expect(missingParameterBody.message).toBe('revisionLevel 必须为 MINOR 或 MAJOR');
+
         const singleKey = `archive-single-${marker}`;
         const single = await upload(fixturePaths[0], fixtureNames[0], singleKey);
         uploadedIds.push(single.body.data.id);
@@ -1236,6 +1280,7 @@ describe('running Delivery Platform API', () => {
         );
         for (const fixtureName of fixtureNames) expect(uploadedNames).toContain(fixtureName);
         expect(uploadedNames).not.toContain(invalidName);
+        expect(uploadedNames).not.toContain(missingParameterName);
         expect(verifiedFolder?.totalCount).toBe(targetFolder.totalCount + 3);
 
         for (const [index, logicalFileId] of uploadedIds.entries()) {

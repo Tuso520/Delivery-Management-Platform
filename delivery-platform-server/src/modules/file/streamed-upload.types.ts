@@ -10,9 +10,7 @@ export interface StreamedUploadMetadata {
 export type StreamedMulterFile = Express.Multer.File & StreamedUploadMetadata;
 
 export function isStreamedMulterFile(
-  file: Express.Multer.File,
+  file: Express.Multer.File | undefined,
 ): file is StreamedMulterFile {
-  return (
-    (file as Partial<StreamedUploadMetadata>).streamedToObjectStorage === true
-  );
+  return (file as Partial<StreamedUploadMetadata> | undefined)?.streamedToObjectStorage === true;
 }

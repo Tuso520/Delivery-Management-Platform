@@ -26,6 +26,7 @@ export interface Permission {
   pageCode?: string
   pageName?: string
   actionGroup: 'VIEW' | 'OPERATE' | 'TRANSFER' | 'DELETE'
+  restrictedToSystemAdministrator?: boolean
   sortOrder?: number
   description: string | null
   createdAt: string

@@ -1,5 +1,7 @@
 import { DataScopeType, PrismaClient } from '@prisma/client';
 
+import { isSystemAdministratorPermission } from '../../src/modules/permission/permission-catalog';
+
 import { getAllPermissionCodes, type PermissionCode } from './permissions';
 
 interface RoleSeed {
@@ -61,18 +63,9 @@ export const roleCatalog = [
     roleName: '交付负责人',
     description: '全局交付负责人，可查看所有项目相关数据及成本和档案',
     defaultDataScope: DataScopeType.ALL,
-    permissionCodes: getAllPermissionCodes().filter((code) => {
-      // All permissions except system admin specific ones
-      const excludedPrefixes = [
-        'user:',
-        'role:',
-        'permission:',
-        'system_setting:manage',
-        'field_setting:',
-        'integration:',
-      ];
-      return !excludedPrefixes.some((prefix) => code.startsWith(prefix));
-    }),
+    permissionCodes: getAllPermissionCodes().filter(
+      (code) => !isSystemAdministratorPermission(code),
+    ),
   },
   {
     roleCode: 'COUNTRY_MANAGER',

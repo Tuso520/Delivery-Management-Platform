@@ -55,7 +55,7 @@ export function useRoleDetailQuery(
 ) {
   return useQuery({
     queryKey: computed(() => queryKeys.roles.detail(toValue(roleId))),
-    queryFn: () => roleApi.getById(toValue(roleId)),
+    queryFn: ({ signal }) => roleApi.getById(toValue(roleId), signal),
     enabled: computed(() => Boolean(toValue(roleId)) && toValue(enabled)),
   })
 }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import Message from '@arco-design/web-vue/es/message'
-import type { FormInstance } from '@arco-design/web-vue'
+import type { FormInstance, TableColumnData } from '@arco-design/web-vue'
 import { IconPlus } from '@arco-design/web-vue/es/icon'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 
@@ -43,8 +43,8 @@ const roleList = computed<Role[]>(() => roleListQuery.data.value ?? [])
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const currentId = ref('')
-const isEditingProtectedRole = computed(
-  () => roleList.value.some((role) => role.id === currentId.value && role.isProtected),
+const isEditingProtectedRole = computed(() =>
+  roleList.value.some((role) => role.id === currentId.value && role.isProtected),
 )
 const formRef = ref<FormInstance>()
 const formData = reactive({
@@ -85,6 +85,20 @@ const actionGroups = [
   { key: 'DELETE', label: '删除' },
 ] as const
 type ActionGroup = (typeof actionGroups)[number]['key']
+const permissionMatrixColumns: TableColumnData[] = [
+  {
+    title: '页面 / 功能',
+    width: 360,
+    fixed: 'left',
+    slotName: 'permissionLabel',
+  },
+  ...actionGroups.map(({ key, label }) => ({
+    title: label,
+    minWidth: 205,
+    titleSlotName: `permissionTitle-${key}`,
+    slotName: `permissionCell-${key}`,
+  })),
+]
 interface PermissionMatrixRow {
   id: string
   label: string
@@ -118,6 +132,9 @@ const matrixRows = computed<PermissionMatrixRow[]>(() =>
 const allPermissions = computed(() =>
   permissionModules.value.flatMap((module) => module.pages.flatMap((page) => page.permissions)),
 )
+const canAssignSystemAdministratorPermissions = computed(
+  () => currentRoleForPerm.value?.roleCode === 'SYSTEM_ADMIN',
+)
 
 const roleMutation = useMutation({
   mutationFn: async (variables: RoleMutationVariables): Promise<void> => {
@@ -138,7 +155,7 @@ const roleMutation = useMutation({
   },
   retry: false,
   onSuccess: async () => {
-    await queryClient.invalidateQueries({ queryKey: queryKeys.roles.all })
+    await queryClient.invalidateQueries({ queryKey: queryKeys.roles.list() })
   },
 })
 
@@ -247,9 +264,10 @@ function retryPermissionData(): void {
 }
 
 function setPermissions(permissions: readonly Permission[], checked: boolean): void {
-  const permissionIds = new Set(permissions.map((permission) => permission.id))
+  const assignable = selectablePermissions(permissions)
+  const permissionIds = new Set(assignable.map((permission) => permission.id))
   if (checked) {
-    const newIds = permissions
+    const newIds = assignable
       .filter((permission: Permission) => !selectedPermIds.value.includes(permission.id))
       .map((permission: Permission) => permission.id)
     selectedPermIds.value.push(...newIds)
@@ -258,17 +276,32 @@ function setPermissions(permissions: readonly Permission[], checked: boolean): v
   selectedPermIds.value = selectedPermIds.value.filter((id: string) => !permissionIds.has(id))
 }
 
+function selectablePermissions(permissions: readonly Permission[]): Permission[] {
+  if (canAssignSystemAdministratorPermissions.value) return [...permissions]
+  return permissions.filter((permission) => !permission.restrictedToSystemAdministrator)
+}
+
+function isPermissionSelectionDisabled(permissions: readonly Permission[]): boolean {
+  return (
+    Boolean(currentRoleForPerm.value?.isProtected) ||
+    selectablePermissions(permissions).length === 0
+  )
+}
+
 function isAllChecked(permissions: readonly Permission[]): boolean {
-  return permissions.length > 0 && permissions.every((permission: Permission) =>
-    selectedPermIds.value.includes(permission.id),
+  const assignable = selectablePermissions(permissions)
+  return (
+    assignable.length > 0 &&
+    assignable.every((permission: Permission) => selectedPermIds.value.includes(permission.id))
   )
 }
 
 function isIndeterminate(permissions: readonly Permission[]): boolean {
-  const checkedCount = permissions.filter((permission: Permission) =>
+  const assignable = selectablePermissions(permissions)
+  const checkedCount = assignable.filter((permission: Permission) =>
     selectedPermIds.value.includes(permission.id),
   ).length
-  return checkedCount > 0 && checkedCount < permissions.length
+  return checkedCount > 0 && checkedCount < assignable.length
 }
 
 function actionPermissions(row: PermissionMatrixRow, actionGroup: ActionGroup): Permission[] {
@@ -287,7 +320,9 @@ watch(
       detail?.id === currentRoleId.value &&
       hydratedPermissionRoleId.value !== currentRoleId.value
     ) {
-      selectedPermIds.value = detail.permissions.map((permission: Permission) => permission.id)
+      selectedPermIds.value = selectablePermissions(detail.permissions).map(
+        (permission: Permission) => permission.id,
+      )
       hydratedPermissionRoleId.value = currentRoleId.value
     }
   },
@@ -297,7 +332,10 @@ watch(
 
 <template>
   <PageContainer class="role-page">
-    <PageToolbar title="角色权限" description="按页面与功能维护角色，并为用户中心的角色分配提供授权依据">
+    <PageToolbar
+      title="角色权限"
+      description="按页面与功能维护角色，并为用户中心的角色分配提供授权依据"
+    >
       <template #actions>
         <Can permission="role:create">
           <a-button type="primary" @click="openCreate">
@@ -324,24 +362,9 @@ watch(
       >
         <a-table-column data-index="roleCode" title="角色编码" :width="160" />
         <a-table-column data-index="roleName" title="角色名称" :min-width="160" />
-        <a-table-column
-          data-index="description"
-          title="描述"
-          :min-width="240"
-          tooltip
-        />
-        <a-table-column
-          data-index="userCount"
-          title="用户数"
-          :width="80"
-          align="center"
-        />
-        <a-table-column
-          data-index="permissionCount"
-          title="权限数"
-          :width="80"
-          align="center"
-        />
+        <a-table-column data-index="description" title="描述" :min-width="240" tooltip />
+        <a-table-column data-index="userCount" title="用户数" :width="80" align="center" />
+        <a-table-column data-index="permissionCount" title="权限数" :width="80" align="center" />
         <a-table-column data-index="status" title="状态" :width="90">
           <template #cell="{ record: row }">
             <StatusBadge
@@ -355,9 +378,7 @@ watch(
           <template #cell="{ record: row }">
             <a-space size="mini" :wrap="false">
               <Can permission="role:update">
-                <a-button type="text" size="small" @click="openEdit(row)">
-                  编辑
-                </a-button>
+                <a-button type="text" size="small" @click="openEdit(row)"> 编辑 </a-button>
               </Can>
               <Can permission="role:assign_permission">
                 <a-button type="text" size="small" @click="openAssignPermissions(row)">
@@ -387,12 +408,7 @@ watch(
       :width="520"
       :mask-closable="false"
     >
-      <a-form
-        ref="formRef"
-        :model="formData"
-        :rules="formRules"
-        auto-label-width
-      >
+      <a-form ref="formRef" :model="formData" :rules="formRules" auto-label-width>
         <a-form-item label="角色编码" field="roleCode">
           <a-input
             v-model="formData.roleCode"
@@ -414,19 +430,13 @@ watch(
         </a-form-item>
         <a-form-item v-if="isEdit" label="状态" field="status">
           <a-radio-group v-model="formData.status" :disabled="isEditingProtectedRole">
-            <a-radio value="Active">
-              活跃
-            </a-radio>
-            <a-radio value="Inactive">
-              禁用
-            </a-radio>
+            <a-radio value="Active"> 活跃 </a-radio>
+            <a-radio value="Inactive"> 禁用 </a-radio>
           </a-radio-group>
         </a-form-item>
       </a-form>
       <template #footer>
-        <a-button @click="dialogVisible = false">
-          取消
-        </a-button>
+        <a-button @click="dialogVisible = false"> 取消 </a-button>
         <a-button type="primary" :loading="roleMutation.isPending.value" @click="handleSubmit">
           保存
         </a-button>
@@ -450,10 +460,18 @@ watch(
 
       <div class="permission-batch-actions">
         <a-space>
-          <a-button size="small" :disabled="currentRoleForPerm?.isProtected" @click="setPermissions(allPermissions, true)">
+          <a-button
+            size="small"
+            :disabled="currentRoleForPerm?.isProtected"
+            @click="setPermissions(allPermissions, true)"
+          >
             全部勾选
           </a-button>
-          <a-button size="small" :disabled="currentRoleForPerm?.isProtected" @click="setPermissions(allPermissions, false)">
+          <a-button
+            size="small"
+            :disabled="currentRoleForPerm?.isProtected"
+            @click="setPermissions(allPermissions, false)"
+          >
             全部取消
           </a-button>
         </a-space>
@@ -467,9 +485,7 @@ watch(
           subtitle="请重试后再保存"
         >
           <template #extra>
-            <a-button @click="retryPermissionData">
-              重试
-            </a-button>
+            <a-button @click="retryPermissionData"> 重试 </a-button>
           </template>
         </a-result>
         <div v-else-if="permissionModules.length === 0 && !permTreeLoading" class="perm-empty">
@@ -478,57 +494,61 @@ watch(
         <BusinessTable
           v-else-if="permissionModules.length"
           :data="matrixRows"
+          :columns="permissionMatrixColumns"
           row-key="id"
           default-expand-all-rows
           bordered
           class="permission-matrix"
         >
-          <a-table-column title="页面 / 功能" :width="360" fixed="left">
-            <template #cell="{ record: row }">
-              <a-checkbox
-                :model-value="isAllChecked(row.permissions)"
-                :indeterminate="isIndeterminate(row.permissions)"
-                :disabled="currentRoleForPerm?.isProtected"
-                @change="(value) => setPermissions(row.permissions, Boolean(value))"
-              >
-                <span :class="`permission-label permission-label--${row.level}`">{{ row.label }}</span>
-              </a-checkbox>
-            </template>
-          </a-table-column>
-          <a-table-column
+          <template #permissionLabel="{ record: row }">
+            <a-checkbox
+              :model-value="isAllChecked(row.permissions)"
+              :indeterminate="isIndeterminate(row.permissions)"
+              :disabled="isPermissionSelectionDisabled(row.permissions)"
+              @change="(value) => setPermissions(row.permissions, Boolean(value))"
+            >
+              <span :class="`permission-label permission-label--${row.level}`">{{
+                row.label
+              }}</span>
+            </a-checkbox>
+          </template>
+          <template
             v-for="actionGroup in actionGroups"
-            :key="actionGroup.key"
-            :title="actionGroup.label"
-            :min-width="205"
+            #[`permissionTitle-${actionGroup.key}`]
+            :key="`title-${actionGroup.key}`"
           >
-            <template #title>
-              <a-checkbox
-                :model-value="isAllChecked(allActionPermissions(actionGroup.key))"
-                :indeterminate="isIndeterminate(allActionPermissions(actionGroup.key))"
-                :disabled="currentRoleForPerm?.isProtected"
-                @change="(value) => setPermissions(allActionPermissions(actionGroup.key), Boolean(value))"
-              >
-                {{ actionGroup.label }}
-              </a-checkbox>
-            </template>
-            <template #cell="{ record: row }">
-              <a-checkbox
-                v-if="actionPermissions(row, actionGroup.key).length"
-                :model-value="isAllChecked(actionPermissions(row, actionGroup.key))"
-                :indeterminate="isIndeterminate(actionPermissions(row, actionGroup.key))"
-                :disabled="currentRoleForPerm?.isProtected"
-                @change="(value) => setPermissions(actionPermissions(row, actionGroup.key), Boolean(value))"
-              />
-              <span v-else class="permission-empty">-</span>
-            </template>
-          </a-table-column>
+            <a-checkbox
+              :model-value="isAllChecked(allActionPermissions(actionGroup.key))"
+              :indeterminate="isIndeterminate(allActionPermissions(actionGroup.key))"
+              :disabled="isPermissionSelectionDisabled(allActionPermissions(actionGroup.key))"
+              @change="
+                (value) => setPermissions(allActionPermissions(actionGroup.key), Boolean(value))
+              "
+            >
+              {{ actionGroup.label }}
+            </a-checkbox>
+          </template>
+          <template
+            v-for="actionGroup in actionGroups"
+            #[`permissionCell-${actionGroup.key}`]="{ record: row }"
+            :key="`cell-${actionGroup.key}`"
+          >
+            <a-checkbox
+              v-if="actionPermissions(row, actionGroup.key).length"
+              :model-value="isAllChecked(actionPermissions(row, actionGroup.key))"
+              :indeterminate="isIndeterminate(actionPermissions(row, actionGroup.key))"
+              :disabled="isPermissionSelectionDisabled(actionPermissions(row, actionGroup.key))"
+              @change="
+                (value) => setPermissions(actionPermissions(row, actionGroup.key), Boolean(value))
+              "
+            />
+            <span v-else class="permission-empty">-</span>
+          </template>
         </BusinessTable>
       </a-spin>
 
       <template #footer>
-        <a-button @click="permDialogVisible = false">
-          取消
-        </a-button>
+        <a-button @click="permDialogVisible = false"> 取消 </a-button>
         <a-button
           type="primary"
           :loading="roleMutation.isPending.value"

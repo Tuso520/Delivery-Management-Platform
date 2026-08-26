@@ -187,12 +187,17 @@ app_compose run --rm --no-deps -T \
   -e FEISHU_TEST_RECIPIENT_EMAIL="$FEISHU_TEST_RECIPIENT_EMAIL" \
   -e DMP_TEST_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
   -e DMP_EXPECTED_RELEASE_ID="$EXPECTED_RELEASE_ID" \
-  --entrypoint node backend-migrate - <<'NODE'
+--entrypoint node backend-migrate - <<'NODE'
+const { PrismaClient } = await import('@prisma/client');
+const bcrypt = await import('bcrypt');
+const { randomUUID } = await import('node:crypto');
+
 const baseUrl = 'http://backend:3000/api/v1';
 const password = process.env.DMP_TEST_ADMIN_PASSWORD;
 const expectedReleaseId = process.env.DMP_EXPECTED_RELEASE_ID;
 const syncFeishu = process.env.SYNC_FEISHU === 'true';
 const configuredTestRecipientEmail = process.env.FEISHU_TEST_RECIPIENT_EMAIL || '';
+const prisma = new PrismaClient();
 
 function fail(message) {
   throw new Error(message);
@@ -397,17 +402,16 @@ try {
   if (!archiveFolder?.uploadTarget?.id) fail('project archive has no uploadable folder');
   const archiveItemId = archiveFolder.uploadTarget.id;
   const archiveFileNames = [
+    `runtime-project-archive-single-${standardMarker}.pdf`,
     `runtime-project-archive-a-${standardMarker}.pdf`,
     `runtime-project-archive-b-${standardMarker}.pdf`,
   ];
-  for (const [index, fileName] of archiveFileNames.entries()) {
+  const archiveFileBody = '%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<<>>\n%%EOF\n';
+  async function uploadArchiveFile(fileName, idempotencyKey) {
     const archiveFile = new FormData();
     archiveFile.append(
       'file',
-      new Blob(
-        ['%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<<>>\n%%EOF\n'],
-        { type: 'application/pdf' },
-      ),
+      new Blob([archiveFileBody], { type: 'application/pdf' }),
       fileName,
     );
     archiveFile.append('uploadMode', 'REPLACE');
@@ -420,14 +424,74 @@ try {
         method: 'POST',
         headers: {
           authorization: `Bearer ${session.accessToken}`,
-          'idempotency-key': `runtime-project-archive-${index}-${standardMarker}`,
+          'idempotency-key': idempotencyKey,
         },
         body: archiveFile,
       },
     );
-    const uploaded = requireEnvelope(uploadResult, 201, `project archive upload ${index + 1}`);
-    if (!uploaded?.id) fail(`project archive upload ${index + 1}: logical file id missing`);
+    const uploaded = requireEnvelope(uploadResult, 201, `project archive upload ${fileName}`);
+    if (!uploaded?.id) fail(`project archive upload ${fileName}: logical file id missing`);
+    return uploaded;
+  }
+
+  const singleKey = `runtime-project-archive-single-${standardMarker}`;
+  const single = await uploadArchiveFile(archiveFileNames[0], singleKey);
+  const replayedSingle = await uploadArchiveFile(archiveFileNames[0], singleKey);
+  if (replayedSingle.id !== single.id) fail('project archive idempotent replay created a duplicate');
+  uploadedArchiveLogicalIds.push(single.id);
+
+  for (const [index, fileName] of archiveFileNames.slice(1).entries()) {
+    const uploaded = await uploadArchiveFile(
+      fileName,
+      `runtime-project-archive-multi-${index}-${standardMarker}`,
+    );
     uploadedArchiveLogicalIds.push(uploaded.id);
+  }
+
+  const missingRevisionForm = new FormData();
+  missingRevisionForm.append(
+    'file',
+    new Blob([archiveFileBody], { type: 'application/pdf' }),
+    `runtime-project-archive-missing-revision-${standardMarker}.pdf`,
+  );
+  missingRevisionForm.append('uploadMode', 'REPLACE');
+  const missingRevision = await jsonRequest(
+    `/projects/${archiveProject.id}/archive-items/${archiveItemId}/files`,
+    {
+      method: 'POST',
+      headers: { authorization: `Bearer ${session.accessToken}` },
+      body: missingRevisionForm,
+    },
+  );
+  if (
+    missingRevision.response.status !== 400 ||
+    missingRevision.body?.message !== 'revisionLevel 必须为 MINOR 或 MAJOR'
+  ) {
+    fail('project archive missing revision did not return the explicit HTTP 400 reason');
+  }
+
+  const invalidFileForm = new FormData();
+  invalidFileForm.append(
+    'file',
+    new Blob(['not a PDF'], { type: 'application/pdf' }),
+    `runtime-project-archive-invalid-${standardMarker}.pdf`,
+  );
+  invalidFileForm.append('uploadMode', 'REPLACE');
+  invalidFileForm.append('revisionLevel', 'MINOR');
+  invalidFileForm.append('createNewLogicalFile', 'true');
+  const invalidFile = await jsonRequest(
+    `/projects/${archiveProject.id}/archive-items/${archiveItemId}/files`,
+    {
+      method: 'POST',
+      headers: { authorization: `Bearer ${session.accessToken}` },
+      body: invalidFileForm,
+    },
+  );
+  if (
+    invalidFile.response.status !== 400 ||
+    invalidFile.body?.message !== '文件内容与扩展名不匹配'
+  ) {
+    fail('project archive invalid file did not return the explicit HTTP 400 reason');
   }
 
   const archiveTreeAfterResult = await jsonRequest(`/projects/${archiveProject.id}/archive-tree`, {
@@ -447,8 +511,18 @@ try {
   for (const fileName of archiveFileNames) {
     if (!uploadedNames.has(fileName)) fail(`project archive tree is missing uploaded file ${fileName}`);
   }
-  if (verifiedFolder.totalCount < archiveFolder.totalCount + 2) {
-    fail('project archive folder count did not increase by two');
+  if (verifiedFolder.totalCount < archiveFolder.totalCount + 3) {
+    fail('project archive folder count did not increase by three');
+  }
+  for (const logicalFileId of uploadedArchiveLogicalIds) {
+    const download = await fetch(`${baseUrl}/files/${logicalFileId}/download`, {
+      headers: { authorization: `Bearer ${session.accessToken}` },
+    });
+    if (download.status !== 200) fail(`project archive download failed for ${logicalFileId}`);
+    const downloaded = Buffer.from(await download.arrayBuffer());
+    if (!downloaded.equals(Buffer.from(archiveFileBody))) {
+      fail(`project archive download content mismatch for ${logicalFileId}`);
+    }
   }
 } finally {
   let cleanupFailure = null;
@@ -462,6 +536,135 @@ try {
     }
   }
   if (cleanupFailure) fail(cleanupFailure);
+}
+
+const permissionCatalogResult = await jsonRequest('/permissions', {
+  headers: { authorization: `Bearer ${session.accessToken}` },
+});
+const permissionCatalog = requireEnvelope(permissionCatalogResult, 200, 'role permission catalog');
+const runtimeRoleCode = `RTA_ROLE_${standardMarker}`.replace(/[^A-Z0-9_-]/gu, '_').slice(0, 50);
+const runtimeRoleResult = await jsonRequest('/roles', {
+  method: 'POST',
+  headers: {
+    authorization: `Bearer ${session.accessToken}`,
+    'content-type': 'application/json',
+  },
+  body: JSON.stringify({
+    roleCode: runtimeRoleCode,
+    roleName: `运行时权限验收 ${standardMarker}`.slice(0, 50),
+  }),
+});
+const runtimeRole = requireEnvelope(runtimeRoleResult, 201, 'runtime role creation');
+try {
+  const flatPermissions = permissionCatalog.flatMap((module) =>
+    module.pages.flatMap((page) => page.permissions),
+  );
+  const requiredPermissionCodes = [
+    'project:view',
+    'project:update',
+    'archive:upload',
+    'file:download',
+  ];
+  const requiredPermissions = requiredPermissionCodes.map((permissionCode) =>
+    flatPermissions.find((permission) => permission.permissionCode === permissionCode),
+  );
+  if (requiredPermissions.some((permission) => !permission?.id)) {
+    fail('runtime role permission catalog is missing a required permission');
+  }
+  const assignedRoleResult = await jsonRequest(`/roles/${runtimeRole.id}/permissions`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${session.accessToken}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ permissionIds: requiredPermissions.map(({ id }) => id) }),
+  });
+  requireEnvelope(assignedRoleResult, 200, 'runtime role permission assignment');
+  const persistedRoleResult = await jsonRequest(`/roles/${runtimeRole.id}`, {
+    headers: { authorization: `Bearer ${session.accessToken}` },
+  });
+  const persistedRole = requireEnvelope(persistedRoleResult, 200, 'runtime role permission reload');
+  const persistedCodes = persistedRole.permissions.map(({ permissionCode }) => permissionCode).sort();
+  if (JSON.stringify(persistedCodes) !== JSON.stringify([...requiredPermissionCodes].sort())) {
+    fail('runtime role permissions changed after reload');
+  }
+  const restrictedPermission = flatPermissions.find(
+    (permission) => permission.permissionCode === 'role:assign_permission',
+  );
+  if (!restrictedPermission?.id || restrictedPermission.restrictedToSystemAdministrator !== true) {
+    fail('runtime permission catalog did not mark the administrator-only permission');
+  }
+  const restrictedAssignment = await jsonRequest(`/roles/${runtimeRole.id}/permissions`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${session.accessToken}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ permissionIds: [restrictedPermission.id] }),
+  });
+  if (
+    restrictedAssignment.response.status !== 400 ||
+    restrictedAssignment.body?.message !== '普通角色不能分配系统管理员专属权限'
+  ) {
+    fail('ordinary runtime role accepted an administrator-only permission');
+  }
+} finally {
+  await prisma.rolePermission.deleteMany({ where: { roleId: runtimeRole.id } });
+  await prisma.role.delete({ where: { id: runtimeRole.id } });
+}
+
+const purgeMarker = randomUUID().replace(/-/gu, '').slice(0, 12);
+const adminRecord = await prisma.user.findUnique({ where: { username: 'admin' }, select: { id: true } });
+if (!adminRecord?.id) fail('runtime project deletion cannot resolve the administrator');
+const purgeFixture = await prisma.project.create({
+  data: {
+    projectCode: `RTP-${purgeMarker}`,
+    projectName: `运行时物理删除验收 ${purgeMarker}`,
+    shortName: `删除验收 ${purgeMarker}`,
+    countryCode: 'CN',
+    status: 'CANCELLED',
+    archivedAt: new Date(),
+    archivedBy: adminRecord.id,
+    createdBy: adminRecord.id,
+  },
+  select: { id: true },
+});
+const limitedUsername = `rta_limited_${purgeMarker}`;
+const limitedPassword = `${randomUUID()}Aa1!`;
+const limitedUser = await prisma.user.create({
+  data: {
+    username: limitedUsername,
+    password: await bcrypt.hash(limitedPassword, 12),
+    realName: '运行时受限用户',
+  },
+  select: { id: true },
+});
+try {
+  const limitedLogin = await jsonRequest('/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: limitedUsername, password: limitedPassword }),
+  });
+  const limitedSession = requireEnvelope(limitedLogin, 200, 'limited runtime login');
+  const forbiddenPurge = await jsonRequest(`/projects/${purgeFixture.id}/permanent`, {
+    method: 'DELETE',
+    headers: { authorization: `Bearer ${limitedSession.accessToken}` },
+  });
+  if (forbiddenPurge.response.status !== 403 || forbiddenPurge.body?.code !== 403) {
+    fail('limited runtime user project purge did not return HTTP 403');
+  }
+  const successfulPurge = await jsonRequest(`/projects/${purgeFixture.id}/permanent`, {
+    method: 'DELETE',
+    headers: { authorization: `Bearer ${session.accessToken}` },
+  });
+  requireEnvelope(successfulPurge, 200, 'administrator runtime project purge');
+  if (await prisma.project.findUnique({ where: { id: purgeFixture.id }, select: { id: true } })) {
+    fail('administrator runtime project purge left the project row behind');
+  }
+} finally {
+  await prisma.refreshSession.deleteMany({ where: { userId: limitedUser.id } });
+  await prisma.user.delete({ where: { id: limitedUser.id } });
+  await prisma.project.deleteMany({ where: { id: purgeFixture.id } });
 }
 
 const integration = await jsonRequest('/integrations/FEISHU', {
@@ -569,11 +772,19 @@ console.log(JSON.stringify({
   refreshRotation: 'PASS',
   refreshReplayRejected: 'PASS',
   logoutRevocation: 'PASS',
+  projectPermanentDelete: 'PASS',
+  projectDeleteForbidden: 'PASS',
+  projectArchiveSingleFileUpload: 'PASS',
   projectArchiveMultiFileUpload: 'PASS',
+  projectArchiveDownload: 'PASS',
+  projectArchiveInvalidRequest: 'PASS',
+  rolePermissionPersistence: 'PASS',
+  rolePermissionRestriction: 'PASS',
   feishuEnabled: Boolean(integrationData?.isEnabled),
   feishuSync: feishuSummary,
   feishuNotification,
 }));
+await prisma.$disconnect();
 NODE
 
 unset ADMIN_PASSWORD

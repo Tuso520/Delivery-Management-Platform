@@ -15,6 +15,7 @@ import { FileStorageService } from './file-storage.service';
 import { FileController, ProjectArchiveFileController } from './file.controller';
 import { MinioMulterStorage } from './minio-multer.storage';
 import { UnifiedFileService } from './unified-file.service';
+import { UploadedFileCleanupInterceptor } from './uploaded-file-cleanup.interceptor';
 
 @Module({
   imports: [
@@ -34,7 +35,12 @@ import { UnifiedFileService } from './unified-file.service';
     }),
   ],
   controllers: [FileController, ProjectArchiveFileController],
-  providers: [FileConversionAdapter, FileProcessingService, UnifiedFileService],
+  providers: [
+    FileConversionAdapter,
+    FileProcessingService,
+    UnifiedFileService,
+    UploadedFileCleanupInterceptor,
+  ],
   exports: [FileStorageModule, FileProcessingService, UnifiedFileService],
 })
 export class FileModule {}

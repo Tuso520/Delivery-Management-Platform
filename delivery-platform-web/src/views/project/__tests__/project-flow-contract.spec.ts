@@ -23,14 +23,14 @@ describe('project overview and overlay contract', () => {
     expect(overview).toContain('IconPlayCircle')
     expect(overview).toContain('IconCalendarClock')
     expect(overview).toContain('IconUp')
-    expect(overview).not.toContain("@/assets/figma/project-overview")
+    expect(overview).not.toContain('@/assets/figma/project-overview')
     expect(overview).toContain('<a-progress')
     expect(overview).toContain('<a-tag')
     expect(overview).toContain('<a-link class="project-link"')
     expect(overview).not.toContain('<button')
     expect(overview).toContain('displayName(row)')
     expect(overview).not.toContain('archivedView')
-    expect(overview).not.toContain(':title="t(\'common.action\')"')
+    expect(overview).toContain(':title="t(\'common.action\')"')
     expect(overview).not.toContain('project:stage:update')
   })
 
@@ -93,7 +93,7 @@ describe('project overview and overlay contract', () => {
     expect(dialog).toContain('class="project-detail-form"')
     expect(dialog).toContain('<ProjectPaymentPlan')
     expect(dialog).toContain('v-if="canEditProject"')
-    expect(dialog).toContain("@click=\"emit('edit')\"")
+    expect(dialog).toContain('@click="emit(\'edit\')"')
     expect(dialog).toContain('编辑项目')
     expect(dialog).not.toContain('<button')
     expect(dialog).toContain('paymentPlans: plans')
@@ -147,7 +147,9 @@ describe('project overview and overlay contract', () => {
   it('routes the permission-gated view action into the shared edit dialog', () => {
     const overview = source('src/domains/project/pages/ProjectOverviewPage.vue')
     const dialog = source('src/domains/project/components/ProjectDetailDialog.vue')
-    const permissionCatalog = source('../delivery-platform-server/src/modules/permission/permission-catalog.ts')
+    const permissionCatalog = source(
+      '../delivery-platform-server/src/modules/permission/permission-catalog.ts',
+    )
     const permissions = source('../delivery-platform-server/prisma/seed-data/permissions.ts')
 
     expect(overview).toContain('@edit="editProject"')
@@ -178,11 +180,16 @@ describe('project overview and overlay contract', () => {
     expect(paymentPlan).toContain('<span class="payment-cell-left">{{ converted(record) }}</span>')
   })
 
-  it('keeps permanent deletion out of the Figma list while retaining the guarded API', () => {
+  it('exposes permanent deletion only for server-authorized archived list rows', () => {
     const overview = source('src/domains/project/pages/ProjectOverviewPage.vue')
     const api = source('src/domains/project/api/project.api.ts')
-    expect(overview).not.toContain('row.canPermanentDelete')
-    expect(overview).not.toContain('permanentDelete')
+    expect(overview).toContain('v-if="row.canPermanentDelete"')
+    expect(overview).toContain('@click="permanentlyDeleteProject(row)"')
+    expect(overview).toContain("content: t('projects.deleteConfirm', { name: project.projectName })")
+    expect(overview).toContain('Promise.all([listQuery.refetch(), summaryQuery.refetch()])')
+    expect(overview).toContain(
+      "error instanceof Error && error.message ? error.message : t('projects.deleteFailed')",
+    )
     expect(api).toContain('/projects/${id}/permanent')
   })
 })

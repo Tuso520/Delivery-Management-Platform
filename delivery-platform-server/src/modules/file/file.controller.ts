@@ -37,6 +37,7 @@ import { UploadDraftFileDto } from './dto/upload-draft-file.dto';
 import { UploadProjectArchiveFileDto } from './dto/upload-project-archive-file.dto';
 import { FileStorageService } from './file-storage.service';
 import { UnifiedFileService } from './unified-file.service';
+import { UploadedFileCleanupInterceptor } from './uploaded-file-cleanup.interceptor';
 
 function getSensitiveAccessContext(request: Request): {
   ipAddress?: string;
@@ -260,7 +261,7 @@ export class ProjectArchiveFileController {
 
   @Post(':itemId/files')
   @RequirePermissions({ all: ['archive:upload'] })
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file'), UploadedFileCleanupInterceptor)
   @HttpCode(HttpStatus.CREATED)
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: '上传、替换或新增项目档案文件版本' })
