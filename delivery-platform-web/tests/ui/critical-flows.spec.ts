@@ -779,9 +779,14 @@ test('only the administrator can permanently delete the dedicated archived test 
       response.request().method() === 'DELETE',
   )
   const refreshedList = page.waitForResponse(
-    (response) =>
-      new URL(response.url()).pathname === '/api/v1/projects/archived' &&
-      response.request().method() === 'GET',
+    (response) => {
+      const url = new URL(response.url())
+      return (
+        url.pathname === '/api/v1/projects' &&
+        url.searchParams.get('scope') === 'archived' &&
+        response.request().method() === 'GET'
+      )
+    },
   )
   const refreshedSummary = page.waitForResponse(
     (response) =>
