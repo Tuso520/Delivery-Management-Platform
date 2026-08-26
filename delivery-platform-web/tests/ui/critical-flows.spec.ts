@@ -318,16 +318,17 @@ test('role permissions lifecycle is super-admin-only and new roles start empty',
       hasText: permissionName,
     })
     await expect(permissionRow).toBeVisible()
-    await permissionRow.getByRole('checkbox').first().click({ delay: 10 })
+    await permissionRow.locator('.arco-checkbox').first().click({ delay: 10 })
   }
-  const downloadPermissionCheckbox = permissionDialog
+  const downloadPermissionRow = permissionDialog
     .locator('.arco-table-tr')
     .filter({ hasText: '下载文件' })
+  const downloadPermissionCheckbox = downloadPermissionRow
     .getByRole('checkbox')
     .first()
-  await downloadPermissionCheckbox.click({ delay: 10 })
+  await downloadPermissionRow.locator('.arco-checkbox').first().click({ delay: 10 })
   await expect(downloadPermissionCheckbox).not.toBeChecked()
-  await downloadPermissionCheckbox.click({ delay: 10 })
+  await downloadPermissionRow.locator('.arco-checkbox').first().click({ delay: 10 })
   await expect(downloadPermissionCheckbox).toBeChecked()
   const savePermissionsResponse = page.waitForResponse(
     (response) =>
@@ -766,13 +767,11 @@ test('only the administrator can permanently delete the dedicated archived test 
   })
 
   await page.goto(`/#/projects?scope=archived&keyword=${encodeURIComponent('示例项目 10')}`)
-  const archivedProjectRow = page.locator('.arco-table-tr').filter({
-    hasText: '示例项目 10',
-  })
-  await expect(archivedProjectRow).toBeVisible({ timeout: 60_000 })
-  await archivedProjectRow.getByRole('button', { name: '永久删除' }).click()
+  const deleteButton = page.locator(`#project-delete-${project.id}`)
+  await expect(deleteButton).toBeVisible({ timeout: 60_000 })
+  await deleteButton.click()
   const confirmation = page.locator('.business-confirm-dialog')
-  await expect(confirmation).toContainText('永久删除项目“示例项目 10”？')
+  await expect(confirmation).toContainText(`永久删除项目“${project.projectName}”？`)
 
   const deleteResponse = page.waitForResponse(
     (response) =>

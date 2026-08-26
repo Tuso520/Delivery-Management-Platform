@@ -508,14 +508,14 @@ test('project overview keeps loading, empty and error states inside the Figma ta
   await expect(page.locator('.project-list-panel .arco-spin-loading')).toBeVisible()
   await expect(page.locator('.business-empty')).toContainText('暂无符合条件的项目')
   await expect(page.locator('.project-table-frame')).toHaveCSS('height', '602px')
-  await expect(page.locator('.project-list-panel thead .arco-table-th')).toHaveCount(14)
+  await expect(page.locator('.project-list-panel thead .arco-table-th')).toHaveCount(15)
   expect(
     await page
       .locator('.project-list-panel thead .arco-table-th')
       .evaluateAll((headers) =>
         headers.map((header) => getComputedStyle(header).borderRightWidth),
       ),
-  ).toEqual(Array.from({ length: 14 }, () => '1px'))
+  ).toEqual(Array.from({ length: 15 }, () => '1px'))
 
   responseMode = 'error'
   await page.getByPlaceholder('搜索项目名称', { exact: true }).fill('project-overview-error-state')

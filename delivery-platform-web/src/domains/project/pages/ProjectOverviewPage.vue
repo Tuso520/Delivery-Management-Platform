@@ -646,18 +646,19 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
             align="center"
           >
             <template #cell="{ record: row }">
-              <a-button
-                v-if="row.canPermanentDelete"
-                type="text"
-                status="danger"
-                :loading="permanentDeleteMutation.isPending.value"
-                @click="permanentlyDeleteProject(row)"
-              >
-                <template #icon>
-                  <IconDelete />
-                </template>
-                {{ t('projects.deleteAction') }}
-              </a-button>
+              <span v-if="row.canPermanentDelete" :id="`project-delete-${row.id}`">
+                <a-button
+                  type="text"
+                  status="danger"
+                  :loading="permanentDeleteMutation.isPending.value"
+                  @click="permanentlyDeleteProject(row)"
+                >
+                  <template #icon>
+                    <IconDelete />
+                  </template>
+                  {{ t('projects.deleteAction') }}
+                </a-button>
+              </span>
               <span v-else>-</span>
             </template>
           </a-table-column>
