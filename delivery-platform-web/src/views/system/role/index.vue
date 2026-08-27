@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, shallowRef } from 'vue'
 import Message from '@arco-design/web-vue/es/message'
 import type { FormInstance, TableColumnData } from '@arco-design/web-vue'
 import { IconPlus } from '@arco-design/web-vue/es/icon'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 
 import { roleApi } from '@/api/role'
+import { permissionApi } from '@/api/permission'
 import {
   BusinessModal,
   BusinessTable,
@@ -14,11 +15,7 @@ import {
   StatusBadge,
 } from '@/design-system'
 import { Can } from '@/platform/permission'
-import {
-  usePermissionGroupsQuery,
-  useRoleDetailQuery,
-  useRolesQuery,
-} from '@/composables/queries/useAdministrationQueries'
+import { useRolesQuery } from '@/composables/queries/useAdministrationQueries'
 import { queryKeys } from '@/query/keys'
 import type {
   AssignPermissionsDto,
@@ -66,18 +63,11 @@ const formRules = {
 
 const permDialogVisible = ref(false)
 const currentRoleForPerm = ref<Role | null>(null)
-const currentRoleId = computed(() => currentRoleForPerm.value?.id ?? '')
 const selectedPermIds = ref<string[]>([])
-const hydratedPermissionRoleId = ref('')
-const permissionGroupsQuery = usePermissionGroupsQuery(permDialogVisible)
-const roleDetailQuery = useRoleDetailQuery(currentRoleId, permDialogVisible)
-const permissionModules = computed<PermissionModule[]>(() => permissionGroupsQuery.data.value ?? [])
-const permTreeLoading = computed(
-  () => permissionGroupsQuery.isFetching.value || roleDetailQuery.isFetching.value,
-)
-const permLoadFailed = computed(
-  () => permissionGroupsQuery.isError.value || roleDetailQuery.isError.value,
-)
+const permissionModules = shallowRef<PermissionModule[]>([])
+const permTreeLoading = ref(false)
+const permLoadFailed = ref(false)
+let permissionSession = 0
 const actionGroups = [
   { key: 'VIEW', label: '查看' },
   { key: 'OPERATE', label: '操作 / 编辑' },
@@ -237,11 +227,42 @@ function handleDelete(row: Role): void {
     .catch(() => undefined)
 }
 
-function openAssignPermissions(row: Role): void {
+async function openAssignPermissions(row: Role): Promise<void> {
+  const previousRoleId = currentRoleForPerm.value?.id
+  const session = ++permissionSession
+  if (previousRoleId) {
+    await queryClient.cancelQueries({ queryKey: queryKeys.roles.detail(previousRoleId) })
+  }
   currentRoleForPerm.value = row
   selectedPermIds.value = []
-  hydratedPermissionRoleId.value = ''
+  permissionModules.value = []
+  permLoadFailed.value = false
+  permTreeLoading.value = true
   permDialogVisible.value = true
+
+  try {
+    const [modules, detail] = await Promise.all([
+      queryClient.fetchQuery({
+        queryKey: queryKeys.permissions.groups(),
+        queryFn: permissionApi.getAll,
+        staleTime: 0,
+      }),
+      queryClient.fetchQuery({
+        queryKey: queryKeys.roles.detail(row.id),
+        queryFn: ({ signal }) => roleApi.getById(row.id, signal),
+        staleTime: 0,
+      }),
+    ])
+    if (session !== permissionSession || currentRoleForPerm.value?.id !== row.id) return
+    permissionModules.value = modules
+    selectedPermIds.value = selectablePermissions(detail.permissions).map(
+      (permission: Permission) => permission.id,
+    )
+  } catch {
+    if (session === permissionSession) permLoadFailed.value = true
+  } finally {
+    if (session === permissionSession) permTreeLoading.value = false
+  }
 }
 
 async function handleAssignPermissions(): Promise<void> {
@@ -253,24 +274,31 @@ async function handleAssignPermissions(): Promise<void> {
       data: { permissionIds: selectedPermIds.value },
     })
     Message.success('权限分配成功')
-    permDialogVisible.value = false
+    closePermissionDialog()
   } catch {
     // The shared request layer has already surfaced the failure.
   }
 }
 
 function retryPermissionData(): void {
-  void Promise.all([permissionGroupsQuery.refetch(), roleDetailQuery.refetch()])
+  if (currentRoleForPerm.value) void openAssignPermissions(currentRoleForPerm.value)
+}
+
+function closePermissionDialog(): void {
+  const roleId = currentRoleForPerm.value?.id
+  permissionSession += 1
+  permDialogVisible.value = false
+  permTreeLoading.value = false
+  if (roleId) void queryClient.cancelQueries({ queryKey: queryKeys.roles.detail(roleId) })
 }
 
 function setPermissions(permissions: readonly Permission[], checked: boolean): void {
   const assignable = selectablePermissions(permissions)
   const permissionIds = new Set(assignable.map((permission) => permission.id))
   if (checked) {
-    const newIds = assignable
-      .filter((permission: Permission) => !selectedPermIds.value.includes(permission.id))
-      .map((permission: Permission) => permission.id)
-    selectedPermIds.value.push(...newIds)
+    selectedPermIds.value = [
+      ...new Set([...selectedPermIds.value, ...assignable.map((permission) => permission.id)]),
+    ]
     return
   }
   selectedPermIds.value = selectedPermIds.value.filter((id: string) => !permissionIds.has(id))
@@ -311,23 +339,6 @@ function actionPermissions(row: PermissionMatrixRow, actionGroup: ActionGroup): 
 function allActionPermissions(actionGroup: ActionGroup): Permission[] {
   return allPermissions.value.filter((permission) => permission.actionGroup === actionGroup)
 }
-
-watch(
-  [() => permDialogVisible.value, () => roleDetailQuery.data.value],
-  ([visible, detail]) => {
-    if (
-      visible &&
-      detail?.id === currentRoleId.value &&
-      hydratedPermissionRoleId.value !== currentRoleId.value
-    ) {
-      selectedPermIds.value = selectablePermissions(detail.permissions).map(
-        (permission: Permission) => permission.id,
-      )
-      hydratedPermissionRoleId.value = currentRoleId.value
-    }
-  },
-  { immediate: true },
-)
 </script>
 
 <template>
@@ -476,6 +487,7 @@ watch(
       title="配置角色权限"
       :width="1080"
       :mask-closable="false"
+      @cancel="closePermissionDialog"
     >
       <div v-if="currentRoleForPerm" class="perm-dialog-info">
         为角色<strong>{{ currentRoleForPerm.roleName }}({{ currentRoleForPerm.roleCode }})</strong>
@@ -505,9 +517,12 @@ watch(
         </a-space>
       </div>
 
-      <a-spin :loading="permTreeLoading" class="perm-tree-container">
+      <div class="perm-tree-container">
+        <div v-if="permTreeLoading" class="permission-loading">
+          <a-spin tip="正在加载权限" />
+        </div>
         <a-result
-          v-if="permLoadFailed"
+          v-else-if="permLoadFailed"
           status="error"
           title="权限数据加载失败"
           subtitle="请重试后再保存"
@@ -518,7 +533,7 @@ watch(
             </a-button>
           </template>
         </a-result>
-        <div v-else-if="permissionModules.length === 0 && !permTreeLoading" class="perm-empty">
+        <div v-else-if="permissionModules.length === 0" class="perm-empty">
           暂无可用权限数据
         </div>
         <BusinessTable
@@ -575,10 +590,10 @@ watch(
             <span v-else class="permission-empty">-</span>
           </template>
         </BusinessTable>
-      </a-spin>
+      </div>
 
       <template #footer>
-        <a-button @click="permDialogVisible = false">
+        <a-button @click="closePermissionDialog">
           取消
         </a-button>
         <a-button
@@ -624,6 +639,13 @@ watch(
   color: #86909c;
   font-size: 14px;
   text-align: center;
+}
+
+.permission-loading {
+  min-height: 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .permission-label--module {

@@ -152,6 +152,7 @@ describe('controller backend permission boundaries', () => {
 
   it('uses the dedicated project archive permission and explicit auth-only field options', () => {
     expect(permissions(ProjectController.prototype, 'archive')).toEqual(['project:archive']);
+    expect(permissions(ProjectController.prototype, 'softDelete')).toEqual(['project:delete']);
     expect(isAuthenticatedOnly(FieldOptionsController.prototype, 'findEnabled')).toBe(true);
     expect(isAuthenticatedOnly(FieldOptionsController.prototype, 'findEnabledBatch')).toBe(true);
   });

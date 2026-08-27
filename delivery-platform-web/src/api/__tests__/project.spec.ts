@@ -98,4 +98,10 @@ describe('projectApi refactored contract', () => {
 
     expect(mocks.delete).toHaveBeenCalledWith('/projects/project-1/permanent', { silent: true })
   })
+
+  it('uses the administrator-only logical delete endpoint for normal list deletion', () => {
+    projectApi.delete('project-1')
+
+    expect(mocks.delete).toHaveBeenCalledWith('/projects/project-1', { silent: true })
+  })
 })

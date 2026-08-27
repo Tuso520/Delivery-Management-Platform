@@ -130,6 +130,12 @@ interface ProjectListItem {
     projectRole: string;
     user: { id: string; realName: string; username: string };
   }>;
+  canEdit: boolean;
+  canUpdateProgress: boolean;
+  canArchive: boolean;
+  canRestore: boolean;
+  canDelete: boolean;
+  canPermanentDelete: boolean;
 }
 
 @Injectable()
@@ -1408,6 +1414,44 @@ export class ProjectService {
     }
   }
 
+  async softDelete(id: string, actor?: ProjectActor): Promise<void> {
+    if (!actor || typeof actor === 'string' || !this.isProjectDeletionAdministrator(actor)) {
+      throw new ForbiddenException('仅系统管理员或超级管理员可删除项目');
+    }
+
+    await this.prisma.$transaction(async (transaction) => {
+      const project = await transaction.project.findFirst({
+        where: { id, deletedAt: null },
+        select: {
+          id: true,
+          projectCode: true,
+          projectName: true,
+          status: true,
+          archivedAt: true,
+        },
+      });
+      if (!project) throw new NotFoundException('项目不存在或已删除');
+
+      const deletedAt = new Date();
+      const result = await transaction.project.updateMany({
+        where: { id, deletedAt: null },
+        data: { deletedAt },
+      });
+      if (result.count !== 1) throw new ConflictException('项目状态已变化，请刷新后重试');
+
+      await writeOperationLog(transaction, {
+        userId: actor.sub,
+        module: 'project',
+        action: 'delete',
+        targetType: 'project',
+        targetId: id,
+        beforeData: project,
+        afterData: { deletedAt: deletedAt.toISOString() },
+        result: 'success',
+      });
+    });
+  }
+
   async purge(id: string, actor?: ProjectActor): Promise<void> {
     if (typeof actor === 'string' || !actor?.roles.includes('SUPER_ADMIN')) {
       throw new ForbiddenException('仅超级管理员可物理删除项目');
@@ -1602,6 +1646,14 @@ export class ProjectService {
 
   private isSuperAdmin(actor?: ProjectActor): boolean {
     return Boolean(actor && typeof actor !== 'string' && actor.roles.includes('SUPER_ADMIN'));
+  }
+
+  private isProjectDeletionAdministrator(actor?: ProjectActor): boolean {
+    return Boolean(
+      actor &&
+        typeof actor !== 'string' &&
+        actor.roles.some((role) => role === 'SUPER_ADMIN' || role === 'SYSTEM_ADMIN'),
+    );
   }
 
   private hasPermission(actor: ProjectActor | undefined, permission: string): boolean {
@@ -2005,6 +2057,7 @@ export class ProjectService {
       canUpdateProgress: this.hasPermission(actor, 'project:progress:update'),
       canArchive: !project.archivedAt && this.canArchiveProject(project, actor),
       canRestore: Boolean(project.archivedAt) && this.canRestoreProject(actor),
+      canDelete: this.isProjectDeletionAdministrator(actor),
       canPermanentDelete: Boolean(project.archivedAt) && this.isSuperAdmin(actor),
     };
   }

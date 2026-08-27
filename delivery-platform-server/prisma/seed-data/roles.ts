@@ -22,7 +22,7 @@ export const roleCatalog = [
   {
     roleCode: 'SYSTEM_ADMIN',
     roleName: '系统管理员',
-    description: '管理用户、角色、权限和系统配置，不涉及具体项目业务',
+    description: '管理用户、角色、权限、系统配置和项目删除治理',
     defaultDataScope: DataScopeType.ALL,
     permissionCodes: [
       'user:view',
@@ -48,6 +48,8 @@ export const roleCatalog = [
       'integration:view',
       'integration:manage',
       'dashboard:view',
+      'project:view',
+      'project:delete',
       'department:view',
       'department:manage',
       'dictionary:view',

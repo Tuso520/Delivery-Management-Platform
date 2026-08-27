@@ -47,17 +47,19 @@ describe('administration server-state contract', () => {
     expect(readSource('src/views/system/user/UserFormDialog.vue')).toContain('<BusinessDrawer')
   })
 
-  it('hydrates role permissions once per dialog session so query refreshes cannot undo selections', () => {
+  it('loads one isolated permission snapshot per dialog session so refreshes cannot undo selections', () => {
     const source = readSource('src/views/system/role/index.vue')
-    expect(source).toContain("const hydratedPermissionRoleId = ref('')")
-    expect(source).toContain('hydratedPermissionRoleId.value !== currentRoleId.value')
-    expect(source).toContain('hydratedPermissionRoleId.value = currentRoleId.value')
+    expect(source).toContain('const permissionModules = shallowRef<PermissionModule[]>([])')
+    expect(source).toContain('const session = ++permissionSession')
+    expect(source).toContain('session !== permissionSession')
+    expect(source).toContain('queryClient.cancelQueries')
+    expect(source).not.toContain('watch(')
+    expect(source).not.toContain('<a-spin :loading="permTreeLoading"')
     expect(source).toContain(':columns="permissionMatrixColumns"')
     expect(source).toContain('row-key="id"')
     expect(source).toContain('restrictedToSystemAdministrator')
     expect(source).not.toContain('<a-table-column title="页面 / 功能"')
 
-    const queries = readSource('src/composables/queries/useAdministrationQueries.ts')
-    expect(queries).toContain('queryFn: ({ signal }) => roleApi.getById(toValue(roleId), signal)')
+    expect(source).toContain('queryFn: ({ signal }) => roleApi.getById(row.id, signal)')
   })
 })

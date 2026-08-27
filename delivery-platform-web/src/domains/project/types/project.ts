@@ -90,6 +90,7 @@ export interface Project {
   canUpdateProgress: boolean
   canArchive: boolean
   canRestore: boolean
+  canDelete: boolean
   canPermanentDelete: boolean
   archiveCompletion?: {
     total: number

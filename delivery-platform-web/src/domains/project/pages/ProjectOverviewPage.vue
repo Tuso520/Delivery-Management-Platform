@@ -90,8 +90,8 @@ const summaryParams = computed<QueryProjectDto>(() => ({
   scope: filters.value.scope,
 }))
 const summaryQuery = useProjectSummaryQuery(summaryParams)
-const permanentDeleteMutation = useMutation({
-  mutationFn: (projectId: string) => projectApi.permanentDelete(projectId),
+const deleteMutation = useMutation({
+  mutationFn: (projectId: string) => projectApi.delete(projectId),
   retry: false,
 })
 const fieldConfig = useFieldConfig('project')
@@ -123,8 +123,8 @@ const pagination = computed(() => ({
   total: listQuery.data.value?.total ?? 0,
 }))
 
-function permanentlyDeleteProject(project: Project): void {
-  if (!project.canPermanentDelete || permanentDeleteMutation.isPending.value) return
+function deleteProject(project: Project): void {
+  if (!project.canDelete || deleteMutation.isPending.value) return
   Modal.confirm({
     simple: false,
     alignCenter: true,
@@ -140,7 +140,7 @@ function permanentlyDeleteProject(project: Project): void {
     escToClose: false,
     onBeforeOk: async (done) => {
       try {
-        await permanentDeleteMutation.mutateAsync(project.id)
+        await deleteMutation.mutateAsync(project.id)
         await Promise.all([listQuery.refetch(), summaryQuery.refetch()])
         Message.success(t('projects.deletedSuccess'))
         done(true)
@@ -646,12 +646,12 @@ function currencyStyle(currencyCode?: string | null): CSSProperties | undefined 
             align="center"
           >
             <template #cell="{ record: row }">
-              <span v-if="row.canPermanentDelete" :id="`project-delete-${row.id}`">
+              <span v-if="row.canDelete" :id="`project-delete-${row.id}`">
                 <a-button
                   type="text"
                   status="danger"
-                  :loading="permanentDeleteMutation.isPending.value"
-                  @click="permanentlyDeleteProject(row)"
+                  :loading="deleteMutation.isPending.value"
+                  @click="deleteProject(row)"
                 >
                   <template #icon>
                     <IconDelete />

@@ -15,7 +15,7 @@ export class ProjectAccessService {
     userId: string,
     roles: readonly string[] = [],
   ): Promise<Prisma.ProjectWhereInput> {
-    if (roles.includes('SUPER_ADMIN')) return Promise.resolve({ deletedAt: null });
+    if (this.isAdministrator(roles)) return Promise.resolve({ deletedAt: null });
     return this.dataScope.buildProjectWhere(userId);
   }
 
@@ -24,7 +24,11 @@ export class ProjectAccessService {
     userId: string,
     roles: readonly string[] = [],
   ): Promise<void> {
-    if (roles.includes('SUPER_ADMIN')) return Promise.resolve();
+    if (this.isAdministrator(roles)) return Promise.resolve();
     return this.dataScope.assertProjectAccess(projectId, userId);
+  }
+
+  private isAdministrator(roles: readonly string[]): boolean {
+    return roles.some((role) => role === 'SUPER_ADMIN' || role === 'SYSTEM_ADMIN');
   }
 }

@@ -44,4 +44,21 @@ describe('ProjectAccessService', () => {
     expect(dataScope.buildProjectWhere).not.toHaveBeenCalled();
     expect(dataScope.assertProjectAccess).not.toHaveBeenCalled();
   });
+
+  it('gives SYSTEM_ADMIN the same all-project governance scope', async () => {
+    const dataScope = {
+      buildProjectWhere: jest.fn(),
+      assertProjectAccess: jest.fn(),
+    } as unknown as DataScopeService;
+    const service = new ProjectAccessService(dataScope);
+
+    await expect(service.buildProjectWhere('admin-2', ['SYSTEM_ADMIN'])).resolves.toEqual({
+      deletedAt: null,
+    });
+    await expect(
+      service.assertProjectAccess('project-1', 'admin-2', ['SYSTEM_ADMIN']),
+    ).resolves.toBeUndefined();
+    expect(dataScope.buildProjectWhere).not.toHaveBeenCalled();
+    expect(dataScope.assertProjectAccess).not.toHaveBeenCalled();
+  });
 });

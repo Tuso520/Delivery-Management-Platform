@@ -639,6 +639,23 @@ const limitedUser = await prisma.user.create({
   },
   select: { id: true },
 });
+const softDeleteFixture = await prisma.project.create({
+  data: {
+    projectCode: `RTD-${purgeMarker}`,
+    projectName: `运行时逻辑删除验收 ${purgeMarker}`,
+    shortName: `逻辑删除 ${purgeMarker}`,
+    countryCode: 'CN',
+    status: 'ACTIVE',
+    createdBy: adminRecord.id,
+    members: {
+      create: {
+        userId: limitedUser.id,
+        projectRole: 'PROJECT_MANAGER',
+      },
+    },
+  },
+  select: { id: true },
+});
 try {
   const limitedLogin = await jsonRequest('/auth/login', {
     method: 'POST',
@@ -653,6 +670,25 @@ try {
   if (forbiddenPurge.response.status !== 403 || forbiddenPurge.body?.code !== 403) {
     fail('limited runtime user project purge did not return HTTP 403');
   }
+  const forbiddenDelete = await jsonRequest(`/projects/${softDeleteFixture.id}`, {
+    method: 'DELETE',
+    headers: { authorization: `Bearer ${limitedSession.accessToken}` },
+  });
+  if (forbiddenDelete.response.status !== 403 || forbiddenDelete.body?.code !== 403) {
+    fail('limited runtime user project deletion did not return HTTP 403');
+  }
+  const successfulDelete = await jsonRequest(`/projects/${softDeleteFixture.id}`, {
+    method: 'DELETE',
+    headers: { authorization: `Bearer ${session.accessToken}` },
+  });
+  requireEnvelope(successfulDelete, 200, 'administrator runtime project deletion');
+  const deletedProject = await prisma.project.findUnique({
+    where: { id: softDeleteFixture.id },
+    select: { deletedAt: true, members: { select: { id: true } } },
+  });
+  if (!deletedProject?.deletedAt || deletedProject.members.length !== 1) {
+    fail('administrator runtime project deletion did not preserve the associated project member');
+  }
   const successfulPurge = await jsonRequest(`/projects/${purgeFixture.id}/permanent`, {
     method: 'DELETE',
     headers: { authorization: `Bearer ${session.accessToken}` },
@@ -662,6 +698,11 @@ try {
     fail('administrator runtime project purge left the project row behind');
   }
 } finally {
+  await prisma.projectMember.deleteMany({ where: { projectId: softDeleteFixture.id } });
+  await prisma.operationLog.deleteMany({
+    where: { targetType: 'project', targetId: softDeleteFixture.id },
+  });
+  await prisma.project.deleteMany({ where: { id: softDeleteFixture.id } });
   await prisma.refreshSession.deleteMany({ where: { userId: limitedUser.id } });
   await prisma.user.update({
     where: { id: limitedUser.id },

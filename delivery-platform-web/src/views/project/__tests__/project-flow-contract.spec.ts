@@ -180,16 +180,16 @@ describe('project overview and overlay contract', () => {
     expect(paymentPlan).toContain('<span class="payment-cell-left">{{ converted(record) }}</span>')
   })
 
-  it('exposes permanent deletion only for server-authorized archived list rows', () => {
+  it('exposes safe project deletion for every server-authorized administrator list row', () => {
     const overview = source('src/domains/project/pages/ProjectOverviewPage.vue')
     const api = source('src/domains/project/api/project.api.ts')
-    expect(overview).toContain('v-if="row.canPermanentDelete"')
-    expect(overview).toContain('@click="permanentlyDeleteProject(row)"')
+    expect(overview).toContain('v-if="row.canDelete"')
+    expect(overview).toContain('@click="deleteProject(row)"')
     expect(overview).toContain("content: t('projects.deleteConfirm', { name: project.projectName })")
     expect(overview).toContain('Promise.all([listQuery.refetch(), summaryQuery.refetch()])')
     expect(overview).toContain(
       "error instanceof Error && error.message ? error.message : t('projects.deleteFailed')",
     )
-    expect(api).toContain('/projects/${id}/permanent')
+    expect(api).toContain('request.delete<void>(`/projects/${id}`, { silent: true })')
   })
 })

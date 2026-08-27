@@ -244,6 +244,18 @@ export class ProjectController {
     return this.projectService.changeStatus(id, 'restore', dto, user);
   }
 
+  @Delete(':id')
+  @RequirePermissions({ all: ['project:delete'] })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '逻辑删除项目（仅系统管理员或超级管理员）' })
+  @ApiResponse({ status: 200, description: '删除成功' })
+  @ApiResponse({ status: 403, description: '仅系统管理员或超级管理员可删除项目' })
+  @ApiResponse({ status: 404, description: '项目不存在或已删除' })
+  async softDelete(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
+    await this.projectService.softDelete(id, user);
+    return null;
+  }
+
   @Delete(':id/permanent')
   @RequirePermissions({ all: ['project:delete'] })
   @HttpCode(HttpStatus.OK)

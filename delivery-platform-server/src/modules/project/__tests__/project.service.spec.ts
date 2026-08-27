@@ -257,9 +257,30 @@ describe('ProjectService', () => {
         convertedAmount: null,
         exchangeRateDate: null,
         exchangeRateSource: null,
+        canDelete: false,
       }),
     );
     expect(result.items[0]).not.toHaveProperty('projectStatus');
+  });
+
+  it('marks every visible project as deletable for a super administrator', async () => {
+    const adminActor = { ...publicActor, roles: ['SUPER_ADMIN'], permissions: ['project:view'] };
+    prisma.project.count.mockResolvedValue(1);
+    prisma.project.findMany.mockResolvedValue([mockProject]);
+
+    const result = await service.findAll({ scope: 'all' }, adminActor);
+
+    expect(result.items[0]).toEqual(expect.objectContaining({ canDelete: true }));
+  });
+
+  it('marks every visible project as deletable for a system administrator', async () => {
+    const adminActor = { ...publicActor, roles: ['SYSTEM_ADMIN'], permissions: ['project:view'] };
+    prisma.project.count.mockResolvedValue(1);
+    prisma.project.findMany.mockResolvedValue([mockProject]);
+
+    const result = await service.findAll({ scope: 'all' }, adminActor);
+
+    expect(result.items[0]).toEqual(expect.objectContaining({ canDelete: true }));
   });
 
   it('can restrict archive workspace options to projects with an active archive snapshot', async () => {
@@ -1249,6 +1270,46 @@ describe('ProjectService', () => {
         result: 'success',
       }),
     });
+  });
+
+  it('logically deletes an active project with associations for a super administrator', async () => {
+    const adminActor = { ...publicActor, roles: ['SUPER_ADMIN'], permissions: ['project:delete'] };
+    prisma.project.findFirst.mockResolvedValue(mockProject);
+
+    await service.softDelete('project-1', adminActor);
+
+    expect(prisma.project.updateMany).toHaveBeenCalledWith({
+      where: { id: 'project-1', deletedAt: null },
+      data: { deletedAt: expect.any(Date) },
+    });
+    expect(prisma.project.delete).not.toHaveBeenCalled();
+    expect(prisma.projectArchiveFile.count).not.toHaveBeenCalled();
+    expect(prisma.operationLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        userId: 'user-1',
+        action: 'delete',
+        targetId: 'project-1',
+        result: 'success',
+      }),
+    });
+  });
+
+  it('logically deletes a project for a system administrator', async () => {
+    const adminActor = { ...publicActor, roles: ['SYSTEM_ADMIN'], permissions: ['project:delete'] };
+    prisma.project.findFirst.mockResolvedValue(mockProject);
+
+    await service.softDelete('project-1', adminActor);
+
+    expect(prisma.project.updateMany).toHaveBeenCalledWith({
+      where: { id: 'project-1', deletedAt: null },
+      data: { deletedAt: expect.any(Date) },
+    });
+  });
+
+  it('rejects logical project deletion for non-super-administrators', async () => {
+    await expect(service.softDelete('project-1', publicActor)).rejects.toThrow(ForbiddenException);
+    expect(prisma.project.findFirst).not.toHaveBeenCalled();
+    expect(prisma.project.updateMany).not.toHaveBeenCalled();
   });
 
   it('blocks physical deletion when protected records exist and audits the rejection', async () => {

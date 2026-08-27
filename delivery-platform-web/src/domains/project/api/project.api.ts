@@ -53,6 +53,10 @@ export const projectApi = {
     return request.post<Project>(`/projects/${id}/${command}`, data)
   },
 
+  delete(id: string) {
+    return request.delete<void>(`/projects/${id}`, { silent: true })
+  },
+
   permanentDelete(id: string) {
     return request.delete<void>(`/projects/${id}/permanent`, { silent: true })
   },

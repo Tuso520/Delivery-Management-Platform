@@ -2,6 +2,7 @@ import { expect, test, type APIResponse, type Page } from '@playwright/test'
 
 interface ProjectListItem {
   archivedAt?: string | null
+  canDelete?: boolean
   canPermanentDelete?: boolean
   canRestore?: boolean
   contractAmount?: number | string | null
@@ -167,6 +168,7 @@ test('administrator can use the target architecture navigation', async ({ page }
   expect(projects.data.items.every((project) => !project.archivedAt)).toBe(true)
   const seedProject = requireSeedProject(projects)
   expect(seedProject).toMatchObject({
+    canDelete: true,
     contractType: expect.any(String),
     product: expect.any(String),
     projectType: expect.any(String),
@@ -196,6 +198,9 @@ test('administrator can use the target architecture navigation', async ({ page }
   ).toBeVisible({ timeout: 60_000 })
   await page.goto(`/#/projects?scope=all&keyword=${encodeURIComponent('示例项目 1')}`)
   await expect(page.getByText('示例项目 1', { exact: true })).toBeVisible({ timeout: 60_000 })
+  const activeProject = projects.data.items.find((project) => project.shortName === '示例项目 1')
+  if (!activeProject) throw new Error('Active administrator deletion fixture is missing')
+  await expect(page.locator(`#project-delete-${activeProject.id}`)).toBeVisible()
   await expect(page.getByText('VN-LG-2026-001', { exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '新建' })).toBeVisible()
 
@@ -312,13 +317,19 @@ test('role permissions lifecycle is super-admin-only and new roles start empty',
   await expect(permissionDialog).toBeVisible()
   await expect.poll(() => permissionCatalogRequests).toBe(1)
   await expect.poll(() => roleDetailRequests).toBe(1)
+  const initialPermissionTable = await permissionDialog
+    .locator('.permission-matrix .arco-table')
+    .elementHandle()
+  expect(initialPermissionTable).not.toBeNull()
 
   for (const permissionName of ['查看项目列表', '编辑项目', '上传档案文件', '下载文件']) {
     const permissionRow = permissionDialog.locator('.arco-table-tr').filter({
       hasText: permissionName,
     })
     await expect(permissionRow).toBeVisible()
-    await permissionRow.locator('.arco-checkbox').first().click({ delay: 10 })
+    await permissionRow.locator('.arco-checkbox').first().click()
+    expect(await initialPermissionTable?.evaluate((element) => element.isConnected)).toBe(true)
+    await expect(permissionDialog.locator('.arco-spin-mask')).toHaveCount(0)
   }
   const downloadPermissionRow = permissionDialog
     .locator('.arco-table-tr')
@@ -373,7 +384,7 @@ test('role permissions lifecycle is super-admin-only and new roles start empty',
       .first(),
   ).toBeChecked()
   await switchedBackDialog.getByRole('button', { name: '取消', exact: true }).click()
-  expect(roleDetailRequests).toBe(2)
+  expect(roleDetailRequests).toBe(3)
 
   const assignedDetailResponse = await page.request.get(`/api/v1/roles/${created.data.id}`, {
     headers: authorization,
@@ -732,7 +743,7 @@ test('project manager is restricted by data scope, field permissions and setting
   expect(browserErrors).toEqual([])
 })
 
-test('only the administrator can permanently delete the dedicated archived test project', async ({
+test('only the administrator can safely delete any project from the overview', async ({
   page,
 }) => {
   const adminToken = await login(page, adminUsername, adminPassword)
@@ -744,6 +755,7 @@ test('only the administrator can permanently delete the dedicated archived test 
   const project = archivedProjects.data.items.find(({ shortName }) => shortName === '示例项目 10')
   expect(project).toMatchObject({
     archivedAt: expect.any(String),
+    canDelete: true,
     canPermanentDelete: true,
   })
   if (!project) throw new Error('Dedicated archived deletion fixture is missing')
@@ -757,7 +769,7 @@ test('only the administrator can permanently delete the dedicated archived test 
   })
   expect(limitedLoginResponse.status()).toBe(200)
   const limitedSession = (await limitedLoginResponse.json()) as SessionEnvelope
-  const forbiddenDelete = await page.request.delete(`/api/v1/projects/${project.id}/permanent`, {
+  const forbiddenDelete = await page.request.delete(`/api/v1/projects/${project.id}`, {
     headers: { authorization: `Bearer ${limitedSession.data.accessToken}` },
   })
   expect(forbiddenDelete.status()).toBe(403)
@@ -771,11 +783,11 @@ test('only the administrator can permanently delete the dedicated archived test 
   await expect(deleteButton).toBeVisible({ timeout: 60_000 })
   await deleteButton.click()
   const confirmation = page.locator('.business-confirm-dialog')
-  await expect(confirmation).toContainText(`永久删除项目“${project.projectName}”？`)
+  await expect(confirmation).toContainText(`确认删除项目“${project.projectName}”？`)
 
   const deleteResponse = page.waitForResponse(
     (response) =>
-      new URL(response.url()).pathname === `/api/v1/projects/${project.id}/permanent` &&
+      new URL(response.url()).pathname === `/api/v1/projects/${project.id}` &&
       response.request().method() === 'DELETE',
   )
   const refreshedList = page.waitForResponse(
@@ -793,7 +805,7 @@ test('only the administrator can permanently delete the dedicated archived test 
       new URL(response.url()).pathname === '/api/v1/projects/summary' &&
       response.request().method() === 'GET',
   )
-  await confirmation.getByRole('button', { name: '永久删除' }).click()
+  await confirmation.getByRole('button', { name: '删除', exact: true }).click()
   expect((await deleteResponse).status()).toBe(200)
   expect((await refreshedList).status()).toBe(200)
   expect((await refreshedSummary).status()).toBe(200)
