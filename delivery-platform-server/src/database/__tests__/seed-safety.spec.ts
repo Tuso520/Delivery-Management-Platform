@@ -788,7 +788,7 @@ describe('deployment seed safety', () => {
     expect(bcrypt.hash).not.toHaveBeenCalled();
   });
 
-  it('preserves ordinary roles while keeping the protected super administrator complete', async () => {
+  it('preserves ordinary roles while synchronizing protected administrator permissions', async () => {
     const originalNodeEnv = process.env.NODE_ENV;
     process.env.NODE_ENV = 'production';
     const deleteRolePermission = jest.fn();
@@ -822,11 +822,22 @@ describe('deployment seed safety', () => {
     }
 
     expect(deleteRolePermission).not.toHaveBeenCalled();
-    expect(createRolePermission).toHaveBeenCalledTimes(1);
-    expect(createRolePermission).toHaveBeenCalledWith({
+    expect(createRolePermission).toHaveBeenCalledTimes(2);
+    expect(createRolePermission).toHaveBeenNthCalledWith(1, {
       data: { roleId: 'role-SUPER_ADMIN', permissionId: 'new-seeded-permission' },
     });
-    expect(permissionFindMany).toHaveBeenCalledTimes(1);
+    expect(createRolePermission).toHaveBeenNthCalledWith(2, {
+      data: { roleId: 'role-SYSTEM_ADMIN', permissionId: 'new-seeded-permission' },
+    });
+    expect(permissionFindMany).toHaveBeenCalledTimes(2);
+    expect(permissionFindMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          permissionCode: { in: ['project:view', 'project:delete'] },
+        }),
+      }),
+    );
     for (const call of (prisma.role.upsert as unknown as jest.Mock).mock.calls) {
       expect(call[0].update).toEqual(
         call[0].where.roleCode === 'SUPER_ADMIN' ? { isProtected: true, status: 'Active' } : {},

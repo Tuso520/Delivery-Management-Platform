@@ -371,18 +371,30 @@ export async function seedRoles(prisma: PrismaClient): Promise<void> {
       },
     });
     // A newly introduced role needs its initial matrix. Existing production
-    // roles are user-managed, so a deploy-time seed must not silently grant
-    // newly added permissions. Administrators can assign those explicitly.
-    if (existingRole && process.env.NODE_ENV === 'production' && role.roleCode !== 'SUPER_ADMIN') {
+    // roles are user-managed, except for the protected super administrator and
+    // the two explicit project-governance permissions owned by SYSTEM_ADMIN.
+    const syncSystemAdminProjectGovernance =
+      Boolean(existingRole) &&
+      process.env.NODE_ENV === 'production' &&
+      role.roleCode === 'SYSTEM_ADMIN';
+    if (
+      existingRole &&
+      process.env.NODE_ENV === 'production' &&
+      role.roleCode !== 'SUPER_ADMIN' &&
+      !syncSystemAdminProjectGovernance
+    ) {
       console.log(
         `Role "${role.roleCode}" already exists; preserving production metadata and permissions.`,
       );
       continue;
     }
     // Fetch matching permission IDs
+    const permissionCodes = syncSystemAdminProjectGovernance
+      ? (['project:view', 'project:delete'] satisfies PermissionCode[])
+      : role.permissionCodes;
     const permissions = await prisma.permission.findMany({
       where: {
-        permissionCode: { in: role.permissionCodes },
+        permissionCode: { in: permissionCodes },
         deprecatedAt: null,
       },
       select: { id: true },
