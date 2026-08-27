@@ -318,7 +318,7 @@ test('role permissions lifecycle is super-admin-only and new roles start empty',
   await expect.poll(() => permissionCatalogRequests).toBe(1)
   await expect.poll(() => roleDetailRequests).toBe(1)
   const initialPermissionTable = await permissionDialog
-    .locator('.permission-matrix .arco-table')
+    .locator('.permission-matrix.arco-table')
     .elementHandle()
   expect(initialPermissionTable).not.toBeNull()
 
