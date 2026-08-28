@@ -90,7 +90,7 @@ const permissionModalBodyStyle = {
 const permissionMatrixColumns: TableColumnData[] = [
   {
     title: '页面 / 功能',
-    minWidth: 220,
+    minWidth: 212,
     slotName: 'permissionLabel',
   },
   ...actionGroups.map(({ key, label }) => ({

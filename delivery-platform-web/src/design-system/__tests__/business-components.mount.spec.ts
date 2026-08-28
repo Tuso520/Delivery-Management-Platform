@@ -261,9 +261,9 @@ describe('BusinessTable mount contract', () => {
 
     const table = wrapper.getComponent(TableStub)
     const fittedColumns = table.props('columns') as Array<{ width?: number; minWidth?: number }>
-    expect(table.props('scroll')).toMatchObject({ x: 1600, minWidth: 1208 })
+    expect(table.props('scroll')).toMatchObject({ x: 1598, minWidth: 1208 })
     expect(table.props('bordered')).toEqual({ wrapper: false, cell: true })
-    expect(fittedColumns.reduce((total, column) => total + (column.width ?? 0), 0)).toBe(1600)
+    expect(fittedColumns.reduce((total, column) => total + (column.width ?? 0), 0)).toBe(1598)
     expect(fittedColumns[2]?.width).toBe(111)
     expect(fittedColumns[8]?.width).toBe(182)
     expect(fittedColumns[0]?.width).toBeGreaterThan(220)

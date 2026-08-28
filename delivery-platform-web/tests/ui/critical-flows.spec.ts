@@ -140,7 +140,7 @@ async function expectPermissionDialogLayout(page: Page, dialog: Locator): Promis
     expect(metrics.tableHorizontalOverflow).toBeLessThanOrEqual(1)
     expect(metrics.verticalScrollers).toEqual(['business-table__viewport'])
     expect(metrics.headerWidths.slice(1)).toEqual([64, 96, 96, 64])
-    expect(metrics.headerWidths[0]).toBeGreaterThan(220)
+    expect(metrics.headerWidths[0]).toBeGreaterThanOrEqual(212)
     expect(metrics.firstRowWidths).toEqual(metrics.headerWidths)
   }
   await page.setViewportSize({ width: 1280, height: 720 })

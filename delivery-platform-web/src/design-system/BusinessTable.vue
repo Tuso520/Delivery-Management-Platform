@@ -125,7 +125,10 @@ const tableColumns = computed(() =>
       : resolvedColumns.value,
 )
 const fittedTableWidth = computed(() =>
-  Math.max(preferredTableWidth.value, viewportWidth.value || preferredTableWidth.value),
+  Math.max(
+    preferredTableWidth.value,
+    viewportWidth.value > 0 ? viewportWidth.value - 2 : preferredTableWidth.value,
+  ),
 )
 const tableScroll = computed<TableScroll>(() =>
   props.fitContainer

@@ -70,7 +70,7 @@ describe('administration server-state contract', () => {
     expect(source).toContain("height: 'min(720px, calc(100vh - 144px))'")
     expect(source).toContain("overflowY: 'hidden'")
     expect(source).toContain('const permissionColumnWidths: Record<ActionGroup, number>')
-    expect(source).toContain('minWidth: 220')
+    expect(source).toContain('minWidth: 212')
     expect(source).toContain('width: permissionColumnWidths[key]')
     expect(source).toContain('fit-container')
     expect(source).toContain('.perm-tree-container :deep(.business-table__viewport)')
