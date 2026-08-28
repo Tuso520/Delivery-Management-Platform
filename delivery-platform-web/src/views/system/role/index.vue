@@ -75,16 +75,28 @@ const actionGroups = [
   { key: 'DELETE', label: '删除' },
 ] as const
 type ActionGroup = (typeof actionGroups)[number]['key']
+const permissionColumnWidths: Record<ActionGroup, number> = {
+  VIEW: 64,
+  OPERATE: 96,
+  TRANSFER: 96,
+  DELETE: 64,
+}
+const permissionModalBodyStyle = {
+  display: 'flex',
+  height: 'min(720px, calc(100vh - 144px))',
+  flexDirection: 'column',
+  overflowY: 'hidden',
+} as const
 const permissionMatrixColumns: TableColumnData[] = [
   {
     title: '页面 / 功能',
-    width: 360,
-    fixed: 'left',
+    minWidth: 220,
     slotName: 'permissionLabel',
   },
   ...actionGroups.map(({ key, label }) => ({
     title: label,
-    minWidth: 205,
+    width: permissionColumnWidths[key],
+    align: 'center' as const,
     titleSlotName: `permissionTitle-${key}`,
     slotName: `permissionCell-${key}`,
   })),
@@ -485,7 +497,8 @@ function allActionPermissions(actionGroup: ActionGroup): Permission[] {
     <BusinessModal
       v-model:visible="permDialogVisible"
       title="配置角色权限"
-      :width="1080"
+      width="min(1080px, calc(100vw - 32px))"
+      :body-style="permissionModalBodyStyle"
       :mask-closable="false"
       @cancel="closePermissionDialog"
     >
@@ -543,6 +556,7 @@ function allActionPermissions(actionGroup: ActionGroup): Permission[] {
           row-key="id"
           default-expand-all-rows
           bordered
+          fit-container
           class="permission-matrix"
         >
           <template #permissionLabel="{ record: row }">
@@ -627,11 +641,34 @@ function allActionPermissions(actionGroup: ActionGroup): Permission[] {
 }
 
 .perm-tree-container {
-  max-height: 580px;
-  overflow-y: auto;
+  display: flex;
+  min-height: 0;
+  flex: 1;
   border: 1px solid #e5e6eb;
   border-radius: 6px;
-  padding: 12px;
+  overflow: visible;
+  padding: 6px;
+}
+
+.perm-tree-container :deep(.business-table) {
+  min-height: 0;
+  flex: 1;
+}
+
+.perm-tree-container :deep(.business-table__viewport) {
+  max-height: none;
+}
+
+.permission-matrix :deep(.arco-table-th:nth-child(n + 2) .arco-table-cell),
+.permission-matrix :deep(.arco-table-td:nth-child(n + 2) .arco-table-cell) {
+  padding-right: 6px;
+  padding-left: 6px;
+}
+
+.permission-matrix :deep(.arco-table-th:nth-child(n + 2) .arco-checkbox) {
+  justify-content: center;
+  line-height: 18px;
+  white-space: normal;
 }
 
 .perm-empty {

@@ -62,4 +62,22 @@ describe('administration server-state contract', () => {
 
     expect(source).toContain('queryFn: ({ signal }) => roleApi.getById(row.id, signal)')
   })
+
+  it('keeps the permission matrix inside one vertical viewport without horizontal overflow', () => {
+    const source = readSource('src/views/system/role/index.vue')
+    const businessTable = readSource('src/design-system/BusinessTable.vue')
+
+    expect(source).toContain("height: 'min(720px, calc(100vh - 144px))'")
+    expect(source).toContain("overflowY: 'hidden'")
+    expect(source).toContain('const permissionColumnWidths: Record<ActionGroup, number>')
+    expect(source).toContain('minWidth: 220')
+    expect(source).toContain('width: permissionColumnWidths[key]')
+    expect(source).toContain('fit-container')
+    expect(source).toContain('.perm-tree-container :deep(.business-table__viewport)')
+    expect(source).toContain('max-height: none')
+    expect(source).not.toContain('max-height: 580px')
+    expect(source).not.toContain('overflow-y: auto')
+    expect(businessTable).toContain('viewportWidth.value = viewport.clientWidth')
+    expect(businessTable).not.toContain('entry?.contentRect.width')
+  })
 })

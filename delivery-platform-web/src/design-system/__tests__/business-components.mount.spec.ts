@@ -223,7 +223,8 @@ describe('BusinessTable mount contract', () => {
     class ResizeObserverStub {
       constructor(private readonly callback: ResizeObserverCallback) {}
 
-      observe(): void {
+      observe(target: Element): void {
+        Object.defineProperty(target, 'clientWidth', { configurable: true, value: 1600 })
         this.callback(
           [{ contentRect: { width: 1600 } } as ResizeObserverEntry],
           this as unknown as ResizeObserver,

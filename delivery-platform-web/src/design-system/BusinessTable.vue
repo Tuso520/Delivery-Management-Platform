@@ -259,8 +259,8 @@ onMounted(() => {
   if (!viewport) return
   viewportWidth.value = viewport.clientWidth
   if (typeof ResizeObserver === 'undefined') return
-  resizeObserver = new ResizeObserver(([entry]) => {
-    viewportWidth.value = entry?.contentRect.width ?? viewport.clientWidth
+  resizeObserver = new ResizeObserver(() => {
+    viewportWidth.value = viewport.clientWidth
   })
   resizeObserver.observe(viewport)
 })

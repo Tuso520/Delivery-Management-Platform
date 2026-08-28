@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useAttrs } from 'vue'
+import type { CSSProperties } from 'vue'
 
 defineOptions({ inheritAttrs: false })
 
@@ -8,6 +9,7 @@ withDefaults(
     visible: boolean
     title?: string
     width?: string | number
+    bodyStyle?: CSSProperties
     unmountOnClose?: boolean
     maskClosable?: boolean
     okLoading?: boolean
@@ -20,6 +22,7 @@ withDefaults(
   {
     title: '',
     width: 680,
+    bodyStyle: undefined,
     unmountOnClose: true,
     maskClosable: true,
     okLoading: false,
@@ -46,6 +49,7 @@ const attrs = useAttrs()
     :visible="visible"
     :title="title"
     :width="width"
+    :body-style="bodyStyle"
     :unmount-on-close="unmountOnClose"
     :mask-closable="maskClosable"
     :ok-loading="okLoading"

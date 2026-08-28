@@ -1,4 +1,4 @@
-import { expect, test, type APIResponse, type Page } from '@playwright/test'
+import { expect, test, type APIResponse, type Locator, type Page } from '@playwright/test'
 
 interface ProjectListItem {
   archivedAt?: string | null
@@ -94,6 +94,56 @@ function collectBrowserErrors(page: Page): string[] {
   })
   page.on('pageerror', (error) => errors.push(error.message))
   return errors
+}
+
+async function expectPermissionDialogLayout(page: Page, dialog: Locator): Promise<void> {
+  for (const viewport of [
+    { width: 640, height: 535 },
+    { width: 706, height: 535 },
+    { width: 1280, height: 800 },
+  ]) {
+    await page.setViewportSize(viewport)
+    const metrics = await dialog.evaluate((modal) => {
+      const tableViewport = modal.querySelector<HTMLElement>('.business-table__viewport')
+      const headers = [...modal.querySelectorAll<HTMLElement>('.arco-table-th')]
+      const firstRowCells = [
+        ...modal.querySelectorAll<HTMLElement>(
+          '.permission-matrix tbody .arco-table-tr:first-child td',
+        ),
+      ]
+      if (!tableViewport || headers.length !== 5 || firstRowCells.length !== 5) {
+        throw new Error('permission matrix layout nodes are incomplete')
+      }
+
+      const verticalScrollers = [...modal.querySelectorAll<HTMLElement>('*')]
+        .filter((element) => {
+          const overflowY = getComputedStyle(element).overflowY
+          return (
+            element.scrollHeight > element.clientHeight + 1 &&
+            (overflowY === 'auto' || overflowY === 'scroll')
+          )
+        })
+        .map((element) => element.className)
+
+      return {
+        modalHorizontalOverflow: modal.scrollWidth - modal.clientWidth,
+        tableHorizontalOverflow: tableViewport.scrollWidth - tableViewport.clientWidth,
+        verticalScrollers,
+        headerWidths: headers.map((header) => Math.round(header.getBoundingClientRect().width)),
+        firstRowWidths: firstRowCells.map((cell) =>
+          Math.round(cell.getBoundingClientRect().width),
+        ),
+      }
+    })
+
+    expect(metrics.modalHorizontalOverflow).toBeLessThanOrEqual(1)
+    expect(metrics.tableHorizontalOverflow).toBeLessThanOrEqual(1)
+    expect(metrics.verticalScrollers).toEqual(['business-table__viewport'])
+    expect(metrics.headerWidths.slice(1)).toEqual([64, 96, 96, 64])
+    expect(metrics.headerWidths[0]).toBeGreaterThan(220)
+    expect(metrics.firstRowWidths).toEqual(metrics.headerWidths)
+  }
+  await page.setViewportSize({ width: 1280, height: 720 })
 }
 
 async function login(
@@ -321,6 +371,7 @@ test('role permissions lifecycle is super-admin-only and new roles start empty',
     .locator('.permission-matrix.arco-table')
     .elementHandle()
   expect(initialPermissionTable).not.toBeNull()
+  await expectPermissionDialogLayout(page, permissionDialog)
 
   for (const permissionName of ['查看项目列表', '编辑项目', '上传档案文件', '下载文件']) {
     const permissionRow = permissionDialog.locator('.arco-table-tr').filter({
