@@ -939,6 +939,7 @@
     "pdfFailed": "PDF preview rendering failed. Download the file to view it.",
     "mediaFailed": "This media file cannot be played. Download it to view it.",
     "xmindFailed": "The XMind outline could not be read. Download the file to view it.",
+    "presentationOutline": "Presentation Text Preview",
     "readonly": "Read-only",
     "officeUnavailable": "Office Online Preview Unavailable",
     "officeUnavailableHint": "The conversion service is not ready. Try again later or download the original file.",

@@ -30,6 +30,7 @@ import { SystemConfigService } from '../system-config/system-config.service';
 import { UploadDraftFileDto } from './dto/upload-draft-file.dto';
 import { UploadProjectArchiveFileDto } from './dto/upload-project-archive-file.dto';
 import { FileStorageService } from './file-storage.service';
+import { parsePptxOutline, type PptxOutline } from './pptx-outline-parser';
 import { isStreamedMulterFile } from './streamed-upload.types';
 import { withNormalizedUploadFileName } from './upload-file-name.util';
 
@@ -570,7 +571,7 @@ export class UnifiedFileService {
       targetId: file.id,
       afterData: { fileVersionId: current.id },
     });
-    const viewerType = resolvedPreview.viewerType;
+    let viewerType = resolvedPreview.viewerType;
     const downloadAllowed = this.hasOwnerActionPermission(file.ownerType, actor, 'DOWNLOAD');
     const onlyOffice =
       viewerType === 'ONLYOFFICE_VIEW'
@@ -583,6 +584,19 @@ export class UnifiedFileService {
             actor,
           })
         : undefined;
+    let presentation: PptxOutline | undefined;
+    if (
+      viewerType === 'ONLYOFFICE_VIEW' &&
+      onlyOffice?.available === false &&
+      current.asset.extension?.toLowerCase() === 'pptx'
+    ) {
+      try {
+        presentation = await this.readPptxOutlineAsset(current.asset);
+        viewerType = 'PRESENTATION_OUTLINE';
+      } catch {
+        this.logger.warn(`Unable to build PPTX outline fallback for asset ${current.asset.id}`);
+      }
+    }
     return {
       fileId: requestedVersion?.id ?? file.id,
       fileName: current.asset.originalName,
@@ -599,7 +613,8 @@ export class UnifiedFileService {
         readOnly: true,
       },
       processingStatus: processingJobs.map(({ outputAsset: _outputAsset, ...job }) => job),
-      ...(onlyOffice ? { onlyOffice } : {}),
+      ...(viewerType === 'ONLYOFFICE_VIEW' && onlyOffice ? { onlyOffice } : {}),
+      ...(presentation ? { presentation } : {}),
       ...(resolvedPreview.xmind ? { xmind: resolvedPreview.xmind } : {}),
     };
   }
@@ -1524,6 +1539,11 @@ export class UnifiedFileService {
       throw new Error('XMIND_OUTPUT_INVALID');
     }
     return { sheets: (parsed as { sheets: unknown[] }).sheets };
+  }
+
+  private async readPptxOutlineAsset(asset: FileAsset): Promise<PptxOutline> {
+    const stream = await this.storage.getObjectFrom(asset.storageBucket, asset.storageKey);
+    return parsePptxOutline(await this.readLimitedStream(stream, 25 * 1024 * 1024));
   }
 
   private async readLimitedStream(stream: Readable, maxBytes: number): Promise<Buffer> {

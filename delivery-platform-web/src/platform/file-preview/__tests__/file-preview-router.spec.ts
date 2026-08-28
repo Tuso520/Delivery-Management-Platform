@@ -22,6 +22,8 @@ describe('unified file preview regression', () => {
     expect(source).toContain('fileApi.loadPreviewContent(nextSession.file.id)')
     expect(source).toContain('URL.createObjectURL(blob)')
     expect(source).not.toContain('const response = await fetch(url)')
+    expect(source).toContain("route?.viewer === 'presentation-outline'")
+    expect(source).toContain('presentationSlides')
   })
 
   it('keeps compact preview content flush with the modal body', () => {

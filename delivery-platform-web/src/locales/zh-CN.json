@@ -933,6 +933,7 @@
     "pdfFailed": "PDF 预览渲染失败，请下载后查看。",
     "mediaFailed": "媒体文件无法播放，请下载后查看。",
     "xmindFailed": "未能读取 XMind 大纲，请下载后查看。",
+    "presentationOutline": "演示文稿文本预览",
     "readonly": "只读",
     "officeUnavailable": "Office 在线预览暂不可用",
     "officeUnavailableHint": "转换服务尚未就绪，请稍后重试或下载原文件。",

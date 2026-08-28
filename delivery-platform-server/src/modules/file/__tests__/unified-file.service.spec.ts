@@ -7,6 +7,8 @@ import {
   ForbiddenException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
+import JSZip = require('jszip');
 
 import type { PrismaService } from '../../../database/prisma.service';
 import type { FieldConfigurationService } from '../../field-configuration/field-configuration.service';
@@ -1341,6 +1343,56 @@ describe('UnifiedFileService', () => {
         xmind: { sheets: outline.sheets },
       }),
     );
+  });
+
+  it('returns a safe PPTX outline when ONLYOFFICE is unavailable', async () => {
+    const archive = new JSZip();
+    archive.file(
+      'ppt/slides/slide1.xml',
+      '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><a:p><a:r><a:t>生产 PPTX 回归</a:t></a:r></a:p><a:p><a:r><a:t>DMP-PPTX-FALLBACK</a:t></a:r></a:p></p:cSld></p:sld>',
+    );
+    const pptx = await archive.generateAsync({ type: 'nodebuffer' });
+    const prisma = {
+      logicalFile: { findFirst: jest.fn().mockResolvedValue(previewLogicalFile('pptx')) },
+      fileProcessingJob: { findMany: jest.fn().mockResolvedValue([]) },
+    } as unknown as PrismaService;
+    const storage = {
+      getObjectFrom: jest.fn().mockResolvedValue(Readable.from(pptx)),
+      getPresignedUrlFrom: jest.fn().mockResolvedValue('https://files.test/source.pptx'),
+      toBrowserPreviewUrl: jest.fn((url: string) => url),
+    } as unknown as FileStorageService;
+    const configService = {
+      get: jest.fn().mockReturnValue(''),
+    } as unknown as ConfigService;
+    const service = new UnifiedFileService(
+      prisma,
+      storage,
+      projectAccess,
+      reviewConfiguration,
+      reviewTasks,
+      operationLog,
+      undefined,
+      configService,
+    );
+
+    const session = await service.createPreviewSession('logical-preview', previewActor());
+
+    expect(session).toEqual(
+      expect.objectContaining({
+        viewerType: 'PRESENTATION_OUTLINE',
+        availability: { state: 'READY' },
+        presentation: {
+          slides: [
+            {
+              slideNumber: 1,
+              title: '生产 PPTX 回归',
+              texts: ['生产 PPTX 回归', 'DMP-PPTX-FALLBACK'],
+            },
+          ],
+        },
+      }),
+    );
+    expect(session).not.toHaveProperty('onlyOffice');
   });
 
   it('streams a resolved preview asset through the authenticated content path', async () => {

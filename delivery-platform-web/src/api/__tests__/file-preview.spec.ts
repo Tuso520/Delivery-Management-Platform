@@ -62,6 +62,25 @@ describe('unified file preview contract', () => {
     expect(session.xmind?.sheets).toEqual(sheets)
   })
 
+  it('passes a PPTX outline to the presentation fallback viewer', async () => {
+    const slides = [{ slideNumber: 1, title: '生产回归', texts: ['生产回归', '内容完整'] }]
+    mocks.get.mockResolvedValueOnce(
+      previewSession({
+        viewerType: 'PRESENTATION_OUTLINE',
+        extension: 'pptx',
+        availability: { state: 'READY' },
+        presentation: { slides },
+      }),
+    )
+
+    const session = await fileApi.createPreviewSession('file-1')
+
+    expect(session.route).toEqual(
+      expect.objectContaining({ viewer: 'presentation-outline', category: 'office' }),
+    )
+    expect(session.presentation?.slides).toEqual(slides)
+  })
+
   it('loads preview bytes through the authenticated API route', async () => {
     const blob = new Blob(['knowledge main file'], { type: 'text/markdown' })
     mocks.get.mockResolvedValueOnce(blob)

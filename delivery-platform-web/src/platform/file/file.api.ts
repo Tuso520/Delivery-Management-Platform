@@ -8,6 +8,7 @@ export type FilePreviewViewer =
   | 'deep-zoom-image'
   | 'markdown'
   | 'xmind'
+  | 'presentation-outline'
   | 'cad'
   | 'visio'
   | 'video'
@@ -44,6 +45,12 @@ export interface XmindOutlineSheet {
   root: XmindOutlineNode
 }
 
+export interface PresentationOutlineSlide {
+  slideNumber: number
+  title: string
+  texts: string[]
+}
+
 export interface FilePreviewSession {
   file: {
     id: string
@@ -77,6 +84,9 @@ export interface FilePreviewSession {
   xmind?: {
     sheets: XmindOutlineSheet[]
   }
+  presentation?: {
+    slides: PresentationOutlineSlide[]
+  }
 }
 
 interface UnifiedFilePreviewSession {
@@ -93,6 +103,7 @@ interface UnifiedFilePreviewSession {
     | 'CAD_CONVERTED'
     | 'VISIO_CONVERTED'
     | 'XMIND'
+    | 'PRESENTATION_OUTLINE'
     | 'VIDEO'
     | 'AUDIO'
     | 'UNSUPPORTED'
@@ -128,6 +139,9 @@ interface UnifiedFilePreviewSession {
   xmind?: {
     sheets: XmindOutlineSheet[]
   }
+  presentation?: {
+    slides: PresentationOutlineSlide[]
+  }
 }
 
 function normalizeUnifiedPreviewSession(session: UnifiedFilePreviewSession): FilePreviewSession {
@@ -153,6 +167,7 @@ function normalizeUnifiedPreviewSession(session: UnifiedFilePreviewSession): Fil
       category: 'visio',
     },
     XMIND: { viewer: 'xmind', category: 'xmind' },
+    PRESENTATION_OUTLINE: { viewer: 'presentation-outline', category: 'office' },
     VIDEO: { viewer: 'video', category: 'video' },
     AUDIO: { viewer: 'audio', category: 'audio' },
     UNSUPPORTED: {
@@ -196,6 +211,7 @@ function normalizeUnifiedPreviewSession(session: UnifiedFilePreviewSession): Fil
     },
     onlyOffice: session.onlyOffice,
     xmind: session.xmind,
+    presentation: session.presentation,
   }
 }
 

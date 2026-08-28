@@ -85,6 +85,7 @@ const title = computed(() => session.value?.file.originalName || t('filePreview.
 const route = computed(() => session.value?.route)
 const canDownload = computed(() => Boolean(session.value?.route.supportsDownload))
 const xmindHtml = computed(() => renderXmindSheets(session.value?.xmind?.sheets ?? []))
+const presentationSlides = computed(() => session.value?.presentation?.slides ?? [])
 
 async function loadPdfjs(): Promise<PdfJsModule> {
   if (!pdfjsLibPromise) {
@@ -432,6 +433,31 @@ onBeforeUnmount(() => {
           <a-empty v-if="pdfError" :description="pdfError" />
         </section>
 
+        <section
+          v-else-if="route?.viewer === 'presentation-outline'"
+          class="presentation-outline-viewer"
+        >
+          <div class="viewer-toolbar">
+            <span>{{ t('filePreview.presentationOutline') }}</span>
+            <span>{{ t('filePreview.pageCount', { count: presentationSlides.length }) }}</span>
+          </div>
+          <div class="presentation-slide-list">
+            <article
+              v-for="slide in presentationSlides"
+              :key="slide.slideNumber"
+              class="presentation-slide"
+            >
+              <span class="presentation-slide-number">{{ slide.slideNumber }}</span>
+              <h3>{{ slide.title }}</h3>
+              <ul v-if="slide.texts.length > 1">
+                <li v-for="(text, index) in slide.texts.slice(1)" :key="`${slide.slideNumber}-${index}`">
+                  {{ text }}
+                </li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
         <section v-else-if="route?.viewer === 'image'" class="image-viewer">
           <div class="viewer-toolbar">
             <span>{{ t('filePreview.image') }}</span>
@@ -584,6 +610,7 @@ onBeforeUnmount(() => {
     .deep-image-viewer,
     .markdown-viewer,
     .xmind-viewer,
+    .presentation-outline-viewer,
     .media-viewer,
     .fallback-viewer {
       width: 100%;
@@ -647,6 +674,7 @@ onBeforeUnmount(() => {
 .deep-image-viewer,
 .markdown-viewer,
 .xmind-viewer,
+.presentation-outline-viewer,
 .media-viewer,
 .fallback-viewer {
   width: 100%;
@@ -850,6 +878,54 @@ onBeforeUnmount(() => {
 .xmind-viewer {
   display: grid;
   gap: 12px;
+}
+
+.presentation-outline-viewer {
+  display: grid;
+  align-content: start;
+}
+
+.presentation-slide-list {
+  display: grid;
+  gap: 16px;
+  justify-items: center;
+  padding: 16px 0 28px;
+}
+
+.presentation-slide {
+  position: relative;
+  width: min(100%, 960px);
+  aspect-ratio: 16 / 9;
+  min-height: 260px;
+  padding: clamp(28px, 5vw, 64px);
+  border: 1px solid #d9dfe8;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(24, 31, 45, 0.12);
+  color: var(--color-text-1);
+  overflow: auto;
+}
+
+.presentation-slide h3 {
+  margin: 0 0 24px;
+  font-size: clamp(22px, 3vw, 36px);
+  line-height: 1.25;
+}
+
+.presentation-slide ul {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding-left: 1.4em;
+  font-size: clamp(14px, 1.6vw, 20px);
+  line-height: 1.55;
+}
+
+.presentation-slide-number {
+  position: absolute;
+  right: 18px;
+  bottom: 14px;
+  color: var(--color-text-3);
+  font-size: 12px;
 }
 
 .xmind-viewer :deep(.xmind-sheet) {
