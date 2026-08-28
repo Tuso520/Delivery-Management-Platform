@@ -1448,6 +1448,7 @@
     "back": "Back to Dashboard"
   },
   "validation": {
+    "emptyUploadFiles": "These files are empty. Save them locally before uploading again: {files}",
     "required": "{field} is required",
     "minLength": "{field} must be at least {min} characters",
     "maxLength": "{field} must not exceed {max} characters",

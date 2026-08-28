@@ -195,6 +195,11 @@ describe('standard and knowledge target flows', () => {
 
     expect(standard).toContain('standardApi.uploadDraftFile(')
     expect(knowledge).toContain('knowledgeApi.uploadDraftFile(')
+    expect(standard).toContain('validateUploadFiles([createSelectedFile.value])')
+    expect(standard).toContain('validateUploadFiles([versionSelectedFile.value])')
+    expect(knowledge).toContain('if (!validateUploadFiles(filesToUpload)) return')
+    expect(knowledge).toContain('...createSupportingFiles.value')
+    expect(knowledge).toContain('...versionSupportingFiles.value')
     expect(standard).not.toContain('请输入文件版本编号')
     expect(knowledge).not.toContain('请输入文件版本编号')
   })

@@ -27,6 +27,7 @@ import {
   resolveArchiveUploadTargetLabel,
   resolveProjectArchiveFileName,
 } from '@/domains/archive/utils/project-archive-file'
+import { findEmptyUploadFileNames } from '@/platform/file/upload-validation'
 import { BusinessTable, PageContainer } from '@/design-system'
 import { usePermission } from '@/composables/usePermission'
 import { useFieldConfig } from '@/platform/field-configuration'
@@ -355,6 +356,15 @@ async function submitUpload(): Promise<boolean> {
   if (uploading.value) return false
   if (!uploadItem.value || !selectedProjectId.value || uploadFiles.value.length === 0) {
     Message.warning(t('archive.validation.uploadFileRequired'))
+    return false
+  }
+  const emptyFileNames = findEmptyUploadFileNames(uploadFiles.value)
+  if (emptyFileNames.length) {
+    Message.warning(
+      t('validation.emptyUploadFiles', {
+        files: emptyFileNames.join(', '),
+      }),
+    )
     return false
   }
   const enabledTypes = new Set(

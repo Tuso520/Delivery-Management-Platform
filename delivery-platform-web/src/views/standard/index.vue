@@ -21,6 +21,7 @@ import fileMetricIcon from '@/assets/figma/standard-library/file-text.svg'
 import plusIcon from '@/assets/figma/standard-library/plus.svg'
 import { useFieldConfig } from '@/platform/field-configuration'
 import { useFilePreview } from '@/platform/file-preview/useFilePreview'
+import { findEmptyUploadFileNames } from '@/platform/file/upload-validation'
 import { queryKeys } from '@/query/keys'
 import { firstRouteParam } from '@/router/query-state'
 import { usePermissionStore } from '@/store/permission'
@@ -352,6 +353,13 @@ function selectCreateFile(fileList: ArcoUploadFileItem[]): void {
   createForm.fileVersionId = ''
 }
 
+function validateUploadFiles(files: File[]): boolean {
+  const emptyFileNames = findEmptyUploadFileNames(files)
+  if (!emptyFileNames.length) return true
+  Message.warning(t('validation.emptyUploadFiles', { files: emptyFileNames.join(', ') }))
+  return false
+}
+
 async function submitCreate(): Promise<void> {
   if (
     !createForm.code.trim() ||
@@ -366,6 +374,7 @@ async function submitCreate(): Promise<void> {
     Message.warning(t('standard.validation.fileRequired'))
     return
   }
+  if (!validateUploadFiles([createSelectedFile.value])) return
   const uploaded = await uploadMutation.mutateAsync({
     file: createSelectedFile.value,
     description: createForm.changeDescription.trim() || undefined,
@@ -491,6 +500,7 @@ function selectVersionFile(fileList: ArcoUploadFileItem[]): void {
 
 async function submitVersion(): Promise<void> {
   if (!detail.value) return
+  if (versionSelectedFile.value && !validateUploadFiles([versionSelectedFile.value])) return
   if (versionSelectedFile.value) {
     const uploaded = await uploadMutation.mutateAsync({
       file: versionSelectedFile.value,

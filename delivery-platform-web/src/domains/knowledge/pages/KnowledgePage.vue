@@ -24,6 +24,7 @@ import {
 } from '@/domains/knowledge/queries/useKnowledgeQueries'
 import { useFieldConfig } from '@/platform/field-configuration'
 import { useFilePreview } from '@/platform/file-preview/useFilePreview'
+import { findEmptyUploadFileNames } from '@/platform/file/upload-validation'
 import { queryKeys } from '@/query/keys'
 import { preservedRouteQuery } from '@/router/query-state'
 import { usePermissionStore } from '@/store/permission'
@@ -292,6 +293,13 @@ function selectVersionSupportingFiles(fileList: ArcoUploadFileItem[]): void {
   versionSupportingFiles.value = selectedFiles(fileList)
 }
 
+function validateUploadFiles(files: File[]): boolean {
+  const emptyFileNames = findEmptyUploadFileNames(files)
+  if (!emptyFileNames.length) return true
+  Message.warning(t('validation.emptyUploadFiles', { files: emptyFileNames.join(', ') }))
+  return false
+}
+
 async function uploadSupportingFiles(files: File[], changeDescription: string): Promise<string[]> {
   const uploaded = await uploadDraftMutation.mutateAsync({ files, changeDescription })
   return uploaded.map((item) => item.fileVersionId)
@@ -384,6 +392,14 @@ async function submitCreate(): Promise<void> {
     )
   )
     return
+
+  const filesToUpload = [
+    ...(createForm.contentType === 'FILE' && createSelectedFile.value && !createForm.fileVersionId
+      ? [createSelectedFile.value]
+      : []),
+    ...createSupportingFiles.value,
+  ]
+  if (!validateUploadFiles(filesToUpload)) return
 
   if (createForm.contentType === 'FILE' && createSelectedFile.value && !createForm.fileVersionId) {
     const [uploaded] = await uploadDraftMutation.mutateAsync({
@@ -518,6 +534,14 @@ async function submitVersion(): Promise<void> {
     )
   )
     return
+
+  const filesToUpload = [
+    ...(versionForm.contentType === 'FILE' && versionSelectedFile.value
+      ? [versionSelectedFile.value]
+      : []),
+    ...versionSupportingFiles.value,
+  ]
+  if (!validateUploadFiles(filesToUpload)) return
 
   if (versionForm.contentType === 'FILE' && versionSelectedFile.value) {
     const [uploaded] = await uploadDraftMutation.mutateAsync({

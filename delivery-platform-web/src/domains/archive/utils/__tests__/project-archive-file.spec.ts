@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ProjectArchiveTargetItem } from '@/domains/archive/types/archive'
-import {
-  resolveArchiveUploadTargetLabel,
-  resolveProjectArchiveFileName,
-} from '../project-archive-file'
+import { resolveArchiveUploadTargetLabel, resolveProjectArchiveFileName } from '../project-archive-file'
 
 function archiveItem(
   currentVersion: ProjectArchiveTargetItem['currentVersion'],

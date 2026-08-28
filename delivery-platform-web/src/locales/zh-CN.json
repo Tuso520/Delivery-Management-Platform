@@ -1442,6 +1442,7 @@
     "back": "返回工作台"
   },
   "validation": {
+    "emptyUploadFiles": "以下文件内容为空，请先在本地重新保存后再上传：{files}",
     "required": "{field}不能为空",
     "minLength": "{field}长度不能少于{min}位",
     "maxLength": "{field}长度不能超过{max}位",

@@ -26,6 +26,8 @@ describe('archive template route state', () => {
     expect(page).not.toContain(':show-file-list="false"')
     expect(page).toContain('multiple')
     expect(page).toContain('uploadFileItems')
+    expect(page).toContain('findEmptyUploadFileNames(uploadFiles.value)')
+    expect(page).toContain("t('validation.emptyUploadFiles'")
     expect(page).toContain('createNewLogicalFile: !updateExistingFile')
     expect(page).toContain('selectedFolder.value?.files')
     expect(page).toContain('row-key="rowKey"')
