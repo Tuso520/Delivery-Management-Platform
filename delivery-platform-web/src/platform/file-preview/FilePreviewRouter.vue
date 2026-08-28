@@ -538,7 +538,13 @@ onBeforeUnmount(() => {
             status="warning"
             :title="t('filePreview.unsupported')"
             :subtitle="route?.reason || t('filePreview.downloadHint')"
-          />
+          >
+            <template #extra>
+              <a-button v-if="canDownload" :loading="downloading" @click="downloadOriginal">
+                {{ t('filePreview.downloadOriginal') }}
+              </a-button>
+            </template>
+          </a-result>
         </section>
       </main>
     </div>

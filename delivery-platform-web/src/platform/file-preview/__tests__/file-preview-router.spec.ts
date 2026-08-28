@@ -17,6 +17,9 @@ describe('unified file preview regression', () => {
     expect(source).not.toContain('AttachmentPreviewPane')
     expect(source).toContain('@click="loadPreview"')
     expect(source).toContain('v-if="canDownload" :loading="downloading" @click="downloadOriginal"')
+    expect(source).toMatch(
+      /<section v-else class="fallback-viewer">[\s\S]*?<a-button v-if="canDownload"[\s\S]*?@click="downloadOriginal">/u,
+    )
     expect(source).toContain("throw new Error('ONLYOFFICE is unavailable')")
     expect(source).toContain("throw new Error('ONLYOFFICE API did not initialize')")
     expect(source).toContain('fileApi.loadPreviewContent(nextSession.file.id)')
