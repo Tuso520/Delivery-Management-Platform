@@ -265,19 +265,20 @@ test('administrator can use the target architecture navigation', async ({ page }
   const archiveUploadDialog = page.locator('.arco-modal').filter({ hasText: '上传档案文件' })
   await expect(archiveUploadDialog).toBeVisible()
   await archiveUploadDialog.locator('input[type="file"]').setInputFiles({
-    name: 'archive-retry-regression.docx',
+    name: 'archive-start-action-regression.docx',
     mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    buffer: Buffer.from('archive retry regression'),
+    buffer: Buffer.from('archive start action regression'),
   })
-  const manualUploadAction = archiveUploadDialog.locator('.arco-upload-icon-start')
-  await expect(manualUploadAction).toBeVisible()
-  await manualUploadAction.evaluate((startAction) => {
-    const retryAction = document.createElement('span')
-    retryAction.className = 'arco-upload-icon arco-upload-icon-upload'
-    retryAction.textContent = '点击重试'
-    startAction.parentElement?.append(retryAction)
-  })
-  await expect(archiveUploadDialog.locator('.arco-upload-icon-upload')).toBeHidden()
+  await expect(
+    archiveUploadDialog.getByText('archive-start-action-regression.docx', { exact: true }),
+  ).toBeVisible()
+  await expect(archiveUploadDialog.locator('.arco-upload-icon-start')).toHaveCount(0)
+  await expect(archiveUploadDialog.locator('.arco-upload-icon-upload')).toHaveCount(0)
+  await expect(
+    archiveUploadDialog.getByRole('button', {
+      name: '删除 archive-start-action-regression.docx',
+    }),
+  ).toBeVisible()
   await archiveUploadDialog.getByRole('button', { name: '取消', exact: true }).click()
 
   await page.goto('/#/standards')

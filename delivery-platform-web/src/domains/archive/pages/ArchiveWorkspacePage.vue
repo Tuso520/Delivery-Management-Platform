@@ -2,7 +2,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import type { FileItem, TableColumnData } from '@arco-design/web-vue'
 import Message from '@arco-design/web-vue/es/message'
-import { IconFolder, IconUpload } from '@arco-design/web-vue/es/icon'
+import { IconDelete, IconFile, IconFolder, IconUpload } from '@arco-design/web-vue/es/icon'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -347,6 +347,14 @@ function handleUploadSelection(fileList: FileItem[], _fileItem?: FileItem): void
   uploadFileItems.value = fileList
 }
 
+function uploadFileName(fileItem: FileItem): string {
+  return fileItem.name || fileItem.file?.name || t('archive.file')
+}
+
+function removeUploadSelection(index: number): void {
+  uploadFileItems.value = uploadFileItems.value.filter((_, itemIndex) => itemIndex !== index)
+}
+
 function changeUploadTarget(value: unknown): void {
   uploadItemId.value = typeof value === 'string' ? value : ''
   uploadLogicalFileId.value = ''
@@ -643,7 +651,30 @@ watch(
             :accept="uploadAccept || undefined"
             :disabled="uploading || fieldConfig.loading.value"
             @change="handleUploadSelection"
-          />
+          >
+            <template #upload-item="{ fileItem, index }">
+              <div class="archive-upload-file-item">
+                <span class="archive-upload-file-item__name" :title="uploadFileName(fileItem)">
+                  <IconFile />
+                  <span>{{ uploadFileName(fileItem) }}</span>
+                </span>
+                <a-button
+                  class="archive-upload-file-item__remove"
+                  type="text"
+                  size="mini"
+                  :disabled="uploading"
+                  @click="removeUploadSelection(index)"
+                >
+                  <template #icon>
+                    <IconDelete />
+                  </template>
+                  <span class="archive-upload-file-item__remove-label">
+                    {{ t('common.delete') }} {{ uploadFileName(fileItem) }}
+                  </span>
+                </a-button>
+              </div>
+            </template>
+          </a-upload>
         </a-form-item>
         <a-form-item :label="t('archive.changeDescription')">
           <a-textarea
@@ -674,9 +705,49 @@ watch(
   font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
 
-/* Arco 2.58.0 still renders the text retry action when showRetryButton is false. */
-.archive-file-upload :deep(.arco-upload-icon-upload) {
-  display: none;
+.archive-upload-file-item {
+  width: 100%;
+  min-height: 32px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 8px;
+  background: #f7f8fa;
+}
+
+.archive-upload-file-item__name {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #4e5969;
+}
+
+.archive-upload-file-item__name > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.archive-upload-file-item__name :deep(.arco-icon) {
+  flex: 0 0 auto;
+  color: #165dff;
+}
+
+.archive-upload-file-item__remove {
+  flex: 0 0 auto;
+  color: #86909c;
+}
+
+.archive-upload-file-item__remove-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 .archive-metrics {
