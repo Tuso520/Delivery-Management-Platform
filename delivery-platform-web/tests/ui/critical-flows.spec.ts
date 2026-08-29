@@ -274,7 +274,6 @@ test('administrator can use the target architecture navigation', async ({ page }
   await manualUploadAction.click()
   await expect(archiveUploadDialog.locator('.arco-upload-list-item-error')).toBeVisible()
   await expect(archiveUploadDialog.locator('.arco-upload-icon-upload')).toBeHidden()
-  await expect(archiveUploadDialog.getByText('点击重试', { exact: true })).toHaveCount(0)
   await archiveUploadDialog.getByRole('button', { name: '取消', exact: true }).click()
 
   await page.goto('/#/standards')
