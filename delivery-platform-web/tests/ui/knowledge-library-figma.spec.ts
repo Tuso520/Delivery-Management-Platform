@@ -62,6 +62,21 @@ const limitedPassword = process.env.E2E_LIMITED_PASSWORD
 const knowledgeReaderUsername = process.env.E2E_KNOWLEDGE_READER_USERNAME ?? 'elec_xu'
 const knowledgeReaderPassword =
   process.env.E2E_KNOWLEDGE_READER_PASSWORD ?? process.env.E2E_LIMITED_PASSWORD
+const knowledgeDirectories = [
+  ['岗位职责与能力', '项目经理、电气、软件、运维等岗位职责、能力模型及技能评估要求。'],
+  ['项目管理规范', '项目启动、计划、执行、监控、沟通、风险、变更及收尾等通用管理规范。'],
+  ['电气与自动化', 'PLC、控制柜、仪表、执行器、通讯网络、电气设计及自动化控制相关知识。'],
+  [
+    '软件与平台',
+    '公司自研软件平台及标准产品的软件功能、配置、部署、调试、应用与技术支持相关知识。',
+  ],
+  ['施工与安全', '现场施工、设备安装、布线接线、施工工艺、安全规范及质量要求。'],
+  ['调试与验收', '单机调试、系统联调、功能测试、性能验证、验收方法及问题整改相关知识。'],
+  ['运维与远程支持', '系统运维、故障诊断、远程支持、巡检、备份恢复及持续服务相关知识。'],
+  ['技术文档与成果物', '技术方案、图纸、点表、程序说明、测试记录、竣工资料及标准成果物要求。'],
+  ['技术资源与供应链', '设备选型、品牌资料、技术手册、供应商、替代方案及供应链技术资源。'],
+  ['海外交付支持', '海外项目签证、物流清关、当地施工、人员管理、语言沟通及跨国交付相关知识。'],
+] as const
 
 function requireCredential(value: string | undefined, name: string): string {
   if (!value) throw new Error(`${name} is required`)
@@ -251,15 +266,23 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
   expect(figmaGeometry.categoryHeader.height).toBe(44)
   expect(figmaGeometry.categoryRow.height).toBe(44)
   expect(figmaGeometry.rowHeights[0]).toBe(33)
-  expect(
-    figmaGeometry.rowHeights.slice(1).every((height) => Math.abs(height - 35) <= 0.5),
-  ).toBe(true)
+  expect(figmaGeometry.rowHeights.slice(1).every((height) => Math.abs(height - 35) <= 0.5)).toBe(
+    true,
+  )
 
   const activeCategoryLabel = (
     await page.locator('.knowledge-category--active span').innerText()
   ).trim()
   await expect(page.locator('.knowledge-category-description h1')).toHaveText(activeCategoryLabel)
   await expect(page.locator('.knowledge-category-description p')).not.toBeEmpty()
+  await expect(page.locator('.knowledge-category span')).toHaveText(
+    knowledgeDirectories.map(([label]) => label),
+  )
+  for (const [index, [label, description]] of knowledgeDirectories.entries()) {
+    await page.locator('.knowledge-category').nth(index).click()
+    await expect(page.locator('.knowledge-category-description h1')).toHaveText(label)
+    await expect(page.locator('.knowledge-category-description p')).toHaveText(description)
+  }
 
   const selectedCategoryId = await page
     .locator('.knowledge-category--active')
@@ -417,11 +440,9 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
           return header.getBoundingClientRect().top - region.getBoundingClientRect().top
         })
         expect(Math.abs(stickyHeaderOffset)).toBeLessThanOrEqual(1)
-        await page
-          .locator('.knowledge-table-region .business-table__viewport')
-          .evaluate((node) => {
-            node.scrollTop = 0
-          })
+        await page.locator('.knowledge-table-region .business-table__viewport').evaluate((node) => {
+          node.scrollTop = 0
+        })
       }
     }
     expect(panelHeights[1]).toBeGreaterThan(panelHeights[0]!)
@@ -461,11 +482,14 @@ test('knowledge library matches Figma node 125:624 and uses real backend service
     const uiFileName = `knowledge-ui-create-${Date.now()}.md`
     await createModal.locator('input[placeholder="请输入资料标题"]').fill('新增后弹窗预览验收')
     await createModal.locator('.arco-radio-button').filter({ hasText: '文件' }).click()
-    await createModal.locator('input[type="file"]').first().setInputFiles({
-      name: uiFileName,
-      mimeType: 'text/markdown',
-      buffer: Buffer.from('# ui create modal preview'),
-    })
+    await createModal
+      .locator('input[type="file"]')
+      .first()
+      .setInputFiles({
+        name: uiFileName,
+        mimeType: 'text/markdown',
+        buffer: Buffer.from('# ui create modal preview'),
+      })
     const uiCreateResponse = page.waitForResponse((response) => {
       const url = new URL(response.url())
       return url.pathname === '/api/v1/knowledge' && response.request().method() === 'POST'

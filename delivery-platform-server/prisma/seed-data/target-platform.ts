@@ -38,6 +38,12 @@ const fieldConfigurationCodes = new Set([
   'STANDARD_EFFECTIVE_DATE',
 ]);
 
+const directoryDescriptionCodes = new Set([
+  'KNOWLEDGE_CATEGORY',
+  'STANDARD_DELIVERY_STAGE',
+  'STANDARD_MANAGEMENT_DOMAIN',
+]);
+
 const fieldConfigurationMeta: Readonly<Record<string, FieldConfigurationSeed>> = {
   COUNTRY: {
     fieldType: 'SINGLE_SELECT',
@@ -254,18 +260,66 @@ const legacyTargetDictionaries: readonly DictionarySeed[] = [
 ] as const;
 
 export const standardManagementDomainItems = [
-  { value: 'PROGRESS_PLANNING_MANAGEMENT', label: '进度与计划管理' },
-  { value: 'QUALITY_MANAGEMENT', label: '质量管理' },
-  { value: 'SAFETY_MANAGEMENT', label: '安全管理' },
-  { value: 'COST_BUDGET_MANAGEMENT', label: '成本与预算管理' },
-  { value: 'CONTRACT_PAYMENT_COMMERCIAL_MANAGEMENT', label: '合同、付款与商务管理' },
-  { value: 'PROCUREMENT_SUPPLY_CHAIN_MANAGEMENT', label: '采购与供应链管理' },
-  { value: 'RISK_ISSUE_TODO_MANAGEMENT', label: '风险、问题与待办管理' },
-  { value: 'CHANGE_ADDITION_MANAGEMENT', label: '变更与增项管理' },
-  { value: 'COMMUNICATION_MEETING_REPORTING_MANAGEMENT', label: '沟通、会议与汇报管理' },
-  { value: 'FILE_ARCHIVE_DELIVERABLE_MANAGEMENT', label: '文件、档案与成果物管理' },
-  { value: 'STAGE_REVIEW_APPROVAL_MANAGEMENT', label: '阶段评审与审批管理' },
-  { value: 'SUBCONTRACTOR_STAKEHOLDER_MANAGEMENT', label: '分包商与相关方管理' },
+  {
+    value: 'PROGRESS_PLANNING_MANAGEMENT',
+    label: '进度与计划管理',
+    description: '项目总体计划、阶段计划、周计划、里程碑、进度跟踪、延期预警及纠偏管理。',
+  },
+  {
+    value: 'QUALITY_MANAGEMENT',
+    label: '质量管理',
+    description: '项目质量标准、检查机制、质量问题、不合格项、整改验证及质量闭环管理。',
+  },
+  {
+    value: 'SAFETY_MANAGEMENT',
+    label: '安全管理',
+    description: '施工及项目实施过程中的安全要求、风险识别、检查、培训、事故及隐患管理。',
+  },
+  {
+    value: 'COST_BUDGET_MANAGEMENT',
+    label: '成本与预算管理',
+    description: '项目预算、成本计划、实际成本、偏差分析、费用控制及项目成本复盘管理。',
+  },
+  {
+    value: 'CONTRACT_PAYMENT_COMMERCIAL_MANAGEMENT',
+    label: '合同、付款与商务管理',
+    description: '合同执行、付款节点、回款、商务条件、索赔及相关商务事项管理。',
+  },
+  {
+    value: 'PROCUREMENT_SUPPLY_CHAIN_MANAGEMENT',
+    label: '采购与供应链管理',
+    description: '供应商、询价采购、交期、物流、到货、供应风险及供应链全过程管理。',
+  },
+  {
+    value: 'RISK_ISSUE_TODO_MANAGEMENT',
+    label: '风险、问题与待办管理',
+    description: '项目风险、问题、行动项和待办事项的识别、分级、责任、跟踪及关闭管理。',
+  },
+  {
+    value: 'CHANGE_ADDITION_MANAGEMENT',
+    label: '变更与增项管理',
+    description: '项目范围、技术、商务及现场变更的申请、评估、审批、实施和费用确认管理。',
+  },
+  {
+    value: 'COMMUNICATION_MEETING_REPORTING_MANAGEMENT',
+    label: '沟通、会议与汇报管理',
+    description: '项目会议、沟通机制、会议纪要、周报月报、客户汇报及关键事项沟通管理。',
+  },
+  {
+    value: 'FILE_ARCHIVE_DELIVERABLE_MANAGEMENT',
+    label: '文件、档案与成果物管理',
+    description: '项目文件、图纸、资料、版本、成果物、归档、权限及交付记录管理。',
+  },
+  {
+    value: 'STAGE_REVIEW_APPROVAL_MANAGEMENT',
+    label: '阶段评审与审批管理',
+    description: '项目关键阶段、重大方案、成果物和重要事项的评审、审批及放行管理。',
+  },
+  {
+    value: 'SUBCONTRACTOR_STAKEHOLDER_MANAGEMENT',
+    label: '分包商与相关方管理',
+    description: '分包商、供应商、客户及其他相关方的职责、接口、协同、评价及履约管理。',
+  },
 ] as const satisfies DictionarySeed['items'];
 
 const legacyStandardManagementDomainValues = [
@@ -390,15 +444,52 @@ const fieldConfigurationDictionaries: readonly DictionarySeed[] = [
         label: '岗位职责与能力',
         description: '项目经理、电气、软件、运维等岗位职责、能力模型及技能评估要求。',
       },
-      { value: 'PROJECT_MANAGEMENT_STANDARD', label: '项目管理规范' },
-      { value: 'ELECTRICAL_AUTOMATION', label: '电气与自动化' },
-      { value: 'SOFTWARE_PLATFORM', label: '软件与平台' },
-      { value: 'CONSTRUCTION_SAFETY', label: '施工与安全' },
-      { value: 'COMMISSIONING_ACCEPTANCE', label: '调试与验收' },
-      { value: 'OPERATIONS_REMOTE_SUPPORT', label: '运维与远程支持' },
-      { value: 'TECHNICAL_DOCUMENT_DELIVERABLE', label: '技术文档与成果物' },
-      { value: 'TECHNICAL_RESOURCE_SUPPLY_CHAIN', label: '技术资源与供应链' },
-      { value: 'OVERSEAS_DELIVERY_SUPPORT', label: '海外交付支持' },
+      {
+        value: 'PROJECT_MANAGEMENT_STANDARD',
+        label: '项目管理规范',
+        description: '项目启动、计划、执行、监控、沟通、风险、变更及收尾等通用管理规范。',
+      },
+      {
+        value: 'ELECTRICAL_AUTOMATION',
+        label: '电气与自动化',
+        description: 'PLC、控制柜、仪表、执行器、通讯网络、电气设计及自动化控制相关知识。',
+      },
+      {
+        value: 'SOFTWARE_PLATFORM',
+        label: '软件与平台',
+        description:
+          '公司自研软件平台及标准产品的软件功能、配置、部署、调试、应用与技术支持相关知识。',
+      },
+      {
+        value: 'CONSTRUCTION_SAFETY',
+        label: '施工与安全',
+        description: '现场施工、设备安装、布线接线、施工工艺、安全规范及质量要求。',
+      },
+      {
+        value: 'COMMISSIONING_ACCEPTANCE',
+        label: '调试与验收',
+        description: '单机调试、系统联调、功能测试、性能验证、验收方法及问题整改相关知识。',
+      },
+      {
+        value: 'OPERATIONS_REMOTE_SUPPORT',
+        label: '运维与远程支持',
+        description: '系统运维、故障诊断、远程支持、巡检、备份恢复及持续服务相关知识。',
+      },
+      {
+        value: 'TECHNICAL_DOCUMENT_DELIVERABLE',
+        label: '技术文档与成果物',
+        description: '技术方案、图纸、点表、程序说明、测试记录、竣工资料及标准成果物要求。',
+      },
+      {
+        value: 'TECHNICAL_RESOURCE_SUPPLY_CHAIN',
+        label: '技术资源与供应链',
+        description: '设备选型、品牌资料、技术手册、供应商、替代方案及供应链技术资源。',
+      },
+      {
+        value: 'OVERSEAS_DELIVERY_SUPPORT',
+        label: '海外交付支持',
+        description: '海外项目签证、物流清关、当地施工、人员管理、语言沟通及跨国交付相关知识。',
+      },
     ],
   },
   {
@@ -444,17 +535,57 @@ const fieldConfigurationDictionaries: readonly DictionarySeed[] = [
     code: 'STANDARD_DELIVERY_STAGE',
     name: '交付阶段',
     items: [
-      ['PROJECT_STARTUP', '项目启动'],
-      ['DETAILED_DESIGN', '深化设计'],
-      ['PROCUREMENT_PRODUCTION', '采购与生产'],
-      ['CONSTRUCTION_INSTALLATION', '施工与安装'],
-      ['HARDWARE_COMMISSIONING', '硬件调试'],
-      ['SOFTWARE_TESTING', '软件测试'],
-      ['INTERNAL_ACCEPTANCE', '内部验收'],
-      ['CUSTOMER_ACCEPTANCE', '客户验收'],
-      ['CLOSEOUT_HANDOVER', '收尾与移交'],
-      ['WARRANTY_REVIEW', '维保与复盘'],
-    ].map(([value, label]) => ({ value, label })),
+      {
+        value: 'PROJECT_STARTUP',
+        label: '项目启动',
+        description: '完成项目交接、团队组建、目标确认、计划编制、风险识别及启动会组织。',
+      },
+      {
+        value: 'DETAILED_DESIGN',
+        label: '深化设计',
+        description: '完成需求澄清、技术方案、系统架构、点位、图纸及软硬件配置等深化设计工作。',
+      },
+      {
+        value: 'PROCUREMENT_PRODUCTION',
+        label: '采购与生产',
+        description: '完成设备材料选型、采购下单、生产跟踪、质量检查、交期控制及发货准备。',
+      },
+      {
+        value: 'CONSTRUCTION_INSTALLATION',
+        label: '施工与安装',
+        description: '完成现场进场、施工组织、设备安装、布线接线、质量检查及施工问题闭环。',
+      },
+      {
+        value: 'HARDWARE_COMMISSIONING',
+        label: '硬件调试',
+        description: '完成控制柜、PLC、仪表、执行器、通讯网络及现场设备的检查、上电和联调。',
+      },
+      {
+        value: 'SOFTWARE_TESTING',
+        label: '软件测试',
+        description: '完成控制程序、软件平台、通讯接口、数据点位及控制逻辑调试。',
+      },
+      {
+        value: 'INTERNAL_ACCEPTANCE',
+        label: '内部验收',
+        description: '完成项目内部功能、质量、资料及问题项检查，确认达到客户验收条件。',
+      },
+      {
+        value: 'CUSTOMER_ACCEPTANCE',
+        label: '客户验收',
+        description: '完成客户功能验证、现场测试、问题整改、验收资料提交及验收确认。',
+      },
+      {
+        value: 'CLOSEOUT_HANDOVER',
+        label: '收尾与移交',
+        description: '完成遗留问题关闭、竣工资料整理、培训、备件及系统资料正式移交。',
+      },
+      {
+        value: 'WARRANTY_REVIEW',
+        label: '维保与复盘',
+        description: '完成质保运维、故障支持、问题跟踪、项目复盘、经验总结及标准沉淀。',
+      },
+    ],
   },
   { code: 'STANDARD_MANAGEMENT_DOMAIN', name: '管理领域', items: standardManagementDomainItems },
   {
@@ -603,7 +734,12 @@ export async function seedTargetDictionaries(
           createdBy: actorId,
           updatedBy: actorId,
         },
-        update: {},
+        update: directoryDescriptionCodes.has(definition.code)
+          ? {
+              description: item.description,
+              ...(actorId ? { updatedBy: actorId } : {}),
+            }
+          : {},
         select: { id: true },
       });
       if (definition.code === 'KNOWLEDGE_CATEGORY') {
@@ -619,6 +755,7 @@ export async function seedTargetDictionaries(
           },
           update: {
             fieldOptionId: fieldOption.id,
+            description: item.description,
           },
         });
       }

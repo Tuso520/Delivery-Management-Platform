@@ -610,6 +610,70 @@ describe('deployment seed safety', () => {
       '阶段评审与审批管理',
       '分包商与相关方管理',
     ]);
+    expect(managementDomainCalls.map((call) => call.create.description)).toEqual([
+      '项目总体计划、阶段计划、周计划、里程碑、进度跟踪、延期预警及纠偏管理。',
+      '项目质量标准、检查机制、质量问题、不合格项、整改验证及质量闭环管理。',
+      '施工及项目实施过程中的安全要求、风险识别、检查、培训、事故及隐患管理。',
+      '项目预算、成本计划、实际成本、偏差分析、费用控制及项目成本复盘管理。',
+      '合同执行、付款节点、回款、商务条件、索赔及相关商务事项管理。',
+      '供应商、询价采购、交期、物流、到货、供应风险及供应链全过程管理。',
+      '项目风险、问题、行动项和待办事项的识别、分级、责任、跟踪及关闭管理。',
+      '项目范围、技术、商务及现场变更的申请、评估、审批、实施和费用确认管理。',
+      '项目会议、沟通机制、会议纪要、周报月报、客户汇报及关键事项沟通管理。',
+      '项目文件、图纸、资料、版本、成果物、归档、权限及交付记录管理。',
+      '项目关键阶段、重大方案、成果物和重要事项的评审、审批及放行管理。',
+      '分包商、供应商、客户及其他相关方的职责、接口、协同、评价及履约管理。',
+    ]);
+    expect(
+      managementDomainCalls.every((call) => call.update.description === call.create.description),
+    ).toBe(true);
+
+    const deliveryStageCalls = itemUpsert.mock.calls
+      .map(([call]) => call)
+      .filter(
+        (call) => call.where.categoryId_itemValue.categoryId === 'category-STANDARD_DELIVERY_STAGE',
+      );
+    expect(deliveryStageCalls.map((call) => call.create.itemLabel)).toEqual([
+      '项目启动',
+      '深化设计',
+      '采购与生产',
+      '施工与安装',
+      '硬件调试',
+      '软件测试',
+      '内部验收',
+      '客户验收',
+      '收尾与移交',
+      '维保与复盘',
+    ]);
+    expect(deliveryStageCalls.map((call) => call.create.description)).toEqual([
+      '完成项目交接、团队组建、目标确认、计划编制、风险识别及启动会组织。',
+      '完成需求澄清、技术方案、系统架构、点位、图纸及软硬件配置等深化设计工作。',
+      '完成设备材料选型、采购下单、生产跟踪、质量检查、交期控制及发货准备。',
+      '完成现场进场、施工组织、设备安装、布线接线、质量检查及施工问题闭环。',
+      '完成控制柜、PLC、仪表、执行器、通讯网络及现场设备的检查、上电和联调。',
+      '完成控制程序、软件平台、通讯接口、数据点位及控制逻辑调试。',
+      '完成项目内部功能、质量、资料及问题项检查，确认达到客户验收条件。',
+      '完成客户功能验证、现场测试、问题整改、验收资料提交及验收确认。',
+      '完成遗留问题关闭、竣工资料整理、培训、备件及系统资料正式移交。',
+      '完成质保运维、故障支持、问题跟踪、项目复盘、经验总结及标准沉淀。',
+    ]);
+
+    const knowledgeCategoryCalls = itemUpsert.mock.calls
+      .map(([call]) => call)
+      .filter(
+        (call) => call.where.categoryId_itemValue.categoryId === 'category-KNOWLEDGE_CATEGORY',
+      );
+    expect(knowledgeCategoryCalls).toHaveLength(10);
+    expect(knowledgeCategoryCalls.every((call) => Boolean(call.create.description))).toBe(true);
+    expect(
+      knowledgeCategoryCalls.every((call) => call.update.description === call.create.description),
+    ).toBe(true);
+    expect(knowledgeCategoryUpsert).toHaveBeenCalledTimes(10);
+    expect(
+      knowledgeCategoryUpsert.mock.calls.every(
+        ([call]) => call.update.description === call.create.description,
+      ),
+    ).toBe(true);
     expect(itemUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({

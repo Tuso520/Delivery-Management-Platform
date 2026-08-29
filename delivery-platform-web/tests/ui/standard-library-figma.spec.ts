@@ -9,6 +9,18 @@ const acceptanceScreenshot = resolve(
   process.cwd(),
   '../.ai-work/acceptance-standard-library-1440x900.png',
 )
+const deliveryStageDirectories = [
+  ['项目启动', '完成项目交接、团队组建、目标确认、计划编制、风险识别及启动会组织。'],
+  ['深化设计', '完成需求澄清、技术方案、系统架构、点位、图纸及软硬件配置等深化设计工作。'],
+  ['采购与生产', '完成设备材料选型、采购下单、生产跟踪、质量检查、交期控制及发货准备。'],
+  ['施工与安装', '完成现场进场、施工组织、设备安装、布线接线、质量检查及施工问题闭环。'],
+  ['硬件调试', '完成控制柜、PLC、仪表、执行器、通讯网络及现场设备的检查、上电和联调。'],
+  ['软件测试', '完成控制程序、软件平台、通讯接口、数据点位及控制逻辑调试。'],
+  ['内部验收', '完成项目内部功能、质量、资料及问题项检查，确认达到客户验收条件。'],
+  ['客户验收', '完成客户功能验证、现场测试、问题整改、验收资料提交及验收确认。'],
+  ['收尾与移交', '完成遗留问题关闭、竣工资料整理、培训、备件及系统资料正式移交。'],
+  ['维保与复盘', '完成质保运维、故障支持、问题跟踪、项目复盘、经验总结及标准沉淀。'],
+] as const
 const managementDomainLabels = [
   '进度与计划管理',
   '质量管理',
@@ -22,6 +34,20 @@ const managementDomainLabels = [
   '文件、档案与成果物管理',
   '阶段评审与审批管理',
   '分包商与相关方管理',
+] as const
+const managementDomainDescriptions = [
+  '项目总体计划、阶段计划、周计划、里程碑、进度跟踪、延期预警及纠偏管理。',
+  '项目质量标准、检查机制、质量问题、不合格项、整改验证及质量闭环管理。',
+  '施工及项目实施过程中的安全要求、风险识别、检查、培训、事故及隐患管理。',
+  '项目预算、成本计划、实际成本、偏差分析、费用控制及项目成本复盘管理。',
+  '合同执行、付款节点、回款、商务条件、索赔及相关商务事项管理。',
+  '供应商、询价采购、交期、物流、到货、供应风险及供应链全过程管理。',
+  '项目风险、问题、行动项和待办事项的识别、分级、责任、跟踪及关闭管理。',
+  '项目范围、技术、商务及现场变更的申请、评估、审批、实施和费用确认管理。',
+  '项目会议、沟通机制、会议纪要、周报月报、客户汇报及关键事项沟通管理。',
+  '项目文件、图纸、资料、版本、成果物、归档、权限及交付记录管理。',
+  '项目关键阶段、重大方案、成果物和重要事项的评审、审批及放行管理。',
+  '分包商、供应商、客户及其他相关方的职责、接口、协同、评价及履约管理。',
 ] as const
 
 interface SessionEnvelope {
@@ -133,9 +159,9 @@ test('standard library matches Figma node 70:322 geometry and real configured co
     const bodyWidths = Array.from(
       document.querySelectorAll<HTMLElement>('.standard-table tbody tr:first-child td'),
     ).map((node) => node.getBoundingClientRect().width)
-    const rowHeights = Array.from(
-      document.querySelectorAll<HTMLElement>('.standard-table tr'),
-    ).map((node) => node.getBoundingClientRect().height)
+    const rowHeights = Array.from(document.querySelectorAll<HTMLElement>('.standard-table tr')).map(
+      (node) => node.getBoundingClientRect().height,
+    )
 
     return {
       categoryDescription: rect('.category-description'),
@@ -174,6 +200,14 @@ test('standard library matches Figma node 70:322 geometry and real configured co
 
   await expect(page.locator('.category-description h1')).not.toHaveText('-')
   await expect(page.locator('.category-description p')).not.toHaveText('')
+  await expect(page.locator('.category-list button span')).toHaveText(
+    deliveryStageDirectories.map(([label]) => label),
+  )
+  for (const [index, [label, description]] of deliveryStageDirectories.entries()) {
+    await page.locator('.category-list button').nth(index).click()
+    await expect(page.locator('.category-description h1')).toHaveText(label)
+    await expect(page.locator('.category-description p')).toHaveText(description)
+  }
   await expect(table.locator('tbody tr').first().locator('td').nth(0)).not.toHaveText('')
   await expect(table.locator('tbody tr').first().locator('td').nth(1)).not.toHaveText('')
   await expect(panel).toHaveCSS('border-top-width', '1px')
@@ -199,10 +233,14 @@ test('standard library matches Figma node 70:322 geometry and real configured co
   await expect(table.locator('tbody tr').first()).toBeVisible()
   await page.locator('.category-tabs button').nth(1).click()
   await expect(page.locator('.category-tabs button').nth(1)).toHaveClass(/active/u)
-  await expect(page.locator('.category-list button span')).toHaveText([
-    ...managementDomainLabels,
-  ])
-  await expect(page.locator('.category-description h1')).not.toHaveText('-')
+  await expect(page.locator('.category-list button span')).toHaveText([...managementDomainLabels])
+  for (const [index, label] of managementDomainLabels.entries()) {
+    await page.locator('.category-list button').nth(index).click()
+    await expect(page.locator('.category-description h1')).toHaveText(label)
+    await expect(page.locator('.category-description p')).toHaveText(
+      managementDomainDescriptions[index],
+    )
+  }
   await page.locator('.category-tabs button').nth(0).click()
   await expect(page.locator('.category-tabs button').nth(0)).toHaveClass(/active/u)
 
@@ -217,9 +255,9 @@ test('standard library matches Figma node 70:322 geometry and real configured co
     .locator('.arco-form-item')
     .filter({ hasText: '管理领域' })
   await managementDomainField.locator('.arco-select').click()
-  await expect(
-    page.locator('.arco-select-dropdown:visible .arco-select-option'),
-  ).toHaveText([...managementDomainLabels])
+  await expect(page.locator('.arco-select-dropdown:visible .arco-select-option')).toHaveText([
+    ...managementDomainLabels,
+  ])
   await page.keyboard.press('Escape')
   await createModal.locator('.arco-modal-close-btn').click()
 
@@ -335,9 +373,7 @@ test('standard library keeps real loading, empty and validation errors inside th
       (firstItem) => !secondPage.data.items.some((secondItem) => secondItem.id === firstItem.id),
     ),
   ).toBe(true)
-  expect(
-    descending.data.items.map((item) => item.id),
-  ).toEqual(
+  expect(descending.data.items.map((item) => item.id)).toEqual(
     [...ascending.data.items].reverse().map((item) => item.id),
   )
 
@@ -385,9 +421,8 @@ test('standard library renders a real long draft, actions and minimum-width scro
       const configuration = field(code)
       const configuredDefault = String(configuration.defaultValue ?? '')
       return (
-        configuration.options.find(
-          (option) => option.enabled && option.value === configuredDefault,
-        )?.value ??
+        configuration.options.find((option) => option.enabled && option.value === configuredDefault)
+          ?.value ??
         configuration.options.find((option) => option.enabled)?.value ??
         ''
       )
@@ -475,7 +510,9 @@ test('standard library renders a real long draft, actions and minimum-width scro
       .toBeGreaterThan(0)
     const archiveButton = row.getByRole('button', { name: '归档', exact: true })
     const horizontalBounds = await archiveButton.evaluate((element) => {
-      const viewport = element.closest('.business-table')?.querySelector('.business-table__viewport')
+      const viewport = element
+        .closest('.business-table')
+        ?.querySelector('.business-table__viewport')
       if (!(viewport instanceof HTMLElement)) throw new Error('Missing BusinessTable viewport')
       const buttonRect = element.getBoundingClientRect()
       const viewportRect = viewport.getBoundingClientRect()
@@ -488,7 +525,6 @@ test('standard library renders a real long draft, actions and minimum-width scro
     })
     expect(horizontalBounds.buttonLeft).toBeGreaterThanOrEqual(horizontalBounds.viewportLeft - 1)
     expect(horizontalBounds.buttonRight).toBeLessThanOrEqual(horizontalBounds.viewportRight + 1)
-
   } finally {
     if (standardId) {
       const archiveResponse = await page.request.post(`/api/v1/standards/${standardId}/archive`, {
