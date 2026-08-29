@@ -635,6 +635,7 @@ watch(
         </a-form-item>
         <a-form-item :label="t('archive.file')" required>
           <a-upload
+            class="archive-file-upload"
             :file-list="uploadFileItems"
             :auto-upload="false"
             multiple
@@ -671,6 +672,11 @@ watch(
   padding: 13px;
   color: #1d2129;
   font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+/* Arco 2.58.0 still renders the text retry action when showRetryButton is false. */
+.archive-file-upload :deep(.arco-upload-icon-upload) {
+  display: none;
 }
 
 .archive-metrics {

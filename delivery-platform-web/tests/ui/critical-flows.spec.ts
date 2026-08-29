@@ -261,6 +261,21 @@ test('administrator can use the target architecture navigation', async ({ page }
 
   await page.goto('/#/archive')
   await expect(page).toHaveURL(/#\/archive\?projectId=[^&]+$/u, { timeout: 60_000 })
+  await page.locator('.archive-upload-button').click()
+  const archiveUploadDialog = page.locator('.arco-modal').filter({ hasText: '上传档案文件' })
+  await expect(archiveUploadDialog).toBeVisible()
+  await archiveUploadDialog.locator('input[type="file"]').setInputFiles({
+    name: 'archive-retry-regression.docx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    buffer: Buffer.from('archive retry regression'),
+  })
+  const manualUploadAction = archiveUploadDialog.locator('.arco-upload-icon-start')
+  await expect(manualUploadAction).toBeVisible()
+  await manualUploadAction.click()
+  await expect(archiveUploadDialog.locator('.arco-upload-list-item-error')).toBeVisible()
+  await expect(archiveUploadDialog.locator('.arco-upload-icon-upload')).toBeHidden()
+  await expect(archiveUploadDialog.getByText('点击重试', { exact: true })).toHaveCount(0)
+  await archiveUploadDialog.getByRole('button', { name: '取消', exact: true }).click()
 
   await page.goto('/#/standards')
   await expect(page).toHaveURL(/#\/standards(?:\?.*)?$/u)
