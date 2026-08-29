@@ -208,6 +208,9 @@ test('standard library matches Figma node 70:322 geometry and real configured co
     await expect(page.locator('.category-description h1')).toHaveText(label)
     await expect(page.locator('.category-description p')).toHaveText(description)
   }
+  await page.locator('.category-list button').first().click()
+  await expect(page.locator('.category-description h1')).toHaveText(deliveryStageDirectories[0][0])
+  await expect(table.locator('tbody tr').first()).toBeVisible()
   await expect(table.locator('tbody tr').first().locator('td').nth(0)).not.toHaveText('')
   await expect(table.locator('tbody tr').first().locator('td').nth(1)).not.toHaveText('')
   await expect(panel).toHaveCSS('border-top-width', '1px')
