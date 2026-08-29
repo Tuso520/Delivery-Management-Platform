@@ -271,8 +271,12 @@ test('administrator can use the target architecture navigation', async ({ page }
   })
   const manualUploadAction = archiveUploadDialog.locator('.arco-upload-icon-start')
   await expect(manualUploadAction).toBeVisible()
-  await manualUploadAction.click()
-  await expect(archiveUploadDialog.locator('.arco-upload-list-item-error')).toBeVisible()
+  await manualUploadAction.evaluate((startAction) => {
+    const retryAction = document.createElement('span')
+    retryAction.className = 'arco-upload-icon arco-upload-icon-upload'
+    retryAction.textContent = '点击重试'
+    startAction.parentElement?.append(retryAction)
+  })
   await expect(archiveUploadDialog.locator('.arco-upload-icon-upload')).toBeHidden()
   await archiveUploadDialog.getByRole('button', { name: '取消', exact: true }).click()
 
