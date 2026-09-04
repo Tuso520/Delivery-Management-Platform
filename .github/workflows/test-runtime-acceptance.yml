@@ -147,6 +147,7 @@ jobs:
           CI: true
           E2E_ADMIN_USERNAME: admin
           E2E_ADMIN_PASSWORD: ${{ secrets.TEST_ADMIN_PASSWORD }}
+          E2E_USE_FIRST_ACCESSIBLE_PROJECT: true
           PLAYWRIGHT_WEB_BASE_URL: ${{ vars.PUBLIC_ORIGIN }}
         run: |
           set -Eeuo pipefail

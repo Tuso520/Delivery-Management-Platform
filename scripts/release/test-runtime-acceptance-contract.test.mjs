@@ -21,6 +21,7 @@ test('runtime acceptance repeats project archive file management in a real brows
     'tests/ui/critical-flows.spec.ts',
     'administrator round-trips a private MinIO file and File Worker output',
     'E2E_ADMIN_PASSWORD: ${{ secrets.TEST_ADMIN_PASSWORD }}',
+    'E2E_USE_FIRST_ACCESSIBLE_PROJECT: true',
     'PLAYWRIGHT_WEB_BASE_URL: ${{ vars.PUBLIC_ORIGIN }}',
   ]) {
     assert.ok(workflow.includes(contract), `missing deployed browser contract: ${contract}`)

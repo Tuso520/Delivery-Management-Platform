@@ -75,6 +75,7 @@ const adminUsername = process.env.E2E_ADMIN_USERNAME
 const adminPassword = process.env.E2E_ADMIN_PASSWORD
 const limitedUsername = process.env.E2E_LIMITED_USERNAME
 const limitedPassword = process.env.E2E_LIMITED_PASSWORD
+const useFirstAccessibleProject = process.env.E2E_USE_FIRST_ACCESSIBLE_PROJECT === 'true'
 
 function requireCredentials(
   username: string | undefined,
@@ -197,7 +198,9 @@ function requireSeedProject(
   projects: ProjectListEnvelope,
   projectCode = 'VN-LG-2026-001',
 ): ProjectListItem {
-  const project = projects.data.items.find((item) => item.projectCode === projectCode)
+  const project =
+    projects.data.items.find((item) => item.projectCode === projectCode) ??
+    (useFirstAccessibleProject ? projects.data.items[0] : undefined)
   if (!project) {
     throw new Error(`Required seeded project ${projectCode} was not returned by the project API`)
   }
