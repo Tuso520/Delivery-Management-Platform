@@ -13,6 +13,20 @@ test('runtime acceptance is hard-wired to the test Environment and strict SSH id
   assert.doesNotMatch(workflow, /ssh-keyscan/u)
 })
 
+test('runtime acceptance repeats project archive file management in a real browser', () => {
+  for (const contract of [
+    'actions/setup-node@v4',
+    'pnpm/action-setup@v4',
+    'playwright install --with-deps chromium',
+    'tests/ui/critical-flows.spec.ts',
+    'administrator round-trips a private MinIO file and File Worker output',
+    'E2E_ADMIN_PASSWORD: ${{ secrets.TEST_ADMIN_PASSWORD }}',
+    'PLAYWRIGHT_WEB_BASE_URL: ${{ vars.PUBLIC_ORIGIN }}',
+  ]) {
+    assert.ok(workflow.includes(contract), `missing deployed browser contract: ${contract}`)
+  }
+})
+
 test('optional backup path keeps remote positional arguments aligned', () => {
   assert.match(workflow, /feishu_backup_path_arg="\$\{FEISHU_BACKUP_PATH:--\}"/u)
   assert.match(workflow, /printf -v remote_command 'test -f %q && test ! -L %q && exec bash %q/u)

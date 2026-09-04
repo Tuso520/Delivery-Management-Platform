@@ -93,6 +93,15 @@ jobs:
           ref: ${{ inputs.release_sha }}
           fetch-depth: 0
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.2
+          cache: pnpm
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+
       - name: 校验 Release 属于 main 历史
         run: |
           set -Eeuo pipefail
@@ -133,6 +142,21 @@ jobs:
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
             "$SERVER_USER@$SERVER_HOST" "$remote_command"
+
+      - name: 浏览器复验项目档案文件管理
+        env:
+          CI: true
+          E2E_ADMIN_USERNAME: admin
+          E2E_ADMIN_PASSWORD: ${{ secrets.TEST_ADMIN_PASSWORD }}
+          PLAYWRIGHT_WEB_BASE_URL: ${{ vars.PUBLIC_ORIGIN }}
+        run: |
+          set -Eeuo pipefail
+          pnpm --dir delivery-platform-web install --frozen-lockfile
+          pnpm --dir delivery-platform-web exec playwright install --with-deps chromium
+          pnpm --dir delivery-platform-web exec playwright test \
+            tests/ui/critical-flows.spec.ts \
+            --config playwright.ui.config.ts \
+            --grep 'administrator round-trips a private MinIO file and File Worker output'
 
       - name: 清理临时验收文件
         if: ${{ always() }}
