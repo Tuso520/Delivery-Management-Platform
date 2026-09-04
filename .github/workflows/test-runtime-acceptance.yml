@@ -93,14 +93,14 @@ jobs:
           ref: ${{ inputs.release_sha }}
           fetch-depth: 0
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20.20.2
           cache: pnpm
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.15.1
 
       - name: 校验 Release 属于 main 历史
         run: |
