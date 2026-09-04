@@ -50,8 +50,6 @@ export const PERMISSION_CODES = [
   "project:view_contract",
   "project:view_financial",
   "project:view_acceptance",
-  "archive:replace",
-  "archive:version:view",
   "file:preview_pending",
   "file:preview_history",
   "file:archive",

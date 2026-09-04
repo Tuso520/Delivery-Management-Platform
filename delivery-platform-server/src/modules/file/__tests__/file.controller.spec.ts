@@ -49,7 +49,6 @@ describe('file upload controllers', () => {
       'project-1',
       'item-1',
       file,
-      { uploadMode: 'NEW_VERSION', revisionLevel: 'MINOR' },
       currentUser,
       'archive-key-0001',
     );
@@ -58,7 +57,6 @@ describe('file upload controllers', () => {
       'project-1',
       'item-1',
       file,
-      { uploadMode: 'NEW_VERSION', revisionLevel: 'MINOR' },
       currentUser,
       'archive-key-0001',
     );

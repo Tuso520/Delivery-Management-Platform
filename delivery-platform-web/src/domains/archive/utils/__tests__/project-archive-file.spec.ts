@@ -3,9 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { ProjectArchiveTargetItem } from '@/domains/archive/types/archive'
 import { resolveArchiveUploadTargetLabel, resolveProjectArchiveFileName } from '../project-archive-file'
 
-function archiveItem(
-  currentVersion: ProjectArchiveTargetItem['currentVersion'],
-): ProjectArchiveTargetItem {
+function archiveItem(file: ProjectArchiveTargetItem['file']): ProjectArchiveTargetItem {
   return {
     id: 'item-1',
     name: '项目需求沟通记录',
@@ -14,8 +12,8 @@ function archiveItem(
     allowMultipleFiles: false,
     isTemporary: false,
     status: 'APPROVED',
-    currentVersion,
-    fileCount: currentVersion ? 1 : 0,
+    file,
+    fileCount: file ? 1 : 0,
     updatedAt: '2026-07-20T00:00:00.000Z',
     canUpload: true,
     canDownload: true,
@@ -29,8 +27,7 @@ describe('resolveProjectArchiveFileName', () => {
     expect(
       resolveProjectArchiveFileName(
         archiveItem({
-          id: 'version-1',
-          version: 'V1.0',
+          id: 'file-1',
           status: 'APPROVED',
           uploadedAt: '2026-07-20T00:00:00.000Z',
           originalName: '项目启动会议纪要.docx',
@@ -45,8 +42,7 @@ describe('resolveProjectArchiveFileName', () => {
     expect(
       resolveProjectArchiveFileName(
         archiveItem({
-          id: 'version-1',
-          version: 'V1.0',
+          id: 'file-1',
           status: 'APPROVED',
           uploadedAt: '2026-07-20T00:00:00.000Z',
           displayName: '项目需求沟通记录',

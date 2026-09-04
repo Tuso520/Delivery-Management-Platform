@@ -17,42 +17,21 @@ describe('project archive upload contract', () => {
     request.post.mockReset()
   })
 
-  it('sends a stable idempotency key with target upload metadata', async () => {
+  it('sends only the file and a stable idempotency key', async () => {
     const file = new File(['archive content'], 'acceptance.pdf', {
       type: 'application/pdf',
     })
 
-    await archiveApi.uploadFile('project-1', 'item-1', file, {
-      uploadMode: 'NEW_VERSION',
-      revisionLevel: 'MINOR',
-      logicalFileId: 'logical-1',
-      changeDescription: '补充签字页',
-    })
+    await archiveApi.uploadFile('project-1', 'item-1', file)
 
     const [path, body, options] = request.post.mock.calls[0]
     expect(path).toBe('/projects/project-1/archive-items/item-1/files')
     expect((body as FormData).get('file')).toBe(file)
-    expect((body as FormData).get('logicalFileId')).toBe('logical-1')
+    expect(Array.from((body as FormData).keys())).toEqual(['file'])
     expect(options.headers).toEqual(
       expect.objectContaining({ 'Idempotency-Key': expect.any(String) }),
     )
     expect(options.headers).not.toHaveProperty('Content-Type')
-  })
-
-  it('marks each batch file as a new independent logical file', async () => {
-    const file = new File(['archive content'], 'drawing.pdf', {
-      type: 'application/pdf',
-    })
-
-    await archiveApi.uploadFile('project-1', 'item-1', file, {
-      uploadMode: 'REPLACE',
-      revisionLevel: 'MINOR',
-      createNewLogicalFile: true,
-    })
-
-    const [, body] = request.post.mock.calls[0]
-    expect((body as FormData).get('createNewLogicalFile')).toBe('true')
-    expect((body as FormData).get('logicalFileId')).toBeNull()
   })
 
   it('retries a transient 503 with the same idempotency key and fresh multipart data', async () => {
@@ -64,11 +43,7 @@ describe('project archive upload contract', () => {
       type: 'application/pdf',
     })
 
-    const upload = archiveApi.uploadFile('project-1', 'item-1', file, {
-      uploadMode: 'REPLACE',
-      revisionLevel: 'MINOR',
-      createNewLogicalFile: true,
-    })
+    const upload = archiveApi.uploadFile('project-1', 'item-1', file)
     await vi.runAllTimersAsync()
     await expect(upload).resolves.toEqual({ id: 'logical-1' })
 

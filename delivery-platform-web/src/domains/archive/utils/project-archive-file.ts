@@ -5,11 +5,11 @@ const GENERIC_ARCHIVE_ITEM_NAMES = new Set(['项目交付文件', '相关交付�
 const FILE_EXTENSION_PATTERN = /\.[^./\\]+$/u
 
 export function resolveProjectArchiveFileName(item: ProjectArchiveTargetItem): string {
-  const version = item.currentVersion
-  const originalName = version?.originalName?.trim()
-  const displayName = version?.displayName?.trim()
+  const file = item.file
+  const originalName = file?.originalName?.trim()
+  const displayName = file?.displayName?.trim()
   const candidate = originalName || displayName || item.name.trim()
-  const extension = version?.extension?.trim().replace(/^\./u, '')
+  const extension = file?.extension?.trim().replace(/^\./u, '')
 
   if (!candidate || !extension || FILE_EXTENSION_PATTERN.test(candidate)) return candidate
   return `${candidate}.${extension}`

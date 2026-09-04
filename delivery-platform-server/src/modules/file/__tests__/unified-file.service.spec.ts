@@ -40,28 +40,6 @@ describe('UnifiedFileService', () => {
     jest.clearAllMocks();
   });
 
-  it('requires archive:replace in addition to archive:upload for replacement uploads', async () => {
-    const service = new UnifiedFileService(
-      {} as PrismaService,
-      { upload: jest.fn() } as unknown as FileStorageService,
-      projectAccess,
-      reviewConfiguration,
-      reviewTasks,
-      operationLog,
-    );
-
-    await expect(
-      service.uploadProjectArchiveFile(
-        'project-1',
-        'item-1',
-        pdfFile(),
-        { uploadMode: 'REPLACE', revisionLevel: 'MINOR' },
-        fileActor(['archive:upload']),
-      ),
-    ).rejects.toThrow(ForbiddenException);
-    expect(projectAccess.assertProjectAccess).not.toHaveBeenCalled();
-  });
-
   it('rejects extensions disabled in system settings before writing object storage', async () => {
     const storage = { upload: jest.fn() } as unknown as FileStorageService;
     const systemConfig = {
@@ -191,11 +169,6 @@ describe('UnifiedFileService', () => {
       'project-1',
       'item-1',
       pdfFile('drawing-V1.2.pdf'),
-      {
-        uploadMode: 'NEW_VERSION',
-        revisionLevel: 'MINOR',
-        createNewLogicalFile: true,
-      },
       fileActor(['archive:upload']),
     );
 
@@ -234,12 +207,7 @@ describe('UnifiedFileService', () => {
       'project-1',
       'item-1',
       pdfFile('drawing-V1.3.pdf'),
-      {
-        uploadMode: 'REPLACE',
-        revisionLevel: 'MINOR',
-        createNewLogicalFile: true,
-      },
-      fileActor(['archive:upload', 'archive:replace']),
+      fileActor(['archive:upload']),
     );
     expect(storage.upload).toHaveBeenCalledTimes(2);
   });
@@ -448,7 +416,6 @@ describe('UnifiedFileService', () => {
         'project-1',
         'item-1',
         file,
-        { uploadMode: 'NEW_VERSION', revisionLevel: 'MINOR' },
         fileActor(['archive:upload']),
         'archive-key-0001',
       ),
@@ -604,11 +571,51 @@ describe('UnifiedFileService', () => {
         'project-1',
         'item-1',
         pdfFile(),
-        { uploadMode: 'NEW_VERSION', revisionLevel: 'MINOR' },
         fileActor(['archive:upload']),
       ),
     ).rejects.toThrow(new UnprocessableEntityException('要求审核，但未配置审批模板'));
     expect(storage.upload).not.toHaveBeenCalled();
+  });
+
+  it('allows a project archive uploader to delete a file in an accessible project', async () => {
+    const logicalFile = {
+      ...previewLogicalFile('pdf'),
+      projectArchiveFile: {
+        id: 'archive-file-1',
+        projectId: 'project-1',
+        archiveItemId: 'item-1',
+        status: 'APPROVED',
+      },
+    };
+    const transaction = {
+      logicalFile: { update: jest.fn().mockResolvedValue({ id: logicalFile.id }) },
+      projectArchiveFile: { update: jest.fn().mockResolvedValue({ id: 'archive-file-1' }) },
+      operationLog: { create: jest.fn().mockResolvedValue({ id: 'log-1' }) },
+    };
+    const prisma = {
+      logicalFile: { findFirst: jest.fn().mockResolvedValue(logicalFile) },
+      $transaction: jest
+        .fn()
+        .mockImplementation((callback: (tx: typeof transaction) => Promise<unknown>) =>
+          callback(transaction),
+        ),
+    } as unknown as PrismaService;
+    const service = new UnifiedFileService(
+      prisma,
+      {} as FileStorageService,
+      projectAccess,
+      reviewConfiguration,
+      reviewTasks,
+      operationLog,
+    );
+
+    await service.archive(logicalFile.id, fileActor(['archive:upload']));
+
+    expect(projectAccess.assertProjectAccess).toHaveBeenCalledWith('project-1', 'user-1');
+    expect(transaction.projectArchiveFile.update).toHaveBeenCalledWith({
+      where: { id: 'archive-file-1' },
+      data: { archivedAt: expect.any(Date), status: 'ARCHIVED' },
+    });
   });
 
   it.each([

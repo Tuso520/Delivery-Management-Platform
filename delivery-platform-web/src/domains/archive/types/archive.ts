@@ -23,9 +23,8 @@ export interface ArchiveTemplate {
   updatedAt: string
   _count?: { versions?: number; projectSnapshots?: number }
 }
-export interface ProjectArchiveCurrentVersion {
+export interface ProjectArchiveFileMetadata {
   id: string
-  version: string
   status: string
   uploadedAt: string
   logicalFileId?: string
@@ -63,7 +62,7 @@ export interface ProjectArchiveTargetItem {
   temporaryReason?: string | null
   archivedAt?: string | null
   status: string
-  currentVersion?: ProjectArchiveCurrentVersion | null
+  file?: ProjectArchiveFileMetadata | null
   fileCount: number
   owner?: { id: string; realName: string; username: string } | null
   updatedAt: string

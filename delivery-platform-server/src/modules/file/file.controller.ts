@@ -34,7 +34,6 @@ import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import type { JwtPayload } from '../auth/strategies/jwt.strategy';
 
 import { UploadDraftFileDto } from './dto/upload-draft-file.dto';
-import { UploadProjectArchiveFileDto } from './dto/upload-project-archive-file.dto';
 import { FileStorageService } from './file-storage.service';
 import { UnifiedFileService } from './unified-file.service';
 import { UploadedFileCleanupInterceptor } from './uploaded-file-cleanup.interceptor';
@@ -155,7 +154,7 @@ export class FileController {
 
   @Get(':id/download')
   @RequirePermissions({
-    any: ['file:download', 'standard:download', 'knowledge:download'],
+    any: ['archive:upload', 'file:download', 'standard:download', 'knowledge:download'],
   })
   @RawResponse()
   @HttpCode(HttpStatus.OK)
@@ -241,7 +240,7 @@ export class FileController {
   }
 
   @Post(':id/archive')
-  @RequirePermissions({ all: ['file:archive'] })
+  @RequirePermissions({ any: ['file:archive', 'archive:upload'] })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '软归档统一文件并保留全部版本' })
   archive(@Param('id') id: string, @CurrentUser() actor: JwtPayload) {
@@ -264,7 +263,7 @@ export class ProjectArchiveFileController {
   @UseInterceptors(FileInterceptor('file'), UploadedFileCleanupInterceptor)
   @HttpCode(HttpStatus.CREATED)
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: '上传、替换或新增项目档案文件版本' })
+  @ApiOperation({ summary: '上传项目档案文件' })
   @ApiHeader({
     name: 'Idempotency-Key',
     required: false,
@@ -274,7 +273,6 @@ export class ProjectArchiveFileController {
     @Param('projectId') projectId: string,
     @Param('itemId') itemId: string,
     @UploadedFile() file: Express.Multer.File,
-    @Body() dto: UploadProjectArchiveFileDto,
     @CurrentUser() actor: JwtPayload,
     @Headers('idempotency-key') idempotencyKey?: string,
   ) {
@@ -284,7 +282,6 @@ export class ProjectArchiveFileController {
         projectId,
         itemId,
         file,
-        dto,
         actor,
         idempotencyKey,
       );

@@ -37,6 +37,8 @@ describe('platform refinement regression', () => {
     expect(archive).toContain('ProjectArchiveTargetFolder')
     expect(archiveApi).not.toContain('archive-template-sync')
     expect(archive).toContain('fileApi.archive(logicalFileId)')
+    expect(archive).not.toContain("t('archive.updateFile')")
+    expect(archive).not.toContain("slotName: 'version'")
     expect(archive).not.toContain('LEGACY_READ_ONLY')
     expect(archive).not.toContain('migrationMode')
     expect(archive).not.toContain('ProjectRecordsPanel')

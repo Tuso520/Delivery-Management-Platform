@@ -51,7 +51,6 @@ interface ArchiveTreeEnvelope {
         reviewRequired: boolean
         allowedExtensions?: string[] | null
         namingRule?: string | null
-        currentVersion?: { logicalFileId?: string | null } | null
         fileCount: number
       }>
     }>
@@ -701,7 +700,6 @@ test('administrator round-trips a private MinIO file and File Worker output', as
   ).toBeDefined()
 
   const fileName = `${item!.namingRule!.replace(/\{version\}/giu, 'V1.0')}.png`
-  const currentLogicalFileId = item!.currentVersion?.logicalFileId
   const image = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
     'base64',
@@ -711,12 +709,6 @@ test('administrator round-trips a private MinIO file and File Worker output', as
     {
       headers: { ...authorization, 'idempotency-key': `runtime-file-${Date.now()}` },
       multipart: {
-        uploadMode: currentLogicalFileId ? 'NEW_VERSION' : 'REPLACE',
-        revisionLevel: 'MINOR',
-        ...(currentLogicalFileId
-          ? { logicalFileId: currentLogicalFileId }
-          : { createNewLogicalFile: 'true' }),
-        changeDescription: 'CI MinIO and File Worker consistency acceptance',
         file: { name: fileName, mimeType: 'image/png', buffer: image },
       },
       timeout: 60_000,
@@ -765,6 +757,30 @@ test('administrator round-trips a private MinIO file and File Worker output', as
   expect(thumbnailResponse.status()).toBe(200)
   expect(thumbnailResponse.headers()['content-type']).toContain('image/webp')
   expect((await thumbnailResponse.body()).byteLength).toBeGreaterThan(0)
+
+  await page.goto(`/#/archive?projectId=${project.id}`)
+  const fileRow = page.locator('.archive-file-table .arco-table-tr', { hasText: fileName })
+  await expect(fileRow).toBeVisible({ timeout: 60_000 })
+  await expect(
+    page.locator('.archive-file-table .arco-table-th').filter({ hasText: '版本号' }),
+  ).toHaveCount(0)
+  await expect(page.getByRole('columnheader', { name: '版本', exact: true })).toHaveCount(0)
+  await expect(fileRow.getByRole('button', { name: '更新', exact: true })).toHaveCount(0)
+  await expect(fileRow.getByRole('button', { name: '下载', exact: true })).toBeVisible()
+  await expect(fileRow.getByRole('button', { name: '删除', exact: true })).toBeVisible()
+  const tableWidths = await page
+    .locator('.archive-file-table .business-table__viewport')
+    .evaluate((element) => ({ clientWidth: element.clientWidth, scrollWidth: element.scrollWidth }))
+  expect(tableWidths.scrollWidth).toBeLessThanOrEqual(tableWidths.clientWidth + 1)
+
+  const downloadPromise = page.waitForEvent('download')
+  await fileRow.getByRole('button', { name: '下载', exact: true }).click()
+  expect((await downloadPromise).suggestedFilename()).toBe(fileName)
+
+  await fileRow.getByRole('button', { name: '删除', exact: true }).click()
+  const deleteDialog = page.locator('.arco-modal').filter({ hasText: fileName })
+  await deleteDialog.getByRole('button', { name: '删除', exact: true }).click()
+  await expect(fileRow).toHaveCount(0)
 })
 
 test('project manager is restricted by data scope, field permissions and settings permissions', async ({

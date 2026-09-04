@@ -266,18 +266,6 @@ export const permissionDefs = [
     action: 'view_acceptance',
   },
   {
-    permissionCode: 'archive:replace',
-    permissionName: '替换正式档案文件',
-    resource: 'archive',
-    action: 'replace',
-  },
-  {
-    permissionCode: 'archive:version:view',
-    permissionName: '查看档案历史版本',
-    resource: 'archive',
-    action: 'version_view',
-  },
-  {
     permissionCode: 'file:preview_pending',
     permissionName: '预览审核中文件',
     resource: 'file',

@@ -143,7 +143,7 @@ interface ProjectArchiveTreeData {
     uploadTarget: { id: string; canUpload: boolean } | null;
     files: Array<{
       id: string;
-      currentVersion?: { originalName?: string; displayName?: string } | null;
+      file?: { originalName?: string; displayName?: string } | null;
     }>;
   }>;
 }
@@ -1163,8 +1163,6 @@ describe('running Delivery Platform API', () => {
       const fixturePaths = fixtureNames.map((name) => resolve(fixtureDirectory, name));
       const invalidName = `invalid-${marker}.pdf`;
       const invalidPath = resolve(fixtureDirectory, invalidName);
-      const missingParameterName = `missing-revision-${marker}.pdf`;
-      const missingParameterPath = resolve(fixtureDirectory, missingParameterName);
       const uploadedIds: string[] = [];
 
       const upload = async (
@@ -1180,10 +1178,6 @@ describe('running Delivery Platform API', () => {
           new Blob([new Uint8Array(fileBody)], { type: 'application/pdf' }),
           fileName,
         );
-        form.append('uploadMode', 'REPLACE');
-        form.append('revisionLevel', 'MINOR');
-        form.append('createNewLogicalFile', 'true');
-        form.append('changeDescription', 'real archive upload acceptance');
         const response = await fetch(
           `${baseUrl}/projects/${selectedProjectId}/archive-items/${archiveItemId}/files`,
           {
@@ -1204,7 +1198,6 @@ describe('running Delivery Platform API', () => {
       await mkdir(fixtureDirectory, { recursive: true });
       await Promise.all(fixturePaths.map((path, index) => writeFile(path, fixtureBodies[index])));
       await writeFile(invalidPath, 'not a PDF file');
-      await writeFile(missingParameterPath, fixtureBodies[0]);
       try {
         const boundaryResponse = await fetch(
           `${baseUrl}/projects/${selectedProjectId}/archive-items/${archiveItemId}/files`,
@@ -1227,25 +1220,6 @@ describe('running Delivery Platform API', () => {
         process.stdout.write(
           `ARCHIVE_UPLOAD_PRE_FIX_400 ${JSON.stringify(boundaryBody)}\n`,
         );
-
-        const missingParameterForm = new FormData();
-        missingParameterForm.append(
-          'file',
-          new Blob([new Uint8Array(fixtureBodies[0])], { type: 'application/pdf' }),
-          missingParameterName,
-        );
-        missingParameterForm.append('uploadMode', 'REPLACE');
-        const missingParameterResponse = await fetch(
-          `${baseUrl}/projects/${selectedProjectId}/archive-items/${archiveItemId}/files`,
-          {
-            method: 'POST',
-            headers: { authorization: `Bearer ${admin.accessToken}` },
-            body: missingParameterForm,
-          },
-        );
-        const missingParameterBody = (await missingParameterResponse.json()) as ApiEnvelope<null>;
-        expect(missingParameterResponse.status).toBe(400);
-        expect(missingParameterBody.message).toBe('revisionLevel 必须为 MINOR 或 MAJOR');
 
         const singleKey = `archive-single-${marker}`;
         const single = await upload(fixturePaths[0], fixtureNames[0], singleKey);
@@ -1275,12 +1249,11 @@ describe('running Delivery Platform API', () => {
         const verifiedFolder = treeAfter.folders.find((folder) => folder.id === targetFolder.id);
         const uploadedNames = new Set(
           verifiedFolder?.files.map(
-            (file) => file.currentVersion?.originalName ?? file.currentVersion?.displayName,
+            (file) => file.file?.originalName ?? file.file?.displayName,
           ) ?? [],
         );
         for (const fixtureName of fixtureNames) expect(uploadedNames).toContain(fixtureName);
         expect(uploadedNames).not.toContain(invalidName);
-        expect(uploadedNames).not.toContain(missingParameterName);
         expect(verifiedFolder?.totalCount).toBe(targetFolder.totalCount + 3);
 
         for (const [index, logicalFileId] of uploadedIds.entries()) {

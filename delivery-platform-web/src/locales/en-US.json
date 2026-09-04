@@ -1049,8 +1049,6 @@
     "archiveItemLabel": "Upload to Folder",
     "selectArchiveItem": "Select a target folder",
     "file": "File",
-    "changeDescription": "Change Description",
-    "changePlaceholder": "Describe the changes in this file",
     "syncTitle": "Sync Archive Template Additions",
     "migrationRequired": "Migrate the current snapshot before synchronizing",
     "alreadyLatest": "This project archive is already up to date",
@@ -1066,7 +1064,6 @@
     "completedFolders": "Completed Folders",
     "directoryAria": "Archive Directory",
     "selectedFileCount": "{count} files",
-    "updateFile": "Update",
     "summary": {
       "completion": "Overall Completion",
       "items": "Archive Files",
@@ -1079,12 +1076,10 @@
     "columns": {
       "itemName": "Archive Item",
       "fileName": "File Name",
-      "version": "Version",
       "fileSize": "File Size",
       "uploader": "Uploader",
       "uploadedAt": "Uploaded At",
       "fileStatus": "File Status",
-      "currentVersion": "Current Version",
       "owner": "Owner",
       "updatedAt": "Last Updated"
     },

@@ -1043,8 +1043,6 @@
     "archiveItemLabel": "上传到文件夹",
     "selectArchiveItem": "请选择目标文件夹",
     "file": "文件",
-    "changeDescription": "变更说明",
-    "changePlaceholder": "说明本次文件变更内容",
     "syncTitle": "同步档案模板新增项",
     "migrationRequired": "当前快照需先完成迁移",
     "alreadyLatest": "当前项目档案已是最新版本",
@@ -1060,7 +1058,6 @@
     "completedFolders": "完成文件夹",
     "directoryAria": "档案目录",
     "selectedFileCount": "共 {count} 个文件",
-    "updateFile": "更新",
     "summary": {
       "completion": "整体完成度",
       "items": "档案文件",
@@ -1073,12 +1070,10 @@
     "columns": {
       "itemName": "文件项名称",
       "fileName": "文件名称",
-      "version": "版本",
       "fileSize": "文件大小",
       "uploader": "上传人",
       "uploadedAt": "上传时间",
       "fileStatus": "文件状态",
-      "currentVersion": "当前版本",
       "owner": "负责人",
       "updatedAt": "最近更新"
     },

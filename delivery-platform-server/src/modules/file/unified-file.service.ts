@@ -28,7 +28,6 @@ import { ReviewTaskService } from '../review/review-task.service';
 import { SystemConfigService } from '../system-config/system-config.service';
 
 import { UploadDraftFileDto } from './dto/upload-draft-file.dto';
-import { UploadProjectArchiveFileDto } from './dto/upload-project-archive-file.dto';
 import { FileStorageService } from './file-storage.service';
 import { parsePptxOutline, type PptxOutline } from './pptx-outline-parser';
 import { isStreamedMulterFile } from './streamed-upload.types';
@@ -272,14 +271,10 @@ export class UnifiedFileService {
     projectId: string,
     archiveItemId: string,
     rawFile: Express.Multer.File,
-    dto: UploadProjectArchiveFileDto,
     actor: UnifiedFileAccessActor,
     rawIdempotencyKey?: string,
   ) {
     this.assertPermission(actor, 'archive:upload');
-    if (dto.uploadMode === 'REPLACE') {
-      this.assertPermission(actor, 'archive:replace');
-    }
     const userId = actor.sub;
     const idempotencyKey = this.validateIdempotencyKey(rawIdempotencyKey);
     await this.projectAccess.assertProjectAccess(projectId, userId);
@@ -317,29 +312,13 @@ export class UnifiedFileService {
         archiveItemId,
         file,
         checksum,
-        dto.logicalFileId,
       );
       if (replay) return this.findById(replay.logicalFileId, actor);
     }
-    const existing = await this.resolveExistingArchiveFile(
-      projectId,
-      archiveItemId,
-      dto.logicalFileId,
-      dto.createNewLogicalFile,
-    );
-    const logicalFileId = existing?.logicalFileId ?? uuidv4();
-    const projectArchiveFileId = existing?.id ?? uuidv4();
+    const logicalFileId = uuidv4();
+    const projectArchiveFileId = uuidv4();
     const assetId = uuidv4();
     const fileVersionId = uuidv4();
-    const previousVersion = existing
-      ? await this.prisma.fileVersion.findFirst({
-          where: { logicalFileId, archivedAt: null },
-          select: { version: true, versionSequence: true },
-          orderBy: { versionSequence: 'desc' },
-        })
-      : null;
-    const nextVersion = this.nextVersion(previousVersion?.version, dto.revisionLevel);
-    const versionSequence = (previousVersion?.versionSequence ?? 0) + 1;
     const reviewConfiguration = archiveItem.reviewRequired
       ? await this.reviewConfiguration.resolve(archiveItem.approvalTemplateId, userId, projectId)
       : null;
@@ -353,7 +332,7 @@ export class UnifiedFileService {
           approvalTemplateId: reviewConfiguration.approvalTemplateId,
           approvalTemplateVersion: reviewConfiguration.approvalTemplateVersion,
           approvalSnapshot: reviewConfiguration.snapshot,
-          title: `${file.originalname} ${nextVersion}`,
+          title: file.originalname,
           locationLabel: `${archiveItem.folder.name} / ${archiveItem.name}`,
           reviewMode: reviewConfiguration.reviewMode,
           submittedBy: userId,
@@ -374,40 +353,26 @@ export class UnifiedFileService {
     };
     try {
       result = await this.prisma.$transaction(async (tx) => {
-        if (!existing) {
-          await tx.logicalFile.create({
-            data: {
-              id: logicalFileId,
-              ownerType: 'PROJECT_ARCHIVE',
-              ownerId: archiveItemId,
-              displayName: file.originalname,
-              status: reviewConfiguration ? 'REVIEWING' : 'APPROVED',
-              createdBy: userId,
-            },
-          });
-          await tx.projectArchiveFile.create({
-            data: {
-              id: projectArchiveFileId,
-              projectId,
-              archiveItemId,
-              logicalFileId,
-              status: reviewConfiguration ? 'REVIEWING' : 'APPROVED',
-              createdBy: userId,
-            },
-          });
-        } else {
-          await tx.logicalFile.update({
-            where: { id: logicalFileId },
-            data: {
-              displayName: file.originalname,
-              status: reviewConfiguration ? 'REVIEWING' : 'APPROVED',
-            },
-          });
-          await tx.projectArchiveFile.update({
-            where: { id: projectArchiveFileId },
-            data: { status: reviewConfiguration ? 'REVIEWING' : 'APPROVED' },
-          });
-        }
+        await tx.logicalFile.create({
+          data: {
+            id: logicalFileId,
+            ownerType: 'PROJECT_ARCHIVE',
+            ownerId: archiveItemId,
+            displayName: file.originalname,
+            status: reviewConfiguration ? 'REVIEWING' : 'APPROVED',
+            createdBy: userId,
+          },
+        });
+        await tx.projectArchiveFile.create({
+          data: {
+            id: projectArchiveFileId,
+            projectId,
+            archiveItemId,
+            logicalFileId,
+            status: reviewConfiguration ? 'REVIEWING' : 'APPROVED',
+            createdBy: userId,
+          },
+        });
 
         await tx.fileAsset.create({
           data: {
@@ -431,12 +396,11 @@ export class UnifiedFileService {
             id: fileVersionId,
             idempotencyKey,
             logicalFileId,
-            version: nextVersion,
-            versionSequence,
-            revisionLevel: dto.revisionLevel,
+            version: 'V1.0',
+            versionSequence: 1,
+            revisionLevel: 'MAJOR',
             assetId,
             status: reviewConfiguration ? 'UPLOADED' : 'APPROVED',
-            changeDescription: dto.changeDescription,
             uploadedBy: userId,
             approvedAt: reviewConfiguration ? null : new Date(),
           },
@@ -453,12 +417,11 @@ export class UnifiedFileService {
         await writeOperationLog(tx, {
           userId,
           module: 'file',
-          action: dto.uploadMode === 'REPLACE' ? 'replace' : 'new_version',
+          action: 'upload',
           targetType: 'logical_file',
           targetId: logicalFileId,
           afterData: {
             fileVersionId,
-            version: nextVersion,
             projectId,
             archiveItemId,
             reviewTaskId,
@@ -497,7 +460,6 @@ export class UnifiedFileService {
           archiveItemId,
           file,
           checksum,
-          dto.logicalFileId,
         );
         if (replay) return this.findById(replay.logicalFileId, actor);
       }
@@ -864,50 +826,6 @@ export class UnifiedFileService {
     return candidate.code === 'P2002';
   }
 
-  private async resolveExistingArchiveFile(
-    projectId: string,
-    archiveItemId: string,
-    logicalFileId?: string,
-    createNewLogicalFile = false,
-  ) {
-    if (createNewLogicalFile) {
-      if (logicalFileId) {
-        throw new BadRequestException('新建独立文件时不能同时指定 logicalFileId');
-      }
-      return null;
-    }
-    if (logicalFileId) {
-      const selected = await this.prisma.projectArchiveFile.findFirst({
-        where: {
-          projectId,
-          archiveItemId,
-          logicalFileId,
-          archivedAt: null,
-          logicalFile: { archivedAt: null },
-        },
-        select: { id: true, logicalFileId: true },
-      });
-      if (!selected) throw new NotFoundException('指定的业务文件不存在');
-      return selected;
-    }
-    const existing = await this.prisma.projectArchiveFile.findMany({
-      where: {
-        projectId,
-        archiveItemId,
-        archivedAt: null,
-        logicalFile: { archivedAt: null },
-      },
-      select: { id: true, logicalFileId: true },
-      orderBy: { createdAt: 'asc' },
-      take: 2,
-    });
-    if (existing.length === 1) return existing[0];
-    if (existing.length > 1) {
-      throw new BadRequestException('该档案项包含多个业务文件，请指定 logicalFileId');
-    }
-    return null;
-  }
-
   private async queueProcessingJobs(
     tx: Prisma.TransactionClient,
     fileAssetId: string,
@@ -1081,13 +999,20 @@ export class UnifiedFileService {
     if (actor.roles.includes('SUPER_ADMIN')) return true;
     const domain = this.resolveBusinessDomain(ownerType);
     if (domain === 'PROJECT_ARCHIVE') {
-      if (action === 'DOWNLOAD') return actor.permissions.includes('file:download');
-      if (action === 'UPDATE') return actor.permissions.includes('file:archive');
+      if (action === 'DOWNLOAD') {
+        return actor.permissions.some((permission) =>
+          ['archive:upload', 'file:download'].includes(permission),
+        );
+      }
+      if (action === 'UPDATE') {
+        return actor.permissions.some((permission) =>
+          ['archive:upload', 'file:archive'].includes(permission),
+        );
+      }
       return actor.permissions.some((permission) =>
         [
           'archive:view',
           'archive:upload',
-          'archive:version:view',
           'file:preview',
           'file:preview_pending',
           'file:preview_history',
@@ -1394,18 +1319,6 @@ export class UnifiedFileService {
     if (isStreamedMulterFile(file)) return file.checksum;
     if (!file.buffer) throw new BadRequestException('上传文件内容为空');
     return createHash('sha256').update(file.buffer).digest('hex');
-  }
-
-  private nextVersion(
-    previousVersion: string | undefined,
-    revisionLevel: 'MINOR' | 'MAJOR',
-  ): string {
-    if (!previousVersion) return 'V1.0';
-    const match = /^V?(\d+)\.(\d+)$/i.exec(previousVersion);
-    if (!match) throw new ConflictException('现有文件版本号无法自动递增');
-    const major = Number(match[1]);
-    const minor = Number(match[2]);
-    return revisionLevel === 'MAJOR' ? `V${major + 1}.0` : `V${major}.${minor + 1}`;
   }
 
   private async findPreviewProcessingJobs(fileAssetId: string): Promise<PreviewProcessingJob[]> {

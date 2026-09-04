@@ -311,11 +311,11 @@ describe('ProjectArchiveTargetService', () => {
 
     const result = await service.getArchiveTree('project-1', {
       ...actor,
-      permissions: [...actor.permissions, 'archive:upload', 'file:download', 'file:archive'],
+      permissions: [...actor.permissions, 'archive:upload'],
     });
 
     expect(result.folders[0].items[0]).toMatchObject({
-      currentVersion: {
+      file: {
         displayName: 'Meeting minutes',
         originalName: '项目启动会议纪要.docx',
         extension: 'docx',

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { FileItem, TableColumnData } from '@arco-design/web-vue'
 import Message from '@arco-design/web-vue/es/message'
 import { IconDelete, IconFile, IconFolder, IconUpload } from '@arco-design/web-vue/es/icon'
@@ -54,13 +54,12 @@ const projectKeyword = ref('')
 const selectedFolderId = ref('')
 const uploadVisible = ref(false)
 const uploadItemId = ref('')
-const uploadLogicalFileId = ref('')
 const uploadFileItems = ref<FileItem[]>([])
 const uploadFiles = computed(() =>
   uploadFileItems.value.flatMap((item) => (item.file ? [item.file] : [])),
 )
 const uploadProgress = ref(0)
-const uploadForm = reactive({ changeDescription: '' })
+const uploadForm: Record<string, never> = {}
 
 const archiveProjectsQuery = useArchiveProjectOptionsQuery(projectKeyword, isSuperAdmin)
 const archiveTreeQuery = useArchiveTreeQuery(selectedProjectId)
@@ -154,12 +153,11 @@ const metrics = computed(() => [
 ])
 
 const fileColumns = computed<TableColumnData[]>(() => [
-  { title: t('archive.columns.fileName'), slotName: 'fileName', width: 340, align: 'left' },
-  { title: t('archive.columns.version'), slotName: 'version', width: 80, align: 'center' },
+  { title: t('archive.columns.fileName'), slotName: 'fileName', width: 452, align: 'left' },
   { title: t('archive.columns.fileSize'), slotName: 'fileSize', width: 100, align: 'center' },
   { title: t('archive.columns.uploader'), slotName: 'uploader', width: 113, align: 'center' },
   { title: t('archive.columns.uploadedAt'), slotName: 'uploadedAt', width: 122, align: 'center' },
-  { title: t('common.action'), slotName: 'action', width: 182, align: 'center' },
+  { title: t('common.action'), slotName: 'action', width: 150, align: 'center' },
 ])
 
 const uploadAccept = computed(() => {
@@ -175,27 +173,17 @@ const uploadMutation = useMutation({
     projectId,
     itemId,
     files,
-    logicalFileId,
   }: {
     projectId: string
     itemId: string
     files: File[]
-    logicalFileId?: string
   }) => {
     return files.reduce<Promise<void>>(async (previous, file, index) => {
       await previous
-      const updateExistingFile = index === 0 && Boolean(logicalFileId)
       await archiveApi.uploadFile(
         projectId,
         itemId,
         file,
-        {
-          uploadMode: updateExistingFile ? 'NEW_VERSION' : 'REPLACE',
-          revisionLevel: 'MINOR',
-          logicalFileId: updateExistingFile ? logicalFileId : undefined,
-          createNewLogicalFile: !updateExistingFile,
-          changeDescription: uploadForm.changeDescription.trim() || undefined,
-        },
         (percentage) => {
           uploadProgress.value = Math.round(((index + percentage / 100) / files.length) * 100)
         },
@@ -267,23 +255,14 @@ function formatFileSize(value?: string | null): string {
 }
 
 function previewItem(item: ProjectArchiveTargetFile): void {
-  if (!item.currentVersion || item.currentVersion.canPreview === false) return
+  if (!item.file || item.file.canPreview === false) return
   const previewIdentifier =
-    item.currentVersion.previewIdentifier || item.currentVersion.logicalFileId
+    item.file.previewIdentifier || item.file.logicalFileId
   if (!previewIdentifier) return
   filePreview.openPreview({
     id: previewIdentifier,
     title: resolveProjectArchiveFileName(item),
   })
-}
-
-function openUpload(item: ProjectArchiveTargetFile): void {
-  uploadItemId.value = item.archiveItemId
-  uploadLogicalFileId.value = item.currentVersion?.logicalFileId ?? ''
-  uploadFileItems.value = []
-  uploadProgress.value = 0
-  uploadForm.changeDescription = ''
-  uploadVisible.value = true
 }
 
 function openFolderUpload(): void {
@@ -295,15 +274,13 @@ function openFolderUpload(): void {
     return
   }
   uploadItemId.value = target.id
-  uploadLogicalFileId.value = ''
   uploadFileItems.value = []
   uploadProgress.value = 0
-  uploadForm.changeDescription = ''
   uploadVisible.value = true
 }
 
 async function downloadItem(item: ProjectArchiveTargetFile): Promise<void> {
-  const logicalFileId = item.currentVersion?.logicalFileId
+  const logicalFileId = item.file?.logicalFileId
   if (!logicalFileId || !canDownloadItem(item)) return
   try {
     const blob = await fileApi.download(logicalFileId)
@@ -318,7 +295,7 @@ function canDownloadItem(item: ProjectArchiveTargetFile): boolean {
 }
 
 async function deleteFile(item: ProjectArchiveTargetFile): Promise<void> {
-  const logicalFileId = item.currentVersion?.logicalFileId
+  const logicalFileId = item.file?.logicalFileId
   if (!logicalFileId) return
   const fileName = resolveProjectArchiveFileName(item)
   try {
@@ -357,7 +334,6 @@ function removeUploadSelection(index: number): void {
 
 function changeUploadTarget(value: unknown): void {
   uploadItemId.value = typeof value === 'string' ? value : ''
-  uploadLogicalFileId.value = ''
 }
 
 async function submitUpload(): Promise<boolean> {
@@ -391,7 +367,6 @@ async function submitUpload(): Promise<boolean> {
       projectId: selectedProjectId.value,
       itemId: uploadItem.value.id,
       files: uploadFiles.value,
-      logicalFileId: uploadLogicalFileId.value || undefined,
     })
     Message.success(
       uploadItem.value.reviewRequired
@@ -553,46 +528,35 @@ watch(
             size="small"
             bordered
             stripe
-            preserve-column-widths
+            fit-container
             :columns="fileColumns"
             :batch-size="Math.max(20, selectedFolderItems.length)"
-            :scroll="{ x: 937 }"
+            :scroll="{ minWidth: 760 }"
             :empty-title="t('archive.emptyFolder')"
           >
             <template #fileName="{ record }">
               <span class="archive-file-name" :title="resolveProjectArchiveFileName(record)">
                 <a-link
-                  :disabled="!record.currentVersion || record.currentVersion.canPreview === false"
+                  :disabled="!record.file || record.file.canPreview === false"
                   @click="previewItem(record)"
                 >
                   {{ resolveProjectArchiveFileName(record) }}
                 </a-link>
               </span>
             </template>
-            <template #version="{ record }">
-              {{ record.currentVersion?.version || '—' }}
-            </template>
             <template #fileSize="{ record }">
-              {{ formatFileSize(record.currentVersion?.fileSize) }}
+              {{ formatFileSize(record.file?.fileSize) }}
             </template>
             <template #uploader="{ record }">
-              {{ record.currentVersion?.uploader?.realName || '—' }}
+              {{ record.file?.uploader?.realName || '—' }}
             </template>
             <template #uploadedAt="{ record }">
-              {{ formatDate(record.currentVersion?.uploadedAt) }}
+              {{ formatDate(record.file?.uploadedAt) }}
             </template>
             <template #action="{ record }">
-              <a-space class="archive-row-actions" :size="12">
+              <a-space class="archive-row-actions" :size="16">
                 <a-button
-                  v-if="record.canUpload"
-                  type="text"
-                  size="mini"
-                  @click="openUpload(record)"
-                >
-                  {{ t('archive.updateFile') }}
-                </a-button>
-                <a-button
-                  v-if="canDownloadItem(record) && record.currentVersion"
+                  v-if="canDownloadItem(record) && record.file"
                   type="text"
                   size="mini"
                   @click="downloadItem(record)"
@@ -600,7 +564,7 @@ watch(
                   {{ t('common.download') }}
                 </a-button>
                 <a-button
-                  v-if="record.canDeleteFile && record.currentVersion"
+                  v-if="record.canDeleteFile && record.file"
                   type="text"
                   status="danger"
                   size="mini"
@@ -676,14 +640,6 @@ watch(
             </template>
           </a-upload>
         </a-form-item>
-        <a-form-item :label="t('archive.changeDescription')">
-          <a-textarea
-            v-model="uploadForm.changeDescription"
-            :max-length="1000"
-            show-word-limit
-            :placeholder="t('archive.changePlaceholder')"
-          />
-        </a-form-item>
         <a-progress v-if="uploading" :percent="uploadProgress / 100" />
       </a-form>
     </a-modal>
@@ -695,10 +651,10 @@ watch(
   --archive-border: #e5e6eb;
   width: 100%;
   height: 100%;
-  min-width: 1234px;
+  min-width: 0;
   min-height: 0;
   box-sizing: border-box;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: hidden;
   padding: 13px;
   color: #1d2129;
@@ -940,11 +896,11 @@ watch(
 .archive-workspace {
   width: 100%;
   height: 100%;
-  min-width: 1208px;
+  min-width: 0;
   min-height: 0;
   display: grid;
   flex: 1;
-  grid-template-columns: 270px minmax(937px, 1fr);
+  grid-template-columns: 270px minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid var(--archive-border);
   background: #fff;
@@ -1054,7 +1010,7 @@ watch(
 }
 
 .archive-files {
-  min-width: 937px;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -1172,11 +1128,16 @@ watch(
 }
 
 .archive-row-actions {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
   white-space: nowrap;
 }
 
 .archive-row-actions :deep(.arco-btn-text) {
-  padding: 0;
-  min-width: auto;
+  min-width: 48px;
+  padding: 0 8px;
 }
 </style>

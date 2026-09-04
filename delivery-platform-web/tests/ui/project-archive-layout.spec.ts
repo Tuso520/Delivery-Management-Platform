@@ -30,7 +30,7 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
   ]
   const workspaceHeights: number[] = []
   const headerWidthsByViewport: number[][] = []
-  const baselineHeaderWidths = [340, 80, 100, 113, 122, 182]
+  const baselineHeaderWidths = [452, 100, 113, 122, 150]
 
   for (const [viewportIndex, viewport] of viewports.entries()) {
     await page.setViewportSize(viewport)
@@ -48,7 +48,7 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
       const tableElement = root.querySelector<HTMLElement>('.arco-table-element')
       const headers = [...root.querySelectorAll<HTMLElement>('thead .arco-table-th')]
       const cells = [...root.querySelectorAll<HTMLElement>('tbody tr:first-child .arco-table-td')]
-      const firstDataCell = cells.length === 6 ? cells[0] : null
+      const firstDataCell = cells.length === 5 ? cells[0] : null
       const layoutMain = root.closest<HTMLElement>('.layout-main')
       if (
         !metrics ||
@@ -61,7 +61,7 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
         !tableViewport ||
         !tableElement ||
         !layoutMain ||
-        headers.length !== 6
+        headers.length !== 5
       ) {
         throw new Error('Project archive layout nodes are incomplete')
       }
@@ -81,6 +81,8 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
         directoryRowHeight: Math.round(firstDirectoryItem.getBoundingClientRect().height),
         directoryOverflowY: getComputedStyle(directoryScroll).overflowY,
         tableOverflowY: getComputedStyle(tableViewport).overflowY,
+        tableClientWidth: tableViewport.clientWidth,
+        tableScrollWidth: tableViewport.scrollWidth,
         tableRowHeight: firstDataCell
           ? Math.round(firstDataCell.getBoundingClientRect().height)
           : null,
@@ -88,7 +90,7 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
         headerWidths: headers.map((header) => Math.round(header.getBoundingClientRect().width)),
         headerBorders: headers.map((header) => getComputedStyle(header).borderRightWidth),
         cellBorders:
-          cells.length === 6
+          cells.length === 5
             ? cells.map((cell) => getComputedStyle(cell).borderRightWidth)
             : [],
         documentScrollHeight: document.documentElement.scrollHeight,
@@ -107,11 +109,11 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
       directoryRowHeight: 44,
       directoryOverflowY: 'auto',
       tableOverflowY: 'auto',
-      headerBorders: ['1px', '1px', '1px', '1px', '1px', '0px'],
+      headerBorders: ['1px', '1px', '1px', '1px', '0px'],
     })
     if (layout.tableRowHeight !== null) {
       expect(layout.tableRowHeight).toBe(44)
-      expect(layout.cellBorders).toEqual(['1px', '1px', '1px', '1px', '1px', '0px'])
+      expect(layout.cellBorders).toEqual(['1px', '1px', '1px', '1px', '0px'])
     } else {
       expect(layout.cellBorders).toEqual([])
     }
@@ -128,6 +130,7 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
           layout.tableElementWidth,
       ),
     ).toBeLessThanOrEqual(2)
+    expect(layout.tableScrollWidth).toBeLessThanOrEqual(layout.tableClientWidth + 1)
     expect(layout.selectLeft).toBe(layout.directoryLeft)
     expect(layout.documentScrollHeight).toBe(layout.documentClientHeight)
   }
@@ -139,5 +142,10 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
     expect(headerWidthsByViewport[2]?.[index]).toBeGreaterThan(headerWidthsByViewport[1]?.[index] ?? 0)
   })
   await expect(page.getByRole('button', { name: '上传', exact: true })).toBeVisible()
+  await expect(
+    page.locator('.archive-file-table .arco-table-th').filter({ hasText: '版本号' }),
+  ).toHaveCount(0)
+  await expect(page.getByRole('columnheader', { name: '版本', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '更新', exact: true })).toHaveCount(0)
   await expect(page.getByText('同步模板', { exact: true })).toHaveCount(0)
 })

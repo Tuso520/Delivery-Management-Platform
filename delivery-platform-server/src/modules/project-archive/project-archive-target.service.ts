@@ -86,7 +86,6 @@ export class ProjectArchiveTargetService {
                         currentVersion: {
                           select: {
                             id: true,
-                            version: true,
                             status: true,
                             uploadedAt: true,
                             uploadedBy: true,
@@ -121,7 +120,6 @@ export class ProjectArchiveTargetService {
                           take: 10,
                           select: {
                             id: true,
-                            version: true,
                             status: true,
                             uploadedAt: true,
                             uploadedBy: true,
@@ -168,8 +166,10 @@ export class ProjectArchiveTargetService {
     }
 
     const canUpload = this.hasPermission(actor, 'archive:upload');
-    const canDownload = this.hasPermission(actor, 'file:download');
-    const canDeleteFile = this.hasPermission(actor, 'file:archive');
+    const canDownload =
+      this.hasPermission(actor, 'archive:upload') || this.hasPermission(actor, 'file:download');
+    const canDeleteFile =
+      this.hasPermission(actor, 'archive:upload') || this.hasPermission(actor, 'file:archive');
     const folders = project.archiveFolders.map((folder) => {
       const items = folder.items.map((item) => {
         const currentFile = item.files[0] ?? null;
@@ -238,10 +238,9 @@ export class ProjectArchiveTargetService {
           temporaryReason: item.temporaryReason,
           archivedAt: item.archivedAt,
           status,
-          currentVersion: presentedVersion
+          file: presentedVersion
             ? {
                 id: presentedVersion.id,
-                version: presentedVersion.version,
                 status: presentedVersion.status,
                 uploadedAt: presentedVersion.uploadedAt,
                 logicalFileId: presentedFile?.logicalFile.id,
@@ -346,10 +345,9 @@ export class ProjectArchiveTargetService {
             temporaryReason: item.temporaryReason,
             archivedAt: item.archivedAt,
             status,
-            currentVersion: presentedVersion
+            file: presentedVersion
               ? {
                   id: presentedVersion.id,
-                  version: presentedVersion.version,
                   status: presentedVersion.status,
                   uploadedAt: presentedVersion.uploadedAt,
                   logicalFileId: file.logicalFile.id,
@@ -409,7 +407,7 @@ export class ProjectArchiveTargetService {
           ? {
               ...uploadTarget,
               allowMultipleFiles: true,
-              currentVersion: null,
+              file: null,
               fileCount: 0,
               canDownload: false,
               canDeleteFile: false,
