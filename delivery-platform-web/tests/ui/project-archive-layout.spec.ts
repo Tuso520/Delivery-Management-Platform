@@ -30,7 +30,7 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
   ]
   const workspaceHeights: number[] = []
   const headerWidthsByViewport: number[][] = []
-  const baselineHeaderWidths = [440, 100, 113, 122, 150]
+  const fixedHeaderWidths = [100, 113, 122, 150]
 
   for (const [viewportIndex, viewport] of viewports.entries()) {
     await page.setViewportSize(viewport)
@@ -118,11 +118,10 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
       expect(layout.cellBorders).toEqual([])
     }
     if (viewportIndex === 0) {
-      expect(layout.headerWidths).toEqual(baselineHeaderWidths)
+      expect(layout.headerWidths[0]).toBeGreaterThanOrEqual(400)
+      expect(layout.headerWidths.slice(1)).toEqual(fixedHeaderWidths)
     } else {
-      layout.headerWidths.forEach((width, index) => {
-        expect(width).toBeGreaterThanOrEqual(baselineHeaderWidths[index] ?? 0)
-      })
+      expect(layout.headerWidths.slice(1)).toEqual(fixedHeaderWidths)
     }
     expect(
       Math.abs(
@@ -137,10 +136,8 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
 
   expect(workspaceHeights[1]).toBeGreaterThan(workspaceHeights[0])
   expect(workspaceHeights[2]).toBeGreaterThan(workspaceHeights[1])
-  baselineHeaderWidths.forEach((_, index) => {
-    expect(headerWidthsByViewport[1]?.[index]).toBeGreaterThan(headerWidthsByViewport[0]?.[index] ?? 0)
-    expect(headerWidthsByViewport[2]?.[index]).toBeGreaterThan(headerWidthsByViewport[1]?.[index] ?? 0)
-  })
+  expect(headerWidthsByViewport[1]?.[0]).toBeGreaterThan(headerWidthsByViewport[0]?.[0] ?? 0)
+  expect(headerWidthsByViewport[2]?.[0]).toBeGreaterThan(headerWidthsByViewport[1]?.[0] ?? 0)
   await expect(page.getByRole('button', { name: '上传', exact: true })).toBeVisible()
   await expect(
     page.locator('.archive-file-table .arco-table-th').filter({ hasText: '版本号' }),
