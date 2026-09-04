@@ -30,7 +30,7 @@ test('project archive matches Figma 43:317 and fills three desktop viewports', a
   ]
   const workspaceHeights: number[] = []
   const headerWidthsByViewport: number[][] = []
-  const baselineHeaderWidths = [452, 100, 113, 122, 150]
+  const baselineHeaderWidths = [440, 100, 113, 122, 150]
 
   for (const [viewportIndex, viewport] of viewports.entries()) {
     await page.setViewportSize(viewport)

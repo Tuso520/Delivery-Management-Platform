@@ -92,7 +92,7 @@ describe('business component adoption contract', () => {
     expect(archive).toContain('height: 100%')
     expect(archive).toContain('flex: 1 1 auto')
     expect(archive).toContain('border-right: 1px solid var(--archive-border) !important')
-    expect(archive).toContain("slotName: 'fileName', width: 452")
+    expect(archive).toContain("slotName: 'fileName', width: 440")
     expect(archive).not.toContain("slotName: 'version'")
     expect(archive).toContain("slotName: 'fileSize', width: 100")
     expect(archive).toContain("slotName: 'uploader', width: 113")

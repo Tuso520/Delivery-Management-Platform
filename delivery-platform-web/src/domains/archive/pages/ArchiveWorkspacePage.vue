@@ -153,7 +153,7 @@ const metrics = computed(() => [
 ])
 
 const fileColumns = computed<TableColumnData[]>(() => [
-  { title: t('archive.columns.fileName'), slotName: 'fileName', width: 452, align: 'left' },
+  { title: t('archive.columns.fileName'), slotName: 'fileName', width: 440, align: 'left' },
   { title: t('archive.columns.fileSize'), slotName: 'fileSize', width: 100, align: 'center' },
   { title: t('archive.columns.uploader'), slotName: 'uploader', width: 113, align: 'center' },
   { title: t('archive.columns.uploadedAt'), slotName: 'uploadedAt', width: 122, align: 'center' },

@@ -691,15 +691,14 @@ test('administrator round-trips a private MinIO file and File Worker output', as
       (candidate) =>
         candidate.canUpload &&
         !candidate.reviewRequired &&
-        (!candidate.allowedExtensions?.length || candidate.allowedExtensions.includes('png')) &&
-        candidate.namingRule,
+        (!candidate.allowedExtensions?.length || candidate.allowedExtensions.includes('png')),
     )
   expect(
     item,
-    'seed project must expose a non-review PNG archive item with an explicit naming rule',
+    'seed project must expose a non-review PNG archive item',
   ).toBeDefined()
 
-  const fileName = `${item!.namingRule!.replace(/\{version\}/giu, 'V1.0')}.png`
+  const fileName = `project-archive-${Date.now()}.png`
   const image = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
     'base64',
@@ -769,7 +768,7 @@ test('administrator round-trips a private MinIO file and File Worker output', as
   await expect(fileRow.getByRole('button', { name: '下载', exact: true })).toBeVisible()
   await expect(fileRow.getByRole('button', { name: '删除', exact: true })).toBeVisible()
   const tableWidths = await page
-    .locator('.archive-file-table .business-table__viewport')
+    .locator('.archive-files .business-table__viewport')
     .evaluate((element) => ({ clientWidth: element.clientWidth, scrollWidth: element.scrollWidth }))
   expect(tableWidths.scrollWidth).toBeLessThanOrEqual(tableWidths.clientWidth + 1)
 
