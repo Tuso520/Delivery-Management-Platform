@@ -1106,7 +1106,7 @@
       "uploaded": "Upload complete",
       "uploadFailed": "File upload failed. Check the file and network, then try again",
       "noUploadTarget": "This project has no folder available for upload",
-      "fileDeleted": "The file was deleted and its version history was retained",
+      "fileDeleted": "The file was deleted",
       "downloadFailed": "File download failed. Check your permission and try again",
       "deleteFailed": "File deletion failed. Check your permission and try again",
       "templateSynced": "Template additions synchronized without changing existing archive content",
@@ -1115,11 +1115,11 @@
     },
     "deleteFile": {
       "title": "Delete file",
-      "confirm": "Delete the current file? Its version history will be retained."
+      "confirm": "Delete “{name}”?"
     },
     "archiveItem": {
       "title": "Archive Item",
-      "confirm": "Archiving “{name}” will retain all files and version history. Continue?",
+      "confirm": "Archiving “{name}” will retain its related files. Continue?",
       "action": "Archive"
     }
   },
