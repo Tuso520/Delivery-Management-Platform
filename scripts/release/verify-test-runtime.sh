@@ -414,10 +414,6 @@ try {
       new Blob([archiveFileBody], { type: 'application/pdf' }),
       fileName,
     );
-    archiveFile.append('uploadMode', 'REPLACE');
-    archiveFile.append('revisionLevel', 'MINOR');
-    archiveFile.append('createNewLogicalFile', 'true');
-    archiveFile.append('changeDescription', 'test runtime project archive multi-file upload');
     const uploadResult = await jsonRequest(
       `/projects/${archiveProject.id}/archive-items/${archiveItemId}/files`,
       {
@@ -448,37 +444,12 @@ try {
     uploadedArchiveLogicalIds.push(uploaded.id);
   }
 
-  const missingRevisionForm = new FormData();
-  missingRevisionForm.append(
-    'file',
-    new Blob([archiveFileBody], { type: 'application/pdf' }),
-    `runtime-project-archive-missing-revision-${standardMarker}.pdf`,
-  );
-  missingRevisionForm.append('uploadMode', 'REPLACE');
-  const missingRevision = await jsonRequest(
-    `/projects/${archiveProject.id}/archive-items/${archiveItemId}/files`,
-    {
-      method: 'POST',
-      headers: { authorization: `Bearer ${session.accessToken}` },
-      body: missingRevisionForm,
-    },
-  );
-  if (
-    missingRevision.response.status !== 400 ||
-    missingRevision.body?.message !== 'revisionLevel 必须为 MINOR 或 MAJOR'
-  ) {
-    fail('project archive missing revision did not return the explicit HTTP 400 reason');
-  }
-
   const invalidFileForm = new FormData();
   invalidFileForm.append(
     'file',
     new Blob(['not a PDF'], { type: 'application/pdf' }),
     `runtime-project-archive-invalid-${standardMarker}.pdf`,
   );
-  invalidFileForm.append('uploadMode', 'REPLACE');
-  invalidFileForm.append('revisionLevel', 'MINOR');
-  invalidFileForm.append('createNewLogicalFile', 'true');
   const invalidFile = await jsonRequest(
     `/projects/${archiveProject.id}/archive-items/${archiveItemId}/files`,
     {
@@ -505,7 +476,7 @@ try {
   const verifiedFolder = archiveTreeAfter?.folders?.find((folder) => folder.id === archiveFolder.id);
   const uploadedNames = new Set(
     (verifiedFolder?.files || []).map(
-      (file) => file.currentVersion?.originalName || file.currentVersion?.displayName,
+      (file) => file.file?.originalName || file.file?.displayName,
     ),
   );
   for (const fileName of archiveFileNames) {

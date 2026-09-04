@@ -106,5 +106,15 @@ test('runtime acceptance provisions one reusable project and cleans up uploaded 
   assert.match(verifier, /archiveFileNames[\s\S]*runtime-project-archive-a-/u)
   assert.match(verifier, /archiveFileNames[\s\S]*runtime-project-archive-b-/u)
   assert.match(verifier, /verifiedFolder\.totalCount < archiveFolder\.totalCount \+ 3/u)
+  assert.match(verifier, /file\.file\?\.originalName \|\| file\.file\?\.displayName/u)
   assert.doesNotMatch(verifier, /uploadTarget\.allowedExtensions/u)
+  for (const retiredField of [
+    'uploadMode',
+    'revisionLevel',
+    'createNewLogicalFile',
+    'currentVersion?.originalName',
+  ]) {
+    assert.ok(!verifier.includes(retiredField), `retired archive field remains: ${retiredField}`)
+  }
+  assert.doesNotMatch(verifier, /archiveFile\.append\('changeDescription'/u)
 })
